@@ -1,6 +1,6 @@
 {
   "name": "cli-manager",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "",
   "main": "./out/main/index.js",
   "scripts": {
