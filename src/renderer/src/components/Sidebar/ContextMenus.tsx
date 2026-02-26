@@ -1,6 +1,6 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser } from 'lucide-react'
+import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { getTemplateIcon } from '../../constants/icons'
 import { MENU_Z_INDEX } from '../../constants/styles'
@@ -11,6 +11,8 @@ interface WorkspaceContextMenuProps {
     workspacePath: string
     sessions: TerminalSession[]
     templates: TerminalTemplate[]
+    isPinned?: boolean
+    onTogglePin: () => void
     onAddSession: (type: 'regular' | 'worktree', template?: TerminalTemplate) => void
     onTerminateAll: () => void
     onReloadWorktrees: () => void | Promise<void>
@@ -28,6 +30,8 @@ export function WorkspaceContextMenu({
     workspacePath,
     sessions,
     templates,
+    isPinned,
+    onTogglePin,
     onAddSession,
     onTerminateAll,
     onReloadWorktrees,
@@ -67,6 +71,18 @@ export function WorkspaceContextMenu({
             style={{ top: y, left: x }}
             onClick={e => e.stopPropagation()}
         >
+            {/* Pin / Unpin */}
+            <button
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                onClick={() => {
+                    onTogglePin()
+                    onClose()
+                }}
+            >
+                <Pin size={12} className={isPinned ? "text-blue-400 shrink-0" : "text-gray-400 shrink-0"} />
+                <span className="truncate">{isPinned ? 'Unpin' : 'Pin to Top'}</span>
+            </button>
+
             {/* Copy Path */}
             <button
                 className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"

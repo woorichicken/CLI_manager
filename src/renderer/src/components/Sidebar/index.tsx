@@ -72,6 +72,7 @@ interface SidebarProps {
     onRenameSession: (workspaceId: string, sessionId: string, newName: string) => void
     onReorderSessions: (workspaceId: string, sessions: TerminalSession[]) => void
     onReorderWorkspaces: (workspaces: Workspace[]) => void
+    onTogglePin: (workspaceId: string) => void
     width: number
     setWidth: (width: number) => void
     onClose: () => void
@@ -112,6 +113,7 @@ export function Sidebar({
     onRenameSession,
     onReorderSessions,
     onReorderWorkspaces,
+    onTogglePin,
     width,
     setWidth,
     onClose,
@@ -541,9 +543,14 @@ export function Sidebar({
         setRenamingSessionId(null)
     }
 
+    const handleTogglePin = (workspaceId: string) => {
+        onTogglePin(workspaceId)
+    }
+
     // 홈, 일반 워크스페이스, Playground 분리
     const homeWorkspace = workspaces.find(w => w.isHome)
-    const regularWorkspaces = workspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome)
+    const pinnedWorkspaces = workspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && w.isPinned)
+    const regularWorkspaces = workspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned)
     const playgroundWorkspaces = workspaces.filter(w => w.isPlayground)
 
     return (
@@ -558,6 +565,11 @@ export function Sidebar({
                         workspacePath={menuOpen.workspacePath}
                         sessions={workspace?.sessions || []}
                         templates={customTemplates}
+                        isPinned={workspace?.isPinned}
+                        onTogglePin={() => {
+                            handleTogglePin(menuOpen.workspaceId)
+                            setMenuOpen(null)
+                        }}
                         onAddSession={(type, template) => {
                             if (type === 'worktree') {
                                 setShowPrompt({ workspaceId: menuOpen.workspaceId })
@@ -739,6 +751,50 @@ export function Sidebar({
                         />
                     )}
 
+                    {/* Pinned workspaces - displayed at top, no drag reorder */}
+                    {pinnedWorkspaces.length > 0 && (
+                        <>
+                            <div className="px-2 pt-1 pb-0.5">
+                                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Pinned</span>
+                            </div>
+                            {pinnedWorkspaces.map(workspace => {
+                                const childWorktrees = workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                return (
+                                    <WorkspaceItem
+                                        key={workspace.id}
+                                        workspace={workspace}
+                                        childWorktrees={childWorktrees}
+                                        expanded={expanded.has(workspace.id)}
+                                        expandedSet={expanded}
+                                        branchInfo={workspaceBranches.get(workspace.id)}
+                                        activeSessionId={activeSessionId}
+                                        sessionStatuses={sessionStatuses}
+                                        hooksSettings={hooksSettings}
+                                        terminalPreview={terminalPreview}
+                                        renamingSessionId={renamingSessionId}
+                                        fontSize={fontSize}
+                                        showSessionCount={showSessionCount}
+                                        isPinned={true}
+                                        onToggleExpand={toggleExpand}
+                                        onContextMenu={handleContextMenu}
+                                        onSessionContextMenu={handleSessionContextMenu}
+                                        onBranchClick={handleBranchClick}
+                                        onSelect={onSelect}
+                                        onRemoveSession={onRemoveSession}
+                                        onRemoveWorkspace={onRemoveWorkspace}
+                                        onOpenInEditor={onOpenInEditor}
+                                        onRenameSession={handleRenameSubmit}
+                                        onRenameCancel={() => setRenamingSessionId(null)}
+                                        onReorderSessions={onReorderSessions}
+                                        splitLayout={splitLayout}
+                                        onDragStartSession={onDragStartSession}
+                                        onDragEndSession={onDragEndSession}
+                                    />
+                                )
+                            })}
+                        </>
+                    )}
+
                     {/* Regular workspaces - drag & drop reorder supported */}
                     <Reorder.Group
                         axis="y"
@@ -775,6 +831,7 @@ export function Sidebar({
                                         renamingSessionId={renamingSessionId}
                                         fontSize={fontSize}
                                         showSessionCount={showSessionCount}
+                                        isPinned={false}
                                         onToggleExpand={toggleExpand}
                                         onContextMenu={handleContextMenu}
                                         onSessionContextMenu={handleSessionContextMenu}

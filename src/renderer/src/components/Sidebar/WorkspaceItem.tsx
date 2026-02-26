@@ -1,5 +1,5 @@
 import React from 'react'
-import { Folder, FolderOpen, Plus, Trash2, ChevronRight, ChevronDown, GitBranch, Home } from 'lucide-react'
+import { Folder, FolderOpen, Plus, Trash2, ChevronRight, ChevronDown, GitBranch, Home, Pin } from 'lucide-react'
 import clsx from 'clsx'
 import { Reorder } from 'framer-motion'
 import { Workspace, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout } from '../../../../shared/types'
@@ -18,6 +18,7 @@ interface WorkspaceItemProps {
     terminalPreview?: { enabled: boolean; lineCount: number }
     fontSize?: number  // Sidebar font size
     showSessionCount?: boolean  // Show session count next to workspace name
+    isPinned?: boolean
     onToggleExpand: (id: string) => void
     onContextMenu: (e: React.MouseEvent, workspaceId: string) => void
     onBranchClick: (e: React.MouseEvent, workspace: Workspace) => void
@@ -52,6 +53,7 @@ export function WorkspaceItem({
     terminalPreview,
     fontSize = 14,
     showSessionCount = false,
+    isPinned = false,
     onToggleExpand,
     onContextMenu,
     onBranchClick,
@@ -99,6 +101,9 @@ export function WorkspaceItem({
                         >
                             {workspace.name}
                         </span>
+                        {isPinned && (
+                            <Pin size={10} className="text-blue-400/60 shrink-0" />
+                        )}
                         {showSessionCount && (() => {
                             const totalSessions = (workspace.sessions?.length ?? 0)
                                 + childWorktrees.reduce((sum, wt) => sum + (wt.sessions?.length ?? 0), 0)

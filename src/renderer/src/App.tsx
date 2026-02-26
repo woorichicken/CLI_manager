@@ -760,6 +760,14 @@ function App() {
         ]
     }, [workspaces, workspaceOrder, sessionOrders])
 
+    // Toggle pin state for a workspace
+    const handleTogglePin = async (workspaceId: string) => {
+        const newPinned = await window.api.togglePinWorkspace(workspaceId)
+        setWorkspaces(prev => prev.map(w =>
+            w.id === workspaceId ? { ...w, isPinned: newPinned } : w
+        ))
+    }
+
     // Workspace order change handler - only changes display order, NOT workspaces array
     const handleReorderWorkspaces = (newWorkspaces: Workspace[]) => {
         const newOrder = newWorkspaces.map(w => w.id)
@@ -1104,6 +1112,7 @@ function App() {
                     onRenameSession={handleRenameSession}
                     onReorderSessions={handleReorderSessions}
                     onReorderWorkspaces={handleReorderWorkspaces}
+                    onTogglePin={handleTogglePin}
                     width={sidebarWidth}
                     setWidth={setSidebarWidth}
                     onClose={() => setIsSidebarOpen(false)}

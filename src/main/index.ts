@@ -1082,6 +1082,21 @@ app.whenReady().then(async () => {
         return true
     })
 
+    ipcMain.handle('toggle-pin-workspace', (_, workspaceId: string) => {
+        const workspaces = store.get('workspaces') as Workspace[]
+        const workspace = workspaces.find(w => w.id === workspaceId)
+        if (!workspace) return false
+
+        workspace.isPinned = !workspace.isPinned
+        store.set('workspaces', workspaces)
+
+        // Notify renderer to refresh
+        BrowserWindow.getAllWindows().forEach(win => {
+            win.webContents.send('workspaces-updated')
+        })
+        return workspace.isPinned
+    })
+
     ipcMain.handle('create-playground', async () => {
         // Create a readable timestamp for the playground name
         const now = new Date()

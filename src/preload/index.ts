@@ -15,6 +15,7 @@ const api = {
     renameSession: (workspaceId: string, sessionId: string, newName: string): Promise<boolean> => ipcRenderer.invoke('rename-session', workspaceId, sessionId, newName),
     reorderSessions: (workspaceId: string, sessionIds: string[]): Promise<boolean> => ipcRenderer.invoke('reorder-sessions', workspaceId, sessionIds),
     reorderWorkspaces: (workspaceIds: string[]): Promise<boolean> => ipcRenderer.invoke('reorder-workspaces', workspaceIds),
+    togglePinWorkspace: (workspaceId: string): Promise<boolean> => ipcRenderer.invoke('toggle-pin-workspace', workspaceId),
     createPlayground: (): Promise<Workspace | null> => ipcRenderer.invoke('create-playground'),
 
     // Settings

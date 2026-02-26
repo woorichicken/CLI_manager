@@ -138,6 +138,7 @@ export interface Workspace {
     createdAt: number
     isPlayground?: boolean
     isHome?: boolean  // Home directory workspace (cannot be deleted)
+    isPinned?: boolean  // Pin workspace to top of sidebar
     parentWorkspaceId?: string  // Worktree인 경우 부모 workspace ID
     branchName?: string  // Worktree의 브랜치명
     baseBranch?: string  // Worktree 생성 시 분기한 브랜치 (merge 대상)

@@ -15,6 +15,7 @@ declare global {
             renameSession: (workspaceId: string, sessionId: string, newName: string) => Promise<boolean>
             reorderSessions: (workspaceId: string, sessionIds: string[]) => Promise<boolean>
             reorderWorkspaces: (workspaceIds: string[]) => Promise<boolean>
+            togglePinWorkspace: (workspaceId: string) => Promise<boolean>
             createPlayground: () => Promise<Workspace | null>
 
             // Settings
