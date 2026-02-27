@@ -1,6 +1,6 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus } from 'lucide-react'
+import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { getTemplateIcon } from '../../constants/icons'
 import { MENU_Z_INDEX } from '../../constants/styles'
@@ -89,38 +89,50 @@ export function WorkspaceContextMenu({
                 <span className="truncate">{isPinned ? 'Unpin' : 'Pin to Top'}</span>
             </button>
 
-            {/* Move to Folder */}
-            {folders && onMoveToFolder && (
+            {/* Move to Folder - hover submenu */}
+            {folders && onMoveToFolder && folders.length > 0 && (
                 <>
                     <div className="border-t border-white/10 my-0.5"></div>
-                    <div className="px-2.5 py-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                        Move to Folder
-                    </div>
-                    {currentFolderId && (
-                        <button
-                            className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
-                            onClick={() => {
-                                onMoveToFolder(null)
-                                onClose()
-                            }}
-                        >
-                            <FolderMinus size={12} className="text-gray-400 shrink-0" />
-                            <span className="truncate">Remove from Folder</span>
-                        </button>
-                    )}
-                    {folders.filter(f => f.id !== currentFolderId).map(folder => (
-                        <button
-                            key={folder.id}
-                            className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
-                            onClick={() => {
-                                onMoveToFolder(folder.id)
-                                onClose()
-                            }}
-                        >
+                    <div className="relative group/subfolder">
+                        <div className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2 cursor-pointer">
                             <Folder size={12} className="text-amber-400/70 shrink-0" />
-                            <span className="truncate">{folder.name}</span>
-                        </button>
-                    ))}
+                            <span className="truncate flex-1">Move to Folder</span>
+                            <ChevronRight size={12} className="text-gray-500 shrink-0" />
+                        </div>
+                        <div
+                            className="invisible group-hover/subfolder:visible absolute left-full top-0 ml-1 bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-40 backdrop-blur-md max-h-64 overflow-y-auto"
+                            style={{ zIndex: MENU_Z_INDEX + 1 }}
+                        >
+                            {currentFolderId && (
+                                <button
+                                    className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                                    onClick={() => {
+                                        onMoveToFolder(null)
+                                        onClose()
+                                    }}
+                                >
+                                    <FolderMinus size={12} className="text-gray-400 shrink-0" />
+                                    <span className="truncate">Remove from Folder</span>
+                                </button>
+                            )}
+                            {currentFolderId && folders.filter(f => f.id !== currentFolderId).length > 0 && (
+                                <div className="border-t border-white/10 my-0.5"></div>
+                            )}
+                            {folders.filter(f => f.id !== currentFolderId).map(folder => (
+                                <button
+                                    key={folder.id}
+                                    className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                                    onClick={() => {
+                                        onMoveToFolder(folder.id)
+                                        onClose()
+                                    }}
+                                >
+                                    <Folder size={12} className="text-amber-400/70 shrink-0" />
+                                    <span className="truncate">{folder.name}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </>
             )}
 
