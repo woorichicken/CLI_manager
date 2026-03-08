@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Sidebar } from './components/Sidebar/index'
 import { TerminalView } from './components/TerminalView'
+import { SessionMemo } from './components/SessionMemo'
 import { StatusBar } from './components/StatusBar'
 import { Settings } from './components/Settings'
 import { GitPanel } from './components/GitPanel'
@@ -1478,6 +1479,12 @@ function App() {
                                             keyboardSettings={settings.keyboard}
                                             hooksSettings={settings.hooks}
                                             disablePtyResize={isInGridView}
+                                        />
+                                        <SessionMemo
+                                            sessionId={session.id}
+                                            workspaceId={workspace.id}
+                                            initialMemo={session.memo}
+                                            visible={isVisible && !isInGridView}
                                         />
                                     </div>
                                 </div>

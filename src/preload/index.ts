@@ -14,6 +14,7 @@ const api = {
     removeSession: (workspaceId: string, sessionId: string): Promise<boolean> => ipcRenderer.invoke('remove-session', workspaceId, sessionId),
     renameSession: (workspaceId: string, sessionId: string, newName: string): Promise<boolean> => ipcRenderer.invoke('rename-session', workspaceId, sessionId, newName),
     reorderSessions: (workspaceId: string, sessionIds: string[]): Promise<boolean> => ipcRenderer.invoke('reorder-sessions', workspaceId, sessionIds),
+    updateSessionMemo: (workspaceId: string, sessionId: string, memo: string): Promise<boolean> => ipcRenderer.invoke('update-session-memo', workspaceId, sessionId, memo),
     reorderWorkspaces: (workspaceIds: string[]): Promise<boolean> => ipcRenderer.invoke('reorder-workspaces', workspaceIds),
     togglePinWorkspace: (workspaceId: string): Promise<boolean> => ipcRenderer.invoke('toggle-pin-workspace', workspaceId),
     getFolders: (): Promise<any[]> => ipcRenderer.invoke('get-folders'),

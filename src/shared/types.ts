@@ -119,6 +119,7 @@ export interface TerminalSession {
     initialCommand?: string
     cliSessionId?: string
     cliToolName?: string
+    memo?: string  // Quick notepad text per session
 }
 
 export interface TerminalTemplate {

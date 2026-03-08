@@ -1043,6 +1043,24 @@ app.whenReady().then(async () => {
         return true
     })
 
+    // Save session memo
+    ipcMain.handle('update-session-memo', (_, workspaceId: string, sessionId: string, memo: string) => {
+        const workspaces = store.get('workspaces') as Workspace[]
+        const workspace = workspaces.find((w: Workspace) => w.id === workspaceId)
+        if (!workspace) return false
+
+        const session = workspace.sessions.find(s => s.id === sessionId)
+        if (!session) return false
+
+        session.memo = memo
+
+        store.set('workspaces', workspaces.map(w =>
+            w.id === workspaceId ? workspace : w
+        ))
+
+        return true
+    })
+
     // 세션 순서 변경 핸들러
     ipcMain.handle('reorder-sessions', (_, workspaceId: string, sessionIds: string[]) => {
         const workspaces = store.get('workspaces') as Workspace[]
