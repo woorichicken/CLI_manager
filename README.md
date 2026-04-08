@@ -16,9 +16,7 @@
 
 ## Demo
 
-**▶ [Watch full demo on solhun.com](https://solhun.com)**
-
-https://solhun.com/videos/various-project-main.mp4
+![CLI Manager Demo](docs/demo.gif)
 
 ---
 
@@ -52,42 +50,42 @@ As AI-powered development grows, developers are juggling Claude Code, Codex CLI,
 ### All CLI Agents, One Dashboard
 Manage Claude Code, Codex CLI, and Gemini CLI from a single sidebar. Assign custom names and roles — "Frontend Dev", "Backend API", "Design Review" — so multi-agent workflows stay intuitive.
 
-https://solhun.com/videos/changename-main.mp4
+![Agent renaming demo](docs/changename.gif)
 
 ---
 
 ### Git Worktree as Independent Workspaces
 Create Git worktrees directly from the UI. Each worktree becomes its own workspace with independent terminal sessions, branch tracking, and GitHub actions — no manual setup required.
 
-https://solhun.com/videos/makeworktree.mp4
+![Git Worktree demo](docs/worktree.gif)
 
 ---
 
 ### GitHub Integration
 Push branches, create pull requests, and check GitHub Actions workflow status — all from within the app using your existing `gh` CLI authentication.
 
-https://solhun.com/videos/commit-push.mp4
+![GitHub integration demo](docs/github.gif)
 
 ---
 
 ### Real-Time Port Monitoring
 Automatically detects running local development servers. See which ports are active across all your projects at a glance, with filtering and one-click kill.
 
-https://solhun.com/videos/port-manager.mp4
+![Port monitoring demo](docs/ports.gif)
 
 ---
 
 ### Custom Terminal Templates
 Save your most-used command sequences as named templates — with icons and descriptions. Launch complex multi-step setups with a single click.
 
-https://solhun.com/videos/templates.mp4
+![Templates demo](docs/templates.gif)
 
 ---
 
 ### Playground — Instant Isolated Environments
 Spin up a temporary workspace in your Downloads folder with one click. Experiment freely without touching your real projects.
 
-https://solhun.com/videos/playground.mp4
+![Playground demo](docs/playground.gif)
 
 ---
 
