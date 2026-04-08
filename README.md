@@ -16,13 +16,9 @@
 
 ## Demo
 
-> 🎬 Add your demo GIF or video here
->
-> Tip: Record with [Kap](https://getkap.co/) and drop the `.gif` into `docs/` — then reference it below:
->
-> ```md
-> ![CLI Manager Demo](docs/demo.gif)
-> ```
+**▶ [Watch full demo on solhun.com](https://solhun.com)**
+
+https://solhun.com/videos/various-project-main.mp4
 
 ---
 
@@ -43,9 +39,9 @@ As AI-powered development grows, developers are juggling Claude Code, Codex CLI,
 
 ## Performance
 
-- **Zero state loss** — Terminal sessions live in the DOM and are hidden with `display: none`, never destroyed on tab switch
+- **Zero state loss** — Terminal sessions live in the DOM (`display: none`), never destroyed on tab switch
 - **Instant session switching** — No re-initialization overhead; switch in milliseconds
-- **Real-time port detection** — Local dev servers are detected within 5 seconds via `lsof` polling
+- **Real-time port detection** — Local dev servers detected within 5 seconds via `lsof` polling
 - **500ms debounced auto-save** — Session memos save automatically without blocking your workflow
 - **Minimal footprint** — Built on Electron + xterm.js with no unnecessary background processes
 
@@ -54,22 +50,49 @@ As AI-powered development grows, developers are juggling Claude Code, Codex CLI,
 ## Features
 
 ### All CLI Agents, One Dashboard
-Manage Claude Code, Codex CLI, and Gemini CLI from a single sidebar. Assign custom names and roles to each agent — "Frontend Dev", "Backend API", "Design Review" — so multi-agent workflows stay intuitive.
+Manage Claude Code, Codex CLI, and Gemini CLI from a single sidebar. Assign custom names and roles — "Frontend Dev", "Backend API", "Design Review" — so multi-agent workflows stay intuitive.
+
+https://solhun.com/videos/changename-main.mp4
+
+---
 
 ### Git Worktree as Independent Workspaces
 Create Git worktrees directly from the UI. Each worktree becomes its own workspace with independent terminal sessions, branch tracking, and GitHub actions — no manual setup required.
 
+https://solhun.com/videos/makeworktree.mp4
+
+---
+
 ### GitHub Integration
 Push branches, create pull requests, and check GitHub Actions workflow status — all from within the app using your existing `gh` CLI authentication.
 
-### Real-Time Port Monitoring
-Automatically detects running local development servers. See which ports are active across all your projects at a glance, with filtering by port range.
+https://solhun.com/videos/commit-push.mp4
 
-### Session Persistence
-Every terminal session remains alive while you navigate. Switch between a dozen sessions without losing a single line of output.
+---
+
+### Real-Time Port Monitoring
+Automatically detects running local development servers. See which ports are active across all your projects at a glance, with filtering and one-click kill.
+
+https://solhun.com/videos/port-manager.mp4
+
+---
 
 ### Custom Terminal Templates
 Save your most-used command sequences as named templates — with icons and descriptions. Launch complex multi-step setups with a single click.
+
+https://solhun.com/videos/templates.mp4
+
+---
+
+### Playground — Instant Isolated Environments
+Spin up a temporary workspace in your Downloads folder with one click. Experiment freely without touching your real projects.
+
+https://solhun.com/videos/playground.mp4
+
+---
+
+### Session Persistence
+Every terminal session remains alive while you navigate. Switch between a dozen sessions without losing a single line of output.
 
 ### Per-Session Memo Pad
 Each terminal session has its own notepad. Jot down context, commands, or notes — they auto-save and persist with the session.
