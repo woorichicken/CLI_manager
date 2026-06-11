@@ -91,6 +91,9 @@ const api = {
     openExternal: (url: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('open-external', url),
 
     // Terminal
+    // Debug instrumentation flag for automated tests (CLIMANGER_TERM_DEBUG=1).
+    // Renderer cannot read process.env directly, so preload exposes it once.
+    termDebugEnabled: process.env.CLIMANGER_TERM_DEBUG === '1',
     createTerminal: (id: string, cwd: string, cols: number, rows: number, shell?: string): Promise<boolean> => ipcRenderer.invoke('terminal-create', id, cwd, cols, rows, shell),
     resizeTerminal: (id: string, cols: number, rows: number): Promise<void> => ipcRenderer.invoke('terminal-resize', id, cols, rows),
     killTerminal: (id: string): Promise<void> => ipcRenderer.invoke('terminal-kill', id),

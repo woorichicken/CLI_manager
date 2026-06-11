@@ -23,6 +23,13 @@ import { net } from 'electron'
 // Set app name for development mode
 app.setName('CLI Manager')
 
+// Test isolation: automated tests (Playwright) point userData at a temp dir
+// so test runs never touch the user's real workspaces/settings.
+// Must run before the electron-store instance below is constructed.
+if (process.env.CLIMANGER_TEST_USERDATA) {
+    app.setPath('userData', process.env.CLIMANGER_TEST_USERDATA)
+}
+
 // Auto Updater 설정
 // User must click "Download" button to start download (not automatic)
 autoUpdater.autoDownload = false
@@ -2405,6 +2412,13 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async (event) => {
     // If already confirmed to quit, proceed
     if (isQuitting) {
+        return
+    }
+
+    // Automated tests must never be blocked by the quit confirmation dialog
+    if (process.env.CLIMANGER_TEST_USERDATA) {
+        isQuitting = true
+        terminalManager.killAll()
         return
     }
 

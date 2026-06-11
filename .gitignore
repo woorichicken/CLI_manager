@@ -7,6 +7,11 @@ dist/
 *.js
 *.js.map
 
+# Terminal pipeline tests (Playwright + mock CLI)
+test-results/
+tests/terminal/results/
+scripts/mock-cli/recordings/
+
 # TypeScript
 *.tsbuildinfo
 

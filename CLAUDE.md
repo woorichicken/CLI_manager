@@ -33,6 +33,10 @@ pnpm start
 
 # 타입 체크
 pnpm typecheck
+
+# 터미널 파이프라인 테스트 (Playwright + Electron, 빌드 후 실행)
+pnpm build && pnpm test:term
+# 수정 전후 비교용 라벨 부여: METRICS_LABEL=<label> pnpm test:term
 ```
 
 ## Architecture
@@ -270,6 +274,37 @@ exec('/bin/zsh -l -c "code ."')
 - `electron-vite`는 Main/Preload/Renderer를 별도로 번들링
 - Renderer는 Vite + React HMR 지원
 - Main/Preload는 CommonJS 모듈 시스템 사용 (`type: "commonjs"`)
+
+### Terminal Rendering Invariants (회귀 주의)
+
+CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작들. 변경 시 반드시 `pnpm test:term`으로 검증할 것.
+
+1. **`scrollOnEraseInDisplay: true`** (TerminalView.tsx, xterm 6.0+)
+   - CLI가 전체 클리어(CSI 2J)할 때 viewport 내용을 지우는 대신 scrollback으로 보존
+   - 이 옵션이 없으면 클리어마다 화면에 보이던 대화 내용이 영구 파괴됨
+2. **숨김 터미널 PTY resize 보류** (applyTerminalDimensions)
+   - `visible`이 아닌 터미널은 PTY resize를 보내지 않음 (xterm resize만 수행)
+   - PTY resize = SIGWINCH = CLI 전체 리페인트 → 터미널 N개면 창 드래그 1번에 N개 세션의 scrollback이 리페인트 잔여물로 오염됨
+   - visible 전환 시 visibility effect가 `lastPtySizeRef`를 비워 최신 크기를 정확히 1회 적용
+3. **출력 IPC 배칭** (TerminalManager.enqueueOutput)
+   - pty 청크를 4ms 윈도우로 병합 후 renderer로 전송 (TUI 1프레임 = 1메시지)
+4. **터미널 데이터 리스너는 effect cleanup에서 해제** (dataCleanup)
+   - 과거에 Promise 콜백 반환값으로 잘못 등록되어 리스너 누수 있었음
+
+### Terminal Pipeline Testing
+
+터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
+
+- **위치**: `tests/terminal/` (T1 데이터유실, T2 스크롤튕김 6종, T3 히스토리보존, T4 리사이즈폭풍)
+- **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
+- **격리**: `CLIMANGER_TEST_USERDATA`로 userData를 임시 디렉토리로 분리 — 실사용 설정을 건드리지 않음
+- **계측**: `CLIMANGER_TERM_DEBUG=1`일 때만 `window.__termDebug` 활성화 (`src/renderer/src/utils/terminalDebug.ts`)
+- **Mock CLI**: `scripts/mock-cli/`
+  - `claude-mock.cjs`: Claude Code 렌더링 패턴 모사 생성기 (fps/히스토리/풀클리어 파라미터)
+  - `record-claude.cjs`: 실제 CLI 세션을 pty로 구동·녹화 (`ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron`으로 실행, `--resize-test`로 SIGWINCH 리페인트 캡처)
+  - `replay.cjs`: 녹화본(JSONL)을 타이밍대로 재생 — 토큰 소모 없이 실제 바이트 스트림 재현
+  - `analyze-recording.cjs`: 녹화본의 ANSI 시퀀스 통계
+- **메트릭 비교**: `METRICS_LABEL=<label> pnpm test:term` → `tests/terminal/results/<label>/*.json`
 
 ## 문제 해결 접근 방식
 

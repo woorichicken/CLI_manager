@@ -8,6 +8,13 @@ import { ChevronUp, ChevronDown, FolderOpen, ExternalLink, Code } from 'lucide-r
 import { TerminalPatternMatcher } from '../utils/terminalPatterns'
 import { registerFilePathLinks } from '../utils/filePathLinkProvider'
 import { TerminalResizeManager } from '../utils/terminalResizeManager'
+import {
+    debugRegisterTerminal,
+    debugUnregisterTerminal,
+    debugCountPtyResize,
+    debugCountWrite,
+    debugCountWriteError
+} from '../utils/terminalDebug'
 import { SessionStatus, HooksSettings } from '../../../shared/types'
 
 interface TerminalViewProps {
@@ -33,7 +40,7 @@ interface TerminalViewProps {
 
 // Default terminal font family (fallback when no custom font is set)
 const DEFAULT_TERMINAL_FONT_FAMILY = 'Menlo, Monaco, "Courier New", monospace'
-const VIEWPORT_REFRESH_ANSI_REGEX = /\x1b\[[0-9;?]*[HJJKf]|\x1b\[\?1049[hl]/
+const VIEWPORT_REFRESH_ANSI_REGEX = /\x1b\[[0-9;?]*[HJKf]|\x1b\[\?1049[hl]/
 
 export function TerminalView({
     id,
@@ -138,13 +145,6 @@ export function TerminalView({
         terminalCore?.viewport?._innerRefresh?.()
     }, [])
 
-    const isViewportNearBottom = useCallback((terminal?: Terminal | null) => {
-        const target = terminal ?? xtermRef.current
-        if (!target) return true
-        const buffer = target.buffer.active
-        return buffer.viewportY + target.rows >= buffer.length - 2
-    }, [])
-
     const applyTerminalDimensions = useCallback((
         dimensions: ITerminalDimensions,
         options?: { focus?: boolean }
@@ -172,9 +172,20 @@ export function TerminalView({
             return
         }
 
+        // Hidden terminals defer the pty resize until they become visible.
+        // Every pty resize SIGWINCHes the shell, and CLI TUIs respond with a
+        // full repaint — with many sessions a single window drag multiplies
+        // into dozens of repaints that pollute every session's scrollback.
+        // When the terminal becomes visible, the visibility effect clears
+        // lastPtySizeRef and re-applies the latest dimensions exactly once.
+        if (!visibleRef.current) {
+            return
+        }
+
         const lastSize = lastPtySizeRef.current
         if (!lastSize || lastSize.cols !== dimensions.cols || lastSize.rows !== dimensions.rows) {
             lastPtySizeRef.current = dimensions
+            debugCountPtyResize(id)
             window.api.resizeTerminal(id, dimensions.cols, dimensions.rows)
         }
     }, [disablePtyResize, forceViewportRefresh, id])
@@ -385,11 +396,13 @@ export function TerminalView({
             fontSize,
             allowProposedApi: true,
             cursorBlink: true,
-            scrollback: 10000  // 기본값 1000 → 10000 (더 많은 히스토리 보관)
-        } as any)
-
-        // VS Code also enables this to handle full-screen erase/redraw sequences more predictably.
-        ;(term.options as typeof term.options & { scrollOnEraseInDisplay?: boolean }).scrollOnEraseInDisplay = true
+            scrollback: 10000,  // 기본값 1000 → 10000 (더 많은 히스토리 보관)
+            // CLI TUIs (Claude Code, Codex) clear the screen when repainting.
+            // Without this, ED2 (CSI 2J) permanently destroys the viewport
+            // portion of the conversation; with it, erased content is pushed
+            // into scrollback instead (PuTTY behavior, also used by VS Code).
+            scrollOnEraseInDisplay: true
+        })
 
         const fitAddon = new FitAddon()
         term.loadAddon(fitAddon)
@@ -402,6 +415,8 @@ export function TerminalView({
         term.loadAddon(webLinksAddon)
 
         term.open(terminalRef.current)
+
+        debugRegisterTerminal(id, term)
 
         xtermRef.current = term
         fitAddonRef.current = fitAddon
@@ -441,6 +456,11 @@ export function TerminalView({
         // Initialize backend terminal
         let initialCols = 80
         let initialRows = 30
+
+        // Data listener disposer — must be released in the effect cleanup,
+        // otherwise removed sessions leak IPC listeners that keep writing
+        // into disposed xterm instances.
+        let dataCleanup: (() => void) | null = null
 
         if (visible) {
             try {
@@ -491,21 +511,30 @@ export function TerminalView({
             })
 
             // Handle output
-            const cleanup = window.api.onTerminalData(id, (data) => {
+            dataCleanup = window.api.onTerminalData(id, (data) => {
+                debugCountWrite(id, data.length)
                 const shouldRefreshViewport = VIEWPORT_REFRESH_ANSI_REGEX.test(data)
-                term.write(data, () => {
-                    if (!visibleRef.current) return
+                try {
+                    term.write(data, () => {
+                        if (!visibleRef.current) return
 
-                    if (pendingViewportRefreshWritesRef.current > 0) {
-                        pendingViewportRefreshWritesRef.current--
-                        forceViewportRefresh(term)
-                        return
-                    }
+                        if (pendingViewportRefreshWritesRef.current > 0) {
+                            pendingViewportRefreshWritesRef.current--
+                            forceViewportRefresh(term)
+                            return
+                        }
 
-                    if (shouldRefreshViewport) {
-                        forceViewportRefresh(term)
-                    }
-                })
+                        if (shouldRefreshViewport) {
+                            forceViewportRefresh(term)
+                        }
+                    })
+                } catch (e) {
+                    // xterm throws "write data discarded" when its internal
+                    // buffer exceeds 50MB. Keep the handler alive — losing one
+                    // chunk is better than breaking the whole data listener.
+                    debugCountWriteError()
+                    console.error(`[Terminal ${id.slice(0, 8)}] write failed:`, e)
+                }
 
                 try {
                     detectOutput(data)
@@ -549,54 +578,14 @@ export function TerminalView({
                     requestResize({ immediate: true })
                 }
             }, 300)
-
-            return () => {
-                cleanup()
-                window.api.writeTerminal(id, 'exit\n') // Try to close gracefully
-            }
         })
 
-        // Handle resize with debounce - 창 크기 변경 시 너무 자주 호출되는 것 방지
-        // window resize 이벤트는 드래그 중 매 프레임마다 발생하므로 debounce 필수
-        const handleResize = () => {
-            if (!isInitializedRef.current) return
-
-            const rect = terminalRef.current?.getBoundingClientRect()
-            if (!rect) return
-
-            const newWidth = Math.round(rect.width)
-            const newHeight = Math.round(rect.height)
-
-            // DEBUG 로그
-            console.log(`[Terminal ${id.slice(0, 8)}] handleResize: container=${newWidth}x${newHeight}`)
-
-            if (!lastSizeRef.current) {
-                lastSizeRef.current = { width: newWidth, height: newHeight }
-                console.log(`[Terminal ${id.slice(0, 8)}] handleResize: initial size set`)
-                return
-            }
-
-            const widthChanged = Math.abs(newWidth - lastSizeRef.current.width) >= 1
-            const heightChanged = Math.abs(newHeight - lastSizeRef.current.height) >= 1
-
-            if (!widthChanged && !heightChanged) {
-                console.log(`[Terminal ${id.slice(0, 8)}] handleResize: no change, skipping`)
-                return
-            }
-
-            console.log(`[Terminal ${id.slice(0, 8)}] handleResize: size changed from ${lastSizeRef.current.width}x${lastSizeRef.current.height}`)
-            lastSizeRef.current = { width: newWidth, height: newHeight }
-
-            requestResize()
-        }
-
-        window.addEventListener('resize', handleResize)
-
-        // Add ResizeObserver for container size changes (e.g. display: block)
+        // Container size changes are observed with a single ResizeObserver.
+        // (A window `resize` listener used to coexist here — that fired the
+        // same work twice per window drag, so it was removed.)
         // IMPORTANT: 스크롤 중 멈춤 현상 방지
         // - 스크롤 중에는 ResizeObserver 무시
         // - 1px 이상 변화만 감지 (불필요한 트리거 방지)
-        // - 150ms debounce로 연속 이벤트 병합
         const resizeObserver = new ResizeObserver(() => {
             if (!isInitializedRef.current) return
 
@@ -609,13 +598,9 @@ export function TerminalView({
             const newWidth = Math.round(rect.width)
             const newHeight = Math.round(rect.height)
 
-            // DEBUG 로그
-            console.log(`[Terminal ${id.slice(0, 8)}] ResizeObserver: container=${newWidth}x${newHeight}`)
-
             // 초기값 설정
             if (!lastSizeRef.current) {
                 lastSizeRef.current = { width: newWidth, height: newHeight }
-                console.log(`[Terminal ${id.slice(0, 8)}] ResizeObserver: initial size set`)
                 return
             }
 
@@ -624,11 +609,9 @@ export function TerminalView({
             const heightChanged = Math.abs(newHeight - lastSizeRef.current.height) >= 1
 
             if (!widthChanged && !heightChanged) {
-                console.log(`[Terminal ${id.slice(0, 8)}] ResizeObserver: no change, skipping`)
                 return
             }
 
-            console.log(`[Terminal ${id.slice(0, 8)}] ResizeObserver: size changed from ${lastSizeRef.current.width}x${lastSizeRef.current.height}`)
             lastSizeRef.current = { width: newWidth, height: newHeight }
 
             requestResize()
@@ -642,11 +625,13 @@ export function TerminalView({
         const terminalElement = terminalRef.current
 
         return () => {
-            window.removeEventListener('resize', handleResize)
             resizeObserver.disconnect()
             terminalElement?.removeEventListener('contextmenu', contextMenuHandler, { capture: true })
             resizeManagerRef.current?.dispose()
             resizeManagerRef.current = null
+            dataCleanup?.()
+            dataCleanup = null
+            debugUnregisterTerminal(id)
             term.dispose()
             // 폴링 타이머는 별도 useEffect에서 정리됨
         }

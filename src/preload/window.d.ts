@@ -5,6 +5,7 @@ declare global {
     interface Window {
         electron: ElectronAPI
         api: {
+            termDebugEnabled: boolean
             getWorkspaces: () => Promise<Workspace[]>
             syncWorktreeWorkspaces: () => Promise<IPCResult<{ imported: number; removed: number; updated: number }>>
             addWorkspace: () => Promise<IPCResult<Workspace> | null>

@@ -18,12 +18,26 @@ const FALLBACK_SHELLS = os.platform() === 'win32'
 // Also handles terminal mode sequences like ?2026l, ?2026h
 const ANSI_REGEX = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[PX^_].*?\x1b\\|\x1b\(B|\x1b[=>]|\x1b.|\r|\x07/g
 
+// Output batching: coalesce rapid pty chunks before sending over IPC.
+// CLI TUIs emit many tiny chunks per frame; with several terminals running,
+// per-chunk IPC sends flood the renderer event loop. 4ms is imperceptible
+// for interactive echo but merges a whole TUI frame into one message.
+const OUTPUT_FLUSH_MS = 4
+const OUTPUT_FLUSH_BYTES = 256 * 1024
+
+interface PendingOutput {
+    chunks: string[]
+    bytes: number
+    timer: NodeJS.Timeout | null
+}
+
 export class TerminalManager {
     private terminals: Map<string, any> = new Map()
     // Output buffer for terminal preview (stores last N lines per terminal)
     private outputBuffers: Map<string, string[]> = new Map()
     private readonly PREVIEW_BUFFER_LINES = 10
     private cliTracker: CLISessionTracker | null = null
+    private pendingOutput: Map<string, PendingOutput> = new Map()
 
     constructor(cliTracker?: CLISessionTracker) {
         this.cliTracker = cliTracker ?? null
@@ -242,6 +256,7 @@ export class TerminalManager {
                 ptyProcess.kill()
                 this.terminals.delete(id)
                 this.clearBuffer(id)
+                this.clearPendingOutput(id)
                 this.cliTracker?.cleanup(id)
             }
         })
@@ -329,6 +344,9 @@ export class TerminalManager {
                 console.error(`Failed to kill terminal ${id}:`, e)
             }
         }
+        for (const id of [...this.pendingOutput.keys()]) {
+            this.clearPendingOutput(id)
+        }
         this.terminals.clear()
         this.outputBuffers.clear()
     }
@@ -370,14 +388,60 @@ export class TerminalManager {
         ptyProcess.onData((data: string) => {
             // Store in preview buffer
             this.appendToBuffer(id, data)
-
-            // Send data to renderer
-            const windows = require('electron').BrowserWindow.getAllWindows()
-            windows.forEach((win: any) => {
-                win.webContents.send(`terminal-output-${id}`, data)
-            })
+            this.enqueueOutput(id, data)
         })
 
         this.terminals.set(id, ptyProcess)
+    }
+
+    /**
+     * Queue a pty chunk for batched delivery to the renderer(s).
+     * Flushes after OUTPUT_FLUSH_MS, or immediately past OUTPUT_FLUSH_BYTES.
+     */
+    private enqueueOutput(id: string, data: string): void {
+        let pending = this.pendingOutput.get(id)
+        if (!pending) {
+            pending = { chunks: [], bytes: 0, timer: null }
+            this.pendingOutput.set(id, pending)
+        }
+        pending.chunks.push(data)
+        pending.bytes += data.length
+
+        if (pending.bytes >= OUTPUT_FLUSH_BYTES) {
+            this.flushOutput(id)
+            return
+        }
+        if (!pending.timer) {
+            pending.timer = setTimeout(() => this.flushOutput(id), OUTPUT_FLUSH_MS)
+        }
+    }
+
+    private flushOutput(id: string): void {
+        const pending = this.pendingOutput.get(id)
+        if (!pending) return
+        if (pending.timer) {
+            clearTimeout(pending.timer)
+            pending.timer = null
+        }
+        if (pending.chunks.length === 0) return
+
+        const data = pending.chunks.join('')
+        pending.chunks = []
+        pending.bytes = 0
+
+        const windows = BrowserWindow.getAllWindows()
+        windows.forEach(win => {
+            if (!win.isDestroyed()) {
+                win.webContents.send(`terminal-output-${id}`, data)
+            }
+        })
+    }
+
+    private clearPendingOutput(id: string): void {
+        const pending = this.pendingOutput.get(id)
+        if (pending?.timer) {
+            clearTimeout(pending.timer)
+        }
+        this.pendingOutput.delete(id)
     }
 }
