@@ -91,7 +91,9 @@ export async function launchAppWithSessions(sessions: SeedSession[]): Promise<La
         env: {
             ...process.env,
             CLIMANGER_TEST_USERDATA: userDataDir,
-            CLIMANGER_TERM_DEBUG: '1'
+            CLIMANGER_TERM_DEBUG: '1',
+            // Windows stay hidden during tests (set CLIMANGER_TEST_HEADED=1 to watch)
+            CLIMANGER_TEST_HEADLESS: process.env.CLIMANGER_TEST_HEADED === '1' ? '0' : '1'
         } as Record<string, string>
     })
 

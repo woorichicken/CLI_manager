@@ -30,6 +30,11 @@ if (process.env.CLIMANGER_TEST_USERDATA) {
     app.setPath('userData', process.env.CLIMANGER_TEST_USERDATA)
 }
 
+// Headless test mode: never show windows on screen. Electron has no true
+// headless, so windows are created but kept hidden; backgroundThrottling is
+// disabled so requestAnimationFrame/timers keep firing in hidden windows.
+const isTestHeadless = process.env.CLIMANGER_TEST_HEADLESS === '1'
+
 // Auto Updater 설정
 // User must click "Download" button to start download (not automatic)
 autoUpdater.autoDownload = false
@@ -416,12 +421,15 @@ function createWindow(): void {
             sandbox: false,
             contextIsolation: true,
             nodeIntegration: false,
-            zoomFactor: 1  // 줌 팩터를 1로 고정
+            zoomFactor: 1,  // 줌 팩터를 1로 고정
+            backgroundThrottling: !isTestHeadless
         }
     })
 
     mainWindow.on('ready-to-show', () => {
-        mainWindow?.show()
+        if (!isTestHeadless) {
+            mainWindow?.show()
+        }
     })
 
     // Cmd+/- 기본 줌 완전 비활성화 (터미널 폰트만 조정)
@@ -482,7 +490,8 @@ function createFullscreenTerminalWindow(sessionIds: string[]): void {
             sandbox: false,
             contextIsolation: true,
             nodeIntegration: false,
-            zoomFactor: 1
+            zoomFactor: 1,
+            backgroundThrottling: !isTestHeadless
         }
     })
 
@@ -490,7 +499,9 @@ function createFullscreenTerminalWindow(sessionIds: string[]): void {
     gridWindow = fullscreenWindow
 
     fullscreenWindow.on('ready-to-show', () => {
-        fullscreenWindow.show()
+        if (!isTestHeadless) {
+            fullscreenWindow.show()
+        }
         // Notify main window that grid view is open
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('grid-view-state-changed', true, sessionIds)
@@ -613,6 +624,11 @@ function clearAllCliSessionIds(): void {
 app.whenReady().then(async () => {
     // Fix PATH for packaged app (must be first!)
     await fixPath()
+
+    // Headless test mode: keep the app out of the macOS dock
+    if (isTestHeadless && process.platform === 'darwin') {
+        app.dock?.hide()
+    }
 
     // Validate persisted cliSessionIds against Claude's session storage
     validateCliSessionIds()
