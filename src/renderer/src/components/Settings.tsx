@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { UserSettings, EditorType, TerminalTemplate, HooksSettings } from '../../../shared/types'
+import { UserSettings, EditorType, TerminalTemplate, HooksSettings, LoopDetectionConfig, LoopCountMode, DEFAULT_LOOP_DETECTION } from '../../../shared/types'
 import { X, Check, AlertCircle, CircleAlert, Plus, Trash2, Code2, Play, Package, GitBranch, Terminal, Settings as SettingsIcon, Bell, Monitor, Github, FolderOpen, Folder, Download, RefreshCw, Loader2, Home, Keyboard, Bug, Webhook, HelpCircle, ExternalLink, GripVertical } from 'lucide-react'
 import { Reorder } from 'framer-motion'
 import { v4 as uuidv4 } from 'uuid'
@@ -22,7 +22,7 @@ interface SettingsProps {
     onResetOnboarding?: () => void
 }
 
-type SettingsCategory = 'general' | 'editor' | 'terminal' | 'keyboard' | 'hooks' | 'notifications' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'developer'
+type SettingsCategory = 'general' | 'editor' | 'terminal' | 'keyboard' | 'hooks' | 'notifications' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'loop' | 'developer'
 
 export function Settings({ isOpen, onClose, onSave, initialCategory = 'general', onResetOnboarding }: SettingsProps) {
     const [settings, setSettings] = useState<UserSettings>({
@@ -64,6 +64,9 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
     const [customEditorPath, setCustomEditorPath] = useState('')
     const standardEditors: EditorType[] = ['vscode', 'cursor', 'antigravity']
 
+    // Loop detection config state (separate from UserSettings)
+    const [loopConfig, setLoopConfig] = useState<LoopDetectionConfig>(DEFAULT_LOOP_DETECTION)
+
     useEffect(() => {
         if (isOpen) {
             setActiveCategory(initialCategory)
@@ -102,6 +105,15 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
             // Load templates
             window.api.getTemplates().then(setTemplates).catch(() => {
                 // If getTemplates is not available, use empty array
+            })
+
+            // Load loop detection config
+            window.api.getLoopConfig().then((result) => {
+                if (result?.success && result.data) {
+                    setLoopConfig(result.data)
+                }
+            }).catch(() => {
+                // Fall back to defaults if the call fails
             })
 
             // Automatically check git config when settings open
@@ -164,6 +176,9 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
     const handleSave = async () => {
         await window.api.saveSettings(settings)
         await window.api.saveTemplates(templates)
+        await window.api.setLoopConfig(loopConfig).catch(() => {
+            // Ignore errors saving loop config
+        })
         onSave?.(settings)
         onClose()
     }
@@ -240,6 +255,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
         { id: 'templates' as const, label: 'Templates', icon: <Play size={16} /> },
         { id: 'git' as const, label: 'Git (Local)', icon: <GitBranch size={16} /> },
         { id: 'github' as const, label: 'GitHub', icon: <Github size={16} /> },
+        { id: 'loop' as const, label: 'Loop', icon: <RefreshCw size={16} /> },
         // Developer tools - uncomment to enable testing dialogs
         // { id: 'developer' as const, label: 'Developer', icon: <Bug size={16} /> },
     ]
@@ -1541,6 +1557,95 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 </div>
                                             </div>
                                         )}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Loop Detection Settings */}
+                            {activeCategory === 'loop' && (
+                                <>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-white mb-1">Loop Detection</h3>
+                                        <p className="text-xs text-gray-400 mb-4">
+                                            Configure how the Loop Dashboard counts iterations for running sessions
+                                        </p>
+
+                                        <div className="space-y-6">
+                                            {/* Count Mode */}
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-1">Count Mode</label>
+                                                <select
+                                                    value={loopConfig.countMode}
+                                                    onChange={e => setLoopConfig(prev => ({ ...prev, countMode: e.target.value as LoopCountMode }))}
+                                                    className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                                >
+                                                    <option value="settle">On completion (running → ready)</option>
+                                                    <option value="start">On start (ready → running)</option>
+                                                </select>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    Determines which state transition increments the iteration counter.
+                                                </p>
+                                            </div>
+
+                                            {/* Debounce Ms */}
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-1">Debounce (ms)</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    step={250}
+                                                    value={loopConfig.debounceMs}
+                                                    onChange={e => setLoopConfig(prev => ({ ...prev, debounceMs: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                                    className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    Window (in milliseconds) to absorb brief mid-iteration pauses such as context compaction or tool waits.
+                                                    Transitions that reverse within this window are not counted.
+                                                </p>
+                                            </div>
+
+                                            {/* Stopped-after idle (seconds) */}
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-1">Mark as stopped after (seconds idle)</label>
+                                                <input
+                                                    type="number"
+                                                    min={10}
+                                                    step={10}
+                                                    value={Math.round((loopConfig.stoppedIdleMs ?? DEFAULT_LOOP_DETECTION.stoppedIdleMs ?? 120000) / 1000)}
+                                                    onChange={e => setLoopConfig(prev => ({ ...prev, stoppedIdleMs: Math.max(10, parseInt(e.target.value) || 10) * 1000 }))}
+                                                    className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    Total silence before a loop is shown as &quot;stopped&quot;. Raise this if a slow or paused loop is wrongly marked stopped.
+                                                </p>
+                                            </div>
+
+                                            {/* Custom Pattern */}
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-1">Custom Pattern (regex, optional)</label>
+                                                <input
+                                                    type="text"
+                                                    value={loopConfig.customPattern ?? ''}
+                                                    onChange={e => setLoopConfig(prev => ({
+                                                        ...prev,
+                                                        customPattern: e.target.value || undefined
+                                                    }))}
+                                                    placeholder="Leave empty to use status transitions"
+                                                    className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    If set, each terminal output line matching this regex increments the counter instead of tracking status transitions.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Tip Box */}
+                                        <div className="mt-6 p-3 bg-blue-500/10 border border-blue-500/20 rounded">
+                                            <p className="text-xs text-blue-200">
+                                                <strong>Tip:</strong> These settings tune how loop iterations are counted in the Loop Dashboard.
+                                                Increase the debounce value if brief pauses (e.g., tool calls, compaction) cause false iteration increments.
+                                            </p>
+                                        </div>
                                     </div>
                                 </>
                             )}

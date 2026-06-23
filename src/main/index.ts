@@ -5,7 +5,7 @@ import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import logoIcon from '../../resources/logo-final.png?asset'
 import Store from 'electron-store'
-import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder } from '../shared/types'
+import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest } from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import simpleGit from 'simple-git'
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
@@ -18,6 +18,7 @@ import { TerminalManager } from './TerminalManager'
 import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
 import { CLISessionTracker } from './CLISessionTracker'
+import { LoopManager } from './LoopManager'
 import { net } from 'electron'
 
 // Set app name for development mode
@@ -129,6 +130,19 @@ const terminalManager = new TerminalManager(cliSessionTracker)
 const portManager = new PortManager()
 const systemMonitor = new SystemMonitor(store)
 
+// LoopManager: instantiated after terminalManager so it can register onOutput.
+// The broadcast callback sends LOOP_UPDATE to loopWindow whenever state changes.
+const loopManager = new LoopManager(
+    store,
+    terminalManager,
+    cliSessionTracker,
+    (payload) => {
+        if (loopWindow && !loopWindow.isDestroyed()) {
+            loopWindow.webContents.send(LOOP_CHANNELS.update, payload)
+        }
+    },
+)
+
 // Background mode state
 let tray: Tray | null = null
 let isQuitting = false  // True when user confirms to quit completely
@@ -136,6 +150,12 @@ let isBackgroundMode = false  // True when running in background (window hidden)
 
 // Main window reference for IPC communication
 let mainWindow: BrowserWindow | null = null
+
+// Grid window reference for split view
+let gridWindow: BrowserWindow | null = null
+
+// Loop Dashboard window reference (singleton)
+let loopWindow: BrowserWindow | null = null
 
 // Validate if a path exists and is accessible
 function isValidPath(dirPath: string): boolean {
@@ -465,9 +485,6 @@ function createWindow(): void {
     }
 }
 
-// Grid window reference for sync
-let gridWindow: BrowserWindow | null = null
-
 // Create fullscreen terminal window for split view
 function createFullscreenTerminalWindow(sessionIds: string[]): void {
     // Close existing grid window if any
@@ -538,6 +555,72 @@ function createFullscreenTerminalWindow(sessionIds: string[]): void {
     } else {
         fullscreenWindow.loadFile(join(__dirname, '../renderer/index.html'), {
             query: { mode: 'fullscreen', sessions: sessionIdsParam }
+        })
+    }
+}
+
+// Create (or focus) the Loop Dashboard window.
+// Mirrors createFullscreenTerminalWindow: same webPreferences, vibrancy,
+// zoom-disabling, isTestHeadless guard, before-input-event handler.
+// Loads with ?mode=loop so the renderer can distinguish the window type.
+function createLoopWindow(): void {
+    // Singleton: if already open, just focus it.
+    if (loopWindow && !loopWindow.isDestroyed()) {
+        loopWindow.focus()
+        return
+    }
+
+    const win = new BrowserWindow({
+        width: 1200,
+        height: 800,
+        show: false,
+        autoHideMenuBar: true,
+        titleBarStyle: 'hiddenInset',
+        vibrancy: 'under-window',
+        visualEffectState: 'active',
+        trafficLightPosition: { x: 15, y: 10 },
+        icon,
+        webPreferences: {
+            preload: join(__dirname, '../preload/index.js'),
+            sandbox: false,
+            contextIsolation: true,
+            nodeIntegration: false,
+            zoomFactor: 1,
+            backgroundThrottling: !isTestHeadless,
+        },
+    })
+
+    loopWindow = win
+
+    win.on('ready-to-show', () => {
+        if (!isTestHeadless) {
+            win.show()
+        }
+    })
+
+    win.on('closed', () => {
+        loopWindow = null
+    })
+
+    // Disable zoom for Loop Dashboard window.
+    win.webContents.setZoomFactor(1)
+    win.webContents.setZoomLevel(0)
+    win.webContents.setVisualZoomLevelLimits(1, 1)
+
+    // Handle terminal zoom for this window (same pattern as grid window).
+    win.webContents.on('before-input-event', (event, input) => {
+        const isModifier = input.meta || input.control
+        if (isModifier && (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0')) {
+            event.preventDefault()
+            win.webContents.send('terminal-zoom', input.key)
+        }
+    })
+
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+        win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?mode=loop`)
+    } else {
+        win.loadFile(join(__dirname, '../renderer/index.html'), {
+            query: { mode: 'loop' },
         })
     }
 }
@@ -728,6 +811,92 @@ app.whenReady().then(async () => {
         return false
     })
 
+    // ============================================
+    // Loop Dashboard IPC Handlers
+    // ============================================
+
+    // Open (or focus) the Loop Dashboard window.
+    ipcMain.handle(LOOP_CHANNELS.openWindow, (): IPCResult<void> => {
+        try {
+            createLoopWindow()
+            return { success: true }
+        } catch (e: any) {
+            console.error('[loop-open-window] ERROR:', e)
+            return { success: false, error: e.message }
+        }
+    })
+
+    // Get current LoopState snapshot.
+    ipcMain.handle(LOOP_CHANNELS.list, (): IPCResult<LoopState> => {
+        try {
+            return { success: true, data: loopManager.getState() }
+        } catch (e: any) {
+            console.error('[loop-list] ERROR:', e)
+            return { success: false, error: e.message }
+        }
+    })
+
+    // Promote a workspace to a LoopProject.
+    // Preload sends a wrapped payload ({ workspaceId }); destructure it here.
+    ipcMain.handle(LOOP_CHANNELS.promote, (_, { workspaceId }: PromoteToLoopRequest): IPCResult<LoopState> => {
+        try {
+            return { success: true, data: loopManager.promote(workspaceId) }
+        } catch (e: any) {
+            console.error('[loop-promote] ERROR:', e)
+            return { success: false, error: e.message }
+        }
+    })
+
+    // Create (or return existing) LoopSession for a LoopProject.
+    ipcMain.handle(LOOP_CHANNELS.openTerminal, (_, { loopProjectId }: OpenLoopTerminalRequest): IPCResult<LoopSession | null> => {
+        try {
+            return { success: true, data: loopManager.openTerminal(loopProjectId) }
+        } catch (e: any) {
+            console.error('[loop-open-terminal] ERROR:', e)
+            return { success: false, error: e.message }
+        }
+    })
+
+    // Restart a stopped loop session.
+    ipcMain.handle(LOOP_CHANNELS.restart, (_, { loopSessionId }: RestartLoopRequest): IPCResult<LoopSession | null> => {
+        try {
+            return { success: true, data: loopManager.restart(loopSessionId) }
+        } catch (e: any) {
+            console.error('[loop-restart] ERROR:', e)
+            return { success: false, error: e.message }
+        }
+    })
+
+    // Remove a LoopProject and its sessions.
+    ipcMain.handle(LOOP_CHANNELS.remove, (_, { loopProjectId }: RemoveLoopProjectRequest): IPCResult<LoopState> => {
+        try {
+            return { success: true, data: loopManager.remove(loopProjectId) }
+        } catch (e: any) {
+            console.error('[loop-remove] ERROR:', e)
+            return { success: false, error: e.message }
+        }
+    })
+
+    // Get LoopDetectionConfig.
+    ipcMain.handle(LOOP_CHANNELS.getConfig, (): IPCResult<LoopDetectionConfig> => {
+        try {
+            return { success: true, data: loopManager.getConfig() }
+        } catch (e: any) {
+            console.error('[loop-get-config] ERROR:', e)
+            return { success: false, error: e.message }
+        }
+    })
+
+    // Set LoopDetectionConfig.
+    ipcMain.handle(LOOP_CHANNELS.setConfig, (_, config: LoopDetectionConfig): IPCResult<LoopDetectionConfig> => {
+        try {
+            return { success: true, data: loopManager.setConfig(config) }
+        } catch (e: any) {
+            console.error('[loop-set-config] ERROR:', e)
+            return { success: false, error: e.message }
+        }
+    })
+
     // CLI Session Tracker: when a CLI tool is detected from manual typing
     cliSessionTracker.onSessionDetected = (info) => {
         // Find which workspace/session this terminal belongs to and persist
@@ -751,6 +920,10 @@ app.whenReady().then(async () => {
                 break
             }
         }
+        // Additive: notify LoopManager so it can attach the cliSessionId to the
+        // matching LoopSession (enables --resume on restart).  No-op if the
+        // terminalId does not belong to any LoopSession.
+        loopManager.noteCliSession(info)
     }
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)

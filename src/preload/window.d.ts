@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig } from '../shared/types'
 
 declare global {
     interface Window {
@@ -159,6 +159,17 @@ declare global {
                 error?: string;
                 size?: number
             }>
+
+            // Loop Dashboard
+            promoteToLoop: (workspaceId: string) => Promise<IPCResult<LoopState>>
+            listLoops: () => Promise<IPCResult<LoopState>>
+            openLoopWindow: () => Promise<IPCResult<void>>
+            openLoopTerminal: (loopProjectId: string) => Promise<IPCResult<LoopSession>>
+            restartLoop: (loopSessionId: string) => Promise<IPCResult<LoopSession>>
+            removeLoopProject: (loopProjectId: string) => Promise<IPCResult<LoopState>>
+            getLoopConfig: () => Promise<IPCResult<LoopDetectionConfig>>
+            setLoopConfig: (config: LoopDetectionConfig) => Promise<IPCResult<LoopDetectionConfig>>
+            onLoopUpdate: (callback: (payload: LoopUpdatePayload) => void) => () => void
         }
     }
 }

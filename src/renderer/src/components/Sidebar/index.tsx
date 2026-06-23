@@ -578,6 +578,7 @@ export function Sidebar({
                     <WorkspaceContextMenu
                         x={menuOpen.x}
                         y={menuOpen.y}
+                        workspaceId={menuOpen.workspaceId}
                         workspacePath={menuOpen.workspacePath}
                         sessions={workspace?.sessions || []}
                         templates={customTemplates}

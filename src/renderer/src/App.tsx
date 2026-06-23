@@ -9,7 +9,7 @@ import { FileSearch } from './components/FileSearch'
 import { ConfirmationModal } from './components/Sidebar/Modals'
 import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, EditorType, TerminalTemplate, PortActionLog, SessionStatus, SplitTerminalLayout } from '../../shared/types'
 import { getErrorMessage } from './utils/errorMessages'
-import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor } from 'lucide-react'
+import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
 import { FullscreenTerminalView } from './components/FullscreenTerminalView'
 import { SystemMonitorPopover } from './components/SystemMonitorPopover'
@@ -1115,6 +1115,19 @@ function App() {
                                         <circle cx="6" cy="18" r="3"></circle>
                                         <path d="M18 9a9 9 0 0 1-9 9"></path>
                                     </svg>
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            await window.api.openLoopWindow()
+                                        } catch (err) {
+                                            console.error('Failed to open Loop Dashboard:', err)
+                                        }
+                                    }}
+                                    className="p-2 hover:bg-white/10 rounded transition-colors no-drag"
+                                    title="Open Loop Dashboard"
+                                >
+                                    <Repeat size={16} className="text-gray-400" />
                                 </button>
                                 <button
                                     ref={monitorButtonRef}

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -49,6 +49,21 @@ const api = {
         const handler = (_event: Electron.IpcRendererEvent, isOpen: boolean, sessionIds: string[]) => callback(isOpen, sessionIds)
         ipcRenderer.on('grid-view-state-changed', handler)
         return () => ipcRenderer.removeListener('grid-view-state-changed', handler)
+    },
+
+    // Loop Dashboard
+    promoteToLoop: (workspaceId: string): Promise<IPCResult<LoopState>> => ipcRenderer.invoke(LOOP_CHANNELS.promote, { workspaceId }),
+    listLoops: (): Promise<IPCResult<LoopState>> => ipcRenderer.invoke(LOOP_CHANNELS.list),
+    openLoopWindow: (): Promise<IPCResult<void>> => ipcRenderer.invoke(LOOP_CHANNELS.openWindow),
+    openLoopTerminal: (loopProjectId: string): Promise<IPCResult<LoopSession>> => ipcRenderer.invoke(LOOP_CHANNELS.openTerminal, { loopProjectId }),
+    restartLoop: (loopSessionId: string): Promise<IPCResult<LoopSession>> => ipcRenderer.invoke(LOOP_CHANNELS.restart, { loopSessionId }),
+    removeLoopProject: (loopProjectId: string): Promise<IPCResult<LoopState>> => ipcRenderer.invoke(LOOP_CHANNELS.remove, { loopProjectId }),
+    getLoopConfig: (): Promise<IPCResult<LoopDetectionConfig>> => ipcRenderer.invoke(LOOP_CHANNELS.getConfig),
+    setLoopConfig: (config: LoopDetectionConfig): Promise<IPCResult<LoopDetectionConfig>> => ipcRenderer.invoke(LOOP_CHANNELS.setConfig, config),
+    onLoopUpdate: (callback: (payload: LoopUpdatePayload) => void): (() => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, payload: LoopUpdatePayload) => callback(payload)
+        ipcRenderer.on(LOOP_CHANNELS.update, handler)
+        return () => ipcRenderer.removeListener(LOOP_CHANNELS.update, handler)
     },
 
     // Git

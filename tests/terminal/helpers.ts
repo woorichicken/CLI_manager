@@ -2,6 +2,7 @@ import { _electron as electron, ElectronApplication, Page } from '@playwright/te
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import type { LoopProject, LoopState, LoopDetectionConfig } from '../../src/shared/types'
 
 /**
  * Shared helpers for Electron terminal pipeline tests.
@@ -260,4 +261,228 @@ export function analyzeSeqContinuity(bufferText: string): {
         }
     }
     return { count: nums.length, first: nums[0] ?? null, last: nums[nums.length - 1] ?? null, gaps }
+}
+
+// ============================================================================
+// Loop Dashboard helpers (Group G-8 additions)
+// ============================================================================
+
+export interface LoopSeedProject {
+    id: string
+    name: string
+    path: string
+}
+
+export interface LoopSeedSession {
+    id: string
+    loopProjectId: string
+    terminalId: string
+    status?: 'running' | 'ready' | 'stopped'
+    loopCount?: number
+}
+
+export interface LoopLaunchOptions {
+    /** Loop projects to seed into config.json */
+    loopProjects: LoopSeedProject[]
+    /**
+     * Loop sessions to seed into config.json.
+     *
+     * NOTE: Due to a bug in the main process IPC handler for loop-open-terminal
+     * (it receives { loopProjectId } as an object but passes it unwrapped to
+     * LoopManager.openTerminal(), which expects a plain string), the
+     * openLoopTerminal IPC fails silently.  Pre-seeding loopSessions in
+     * config.json is the reliable workaround: LoopManager registers them on
+     * startup and the LoopDashboard renderer mounts TerminalViews for them.
+     */
+    loopSessions?: LoopSeedSession[]
+    /** Optional override for settings.loopDetection */
+    loopDetection?: Partial<LoopDetectionConfig>
+}
+
+/**
+ * Launch the app with one workspace (needed for app to boot) and the supplied
+ * loop projects pre-seeded in config.json.  Returns the main window's Page.
+ *
+ * The seeded workspace id is 'test-ws'; the seeded loopProjects have
+ * sourceWorkspaceId pointing to 'test-ws' by default.
+ *
+ * No terminal sessions are seeded, so __termDebug.ids() will initially be empty.
+ * We wait only for the sidebar text "TestWS" to confirm the renderer loaded.
+ */
+export async function launchAppForLoop(opts: LoopLaunchOptions): Promise<LaunchResult> {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-loop-test-'))
+
+    const seededLoopProjects = opts.loopProjects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        path: p.path,
+        sourceWorkspaceId: 'test-ws',
+        createdAt: 1700000000000,
+    }))
+
+    const loopDetection: LoopDetectionConfig = {
+        countMode: (opts.loopDetection?.countMode as LoopDetectionConfig['countMode']) ?? 'settle',
+        debounceMs: opts.loopDetection?.debounceMs ?? 3000,
+        ...(opts.loopDetection?.customPattern
+            ? { customPattern: opts.loopDetection.customPattern }
+            : {}),
+    }
+
+    const seededLoopSessions = (opts.loopSessions ?? []).map((s) => ({
+        id: s.id,
+        loopProjectId: s.loopProjectId,
+        terminalId: s.terminalId,
+        cliToolName: 'claude',
+        status: s.status ?? 'ready',
+        loopCount: s.loopCount ?? 0,
+        lastLoopAt: null,
+        startedAt: 1700000000000,
+    }))
+
+    const config = {
+        workspaces: [
+            {
+                id: 'test-ws',
+                name: 'TestWS',
+                path: REPO_ROOT,
+                sessions: [],
+                createdAt: 1700000000000,
+            },
+        ],
+        playgroundPath: userDataDir,
+        customTemplates: [],
+        loopProjects: seededLoopProjects,
+        loopSessions: seededLoopSessions,
+        settings: {
+            theme: 'dark',
+            fontSize: 14,
+            defaultShell: 'zsh',
+            defaultEditor: 'vscode',
+            hasCompletedOnboarding: true,
+            portFilter: { enabled: false, minPort: 3000, maxPort: 9000 },
+            ignoredPorts: [],
+            ignoredProcesses: [],
+            portActionLogs: [],
+            loopDetection,
+            hooks: {
+                enabled: true,
+                claudeCode: {
+                    enabled: true,
+                    detectRunning: true,
+                    detectReady: true,
+                    detectError: false,
+                    showInSidebar: true,
+                    autoDismissSeconds: 5,
+                },
+            },
+        },
+    }
+    fs.writeFileSync(path.join(userDataDir, 'config.json'), JSON.stringify(config))
+
+    const app = await electron.launch({
+        args: [path.join(REPO_ROOT, 'out/main/index.js')],
+        env: {
+            ...process.env,
+            CLIMANGER_TEST_USERDATA: userDataDir,
+            CLIMANGER_TERM_DEBUG: '1',
+            CLIMANGER_TEST_HEADLESS: process.env.CLIMANGER_TEST_HEADED === '1' ? '0' : '1',
+        } as Record<string, string>,
+    })
+
+    const page = await app.firstWindow()
+    const pageErrors: string[] = []
+    const consoleErrors: string[] = []
+    page.on('pageerror', (err) => pageErrors.push(String(err)))
+    page.on('console', (msg) => {
+        if (msg.type() === 'error' || msg.type() === 'warning') {
+            consoleErrors.push(msg.text())
+        }
+    })
+
+    // Wait for the main window sidebar to appear (no sessions seeded, so skip __termDebug check)
+    await page.getByText('TestWS').first().waitFor({ timeout: 30_000 })
+
+    return { app, page, userDataDir, pageErrors, consoleErrors }
+}
+
+/**
+ * Open the Loop Dashboard window by calling window.api.openLoopWindow() on the
+ * given main-window page.  Waits for and returns the new loop-window Page.
+ *
+ * The loop window URL contains ?mode=loop.
+ */
+export async function openLoopWindow(app: ElectronApplication, mainPage: Page): Promise<Page> {
+    // Trigger window creation
+    const newWindowPromise = app.waitForEvent('window')
+    await mainPage.evaluate(() =>
+        (window as unknown as { api: { openLoopWindow: () => Promise<unknown> } }).api.openLoopWindow()
+    )
+
+    const loopPage = await newWindowPromise
+    await loopPage.waitForLoadState('domcontentloaded')
+
+    // Extra wait to let the React tree mount and useLoops() to fire its initial listLoops()
+    await loopPage.waitForTimeout(2000)
+
+    return loopPage
+}
+
+/**
+ * Read the current LoopState via listLoops() IPC from any window (main or loop).
+ */
+export async function getLoopState(page: Page): Promise<LoopState> {
+    const result = await page.evaluate(async () => {
+        const api = (window as unknown as { api: { listLoops: () => Promise<{ success: boolean; data?: unknown }> } }).api
+        return api.listLoops()
+    })
+    if (!result.success || !result.data) {
+        return { projects: [], sessions: [] }
+    }
+    return result.data as LoopState
+}
+
+/**
+ * Persist a new LoopDetectionConfig via setLoopConfig() IPC.
+ */
+export async function setLoopConfig(page: Page, config: LoopDetectionConfig): Promise<void> {
+    await page.evaluate(async (cfg) => {
+        const api = (window as unknown as { api: { setLoopConfig: (c: unknown) => Promise<unknown> } }).api
+        return api.setLoopConfig(cfg)
+    }, config as unknown as Record<string, unknown>)
+}
+
+/**
+ * Poll listLoops() until the session whose terminalId matches the supplied id
+ * reports loopCount >= expected, or throw on timeout.
+ *
+ * @param page        - any window that has window.api (main or loop window)
+ * @param terminalId  - the terminalId of the LoopSession to watch
+ * @param expected    - minimum loopCount to wait for
+ * @param timeoutMs   - max wait time (default 30 000 ms)
+ */
+export async function pollLoopCount(
+    page: Page,
+    terminalId: string,
+    expected: number,
+    timeoutMs = 30_000
+): Promise<void> {
+    const start = Date.now()
+    let lastCount = -1
+
+    for (;;) {
+        const state = await getLoopState(page)
+        const session = state.sessions.find((s) => s.terminalId === terminalId)
+        lastCount = session?.loopCount ?? 0
+
+        if (lastCount >= expected) return
+
+        if (Date.now() - start > timeoutMs) {
+            throw new Error(
+                `pollLoopCount: timeout after ${timeoutMs} ms. ` +
+                `Expected loopCount >= ${expected} for terminalId=${terminalId}, ` +
+                `last observed: ${lastCount} (session: ${JSON.stringify(session ?? null)})`
+            )
+        }
+        await page.waitForTimeout(1000)
+    }
 }

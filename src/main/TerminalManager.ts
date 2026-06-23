@@ -39,6 +39,13 @@ export class TerminalManager {
     private cliTracker: CLISessionTracker | null = null
     private pendingOutput: Map<string, PendingOutput> = new Map()
 
+    /**
+     * Optional hook called for every raw PTY output chunk, after buffering and
+     * batching logic. Used by LoopManager to detect loop iterations without
+     * altering existing terminal rendering behavior. No-op when undefined.
+     */
+    public onOutput?: (id: string, data: string) => void
+
     constructor(cliTracker?: CLISessionTracker) {
         this.cliTracker = cliTracker ?? null
         this.setupIpc()
@@ -333,6 +340,26 @@ export class TerminalManager {
     }
 
     /**
+     * Write data directly to a terminal's PTY process.
+     * Used by LoopManager to send restart commands (e.g. 'claude\r') without
+     * going through the renderer IPC path. Safe to call with a dead PTY —
+     * any error is silently swallowed so it does not propagate to callers.
+     *
+     * @param id   - terminal id
+     * @param data - raw data to write (use '\r' as line terminator, not '\n')
+     */
+    public writeToTerminal(id: string, data: string): void {
+        try {
+            const ptyProcess = this.terminals.get(id)
+            if (ptyProcess) {
+                ptyProcess.write(data)
+            }
+        } catch (e) {
+            console.warn(`[TerminalManager] writeToTerminal(${id}) failed:`, e)
+        }
+    }
+
+    /**
      * Kill all terminal processes
      */
     killAll(): void {
@@ -389,6 +416,9 @@ export class TerminalManager {
             // Store in preview buffer
             this.appendToBuffer(id, data)
             this.enqueueOutput(id, data)
+            // Additive hook: notify LoopManager (or any observer) of raw output.
+            // No-op when unset; does not affect existing rendering behavior.
+            this.onOutput?.(id, data)
         })
 
         this.terminals.set(id, ptyProcess)

@@ -76,6 +76,8 @@ export interface AppConfig {
     playgroundPath: string
     settings?: UserSettings
     customTemplates?: TerminalTemplate[]
+    loopProjects?: LoopProject[]   // Loop Dashboard: projects promoted from workspaces
+    loopSessions?: LoopSession[]   // Loop Dashboard: persisted loop sessions
 }
 
 export interface UserSettings {
@@ -131,6 +133,8 @@ export interface UserSettings {
     hooks?: HooksSettings
     // Feedback email for issue reporting
     feedbackEmail?: string
+    // Loop Dashboard: loop-count detection tuning
+    loopDetection?: LoopDetectionConfig
 }
 
 // Hooks settings for AI tool session monitoring
@@ -291,4 +295,108 @@ export const SHORTCUT_GROUP_NAMES: Record<ShortcutGroup, string> = {
     search: 'Search',
     ui: 'UI',
     actions: 'Actions',
+}
+
+// ============================================
+// Loop Dashboard Types
+// ============================================
+
+// Loop execution status for a Claude Code /loop session.
+// running: claude is actively generating output
+// ready:   output settled, waiting between iterations
+// stopped: the loop/terminal is no longer alive (manual restart needed)
+export type LoopStatus = 'running' | 'ready' | 'stopped'
+
+// How a loop iteration is counted from terminal status transitions.
+// settle: count when running -> ready (an iteration completed) [default]
+// start:  count when ready -> running (an iteration started)
+export type LoopCountMode = 'settle' | 'start'
+
+// A project promoted from a main-window workspace into the Loop Dashboard.
+export interface LoopProject {
+    id: string
+    name: string
+    path: string                  // working directory (cwd)
+    sourceWorkspaceId: string     // workspace this was promoted from
+    createdAt: number
+}
+
+// A terminal session running Claude Code /loop inside a LoopProject.
+export interface LoopSession {
+    id: string
+    loopProjectId: string
+    terminalId: string            // node-pty terminal id
+    cliToolName: string           // e.g. 'claude'
+    cliSessionId?: string         // claude --session-id (enables --resume on restart)
+    status: LoopStatus
+    loopCount: number             // number of detected loop iterations
+    lastLoopAt: number | null     // timestamp of the most recent iteration
+    startedAt: number
+    statusSince?: number          // timestamp the current status began (for status-duration stats)
+    recentLoops?: Array<{ index: number; at: number }>  // recent iteration timeline (capped), newest last
+}
+
+// A single detected loop iteration ("when it looped").
+export interface LoopIterationEvent {
+    loopSessionId: string
+    index: number                 // 1-based iteration number
+    at: number                    // timestamp
+}
+
+// Tuning for loop-count detection.
+export interface LoopDetectionConfig {
+    countMode: LoopCountMode      // default 'settle'
+    debounceMs: number            // absorb sub-debounce ready flicker (default 3000)
+    customPattern?: string        // optional regex; if set, count matching output lines
+    stoppedIdleMs?: number        // total silence (ms) before marking 'stopped' (default 120000)
+}
+
+export const DEFAULT_LOOP_DETECTION: LoopDetectionConfig = {
+    countMode: 'settle',
+    debounceMs: 3000,
+    stoppedIdleMs: 120000,
+}
+
+// ============================================
+// Loop Dashboard IPC Contract
+// (imported by both main and preload to keep channel names in sync)
+// ============================================
+
+export const LOOP_CHANNELS = {
+    promote: 'loop-promote',           // invoke: promote a workspace to a LoopProject
+    list: 'loop-list',                 // invoke: get current LoopState snapshot
+    openWindow: 'loop-open-window',    // invoke: open (or focus) the Loop Dashboard window
+    openTerminal: 'loop-open-terminal',// invoke: create a new loop terminal session
+    restart: 'loop-restart',           // invoke: restart a stopped loop session
+    remove: 'loop-remove',             // invoke: remove a LoopProject from the dashboard
+    getConfig: 'loop-get-config',      // invoke: read LoopDetectionConfig
+    setConfig: 'loop-set-config',      // invoke: write LoopDetectionConfig
+    update: 'loop-update'              // send/on: main -> renderer state broadcast
+} as const
+
+// Snapshot of all loop state delivered to the Loop window.
+export interface LoopState {
+    projects: LoopProject[]
+    sessions: LoopSession[]
+}
+
+// loop-update broadcast payload.
+export interface LoopUpdatePayload {
+    state: LoopState
+}
+
+export interface PromoteToLoopRequest {
+    workspaceId: string
+}
+
+export interface OpenLoopTerminalRequest {
+    loopProjectId: string
+}
+
+export interface RestartLoopRequest {
+    loopSessionId: string
+}
+
+export interface RemoveLoopProjectRequest {
+    loopProjectId: string
 }

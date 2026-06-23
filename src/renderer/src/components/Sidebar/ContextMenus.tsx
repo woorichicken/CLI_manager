@@ -1,6 +1,6 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight } from 'lucide-react'
+import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { getTemplateIcon } from '../../constants/icons'
 import { MENU_Z_INDEX } from '../../constants/styles'
@@ -8,6 +8,7 @@ import { MENU_Z_INDEX } from '../../constants/styles'
 interface WorkspaceContextMenuProps {
     x: number
     y: number
+    workspaceId: string
     workspacePath: string
     sessions: TerminalSession[]
     templates: TerminalTemplate[]
@@ -30,6 +31,7 @@ interface WorkspaceContextMenuProps {
 export function WorkspaceContextMenu({
     x,
     y,
+    workspaceId,
     workspacePath,
     sessions,
     templates,
@@ -67,6 +69,16 @@ export function WorkspaceContextMenu({
             await onReloadWorktrees()
         } catch (err) {
             console.error('Failed to reload worktrees:', err)
+        }
+        onClose()
+    }
+
+    const handlePromoteToLoop = async () => {
+        try {
+            await window.api.promoteToLoop(workspaceId)
+            await window.api.openLoopWindow()
+        } catch (err) {
+            console.error('Failed to promote to loop:', err)
         }
         onClose()
     }
@@ -180,6 +192,18 @@ export function WorkspaceContextMenu({
                     <span className="truncate">Terminate All ({sessions.length})</span>
                 </button>
             )}
+
+            <div className="border-t border-white/10 my-0.5"></div>
+
+            {/* Promote to Loop */}
+            <button
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                onClick={handlePromoteToLoop}
+                title="Add to Loop Dashboard and open it"
+            >
+                <Repeat size={12} className="text-emerald-400 shrink-0" />
+                <span className="truncate">Promote to Loop</span>
+            </button>
 
             <div className="border-t border-white/10 my-0.5"></div>
 
