@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -224,7 +224,45 @@ const api = {
         error?: string;
         size?: number
     }> =>
-        ipcRenderer.invoke('read-image-as-base64', filePath, maxSize)
+        ipcRenderer.invoke('read-image-as-base64', filePath, maxSize),
+
+    // --- Agent hook integration -------------------------------------------
+
+    getHookState: (): Promise<HookInstallState> => ipcRenderer.invoke('get-hook-state'),
+    setHookIntegration: (settings: HookIntegrationSettings): Promise<IPCResult<HookInstallState>> =>
+        ipcRenderer.invoke('set-hook-integration', settings),
+    getAgentStatusSnapshot: (): Promise<AgentStatusUpdate[]> => ipcRenderer.invoke('get-agent-status-snapshot'),
+
+    /** Reports a renderer-derived status; the main process decides if it wins. */
+    reportObservedStatus: (terminalId: string, status: SessionStatus, source: AgentStatusSource): void =>
+        ipcRenderer.send('agent-status-observed', terminalId, status, source),
+
+    onAgentStatusUpdate: (callback: (update: AgentStatusUpdate) => void) => {
+        const listener = (_e: unknown, update: AgentStatusUpdate) => callback(update)
+        ipcRenderer.on('agent-status-update', listener)
+        return () => ipcRenderer.removeListener('agent-status-update', listener)
+    },
+
+    // --- Usage -------------------------------------------------------------
+
+    getUsageSnapshot: (): Promise<UsageSnapshot> => ipcRenderer.invoke('get-usage-snapshot'),
+    setUsageAlerts: (settings: UsageAlertSettings): Promise<boolean> =>
+        ipcRenderer.invoke('set-usage-alerts', settings),
+
+    onUsageUpdate: (callback: (snapshot: UsageSnapshot) => void) => {
+        const listener = (_e: unknown, snapshot: UsageSnapshot) => callback(snapshot)
+        ipcRenderer.on('usage-update', listener)
+        return () => ipcRenderer.removeListener('usage-update', listener)
+    },
+
+    // --- Diff review -------------------------------------------------------
+
+    getDiffSummary: (workspaceId: string, base: DiffBase): Promise<IPCResult<DiffSummary>> =>
+        ipcRenderer.invoke('git-diff-summary', workspaceId, base),
+    getFileDiff: (workspaceId: string, filePath: string, base: DiffBase): Promise<IPCResult<FileDiff>> =>
+        ipcRenderer.invoke('git-file-diff', workspaceId, filePath, base),
+    sendTextToTerminal: (terminalId: string, text: string): Promise<IPCResult<null>> =>
+        ipcRenderer.invoke('send-text-to-terminal', terminalId, text)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

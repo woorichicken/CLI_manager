@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, PortInfo } from '../../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, PortInfo, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource } from '../../shared/types'
 
 declare global {
     interface Window {
@@ -96,6 +96,23 @@ declare global {
             downloadUpdate: () => Promise<{ success: boolean; error?: string }>
             installUpdate: () => Promise<void>
             onUpdateStatus: (callback: (status: { status: string; version?: string; percent?: number; message?: string }) => void) => () => void
+
+            // Agent hook integration
+            getHookState: () => Promise<HookInstallState>
+            setHookIntegration: (settings: HookIntegrationSettings) => Promise<IPCResult<HookInstallState>>
+            getAgentStatusSnapshot: () => Promise<AgentStatusUpdate[]>
+            reportObservedStatus: (terminalId: string, status: SessionStatus, source: AgentStatusSource) => void
+            onAgentStatusUpdate: (callback: (update: AgentStatusUpdate) => void) => () => void
+
+            // Usage
+            getUsageSnapshot: () => Promise<UsageSnapshot>
+            setUsageAlerts: (settings: UsageAlertSettings) => Promise<boolean>
+            onUsageUpdate: (callback: (snapshot: UsageSnapshot) => void) => () => void
+
+            // Diff review
+            getDiffSummary: (workspaceId: string, base: DiffBase) => Promise<IPCResult<DiffSummary>>
+            getFileDiff: (workspaceId: string, filePath: string, base: DiffBase) => Promise<IPCResult<FileDiff>>
+            sendTextToTerminal: (terminalId: string, text: string) => Promise<IPCResult<null>>
         }
     }
 }

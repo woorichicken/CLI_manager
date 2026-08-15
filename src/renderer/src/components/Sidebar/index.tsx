@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Plus, PanelLeftClose, GripVertical, FolderPlus, Folder, ChevronDown, ChevronRight } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
-import { Workspace, WorkspaceFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout } from '../../../../shared/types'
+import { Workspace, WorkspaceFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import { useWorkspaceBranches } from '../../hooks/useWorkspaceBranches'
 import { useTemplates } from '../../hooks/useTemplates'
 import { WorkspaceItem } from './WorkspaceItem'
@@ -62,7 +62,7 @@ interface SidebarProps {
     onRemoveSession: (workspaceId: string, sessionId: string, skipConfirm?: boolean) => Promise<void>
     onCreatePlayground: () => void
     activeSessionId?: string
-    sessionStatuses?: Map<string, { status: SessionStatus, isClaudeCode: boolean }>
+    sessionStatuses?: Map<string, { status: SessionStatus, isClaudeCode: boolean, source?: AgentStatusSource, awaitingInput?: boolean }>
     hooksSettings?: HooksSettings
     terminalPreview?: { enabled: boolean; lineCount: number }
     onOpenInEditor: (workspacePath: string) => void

@@ -5,11 +5,12 @@ import { SessionMemo, SessionMemoHandle } from './components/SessionMemo'
 import { StatusBar } from './components/StatusBar'
 import { Settings } from './components/Settings'
 import { GitPanel } from './components/GitPanel'
+import { DiffModal } from './components/DiffModal'
 import { FileSearch } from './components/FileSearch'
 import { ConfirmationModal } from './components/Sidebar/Modals'
-import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, EditorType, TerminalTemplate, PortActionLog, SessionStatus, SplitTerminalLayout } from '../../shared/types'
+import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, EditorType, TerminalTemplate, PortActionLog, SessionStatus, SplitTerminalLayout, AgentStatusSource } from '../../shared/types'
 import { getErrorMessage } from './utils/errorMessages'
-import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat } from 'lucide-react'
+import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
 import { FullscreenTerminalView } from './components/FullscreenTerminalView'
 import { SystemMonitorPopover } from './components/SystemMonitorPopover'
@@ -29,6 +30,7 @@ function App() {
     const [activeSession, setActiveSession] = useState<TerminalSession | null>(null)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [gitPanelOpen, setGitPanelOpen] = useState(false)
+    const [diffModalOpen, setDiffModalOpen] = useState(false)
     const [fileSearchOpen, setFileSearchOpen] = useState(false)
     const [fileSearchMode, setFileSearchMode] = useState<'files' | 'content'>('files')
     const [showMonitor, setShowMonitor] = useState(false)
@@ -91,7 +93,11 @@ function App() {
     const prevClaudeCodeRef = useRef<Map<string, boolean>>(new Map())
 
     // Session status tracking for Claude Code hooks (claude-squad style)
-    const [sessionStatuses, setSessionStatuses] = useState<Map<string, { status: SessionStatus, isClaudeCode: boolean }>>(new Map())
+    // `source` records where a status came from so a heuristic guess cannot
+    // overwrite an authoritative hook event between resolver round-trips.
+    // `awaitingInput` marks the agent as blocked on a human, which the sidebar
+    // renders differently from plain "finished".
+    const [sessionStatuses, setSessionStatuses] = useState<Map<string, { status: SessionStatus, isClaudeCode: boolean, source?: AgentStatusSource, awaitingInput?: boolean }>>(new Map())
     const [settings, setSettings] = useState<UserSettings>({
         theme: 'dark',
         fontSize: 14,
@@ -144,6 +150,49 @@ function App() {
 
     // Custom templates for keyboard shortcuts (Cmd+T → number)
     const customTemplates = useTemplates(settingsOpen)
+
+    // Authoritative status from official CLI hooks. Arrives independently of
+    // the screen heuristic and always wins, including for the session that is
+    // currently on screen — which the heuristic deliberately never reports on.
+    useEffect(() => {
+        let cancelled = false
+
+        void window.api.getAgentStatusSnapshot().then((snapshot) => {
+            if (cancelled || snapshot.length === 0) return
+            setSessionStatuses(prev => {
+                const next = new Map(prev)
+                for (const update of snapshot) {
+                    const current = next.get(update.terminalId)
+                    next.set(update.terminalId, {
+                        status: update.status,
+                        isClaudeCode: current?.isClaudeCode ?? true,
+                        source: update.source,
+                        awaitingInput: update.awaitingInput
+                    })
+                }
+                return next
+            })
+        })
+
+        const unsubscribe = window.api.onAgentStatusUpdate((update) => {
+            setSessionStatuses(prev => {
+                const next = new Map(prev)
+                const current = next.get(update.terminalId)
+                next.set(update.terminalId, {
+                    status: update.status,
+                    isClaudeCode: current?.isClaudeCode ?? true,
+                    source: update.source,
+                    awaitingInput: update.awaitingInput
+                })
+                return next
+            })
+        })
+
+        return () => {
+            cancelled = true
+            unsubscribe()
+        }
+    }, [])
 
     // 터미널 폰트 크기 조정 상수
     const MIN_FONT_SIZE = 8
@@ -337,9 +386,23 @@ function App() {
         }
         prevClaudeCodeRef.current.set(sessionId, isClaudeCode)
 
+        // Route the screen heuristic through the main process rather than
+        // applying it directly. AgentStatusResolver decides whether it wins: if
+        // an official hook has reported on this terminal recently the guess is
+        // discarded, and the authoritative value arrives on 'agent-status-update'
+        // instead. Sessions without hooks are unaffected and still land here.
+        window.api.reportObservedStatus(sessionId, status, 'heuristic')
+
         setSessionStatuses(prev => {
             const next = new Map(prev)
-            next.set(sessionId, { status, isClaudeCode })
+            const current = next.get(sessionId)
+            // A hook-sourced status already on screen must not be clobbered by
+            // the heuristic before the resolver's verdict comes back.
+            if (current?.source === 'hook') {
+                next.set(sessionId, { ...current, isClaudeCode })
+                return next
+            }
+            next.set(sessionId, { status, isClaudeCode, source: 'heuristic' })
             return next
         })
     }
@@ -1004,7 +1067,7 @@ function App() {
         }
     }
 
-    const handleOpenSettings = (category: 'general' | 'port-monitoring') => {
+    const handleOpenSettings = (category: 'general' | 'port-monitoring' | 'agents') => {
         setSettingsCategory(category)
         setSettingsOpen(true)
     }
@@ -1115,6 +1178,16 @@ function App() {
                                         <circle cx="6" cy="18" r="3"></circle>
                                         <path d="M18 9a9 9 0 0 1-9 9"></path>
                                     </svg>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (activeWorkspace) setDiffModalOpen(true)
+                                    }}
+                                    className="p-2 hover:bg-white/10 rounded transition-colors no-drag disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Review Diff"
+                                    disabled={!activeWorkspace}
+                                >
+                                    <GitCompare size={16} className="text-gray-400" />
                                 </button>
                                 <button
                                     onClick={async () => {
@@ -1447,6 +1520,8 @@ function App() {
                     onIgnoreProcess={handleIgnoreProcess}
                     onKillProcess={handleKillProcess}
                     onOpenSettings={() => handleOpenSettings('port-monitoring')}
+                    onOpenUsageSettings={() => handleOpenSettings('agents')}
+                    usageAlerts={settings.usageAlerts}
                 />
             </div>
 
@@ -1476,6 +1551,16 @@ function App() {
                 isOpen={gitPanelOpen}
                 onClose={() => setGitPanelOpen(false)}
             />
+
+            {/* Diff review — opened from the header, beside Source Control */}
+            {diffModalOpen && activeWorkspace && (
+                <DiffModal
+                    workspace={activeWorkspace}
+                    sessions={activeWorkspace.sessions ?? []}
+                    activeSessionId={activeSession?.id}
+                    onClose={() => setDiffModalOpen(false)}
+                />
+            )}
 
             {/* Confirmation Modal */}
             {confirmationModal.isOpen && (

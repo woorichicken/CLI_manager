@@ -2,7 +2,7 @@ import React from 'react'
 import { Folder, FolderOpen, Plus, Trash2, ChevronRight, ChevronDown, GitBranch, Home, Pin } from 'lucide-react'
 import clsx from 'clsx'
 import { Reorder } from 'framer-motion'
-import { Workspace, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout } from '../../../../shared/types'
+import { Workspace, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import { SessionItem } from './SessionItem'
 import { WorktreeItem } from './WorktreeItem'
 
@@ -13,7 +13,7 @@ interface WorkspaceItemProps {
     expandedSet: Set<string>  // 전체 expanded 상태를 관리하는 Set 추가
     branchInfo?: { current: string; all: string[] }
     activeSessionId?: string
-    sessionStatuses?: Map<string, { status: SessionStatus, isClaudeCode: boolean }>
+    sessionStatuses?: Map<string, { status: SessionStatus, isClaudeCode: boolean, source?: AgentStatusSource, awaitingInput?: boolean }>
     hooksSettings?: HooksSettings
     terminalPreview?: { enabled: boolean; lineCount: number }
     fontSize?: number  // Sidebar font size
@@ -185,6 +185,7 @@ export function WorkspaceItem({
                                         workspace={workspace}
                                         isActive={activeSessionId === session.id}
                                         sessionStatus={statusInfo?.status}
+                                        awaitingInput={statusInfo?.awaitingInput}
                                         isClaudeCodeSession={statusInfo?.isClaudeCode}
                                         showStatusInSidebar={hooksSettings?.enabled && hooksSettings?.claudeCode?.showInSidebar}
                                         terminalPreview={terminalPreview}

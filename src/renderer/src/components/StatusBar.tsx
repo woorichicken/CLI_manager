@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Activity, Filter, Folder, XCircle, RefreshCw } from 'lucide-react'
-import { PortInfo } from '../../../shared/types'
+import { PortInfo, UsageAlertSettings, DEFAULT_USAGE_ALERTS } from '../../../shared/types'
+import { UsageIndicator } from './UsageIndicator'
 
 interface PortFilter {
     enabled: boolean
@@ -21,6 +22,9 @@ interface StatusBarProps {
     onIgnoreProcess: (processName: string, port: number) => void
     onKillProcess: (pid: number, port: number) => void
     onOpenSettings?: () => void
+    /** Separate from onOpenSettings: usage opens the agent section, not ports. */
+    onOpenUsageSettings?: () => void
+    usageAlerts?: UsageAlertSettings
 }
 
 export function StatusBar({
@@ -30,7 +34,9 @@ export function StatusBar({
     onIgnorePort,
     onIgnoreProcess,
     onKillProcess,
-    onOpenSettings
+    onOpenSettings,
+    onOpenUsageSettings,
+    usageAlerts = DEFAULT_USAGE_ALERTS
 }: StatusBarProps) {
     const [ports, setPorts] = useState<PortInfo[]>([])
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, port: PortInfo } | null>(null)
@@ -205,6 +211,11 @@ export function StatusBar({
                         <span className="text-gray-600 italic">No active ports detected</span>
                     )}
                 </div>
+                <UsageIndicator
+                    claudeThreshold={usageAlerts.claudeThresholdPercent}
+                    codexThreshold={usageAlerts.codexThresholdPercent}
+                    onOpenSettings={onOpenUsageSettings}
+                />
             </div>
 
             {/* Custom Context Menu - 클릭 위치 바로 위에 표시 (메뉴 높이 약 130px) */}

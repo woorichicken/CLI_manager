@@ -47,6 +47,12 @@ pnpm build && pnpm test:term
    - `index.ts`: 앱 초기화, IPC 핸들러, 워크스페이스/세션 관리
    - `TerminalManager.ts`: node-pty를 사용한 터미널 프로세스 생성/관리
    - `PortManager.ts`: macOS `lsof` 명령어로 localhost 포트 모니터링 (5초마다)
+   - `HookInstaller.ts`: 공식 CLI 훅 설치/제거 (`~/.claude/settings.json`, `~/.codex/config.toml` 래핑)
+   - `hookScripts.ts`: 훅 브리지 sh 스크립트 템플릿 + delegate 치환
+   - `AgentHookBridge.ts`: 훅 스풀 디렉토리 감시 → 정규화된 `AgentEvent` 방출
+   - `AgentStatusResolver.ts`: 이벤트/OSC/heuristic 우선순위 판정 → 터미널 상태 확정
+   - `UsageTracker.ts`: Claude(statusLine) · Codex(rollout jsonl) rate limit 추적 + 임계값 알림
+   - `diffParser.ts`: `git diff` plumbing 출력 파서 (numstat/name-status/unified)
 
 2. **Renderer Process** (`src/renderer/`)
    - `App.tsx`: 메인 애플리케이션 컴포넌트, 상태 관리
@@ -60,10 +66,14 @@ pnpm build && pnpm test:term
    - `components/TerminalView.tsx`: xterm.js 터미널 인스턴스
    - `components/StatusBar.tsx`: 포트 모니터링 정보 표시
    - `components/GitPanel.tsx`: Git 상태 관리 패널
+   - `components/DiffModal/`: Diff 리뷰 모달 (라인 인용 → 에이전트 터미널 전송)
+   - `components/UsageIndicator.tsx`: StatusBar 사용량 표시
+   - `components/AgentIntegrationSettings.tsx`: Settings > Agents 패널
    - `components/Settings.tsx`: 설정 화면
    - `hooks/`: **커스텀 훅**
      - `useWorkspaceBranches.ts`: 워크스페이스별 브랜치 정보 관리
      - `useTemplates.ts`: 커스텀 터미널 템플릿 관리
+   - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `constants/`: **상수 및 유틸리티**
      - `icons.tsx`: 템플릿 아이콘 매핑
      - `styles.ts`: 공통 스타일 상수
@@ -137,7 +147,26 @@ pnpm build && pnpm test:term
 - 아이콘, 이름, 설명, 명령어 커스터마이징
 - 새 터미널 생성 시 템플릿 선택 가능
 
-#### 8. Session Memo
+#### 8. Official Agent Integration (NEW)
+- **공식 훅 기반 상태 감지** — 화면 추측(heuristic) 대신 CLI가 알려주는 이벤트를 사용
+  - Claude Code: `SessionStart` / `UserPromptSubmit` / `Stop` / `PermissionRequest` / `Notification` / `SessionEnd`
+  - Codex: `agent-turn-complete` (유일한 이벤트 — 턴 **시작**은 입력 가로채기로 보완)
+- **Permission Inbox 신호**: 승인 대기 세션은 사이드바에서 앰버 펄스 + OS 알림
+- **기존 heuristic은 fallback으로 유지** — 훅 미설치 세션은 이전과 동일하게 동작
+
+#### 9. Usage / Rate Limit Tracking (NEW)
+- 제공자가 **직접 보고한 값** (추정 아님, `/usage`·`/status`와 일치)
+  - Claude Code: statusLine payload의 `rate_limits.five_hour` / `.seven_day`
+  - Codex: `~/.codex/sessions/**/rollout-*.jsonl`의 `rate_limits` — **주간 윈도우 기준**
+- StatusBar 우측에 표시, 임계값 초과 시 데스크톱 알림 (Settings > Agents에서 % 조절)
+
+#### 10. Diff Review (NEW)
+- 헤더 Source Control 옆 버튼 → 중앙 모달
+- worktree는 `baseBranch ← 현재 브랜치` 전체 비교 (merge-base 기준이라 **미커밋 변경도 포함**)
+- untracked 파일도 표시 (에이전트가 만든 새 파일이 `git diff`에선 안 보이기 때문)
+- 라인 선택(shift-click 범위) → 코멘트 → 대상 세션 터미널로 프롬프트 전송
+
+#### 11. Session Memo
 - 각 터미널 세션마다 독립적인 메모장 제공
 - 터미널 우상단 아이콘 클릭으로 빠르게 열기/닫기
 - 500ms 디바운스 자동 저장 (electron-store에 세션 데이터와 함께 저장)
@@ -264,6 +293,19 @@ exec('/bin/zsh -l -c "code ."')
 - `gh-list-prs`: PR 목록 조회
 - `gh-workflow-status`: GitHub Actions 상태 조회
 
+#### Agent Integration (NEW)
+- `get-hook-state`: 디스크 실측 기반 설치 상태 조회 (의도가 아니라 **실제 상태**)
+- `set-hook-integration`: 훅 설치/제거 (끄면 원래 커맨드로 복구)
+- `get-agent-status-snapshot` / `agent-status-update`: 터미널 상태 조회·브로드캐스트
+- `agent-status-observed`: 렌더러가 관측한 상태 보고 (우선순위 판정은 main이 담당)
+- `get-usage-snapshot` / `usage-update` / `usage-threshold`: 사용량 조회·브로드캐스트·임계값 알림
+- `set-usage-alerts`: 알림 임계값 저장
+
+#### Diff Review (NEW)
+- `git-diff-summary`: 변경 파일 목록 (untracked 포함)
+- `git-file-diff`: 단일 파일 unified diff
+- `send-text-to-terminal`: 리뷰 코멘트를 세션 터미널에 입력 (**개행 없이** — 제출은 사용자가)
+
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)
 - **Send/On**: 단방향 이벤트 스트림 (터미널 입력, 포트 업데이트)
@@ -291,14 +333,33 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
 4. **터미널 데이터 리스너는 effect cleanup에서 해제** (dataCleanup)
    - 과거에 Promise 콜백 반환값으로 잘못 등록되어 리스너 누수 있었음
 
+### Agent Hook Invariants (회귀 주의)
+
+사용자가 소유한 설정 파일을 편집하는 유일한 코드이므로, 변경 시 반드시 `t8-hook-install.spec.ts`를 돌릴 것.
+
+1. **HTTP가 아니라 파일 스풀** (`~/.climanager/events/`)
+   - HTTP 훅은 앱이 꺼져 있으면 **매 턴마다** 연결 타임아웃만큼 CLI를 붙잡는다. 파일 쓰기는 앱 상태와 무관하게 즉시 성공. (Orca도 같은 이유로 파일 방식)
+2. **훅 스크립트는 POSIX sh + 항상 `exit 0`**
+   - node 의존 금지(Finder 실행 시 PATH 문제), JSON 파싱 금지(앱이 담당). 브리지가 깨져도 에이전트는 멈추면 안 된다.
+3. **기존 설정은 삭제가 아니라 래핑(chain)**
+   - statusLine·notify에 이미 값이 있으면 캡처해서 우리 스크립트가 대신 호출. 재설치 시 **자기 자신을 chain하지 않도록** 마커로 판별 (무한 재귀 방지).
+4. **스풀 파일은 mtime 순으로 처리**
+   - mktemp 이름은 랜덤이라 순서가 없다. `turn-start`↔`turn-end`가 뒤집히면 상태가 반대로 판정됨.
+5. **heuristic은 제거하지 않는다**
+   - `AgentStatusResolver`가 우선순위(hook > osc > heuristic)로 조정. 훅 미설치 세션은 기존 동작 유지.
+6. **Codex 윈도우는 `window_minutes`로 판별**
+   - `primary`/`secondary` 슬롯 위치는 플랜마다 다르다(주간이 primary인 계정 실측). 이름으로 가정 금지.
+
 ### Terminal Pipeline Testing
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` (T1 데이터유실, T2 스크롤튕김 6종, T3 히스토리보존, T4 리사이즈폭풍, T5 그리드창)
+- **위치**: `tests/terminal/` (T1 데이터유실, T2 스크롤튕김 6종, T3 히스토리보존, T4 리사이즈폭풍, T5 그리드창, T6 Loop, T7 에이전트 통합, T8 훅 설치 안전성)
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
 - **Headless 기본**: 테스트 창은 화면에 표시되지 않음 (`CLIMANGER_TEST_HEADLESS=1` 자동 설정, hidden window + backgroundThrottling 해제). 눈으로 보면서 디버깅하려면 `CLIMANGER_TEST_HEADED=1 pnpm test:term`
 - **격리**: `CLIMANGER_TEST_USERDATA`로 userData를 임시 디렉토리로 분리 — 실사용 설정을 건드리지 않음
+  - 에이전트 통합은 추가로 `CLIMANAGER_HOME`(훅 스풀)·`CODEX_HOME`(사용량)·`HOME`(T8)까지 임시 디렉토리로 돌린다.
+  - `hookIntegrationAllowed()`가 테스트 모드에선 설치 자체를 거부하므로 실제 `~/.claude`·`~/.codex`는 절대 수정되지 않는다.
 - **계측**: `CLIMANGER_TERM_DEBUG=1`일 때만 `window.__termDebug` 활성화 (`src/renderer/src/utils/terminalDebug.ts`)
 - **Mock CLI**: `scripts/mock-cli/`
   - `claude-mock.cjs`: Claude Code 렌더링 패턴 모사 생성기 (fps/히스토리/풀클리어 파라미터)
