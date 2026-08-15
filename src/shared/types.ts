@@ -530,6 +530,14 @@ export interface HookTargetState {
     installed: boolean
     /** Command we are chaining to, when we wrapped a pre-existing entry. */
     wrapped?: string
+    /**
+     * Nothing was installed and nothing is wrong — the target does not apply to
+     * this machine. Kept distinct from `error` so a user who simply does not
+     * have Codex is not shown a warning about it.
+     */
+    skipped?: boolean
+    /** Why the target was skipped, shown as neutral text rather than a fault. */
+    skipReason?: string
     error?: string
 }
 

@@ -301,7 +301,10 @@ export class HookInstaller {
     private installCodexNotify(): HookTargetState {
         try {
             if (!existsSync(this.codexConfigPath)) {
-                return { installed: false, error: 'Codex is not configured on this machine (~/.codex/config.toml not found)' }
+                // Not an error: plenty of users do not have Codex. Reporting it
+                // as a fault would put a warning in Settings for a machine that
+                // is behaving exactly as expected.
+                return { installed: false, skipped: true, skipReason: 'Codex is not installed on this machine' }
             }
 
             this.backupOnce(this.codexConfigPath, 'codex-config.toml')
@@ -465,7 +468,7 @@ export class HookInstaller {
                     wrapped: state.codexNotifyOriginal?.join(' ')
                 }
             } else {
-                result.codexNotify = { installed: false, error: 'Codex is not configured on this machine' }
+                result.codexNotify = { installed: false, skipped: true, skipReason: 'Codex is not installed on this machine' }
             }
         } catch (error) {
             result.codexNotify = { installed: false, error: error instanceof Error ? error.message : String(error) }

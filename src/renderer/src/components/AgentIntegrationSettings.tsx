@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Terminal, CheckCircle2, AlertTriangle, Loader2, Bell } from 'lucide-react'
+import { Terminal, CheckCircle2, AlertTriangle, Loader2, Bell, MinusCircle } from 'lucide-react'
 import {
     DEFAULT_HOOK_INTEGRATION,
     DEFAULT_USAGE_ALERTS,
@@ -30,6 +30,17 @@ function Toggle({ on, onClick, disabled }: { on: boolean; onClick: () => void; d
 /** Renders what is actually on disk, including the command we are chaining to. */
 function TargetStatus({ state }: { state?: HookTargetState }) {
     if (!state) return null
+
+    // A skipped target is reported before an error is even considered: it is a
+    // description of the machine, not a fault, and must not look like one.
+    if (state.skipped) {
+        return (
+            <p className="text-[11px] text-gray-500 mt-1 flex items-start gap-1">
+                <MinusCircle size={11} className="mt-0.5 shrink-0" />
+                <span>{state.skipReason ?? 'Not applicable on this machine'}</span>
+            </p>
+        )
+    }
 
     if (state.error) {
         return (

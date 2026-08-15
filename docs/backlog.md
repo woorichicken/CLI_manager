@@ -47,9 +47,25 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 훅 경로를 먼저 완성하는 게 우선이었다. `'osc'`는 우선순위 표에 자리만 잡아둔 상태.
 - Trigger: 훅을 켜지 않은 사용자에게서 상태 오판 제보가 들어오면. OSC는 설치 없이 정확도가
   올라가는 유일한 구간이라 그때 가치가 가장 크다.
+- Reference: Orca에 구현이 있다 — `orca-ref/src/shared/osc-title-extraction.ts`(전역 정규식 대신
+  경계 있는 수동 파서, `MAX_OSC_TITLE_CHARS=1024`)와 `agent-title-status.ts`(제목 변화 →
+  working/idle 전이 추적, 스피너 글리프 제거로 "종료했는데 계속 working" 방지). 다만 에이전트별
+  제목 패턴이 제각각이라 표면적이 크다.
 - Evidence: `AgentStatusResolver.ts`의 `SOURCE_RANK`에 `osc: 2` 자리가 있으나 이 소스로
   `applyObservedStatus`를 호출하는 코드가 없다 — `grep -rn "'osc'" src/`의 결과는
   `src/shared/types.ts`의 타입 선언과 주석 2줄뿐이다.
+
+### `src/main/TerminalManager.ts` + `AgentStatusResolver.ts` — pane 단위 식별자가 없어 이벤트를 cwd로 추측한다
+- Discovered: 2026-08-16, Orca 소스 대조 중
+- Why deferred: 이미 배포·테스트된 경로를 바꾸는 설계 변경이고, 이번 요청은 참고 조사였다.
+- Trigger: 같은 디렉토리에서 에이전트를 2개 이상 돌리는 사용 패턴이 늘어 상태가 안 잡힌다는
+  제보가 나오면. 또는 권한 프롬프트를 앱에서 승인하는 기능(훅 **응답**이 필요)을 만들 때.
+- Evidence: Orca는 pty에 `ORCA_AGENT_HOOK_PORT`/`ORCA_AGENT_HOOK_TOKEN`/`ORCA_PANE_KEY`를 주입하고
+  훅 스크립트가 그 셋이 없으면 즉시 `exit 0` 한다(`orca-ref/src/main/*/hook-service.ts`). paneKey가
+  요청에 실려 오므로 매칭 추측이 아예 없다. CLImanger도 `TerminalManager`가 모든 pty를 직접
+  띄우므로 전제 조건은 이미 충족한다. 현재는 `AgentStatusResolver.findTerminal`이 cwd가 모호하면
+  판정을 포기한다(`t9-agent-modules.spec.ts`의 "a genuinely ambiguous cwd is not guessed at").
+- Owner: Human Review (설계 변경 승인 필요)
 
 ## Blocked
 

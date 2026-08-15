@@ -282,7 +282,11 @@ test.describe('T8 hook install safety', () => {
             const state = installer.install(ALL_TARGETS)
 
             expect(state.codexNotify.installed).toBe(false)
-            expect(state.codexNotify.error).toContain('not configured')
+            // Skipped, not failed: a machine without Codex is behaving normally
+            // and must not show a warning in Settings.
+            expect(state.codexNotify.skipped).toBe(true)
+            expect(state.codexNotify.error).toBeUndefined()
+            expect(state.codexNotify.skipReason).toContain('not installed')
             expect(state.claudeHooks.installed).toBe(true)
             // We do not create a config file for a tool the user does not have.
             expect(fs.existsSync(fixture.codexPath)).toBe(false)
