@@ -212,6 +212,208 @@ test.describe('T8 hook install safety', () => {
         }
     })
 
+    test('a corrupt settings.json is reported, not thrown, and other targets still install', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            fs.writeFileSync(fixture.claudePath, '{ this is not json')
+
+            const installer = new HookInstaller()
+            const state = installer.install(ALL_TARGETS)
+
+            // Claude targets fail with a message the Settings panel can show...
+            expect(state.claudeHooks.installed).toBe(false)
+            expect(state.claudeHooks.error).toBeTruthy()
+            expect(state.claudeStatusLine.installed).toBe(false)
+
+            // ...while Codex, which is independent, still works. One broken
+            // integration must not disable the rest.
+            expect(state.codexNotify.installed).toBe(true)
+            expect(fs.readFileSync(fixture.codexPath, 'utf-8')).toContain('codex-notify.sh')
+
+            // The unparseable file is left exactly as found rather than replaced
+            // with something we invented.
+            expect(fs.readFileSync(fixture.claudePath, 'utf-8')).toBe('{ this is not json')
+        } finally {
+            fixture.restore()
+        }
+    })
+
+    test('a multi-line notify array is refused rather than corrupted', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            const multiline = [
+                'model = "gpt-5"',
+                'notify = [',
+                '  "/opt/some-tool/notifier",',
+                '  "turn-ended"',
+                ']',
+                '',
+                '[tui]',
+                'theme = "dark"',
+                ''
+            ].join('\n')
+            fs.writeFileSync(fixture.codexPath, multiline)
+
+            const installer = new HookInstaller()
+            const state = installer.install(ALL_TARGETS)
+
+            // We only edit the single line we own. A value we cannot rewrite
+            // safely is left alone and reported.
+            expect(state.codexNotify.installed).toBe(false)
+            expect(state.codexNotify.error).toContain('multiple lines')
+            expect(fs.readFileSync(fixture.codexPath, 'utf-8')).toBe(multiline)
+
+            // Claude is unaffected by the Codex refusal.
+            expect(state.claudeHooks.installed).toBe(true)
+        } finally {
+            fixture.restore()
+        }
+    })
+
+    test('a missing Codex config is reported without blocking Claude', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            fs.rmSync(fixture.codexPath)
+
+            const installer = new HookInstaller()
+            const state = installer.install(ALL_TARGETS)
+
+            expect(state.codexNotify.installed).toBe(false)
+            expect(state.codexNotify.error).toContain('not configured')
+            expect(state.claudeHooks.installed).toBe(true)
+            // We do not create a config file for a tool the user does not have.
+            expect(fs.existsSync(fixture.codexPath)).toBe(false)
+        } finally {
+            fixture.restore()
+        }
+    })
+
+    test('only the enabled targets are installed', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            const installer = new HookInstaller()
+            const state = installer.install({
+                enabled: true,
+                claudeHooks: true,
+                claudeStatusLine: false,
+                codexNotify: false
+            })
+
+            expect(state.claudeHooks.installed).toBe(true)
+            expect(state.claudeStatusLine.installed).toBe(false)
+
+            const settings = JSON.parse(fs.readFileSync(fixture.claudePath, 'utf-8'))
+            // The status line the user already had must be untouched when we
+            // were not asked to wrap it.
+            expect(settings.statusLine.command).toBe('/usr/local/bin/my-hud')
+            expect(fs.readFileSync(fixture.codexPath, 'utf-8')).not.toContain('codex-notify.sh')
+        } finally {
+            fixture.restore()
+        }
+    })
+
+    test('verify() reports on-disk truth after an external tool overwrites our entry', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            const installer = new HookInstaller()
+            installer.install(ALL_TARGETS)
+            expect(installer.verify().claudeStatusLine.installed).toBe(true)
+
+            // Simulate another tool claiming the status line after us.
+            const settings = JSON.parse(fs.readFileSync(fixture.claudePath, 'utf-8'))
+            settings.statusLine = { type: 'command', command: '/opt/other/hud' }
+            fs.writeFileSync(fixture.claudePath, JSON.stringify(settings, null, 2))
+
+            // verify() must read the file, not report what we believe we wrote —
+            // otherwise Settings would show a working integration that is gone.
+            expect(installer.verify().claudeStatusLine.installed).toBe(false)
+            expect(installer.verify().claudeHooks.installed).toBe(true)
+        } finally {
+            fixture.restore()
+        }
+    })
+
+    test('verify() reports a partial hook registration rather than calling it installed', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            const installer = new HookInstaller()
+            installer.install(ALL_TARGETS)
+
+            const settings = JSON.parse(fs.readFileSync(fixture.claudePath, 'utf-8'))
+            delete settings.hooks.PermissionRequest
+            delete settings.hooks.Stop
+            fs.writeFileSync(fixture.claudePath, JSON.stringify(settings, null, 2))
+
+            const state = installer.verify()
+            expect(state.claudeHooks.installed).toBe(false)
+            expect(state.claudeHooks.error).toContain('4/6')
+        } finally {
+            fixture.restore()
+        }
+    })
+
+    test('the pre-CLI-Manager config is backed up once and not overwritten later', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            const installer = new HookInstaller()
+            installer.install(ALL_TARGETS)
+
+            const backup = path.join(fixture.climanagerHome, 'backups', 'claude-settings.json.original')
+            expect(fs.existsSync(backup)).toBe(true)
+
+            const original = JSON.parse(fs.readFileSync(backup, 'utf-8'))
+            expect(original.statusLine.command).toBe('/usr/local/bin/my-hud')
+            expect(JSON.stringify(original.hooks)).not.toContain('claude-hook.sh')
+
+            // A second install must not replace the backup with our own output —
+            // that would make the backup useless for recovery.
+            installer.install(ALL_TARGETS)
+            const stillOriginal = JSON.parse(fs.readFileSync(backup, 'utf-8'))
+            expect(JSON.stringify(stillOriginal.hooks)).not.toContain('claude-hook.sh')
+        } finally {
+            fixture.restore()
+        }
+    })
+
+    test('a delegate path containing spaces and quotes survives shell execution', () => {
+        const fixture = setupFixture({ withExisting: true })
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "climanger-odd name-"))
+
+        try {
+            // Real example: the Codex notifier ships inside an .app bundle whose
+            // path contains spaces. Naive quoting breaks it silently.
+            const odd = path.join(dir, "it's a notifier.sh")
+            fs.writeFileSync(odd, ['#!/bin/sh', 'printf "DELEGATE-RAN"', ''].join('\n'))
+            fs.chmodSync(odd, 0o755)
+
+            fs.writeFileSync(fixture.codexPath, `notify = ${JSON.stringify([odd, 'turn-ended'])}
+
+[tui]
+theme = "dark"
+`)
+
+            const installer = new HookInstaller()
+            const state = installer.install(ALL_TARGETS)
+            expect(state.codexNotify.installed).toBe(true)
+
+            const output = execFileSync('/bin/sh', [installer.codexNotifyScriptPath, '{"type":"agent-turn-complete"}'], {
+                env: { ...process.env, CLIMANAGER_SPOOL: path.join(fixture.climanagerHome, 'events') }
+            }).toString()
+
+            expect(output).toContain('DELEGATE-RAN')
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true })
+            fixture.restore()
+        }
+    })
+
     test('bridge scripts capture payloads and still run the command they replaced', () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-scripts-'))
         const spool = path.join(dir, 'events')
