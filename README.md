@@ -16,7 +16,7 @@
 
 ## Demo
 
-![CLI Manager Demo](docs/demo.gif)
+![CLI Manager Demo](docs/assets/demo.gif)
 
 ---
 
@@ -50,42 +50,42 @@ As AI-powered development grows, developers are juggling Claude Code, Codex CLI,
 ### All CLI Agents, One Dashboard
 Manage Claude Code, Codex CLI, and Gemini CLI from a single sidebar. Assign custom names and roles — "Frontend Dev", "Backend API", "Design Review" — so multi-agent workflows stay intuitive.
 
-![Agent renaming demo](docs/changename.gif)
+![Agent renaming demo](docs/assets/changename.gif)
 
 ---
 
 ### Git Worktree as Independent Workspaces
 Create Git worktrees directly from the UI. Each worktree becomes its own workspace with independent terminal sessions, branch tracking, and GitHub actions — no manual setup required.
 
-![Git Worktree demo](docs/worktree.gif)
+![Git Worktree demo](docs/assets/worktree.gif)
 
 ---
 
 ### GitHub Integration
 Push branches, create pull requests, and check GitHub Actions workflow status — all from within the app using your existing `gh` CLI authentication.
 
-![GitHub integration demo](docs/github.gif)
+![GitHub integration demo](docs/assets/github.gif)
 
 ---
 
 ### Real-Time Port Monitoring
 Automatically detects running local development servers. See which ports are active across all your projects at a glance, with filtering and one-click kill.
 
-![Port monitoring demo](docs/ports.gif)
+![Port monitoring demo](docs/assets/ports.gif)
 
 ---
 
 ### Custom Terminal Templates
 Save your most-used command sequences as named templates — with icons and descriptions. Launch complex multi-step setups with a single click.
 
-![Templates demo](docs/templates.gif)
+![Templates demo](docs/assets/templates.gif)
 
 ---
 
 ### Playground — Instant Isolated Environments
 Spin up a temporary workspace in your Downloads folder with one click. Experiment freely without touching your real projects.
 
-![Playground demo](docs/playground.gif)
+![Playground demo](docs/assets/playground.gif)
 
 ---
 
