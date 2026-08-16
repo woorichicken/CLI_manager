@@ -58,8 +58,16 @@ dist/
 .omc/
 .omx/
 .sisyphus/
-.claude/
 
-# Personal dev notes
-REFACTORING_SUMMARY.md
-notion-issue-tracker.zip
+# .claude/ is intentionally NOT ignored wholesale: rules/, commands/ and
+# skills/ are project guidance referenced by CLAUDE.md, and a blanket rule made
+# new rule files vanish silently (they never showed up in `git status`).
+# Ignore only per-machine state and anything holding credentials.
+.claude/settings.local.json
+.claude/**/.DS_Store
+# Contains hardcoded R2 credentials on the maintainer's machine. The shared
+# copy inside upload-to-r2.zip reads them from the environment instead; keep
+# this local variant out of the repository regardless of other rules.
+.claude/skills/upload-to-r2/scripts/upload-to-r2.js
+.claude/skills/upload-to-r2/upload-to-r2/
+

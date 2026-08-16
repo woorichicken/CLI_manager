@@ -10,6 +10,7 @@
     "start": "electron-vite preview",
     "postinstall": "node scripts/sync-node-pty-prebuilds.cjs",
     "typecheck": "tsc --noEmit",
+    "check:publish": "node scripts/prepublish-check.cjs",
     "test:term": "playwright test",
     "test:term:baseline": "METRICS_LABEL=baseline playwright test",
     "build:mac": "electron-vite build && electron-builder --mac",

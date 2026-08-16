@@ -17,6 +17,7 @@ gains an outward-facing effect belongs there, documented, not here.
 
 | Script | Kind | Purpose | Side effects |
 |---|---|---|---|
+| `prepublish-check.cjs` | manual / CI | Repository hygiene gate: committed credentials, personal absolute paths, tracked-but-ignored files, oversized files, unpushed release commits | None (read-only) |
 | `sync-node-pty-prebuilds.cjs` | automatic | Runs on `postinstall`. Repairs `node-pty` native binaries when an install leaves wrong-arch `pty.node` / non-executable `spawn-helper`. | Rewrites files under `node_modules/node-pty/build/Release` |
 | `mock-cli/claude-mock.cjs` | manual | Generates Claude-Code-shaped terminal output (fps, history size, full-clear cadence) for the terminal tests | None |
 | `mock-cli/loop-mock.cjs` | manual | Emits burst/silence iterations so the Loop Dashboard counter can be exercised | None |
@@ -33,6 +34,23 @@ It runs under Electron-as-Node because it needs the repo's `node-pty`:
 ```bash
 ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron scripts/mock-cli/record-claude.cjs
 ```
+
+## Pre-publish gate
+
+`prepublish-check.cjs` runs in CI on every push and can be run by hand:
+
+```bash
+pnpm check:publish                       # every check
+node scripts/prepublish-check.cjs --list # check names
+node scripts/prepublish-check.cjs --only=secrets
+```
+
+It scans **tracked content only** — local scratch files are not the repository's
+problem, and scanning them produces noise that trains people to skip the gate.
+Failures block; warnings do not. Its own checks are pinned by
+`tests/terminal/t10-prepublish-check.spec.ts`, which plants each problem in a
+throwaway repository and asserts the gate fails — a gate nobody verified is
+worse than no gate.
 
 ## Recordings
 

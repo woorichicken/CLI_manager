@@ -42,3 +42,39 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
   필요), (b) fixture 없으면 `test.skip`으로 건너뛰기 (커버리지 구멍이 조용해짐 — 위험), (c) 작은
   합성 fixture를 만들어 커밋 (실제 CLI 바이트가 아니라 회귀 검출력이 떨어짐). 저장소 소유자
   결정이 필요해 구조 정리 커밋에 섞지 않았다.
+
+
+---
+
+### 🐛 `src/renderer/src/App.tsx` — 업데이트 확인이 시작 시 1회뿐이라 계속 켜두면 영영 모른다
+- Date: 2026-08-16
+- Where: `App.tsx:262` 부근 `setTimeout(checkUpdate, 2000)`, `src/main/index.ts:878`
+  `autoUpdater.checkForUpdatesAndNotify()`. 둘 다 앱 기동 시 1회만 실행되고
+  재확인 타이머가 없다(`grep -n "setInterval" src/main/index.ts src/renderer/src/App.tsx`에
+  업데이트 관련 항목 없음).
+- What: CLI Manager는 터미널 세션을 유지하는 게 목적이라 몇 주씩 안 끄고 쓰는 앱이다. 그 사용
+  패턴에서는 "시작 시 1회 확인"이 사실상 "확인 안 함"이 된다. 실제로 v1.6.0이 2026-06-23에
+  나왔는데 설치본은 2개월 가까이 1.5.1에 머물러 있었다.
+- Surfaced by: "1.6.0 업데이트가 안 된다"는 제보를 조사하다가. 설치본을 격리 userData로 직접
+  띄워 로그를 읽은 결과 업데이트 체인은 **전부 정상**이었다 — `Update available: 1.6.0`을 찾고,
+  매니페스트도 받아오고, 1.6.0 빌드도 설치본과 **같은 팀 ID(65FBP4FBDV)로 서명 + 공증**돼 있다.
+  못 본 이유는 재확인이 없어서다.
+- Impact: 사용자 — 릴리즈가 나가도 도달하지 않는다. 오픈소스로 배포 중이라 보안 수정을 내보내도
+  같은 문제가 생긴다.
+- Workaround: 앱을 완전 종료 후 재실행하면 2초 뒤 좌하단에 알림이 뜬다.
+- Decision: 미정 — 주기 확인(예: 6시간)만 넣을지, 창 포커스 복귀 시에도 확인할지, 알림 위치를
+  좌하단(240px)에서 더 눈에 띄는 곳으로 옮길지가 함께 결정돼야 한다.
+
+### 🐛 `.gitignore` — `.claude/`를 무시해서 새 룰 파일이 조용히 커밋에서 빠진다
+- Date: 2026-08-16
+- Where: `.gitignore:61` (`.claude/`). 그런데 그 아래 10개 파일은 이미 추적 중이다
+  (`git ls-files .claude`).
+- What: 이미 추적된 파일은 계속 추적되지만, **새로 추가하는 `.claude/rules/*.md`는 무시된다.**
+  `git status`에 아무것도 안 뜨고 `git check-ignore -v`로만 확인된다. 프로젝트 규칙을 새로
+  쓰면 커밋됐다고 착각한 채 사라진다. 루트 `CLAUDE.md`와 문서 라우팅 인덱스가
+  `.claude/commands/*.md`를 참조하고 있어 실제로 저장소가 의존하는 경로다.
+- Surfaced by: 오픈소스 공개 전 점검 중 실측(`touch .claude/rules/__probe.md` → 무시됨 확인).
+- Impact: 개발 — 규칙/커맨드 추가가 유실된다. 기여자에게는 원인이 전혀 안 보인다.
+- Workaround: `git add -f .claude/...`
+- Decision: 미정 — `.claude/`에서 공유할 것(rules·commands·skills)과 로컬 전용(state, settings.local.json)을
+  갈라 `.gitignore`를 `!` 예외로 다시 쓸지, 아니면 공유분을 다른 경로로 옮길지 정해야 한다.
