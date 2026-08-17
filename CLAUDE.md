@@ -8,8 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 언제 읽나 | 문서 |
 | --- | --- |
 | 새 기능 개발용 브랜치 생성 및 작업 시작 | [`.claude/commands/new-feature.md`](.claude/commands/new-feature.md) |
-| 버전 업데이트, 빌드, GitHub 릴리즈 생성 | [`.claude/commands/release.md`](.claude/commands/release.md) |
-| Upload release DMG files to Cloudflare R2 storage. This skill should be used when the user requests uploading DMG files to R2, after building a new release, or when updating download links for the website. Automatically detects version from package.json and uploads both arm64 and x64 DMG files using AWS S3-compatible API with proper authentication. | [`.claude/skills/upload-to-r2/SKILL.md`](.claude/skills/upload-to-r2/SKILL.md) |
+| 릴리즈 — 빌드·공증·GitHub 게시·R2·웹사이트·changelog | [`.claude/commands/release.md`](.claude/commands/release.md) |
+| Upload CLI Manager release DMG files to Cloudflare R2. Use when the user asks to upload a release to R2, publish DMG files, or refresh the website download links. Normally invoked through scripts/post-release.cjs rather than directly. | [`.claude/skills/upload-to-r2/SKILL.md`](.claude/skills/upload-to-r2/SKILL.md) |
 | When changing IPC, storage, or a subsystem and you need the current contract | [`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) |
 | When picking up deferred work, or when parking something found mid-task | [`docs/backlog.md`](docs/backlog.md) |
 | When writing, moving, or retiring a document in this repository | [`docs/CLAUDE.md`](docs/CLAUDE.md) |

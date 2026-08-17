@@ -32,6 +32,27 @@ const SITE_DIR = join(process.env.HOME, 'Downloads', 'solhun-web-page')
 const R2_PUBLIC_BASE = 'https://pub-dc249db286af4c1991fedf690157891d.r2.dev'
 const UPLOAD_SCRIPT = join(ROOT, '.claude', 'skills', 'upload-to-r2', 'scripts', 'upload-to-r2.js')
 
+/** Gitignored credential file: distribution secrets live here, never in the repo. */
+const ENV_FILE = join(ROOT, '.env.release')
+
+/**
+ * Loads `.env.release` into the environment if present.
+ *
+ * The upload script reads its credentials from the environment so the code can
+ * be shared publicly. Keeping the values in one gitignored file means the
+ * maintainer never has to export anything by hand, and a fresh clone simply
+ * gets a script that asks for credentials it does not have — which is the
+ * correct behaviour for someone else's bucket.
+ */
+function loadReleaseEnv() {
+    if (!existsSync(ENV_FILE)) return false
+    for (const line of readFileSync(ENV_FILE, 'utf-8').split('\n')) {
+        const match = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*"?([^"]*)"?\s*$/.exec(line)
+        if (match && !process.env[match[1]]) process.env[match[1]] = match[2]
+    }
+    return true
+}
+
 /** Files on the site that carry download URLs. Verified, not assumed. */
 const SITE_LINK_FILES = ['app/page.tsx', 'components/site-header.tsx', 'components/cta-section.tsx']
 
@@ -76,6 +97,11 @@ function preflight(version, { skipChangelog }) {
 
     if (existsSync(UPLOAD_SCRIPT)) pass('upload script present')
     else fail('upload script missing', UPLOAD_SCRIPT)
+
+    const missingR2 = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME']
+        .filter((name) => !process.env[name])
+    if (missingR2.length === 0) pass('R2 credentials loaded', existsSync(ENV_FILE) ? '.env.release' : 'environment')
+    else fail('R2 credentials missing', missingR2.join(', '), `set them in ${ENV_FILE} or the environment`)
 
     if (existsSync(SITE_DIR)) {
         const dirty = run('git', ['status', '--porcelain'], { cwd: SITE_DIR })
@@ -298,6 +324,7 @@ function main() {
     }
 
     log(`CLI Manager post-release${checkOnly ? ' preflight' : ''} — v${version}`)
+    loadReleaseEnv()
     preflight(version, { skipChangelog })
 
     if (failed) {

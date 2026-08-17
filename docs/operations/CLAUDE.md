@@ -29,9 +29,18 @@ There is no dry-run flag. To rehearse, use the matching `build:*` command and in
 
 ## Release sequence
 
-The full deploy flow — version bump, changelog, R2 upload, website link update — is defined in
-[`.claude/rules/deploy-workflow.md`](../../.claude/rules/deploy-workflow.md) and only runs when the
-user explicitly asks to deploy. Do not infer it from a commit request.
+Two scripts cover the whole flow; do not perform these steps by hand.
+
+```bash
+node scripts/release.cjs --version X.Y.Z --build      # ~10 min, run detached
+node scripts/release.cjs --version X.Y.Z --publish --notes notes.md
+DATABASE_URL=... node scripts/post-release.cjs --version X.Y.Z --notes changelog.json
+```
+
+Procedure and rationale live in
+[`.claude/rules/deploy-workflow.md`](../../.claude/rules/deploy-workflow.md); the scripts themselves
+are documented in [`scripts/CLAUDE.md`](../../scripts/CLAUDE.md). Deployment only runs when the user
+explicitly asks for it — never inferred from a commit request.
 
 Before any publish:
 
@@ -41,9 +50,13 @@ Before any publish:
 
 ## Cloudflare R2
 
-DMG distribution goes through the [`upload-to-r2`](../../.claude/skills/upload-to-r2/SKILL.md)
-skill, which reads credentials from the environment. **Never commit R2 keys**, and never paste them
-into a document under `docs/` — this directory is public in the published repository.
+DMG distribution runs inside `post-release.cjs`, which wraps the
+[`upload-to-r2`](../../.claude/skills/upload-to-r2/SKILL.md) skill and then verifies the public URL
+before the website is repointed at it.
+
+Credentials come from the environment, loaded from `.env.release` at the repository root — a
+gitignored file. **Never commit R2 keys**, and never paste them into a document under `docs/`:
+this directory is public in the published repository.
 
 ## Codex prompt setup
 

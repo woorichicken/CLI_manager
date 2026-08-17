@@ -25,6 +25,8 @@ pnpm-debug.log*
 .env
 .env.local
 .env.*.local
+# Release/distribution credentials, sourced by scripts/post-release.cjs
+.env.release
 
 # IDE
 .vscode/
