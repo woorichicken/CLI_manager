@@ -12,10 +12,15 @@
  * second, and the artifacts are verified before anything is published.
  *
  * Usage:
- *   node scripts/release.cjs --check                 # preflight only, no changes
- *   node scripts/release.cjs --version 1.7.0         # full release
- *   node scripts/release.cjs --version 1.7.0 --notes path/to/notes.md
- *   node scripts/release.cjs --version 1.7.0 --skip-tests
+ *   node scripts/release.cjs --check                    # preflight only, no changes
+ *   node scripts/release.cjs --version 1.7.0            # full release
+ *   node scripts/release.cjs --version 1.7.0 --build    # preflight + build + verify, stop
+ *   node scripts/release.cjs --version 1.7.0 --publish  # verify existing build, publish
+ *
+ * The build takes ~12 minutes and the publish steps take seconds. Splitting them
+ * means a build interrupted by a session timeout, a laptop lid, or a killed
+ * terminal costs only the build — the artifacts survive and `--publish` picks
+ * them up. Two runs were lost to exactly that before the split existed.
  *
  * Nothing is published until every gate has passed. On a build failure the
  * output directory is removed, because a signed-but-unnotarized app sitting in
@@ -407,6 +412,8 @@ function verifyPublished(version) {
 function main() {
     const args = process.argv.slice(2)
     const checkOnly = args.includes('--check')
+    const buildOnly = args.includes('--build')
+    const publishOnly = args.includes('--publish')
     const skipTests = args.includes('--skip-tests')
     // indexOf returns -1 when absent, which would read args[0] as the version.
     const versionIndex = args.indexOf('--version')
@@ -419,7 +426,25 @@ function main() {
         return 1
     }
 
-    log(`CLI Manager release${checkOnly ? ' preflight' : ` — v${version}`}`)
+    const phase = checkOnly ? 'preflight' : buildOnly ? 'build' : publishOnly ? 'publish' : 'full'
+    log(`CLI Manager release — ${phase}${version ? ` v${version}` : ''}`)
+
+    // Publishing an already-built tree re-runs only the checks that can still
+    // change between build and publish, then verifies the artifacts on disk.
+    if (publishOnly) {
+        checkToolchain()
+        checkGitState()
+        const assets = verifyArtifacts(version)
+        if (failed) {
+            log('\nARTIFACT VERIFICATION FAILED — nothing published.')
+            return 1
+        }
+        setVersion(version)
+        const url = publish(version, assets, notesPath)
+        verifyPublished(version)
+        log(`\n${failed ? 'PUBLISHED WITH WARNINGS' : 'DONE'} — ${url}`)
+        return failed ? 1 : 0
+    }
 
     checkToolchain()
     checkGitState()
@@ -449,6 +474,14 @@ function main() {
         run('git', ['checkout', 'package.json'])
         log('\nARTIFACT VERIFICATION FAILED — nothing published.')
         return 1
+    }
+
+    if (buildOnly) {
+        // Leave package.json bumped: --publish reads the same version and the
+        // artifacts on disk already carry it.
+        log(`\nBUILD OK — artifacts verified in release/.`)
+        log(`Next: node scripts/release.cjs --version ${version} --publish${notesPath ? ` --notes ${notesPath}` : ''}`)
+        return 0
     }
 
     const url = publish(version, assets, notesPath)
