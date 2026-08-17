@@ -1,3 +1,14 @@
+---
+description: Historical record of the 2025-11 sidebar modularization
+authority: none — archived
+status: archived
+owner: maintainer
+last-reviewed: 2026-08-16
+---
+
+> **Archived.** This records a completed refactor as of 2025-11 and is not current guidance.
+> Current architecture lives in the root [`CLAUDE.md`](../../CLAUDE.md).
+
 # 코드 최적화 및 리팩토링 요약
 
 ## 📊 개선 결과 요약

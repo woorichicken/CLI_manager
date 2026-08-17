@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource } from '../shared/types'
 
 declare global {
     interface Window {
@@ -170,6 +170,23 @@ declare global {
             getLoopConfig: () => Promise<IPCResult<LoopDetectionConfig>>
             setLoopConfig: (config: LoopDetectionConfig) => Promise<IPCResult<LoopDetectionConfig>>
             onLoopUpdate: (callback: (payload: LoopUpdatePayload) => void) => () => void
+
+            // Agent hook integration
+            getHookState: () => Promise<HookInstallState>
+            setHookIntegration: (settings: HookIntegrationSettings) => Promise<IPCResult<HookInstallState>>
+            getAgentStatusSnapshot: () => Promise<AgentStatusUpdate[]>
+            reportObservedStatus: (terminalId: string, status: SessionStatus, source: AgentStatusSource) => void
+            onAgentStatusUpdate: (callback: (update: AgentStatusUpdate) => void) => () => void
+
+            // Usage
+            getUsageSnapshot: () => Promise<UsageSnapshot>
+            setUsageAlerts: (settings: UsageAlertSettings) => Promise<boolean>
+            onUsageUpdate: (callback: (snapshot: UsageSnapshot) => void) => () => void
+
+            // Diff review
+            getDiffSummary: (workspaceId: string, base: DiffBase) => Promise<IPCResult<DiffSummary>>
+            getFileDiff: (workspaceId: string, filePath: string, base: DiffBase) => Promise<IPCResult<FileDiff>>
+            sendTextToTerminal: (terminalId: string, text: string) => Promise<IPCResult<null>>
         }
     }
 }

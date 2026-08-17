@@ -2,6 +2,46 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Which document to read when
+
+<!-- docs-index:start -->
+| 언제 읽나 | 문서 |
+| --- | --- |
+| 새 기능 개발용 브랜치 생성 및 작업 시작 | [`.claude/commands/new-feature.md`](.claude/commands/new-feature.md) |
+| 버전 업데이트, 빌드, GitHub 릴리즈 생성 | [`.claude/commands/release.md`](.claude/commands/release.md) |
+| Upload release DMG files to Cloudflare R2 storage. This skill should be used when the user requests uploading DMG files to R2, after building a new release, or when updating download links for the website. Automatically detects version from package.json and uploads both arm64 and x64 DMG files using AWS S3-compatible API with proper authentication. | [`.claude/skills/upload-to-r2/SKILL.md`](.claude/skills/upload-to-r2/SKILL.md) |
+| When changing IPC, storage, or a subsystem and you need the current contract | [`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) |
+| When picking up deferred work, or when parking something found mid-task | [`docs/backlog.md`](docs/backlog.md) |
+| When writing, moving, or retiring a document in this repository | [`docs/CLAUDE.md`](docs/CLAUDE.md) |
+| When changing how agent hook events reach the app, or when tempted to replace the spool with a local server | [`docs/decisions/0001-hook-delivery-via-file-spool.md`](docs/decisions/0001-hook-delivery-via-file-spool.md) |
+| When editing a config file the user owns, or when a shared entry point already has a value | [`docs/decisions/0002-wrap-not-replace-user-config.md`](docs/decisions/0002-wrap-not-replace-user-config.md) |
+| When tempted to delete the screen-hash status detection now that official hooks exist | [`docs/decisions/0003-keep-heuristic-as-fallback.md`](docs/decisions/0003-keep-heuristic-as-fallback.md) |
+| When a design choice looks arbitrary and you are about to change it | [`docs/decisions/CLAUDE.md`](docs/decisions/CLAUDE.md) |
+| When touching an area that misbehaves, or when triaging a report against known-wrong behavior | [`docs/found-defects.md`](docs/found-defects.md) |
+| When adding or debugging an integration with an external AI CLI (hooks, status line, usage data) | [`docs/integrations/CLAUDE.md`](docs/integrations/CLAUDE.md) |
+| When a document contradicts the code and you need to know whether it was ever true | [`docs/legacy/CLAUDE.md`](docs/legacy/CLAUDE.md) |
+| Before building, publishing, or distributing a release — anything with an effect outside this machine | [`docs/operations/CLAUDE.md`](docs/operations/CLAUDE.md) |
+| Before running, adding, or removing a script in scripts/ | [`scripts/CLAUDE.md`](scripts/CLAUDE.md) |
+<!-- docs-index:end -->
+
+작업 중 발견했지만 이번 범위가 아닌 항목은 [`docs/backlog.md`](docs/backlog.md) `## Open`에 추가한다.
+작업 중 발견했지만 지금 고치지 않는 **결함**은 [`docs/found-defects.md`](docs/found-defects.md)에 적는다.
+
+## Repository Operations Standard
+
+- Standard: `curate-repository-ops@da56dfe`
+- Last audited: `2026-08-16`
+- Local deviations:
+  - `docs/design/` 없음 — 디자인 토큰 체계가 아직 없어 가이드를 쓰면 그 문서가 곧 거짓이 된다.
+    [`docs/backlog.md`](docs/backlog.md)에 트리거와 함께 등록했다.
+  - `docs/migrations/` 없음 — electron-store 기반이라 스키마 마이그레이션 절차가 존재하지 않는다.
+  - `.claude/skills/*/SKILL.md`의 `description`은 라우팅 문구 규칙(독자 상황)을 따르지 않는다.
+    그 필드는 Claude Code의 **스킬 활성화 트리거**라 계약이 다르고, 인덱스 가독성 때문에 고치면
+    스킬이 덜 뜬다. 인덱스에는 그대로 실린다.
+  - 루트가 250줄 신호를 넘는다(현재 313줄). 남은 내용은 회귀 방지 불변식(터미널 렌더링 / 에이전트
+    훅), 코드 스타일, 문제 해결 절차라 **매 세션 로드되어야 의미가 있다.** 참조성 내용(기능 목록,
+    IPC 채널, 저장 스키마)은 `docs/architecture/CLAUDE.md`로 이미 분리했다.
+
 ## Project Overview
 
 CLImanger는 Electron 기반 터미널 관리 애플리케이션입니다. 여러 워크스페이스와 터미널 세션을 관리하고, **Git worktree를 별도 워크스페이스로 관리**하며, **GitHub 연동 기능**과 로컬 포트 모니터링 기능을 제공합니다.
@@ -47,6 +87,12 @@ pnpm build && pnpm test:term
    - `index.ts`: 앱 초기화, IPC 핸들러, 워크스페이스/세션 관리
    - `TerminalManager.ts`: node-pty를 사용한 터미널 프로세스 생성/관리
    - `PortManager.ts`: macOS `lsof` 명령어로 localhost 포트 모니터링 (5초마다)
+   - `HookInstaller.ts`: 공식 CLI 훅 설치/제거 (`~/.claude/settings.json`, `~/.codex/config.toml` 래핑)
+   - `hookScripts.ts`: 훅 브리지 sh 스크립트 템플릿 + delegate 치환
+   - `AgentHookBridge.ts`: 훅 스풀 디렉토리 감시 → 정규화된 `AgentEvent` 방출
+   - `AgentStatusResolver.ts`: 이벤트/OSC/heuristic 우선순위 판정 → 터미널 상태 확정
+   - `UsageTracker.ts`: Claude(statusLine) · Codex(rollout jsonl) rate limit 추적 + 임계값 알림
+   - `diffParser.ts`: `git diff` plumbing 출력 파서 (numstat/name-status/unified)
 
 2. **Renderer Process** (`src/renderer/`)
    - `App.tsx`: 메인 애플리케이션 컴포넌트, 상태 관리
@@ -60,10 +106,14 @@ pnpm build && pnpm test:term
    - `components/TerminalView.tsx`: xterm.js 터미널 인스턴스
    - `components/StatusBar.tsx`: 포트 모니터링 정보 표시
    - `components/GitPanel.tsx`: Git 상태 관리 패널
+   - `components/DiffModal/`: Diff 리뷰 모달 (라인 인용 → 에이전트 터미널 전송)
+   - `components/UsageIndicator.tsx`: StatusBar 사용량 표시
+   - `components/AgentIntegrationSettings.tsx`: Settings > Agents 패널
    - `components/Settings.tsx`: 설정 화면
    - `hooks/`: **커스텀 훅**
      - `useWorkspaceBranches.ts`: 워크스페이스별 브랜치 정보 관리
      - `useTemplates.ts`: 커스텀 터미널 템플릿 관리
+   - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `constants/`: **상수 및 유틸리티**
      - `icons.tsx`: 템플릿 아이콘 매핑
      - `styles.ts`: 공통 스타일 상수
@@ -74,6 +124,11 @@ pnpm build && pnpm test:term
 
 4. **Shared** (`src/shared/`)
    - `types.ts`: Main/Renderer 공통 TypeScript 타입 정의
+
+### 상세 레퍼런스
+
+기능 목록, 데이터 흐름, 세션 라이프사이클, 저장 스키마, IPC 채널 전체 목록은
+[`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md)에 있다. 서브시스템을 만질 때 읽는다.
 
 ### Code Organization & Best Practices
 
@@ -98,103 +153,6 @@ pnpm build && pnpm test:term
 - **컴포넌트 수**: 1개 → 7개 모듈로 분리
 - **재사용성**: 중복 코드 제거, 유지보수성 향상
 - **타입 안전성**: TypeScript 타입 정의 개선
-
-### Key Features
-
-#### 1. Workspace Management
-- 폴더를 워크스페이스로 추가하고 여러 터미널 세션 관리
-- 각 워크스페이스는 독립적인 세션 목록 보유
-- 워크스페이스별 Git 브랜치 정보 표시
-
-#### 2. Playground
-- 임시 작업용 디렉토리 자동 생성 (Downloads 폴더에 timestamp 기반)
-- 빠른 실험 및 테스트용 격리된 환경 제공
-
-#### 3. Git Worktree Support (NEW)
-- **Worktree를 별도 Workspace로 관리**
-  - 부모 workspace 아래 트리 구조로 표시
-  - 각 worktree workspace는 여러 터미널 세션 보유 가능
-  - 독립적인 작업 환경 제공
-- **자동 생성**: 브랜치명 입력 시 자동으로 worktree 생성 및 workspace 추가
-- **자동 삭제**: Worktree workspace 삭제 시 `git worktree remove` 실행 및 디렉토리 제거
-
-#### 4. GitHub Integration (NEW)
-- **Push to GitHub**: Worktree 브랜치를 GitHub로 직접 푸시
-- **Create PR**: Pull Request 생성 (제목, 설명 입력 가능)
-- **gh CLI 연동**: GitHub CLI를 통한 인증 및 작업 수행
-- **Workflow Status**: GitHub Actions 워크플로우 상태 확인
-
-#### 5. Port Monitoring
-- 로컬 개발 서버 포트를 실시간 감지 및 표시 (macOS only)
-- 포트 필터링 기능 (최소/최대 포트 설정)
-
-#### 6. Session Persistence
-- 모든 터미널 세션을 DOM에 유지하여 탭 전환 시에도 상태 보존
-- `display: none` 방식으로 비활성 세션 숨김
-
-#### 7. Custom Terminal Templates
-- 자주 사용하는 명령어를 템플릿으로 저장
-- 아이콘, 이름, 설명, 명령어 커스터마이징
-- 새 터미널 생성 시 템플릿 선택 가능
-
-#### 8. Session Memo
-- 각 터미널 세션마다 독립적인 메모장 제공
-- 터미널 우상단 아이콘 클릭으로 빠르게 열기/닫기
-- 500ms 디바운스 자동 저장 (electron-store에 세션 데이터와 함께 저장)
-- 메모가 있으면 아이콘이 노란색으로 변경되어 내용 존재를 표시
-- Escape 키로 즉시 닫기
-- 세션 삭제 시 메모도 자동 삭제 (TerminalSession.memo 필드)
-
-### Data Flow
-
-```
-User Action (Renderer)
-  → IPC Call (Preload)
-    → IPC Handler (Main)
-      → electron-store (Persistent Storage) / simple-git / gh CLI
-        → Response to Renderer
-          → UI Update
-```
-
-### Terminal Session Lifecycle
-
-1. 사용자가 세션 추가 요청
-2. Main process에서 UUID 생성 및 세션 정보 저장
-3. Renderer에서 TerminalView 컴포넌트 생성
-4. TerminalView가 mount 시 `terminal-create` IPC 호출
-5. TerminalManager가 node-pty 프로세스 생성
-6. pty 데이터를 `terminal-output-{id}` 채널로 브로드캐스트
-7. 해당 TerminalView가 xterm.js에 데이터 렌더링
-
-### Storage Schema (electron-store)
-
-```typescript
-{
-  workspaces: [
-    {
-      id: string,
-      name: string,
-      path: string,
-      sessions: [
-        {
-          id: string,
-          name: string,
-          cwd: string,
-          type: 'regular' | 'worktree',
-          memo?: string               // Session memo text
-        }
-      ],
-      createdAt: number,
-      isPlayground?: boolean,
-      parentWorkspaceId?: string,  // Worktree인 경우 부모 workspace ID
-      branchName?: string          // Worktree의 브랜치명
-    }
-  ],
-  playgroundPath: string,
-  customTemplates: TerminalTemplate[],
-  settings: UserSettings
-}
-```
 
 ## Important Notes
 
@@ -240,35 +198,6 @@ exec('/bin/zsh -l -c "code ."')
 - **PR 생성**: `gh pr create` 명령어 사용, 자동으로 브랜치 푸시
 - **인증**: `gh auth status`로 인증 상태 확인, `gh auth login --web`으로 로그인
 
-### IPC Communication
-
-#### Workspace Management
-- `get-workspaces`: 모든 워크스페이스 조회
-- `add-workspace`: 폴더 선택 다이얼로그로 워크스페이스 추가
-- `add-worktree-workspace`: Worktree workspace 생성 (NEW)
-- `remove-workspace`: 워크스페이스 삭제 (Worktree인 경우 git worktree remove 실행)
-- `add-session`: 터미널 세션 추가
-- `remove-session`: 터미널 세션 삭제
-- `update-session-memo`: 세션 메모 저장
-
-#### Git Operations
-- `git-list-branches`: 브랜치 목록 조회
-- `git-checkout`: 브랜치 전환
-- `git-status`: Git 상태 조회
-- `git-commit`, `git-push`, `git-pull`: Git 기본 작업
-
-#### GitHub Operations (NEW)
-- `gh-check-auth`: GitHub 인증 상태 확인
-- `gh-push-branch`: 브랜치 푸시
-- `gh-create-pr-from-worktree`: Worktree에서 PR 생성
-- `gh-list-prs`: PR 목록 조회
-- `gh-workflow-status`: GitHub Actions 상태 조회
-
-#### Communication Patterns
-- **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)
-- **Send/On**: 단방향 이벤트 스트림 (터미널 입력, 포트 업데이트)
-- 터미널 데이터는 모든 BrowserWindow에 브로드캐스트되므로 Renderer에서 ID로 필터링 필요
-
 ### Build Configuration
 
 - `electron-vite`는 Main/Preload/Renderer를 별도로 번들링
@@ -291,14 +220,53 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
 4. **터미널 데이터 리스너는 effect cleanup에서 해제** (dataCleanup)
    - 과거에 Promise 콜백 반환값으로 잘못 등록되어 리스너 누수 있었음
 
+### Agent Hook Invariants (회귀 주의)
+
+사용자가 소유한 설정 파일을 편집하는 유일한 코드이므로, 변경 시 반드시 `t8-hook-install.spec.ts`를 돌릴 것.
+
+1. **HTTP가 아니라 파일 스풀** (`~/.climanager/events/`)
+   - HTTP 훅은 앱이 꺼져 있으면 **매 턴마다** 연결 타임아웃만큼 CLI를 붙잡는다. 파일 쓰기는 앱 상태와 무관하게 즉시 성공. (Orca도 같은 이유로 파일 방식)
+2. **훅 스크립트는 POSIX sh + 항상 `exit 0`**
+   - node 의존 금지(Finder 실행 시 PATH 문제), JSON 파싱 금지(앱이 담당). 브리지가 깨져도 에이전트는 멈추면 안 된다.
+3. **기존 설정은 삭제가 아니라 래핑(chain)**
+   - statusLine·notify에 이미 값이 있으면 캡처해서 우리 스크립트가 대신 호출. 재설치 시 **자기 자신을 chain하지 않도록** 마커로 판별 (무한 재귀 방지).
+4. **스풀 파일은 mtime 순으로 처리**
+   - mktemp 이름은 랜덤이라 순서가 없다. `turn-start`↔`turn-end`가 뒤집히면 상태가 반대로 판정됨.
+5. **heuristic은 제거하지 않는다**
+   - `AgentStatusResolver`가 우선순위(hook > osc > heuristic)로 조정. 훅 미설치 세션은 기존 동작 유지.
+6. **Codex 윈도우는 `window_minutes`로 판별**
+   - `primary`/`secondary` 슬롯 위치는 플랜마다 다르다(주간이 primary인 계정 실측). 이름으로 가정 금지.
+
+### 성능: 무엇이 실제로 비싼가 (2026-08-17 실측)
+
+"터미널 상태 검사가 무거울 것"이라는 직관은 틀렸다. 실측값:
+
+| 작업 | 비용 | 비고 |
+|---|---|---|
+| heuristic 폴링 (`pollStatus`) | 4.5µs/회 · 터미널 24개에서 **CPU 0.02%** | 꺼도 체감 없음 |
+| 출력 처리 (`processWithStatus`) | 5.7µs/청크 · 60청크/초에서 **CPU 0.03%** | |
+| **포트 모니터** | 5초마다 `lsof` 1회(50ms) **+ 리스닝 포트마다 1회**(30ms) | 포트 11개면 **CPU 약 7%** |
+
+포트 모니터가 터미널 검사보다 **수백 배** 비싸다. 그래서 끄는 스위치는 그쪽에 있고
+(Settings > Port Monitoring), pid→cwd 캐시로 반복 호출을 없앴다.
+
+성능 작업을 하기 전에 반드시 다시 재라 — `pollStatus`는 `currentTool !== 'cc'`면 즉시
+반환하므로, Claude Code로 인식되지 않는 입력으로 벤치마크하면 **90배 낮은 가짜 수치**가 나온다.
+
 ### Terminal Pipeline Testing
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` (T1 데이터유실, T2 스크롤튕김 6종, T3 히스토리보존, T4 리사이즈폭풍, T5 그리드창)
+- **위치**: `tests/terminal/` (T1 데이터유실, T2 스크롤튕김 6종, T3 히스토리보존, T4 리사이즈폭풍, T5 그리드창, T6 Loop, T7 에이전트 통합, T8 훅 설치 안전성)
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
 - **Headless 기본**: 테스트 창은 화면에 표시되지 않음 (`CLIMANGER_TEST_HEADLESS=1` 자동 설정, hidden window + backgroundThrottling 해제). 눈으로 보면서 디버깅하려면 `CLIMANGER_TEST_HEADED=1 pnpm test:term`
 - **격리**: `CLIMANGER_TEST_USERDATA`로 userData를 임시 디렉토리로 분리 — 실사용 설정을 건드리지 않음
+  - 에이전트 통합은 추가로 `CLIMANAGER_HOME`(훅 스풀)·`CODEX_HOME`(사용량)·`HOME`(T8)까지 임시 디렉토리로 돌린다.
+  - `hookIntegrationAllowed()`가 테스트 모드에선 설치 자체를 거부하므로 실제 `~/.claude`·`~/.codex`는 절대 수정되지 않는다.
+  - **Electron의 `userData`는 `$HOME`을 따르지 않는다**(OS API로 해석). 반면 `os.homedir()`는
+    따른다. 그래서 앱 저장소 격리는 `CLIMANGER_TEST_USERDATA`, 설정 파일 격리는 `$HOME`으로
+    **각각** 해야 한다. 둘 다 필요한 UI 왕복 테스트(T11)는 `CLIMANAGER_ALLOW_HOOK_INSTALL=1`로
+    설치 가드를 되돌린다 — 반드시 가짜 `$HOME`과 함께 쓸 것.
 - **계측**: `CLIMANGER_TERM_DEBUG=1`일 때만 `window.__termDebug` 활성화 (`src/renderer/src/utils/terminalDebug.ts`)
 - **Mock CLI**: `scripts/mock-cli/`
   - `claude-mock.cjs`: Claude Code 렌더링 패턴 모사 생성기 (fps/히스토리/풀클리어 파라미터)

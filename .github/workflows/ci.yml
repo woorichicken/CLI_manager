@@ -1,0 +1,73 @@
+name: CI
+
+# Why this exists: release.yml only runs on a v* tag, so until now nothing
+# verified a change before it reached the public repository. This gate runs on
+# every push and pull request instead.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    # macOS because node-pty builds a native addon and the terminal tests drive
+    # a real Electron app; ubuntu would verify neither.
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      # Fails the job when a credential-shaped string is committed. Runs against
+      # tracked content only, so local scratch files are irrelevant.
+      - name: Scan for committed secrets
+        run: node scripts/prepublish-check.cjs --only=secrets
+
+      - name: Repository hygiene checks
+        run: node scripts/prepublish-check.cjs
+
+      # Two terminal tests replay a recording that is gitignored, so they cannot
+      # run here. See docs/found-defects.md — until that is resolved this step
+      # deliberately excludes them rather than pretending the suite is green.
+      - name: Terminal + agent tests
+        run: >
+          npx playwright test
+          tests/terminal/loop-counter.spec.ts
+          tests/terminal/t1-data-loss.spec.ts
+          tests/terminal/t4-resize-storm.spec.ts
+          tests/terminal/t5-grid-window.spec.ts
+          tests/terminal/t6-loop-dashboard.spec.ts
+          tests/terminal/t7-agent-integration.spec.ts
+          tests/terminal/t8-hook-install.spec.ts
+          tests/terminal/t9-agent-modules.spec.ts
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 7

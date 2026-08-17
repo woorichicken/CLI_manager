@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { UserSettings, EditorType, TerminalTemplate, HooksSettings, LoopDetectionConfig, LoopCountMode, DEFAULT_LOOP_DETECTION } from '../../../shared/types'
-import { X, Check, AlertCircle, CircleAlert, Plus, Trash2, Code2, Play, Package, GitBranch, Terminal, Settings as SettingsIcon, Bell, Monitor, Github, FolderOpen, Folder, Download, RefreshCw, Loader2, Home, Keyboard, Bug, Webhook, HelpCircle, ExternalLink, GripVertical } from 'lucide-react'
+import { X, Check, AlertCircle, CircleAlert, Plus, Trash2, Code2, Play, Package, GitBranch, Terminal, Settings as SettingsIcon, Bell, Monitor, Github, FolderOpen, Folder, Download, RefreshCw, Loader2, Home, Keyboard, Bug, Webhook, HelpCircle, ExternalLink, GripVertical, Bot } from 'lucide-react'
 import { Reorder } from 'framer-motion'
 import { v4 as uuidv4 } from 'uuid'
 import { KeyboardSettings } from './KeyboardSettings'
+import { AgentIntegrationSettings } from './AgentIntegrationSettings'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
@@ -22,7 +23,7 @@ interface SettingsProps {
     onResetOnboarding?: () => void
 }
 
-type SettingsCategory = 'general' | 'editor' | 'terminal' | 'keyboard' | 'hooks' | 'notifications' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'loop' | 'developer'
+type SettingsCategory = 'general' | 'editor' | 'terminal' | 'keyboard' | 'agents' | 'hooks' | 'notifications' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'loop' | 'developer'
 
 export function Settings({ isOpen, onClose, onSave, initialCategory = 'general', onResetOnboarding }: SettingsProps) {
     const [settings, setSettings] = useState<UserSettings>({
@@ -249,6 +250,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
         { id: 'editor' as const, label: 'Editor', icon: <Code2 size={16} /> },
         { id: 'terminal' as const, label: 'Terminal', icon: <Terminal size={16} /> },
         { id: 'keyboard' as const, label: 'Keyboard', icon: <Keyboard size={16} /> },
+        { id: 'agents' as const, label: 'Agents', icon: <Bot size={16} /> },
         { id: 'hooks' as const, label: 'Hooks', icon: <Webhook size={16} /> },
         { id: 'notifications' as const, label: 'Notifications', icon: <Bell size={16} /> },
         { id: 'port-monitoring' as const, label: 'Port Monitoring', icon: <Monitor size={16} /> },
@@ -961,6 +963,16 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                             )}
 
                             {/* Hooks Settings (Session Monitoring) */}
+                            {activeCategory === 'agents' && (
+                                <AgentIntegrationSettings
+                                    hooks={settings.agentHooks}
+                                    usageAlerts={settings.usageAlerts}
+                                    onChange={({ agentHooks, usageAlerts }) =>
+                                        setSettings(prev => ({ ...prev, agentHooks, usageAlerts }))
+                                    }
+                                />
+                            )}
+
                             {activeCategory === 'hooks' && (
                                 <>
                                     <div>
@@ -1155,6 +1167,37 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                             {/* Port Monitoring Settings */}
                             {activeCategory === 'port-monitoring' && (
                                 <>
+                                    <div className="mb-6 pb-6 border-b border-white/10">
+                                        <h3 className="text-sm font-semibold text-white mb-1">Port Monitoring</h3>
+                                        <p className="text-xs text-gray-400 mb-3">
+                                            Detect local dev servers by polling every 5 seconds.
+                                        </p>
+                                        <div className="flex items-center justify-between">
+                                            <div className="pr-4">
+                                                <p className="text-sm text-gray-300">Enable background polling</p>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    This is the app's most expensive recurring task — it runs one{' '}
+                                                    <code className="text-gray-400">lsof</code> for the port list plus one
+                                                    per listening process. Turning it off stops all of it; the refresh
+                                                    button in the status bar still works on demand.
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => setSettings(prev => ({
+                                                    ...prev,
+                                                    portMonitorEnabled: !(prev.portMonitorEnabled !== false)
+                                                }))}
+                                                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                                                    settings.portMonitorEnabled !== false ? 'bg-blue-600' : 'bg-white/20'
+                                                }`}
+                                            >
+                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                    settings.portMonitorEnabled !== false ? 'translate-x-6' : 'translate-x-1'
+                                                }`} />
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <div>
                                         <h3 className="text-sm font-semibold text-white mb-1">Port Filter</h3>
                                         <p className="text-xs text-gray-400 mb-3">

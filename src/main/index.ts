@@ -1,11 +1,11 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage, Tray, Menu } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage, Tray, Menu, Notification } from 'electron'
 import path, { join } from 'path'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import logoIcon from '../../resources/logo-final.png?asset'
 import Store from 'electron-store'
-import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest } from '../shared/types'
+import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest, HookIntegrationSettings, UsageAlertSettings, UsageSnapshot, HookInstallState, AgentStatusUpdate, DEFAULT_HOOK_INTEGRATION, DEFAULT_USAGE_ALERTS, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource } from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import simpleGit from 'simple-git'
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
@@ -19,6 +19,11 @@ import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
 import { CLISessionTracker } from './CLISessionTracker'
 import { LoopManager } from './LoopManager'
+import { HookInstaller, hookIntegrationAllowed } from './HookInstaller'
+import { AgentHookBridge } from './AgentHookBridge'
+import { AgentStatusResolver, TerminalLookupEntry } from './AgentStatusResolver'
+import { UsageTracker, UsageThresholdAlert } from './UsageTracker'
+import { parseDiffSummary, parseFileDiff } from './diffParser'
 import { net } from 'electron'
 
 // Set app name for development mode
@@ -120,14 +125,24 @@ const store = new Store<AppConfig>({
                     showInSidebar: true,
                     autoDismissSeconds: 5
                 }
-            }
+            },
+            // Official hook integration is opt-in: it edits files the user owns
+            // (~/.claude/settings.json, ~/.codex/config.toml), so it is never
+            // enabled without an explicit action in Settings.
+            agentHooks: { ...DEFAULT_HOOK_INTEGRATION },
+            usageAlerts: { ...DEFAULT_USAGE_ALERTS }
         }
     }
 }) as any
 
 const cliSessionTracker = new CLISessionTracker()
 const terminalManager = new TerminalManager(cliSessionTracker)
-const portManager = new PortManager()
+const portManager = new PortManager(() => {
+    const settings = store.get('settings') as UserSettings | undefined
+    // Default on: turning it off is an explicit choice, not a silent regression
+    // for anyone who never opens Settings.
+    return settings?.portMonitorEnabled !== false
+})
 const systemMonitor = new SystemMonitor(store)
 
 // LoopManager: instantiated after terminalManager so it can register onOutput.
@@ -142,6 +157,101 @@ const loopManager = new LoopManager(
         }
     },
 )
+
+// ---------------------------------------------------------------------------
+// Official agent integration
+//
+// Status detection is event driven wherever the CLI offers a hook, and falls
+// back to the existing screen heuristic everywhere else. AgentStatusResolver
+// owns that precedence, so both paths can stay live at the same time.
+// ---------------------------------------------------------------------------
+
+const hookInstaller = new HookInstaller()
+const agentHookBridge = new AgentHookBridge(hookInstaller.spoolDir)
+const usageTracker = new UsageTracker()
+
+/** Flattens the stored workspaces into the terminal list the resolver matches against. */
+const listTerminals = (): TerminalLookupEntry[] => {
+    const workspaces = (store.get('workspaces') as Workspace[]) || []
+    return workspaces.flatMap((workspace) =>
+        (workspace.sessions || []).map((session) => ({
+            terminalId: session.id,
+            cwd: session.cwd,
+            cliSessionId: session.cliSessionId,
+            cliToolName: session.cliToolName
+        }))
+    )
+}
+
+const agentStatusResolver = new AgentStatusResolver(listTerminals)
+
+const getHookSettings = (): HookIntegrationSettings => {
+    const settings = store.get('settings') as UserSettings | undefined
+    return { ...DEFAULT_HOOK_INTEGRATION, ...(settings?.agentHooks ?? {}) }
+}
+
+const getUsageAlertSettings = (): UsageAlertSettings => {
+    const settings = store.get('settings') as UserSettings | undefined
+    return { ...DEFAULT_USAGE_ALERTS, ...(settings?.usageAlerts ?? {}) }
+}
+
+/** Sends a payload to every open window; each one filters what it cares about. */
+const broadcast = (channel: string, payload: unknown): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(channel, payload)
+    }
+}
+
+agentHookBridge.on('agent-event', (event) => {
+    agentStatusResolver.applyEvent(event)
+})
+
+agentHookBridge.on('claude-statusline', (payload) => {
+    usageTracker.ingestClaudeStatusLine(payload)
+})
+
+agentStatusResolver.on('status', (update: AgentStatusUpdate) => {
+    broadcast('agent-status-update', update)
+
+    // A permission prompt is the one state where the agent cannot make progress
+    // without the user, so it is worth an OS notification even when the app is
+    // in the background.
+    if (update.awaitingInput && Notification.isSupported()) {
+        const settings = store.get('settings') as UserSettings | undefined
+        if (settings?.notifications?.enabled === false) return
+
+        const session = listTerminals().find((t) => t.terminalId === update.terminalId)
+        new Notification({
+            title: 'Agent needs you',
+            body: update.detail
+                ? `Waiting for approval: ${update.detail}`
+                : `An agent is waiting for your input${session ? ` in ${path.basename(session.cwd)}` : ''}`,
+            icon: logoIcon
+        }).show()
+    }
+})
+
+usageTracker.on('update', (snapshot: UsageSnapshot) => {
+    broadcast('usage-update', snapshot)
+})
+
+usageTracker.on('threshold', (alert: UsageThresholdAlert) => {
+    broadcast('usage-threshold', alert)
+
+    if (!Notification.isSupported()) return
+
+    const toolLabel = alert.tool === 'claude' ? 'Claude Code' : 'Codex'
+    const windowLabel = alert.label === '5h' ? '5-hour' : 'weekly'
+    const resets = alert.resetsAt
+        ? ` · resets ${new Date(alert.resetsAt * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+        : ''
+
+    new Notification({
+        title: `${toolLabel} usage at ${Math.round(alert.usedPercent)}%`,
+        body: `${windowLabel} limit passed your ${alert.threshold}% alert${resets}`,
+        icon: logoIcon
+    }).show()
+})
 
 // Background mode state
 let tray: Tray | null = null
@@ -2569,6 +2679,233 @@ app.whenReady().then(async () => {
             return { success: false, error: e.message }
         }
     })
+
+    // ---------------------------------------------------------------------
+    // Agent integration IPC
+    // ---------------------------------------------------------------------
+
+    ipcMain.handle('get-usage-snapshot', (): UsageSnapshot => usageTracker.getSnapshot())
+
+    ipcMain.handle('get-agent-status-snapshot', (): AgentStatusUpdate[] => agentStatusResolver.snapshot())
+
+    /**
+     * Reports a status the renderer derived itself (screen heuristic today, and
+     * terminal-title parsing alongside it). The resolver decides whether it is
+     * allowed to win — a fresh hook event always outranks it.
+     */
+    ipcMain.on('agent-status-observed', (_e, terminalId: string, status: SessionStatus, source: AgentStatusSource) => {
+        agentStatusResolver.applyObservedStatus(terminalId, status, source)
+    })
+
+    ipcMain.handle('get-hook-state', (): HookInstallState => hookInstaller.verify())
+
+    /**
+     * Applies a new integration configuration. Enabling installs, disabling
+     * fully uninstalls and restores whatever we displaced — leaving dead hooks
+     * behind would slow the user's CLI forever.
+     */
+    ipcMain.handle('set-hook-integration', async (_e, next: HookIntegrationSettings): Promise<IPCResult<HookInstallState>> => {
+        try {
+            const settings = (store.get('settings') as UserSettings) || ({} as UserSettings)
+            store.set('settings', { ...settings, agentHooks: next })
+
+            if (!next.enabled) {
+                const state = hookInstaller.uninstall()
+                return { success: true, data: state }
+            }
+
+            // Uninstall first so a target that was just switched off is removed
+            // rather than silently left in place.
+            hookInstaller.uninstall()
+            const state = hookInstaller.install(next)
+            return { success: true, data: state }
+        } catch (e: any) {
+            return { success: false, error: e.message, errorType: 'UNKNOWN_ERROR' }
+        }
+    })
+
+    ipcMain.handle('set-usage-alerts', (_e, next: UsageAlertSettings): boolean => {
+        const settings = (store.get('settings') as UserSettings) || ({} as UserSettings)
+        store.set('settings', { ...settings, usageAlerts: next })
+        usageTracker.setAlertSettings(next)
+        return true
+    })
+
+    // ---------------------------------------------------------------------
+    // Diff review IPC
+    // ---------------------------------------------------------------------
+
+    const GIT_MAX_BUFFER = 64 * 1024 * 1024
+
+    const runGit = async (cwd: string, args: string): Promise<string> => {
+        const { stdout } = await execAsync(`git ${args}`, { cwd, maxBuffer: GIT_MAX_BUFFER })
+        return stdout
+    }
+
+    /**
+     * Resolves what the working tree should be compared against.
+     *
+     * For a worktree workspace the useful comparison is "everything this branch
+     * changed", which is the merge base with the branch it forked from — not
+     * `HEAD`, because an agent's work is usually still uncommitted, and not
+     * `base..HEAD`, because that hides the uncommitted part.
+     */
+    const resolveDiffRange = async (
+        workspace: Workspace,
+        base: DiffBase
+    ): Promise<{ range: string; label: string }> => {
+        if (base === 'base-branch' && workspace.baseBranch) {
+            try {
+                const mergeBase = (await runGit(workspace.path, `merge-base ${workspace.baseBranch} HEAD`)).trim()
+                if (mergeBase) {
+                    return { range: mergeBase, label: `${workspace.baseBranch}...${workspace.branchName ?? 'HEAD'}` }
+                }
+            } catch {
+                // Base branch missing (deleted or never fetched): fall through
+                // to the HEAD comparison rather than failing the whole panel.
+            }
+        }
+        return { range: 'HEAD', label: 'uncommitted vs HEAD' }
+    }
+
+    const findWorkspace = (workspaceId: string): Workspace | undefined => {
+        const workspaces = (store.get('workspaces') as Workspace[]) || []
+        return workspaces.find((w) => w.id === workspaceId)
+    }
+
+    /** Untracked files are invisible to `git diff`, but they are exactly what an agent just created. */
+    const listUntracked = async (cwd: string): Promise<string[]> => {
+        try {
+            const out = await runGit(cwd, 'ls-files --others --exclude-standard -z')
+            return out.split('\0').filter((p) => p.length > 0)
+        } catch {
+            return []
+        }
+    }
+
+    ipcMain.handle('git-diff-summary', async (_e, workspaceId: string, base: DiffBase): Promise<IPCResult<DiffSummary>> => {
+        try {
+            const workspace = findWorkspace(workspaceId)
+            if (!workspace) return { success: false, error: 'Workspace not found' }
+
+            const { range, label } = await resolveDiffRange(workspace, base)
+
+            const [numstat, nameStatus, untracked] = await Promise.all([
+                runGit(workspace.path, `diff --numstat -z ${range}`),
+                runGit(workspace.path, `diff --name-status -z ${range}`),
+                listUntracked(workspace.path)
+            ])
+
+            const files = parseDiffSummary(numstat, nameStatus)
+
+            for (const file of untracked) {
+                if (files.some((f) => f.path === file)) continue
+                let additions = 0
+                let binary = false
+                try {
+                    const content = readFileSync(join(workspace.path, file))
+                    binary = content.includes(0)
+                    additions = binary ? 0 : content.toString('utf-8').split('\n').length
+                } catch {
+                    // Unreadable (permissions, vanished mid-scan): still list it.
+                }
+                files.push({ path: file, status: 'added', additions, deletions: 0, binary })
+            }
+
+            files.sort((a, b) => a.path.localeCompare(b.path))
+
+            return {
+                success: true,
+                data: {
+                    base,
+                    baseLabel: label,
+                    files,
+                    totalAdditions: files.reduce((sum, f) => sum + f.additions, 0),
+                    totalDeletions: files.reduce((sum, f) => sum + f.deletions, 0)
+                }
+            }
+        } catch (e: any) {
+            return { success: false, error: e.message, errorType: 'UNKNOWN_ERROR' }
+        }
+    })
+
+    ipcMain.handle(
+        'git-file-diff',
+        async (_e, workspaceId: string, filePath: string, base: DiffBase): Promise<IPCResult<FileDiff>> => {
+            try {
+                const workspace = findWorkspace(workspaceId)
+                if (!workspace) return { success: false, error: 'Workspace not found' }
+
+                const { range } = await resolveDiffRange(workspace, base)
+                const quoted = JSON.stringify(filePath)
+
+                let raw: string
+                let status: FileDiff['status'] = 'modified'
+
+                const untracked = await listUntracked(workspace.path)
+                if (untracked.includes(filePath)) {
+                    status = 'added'
+                    // --no-index exits 1 when the files differ, which is the
+                    // normal case here, so the non-zero exit is not an error.
+                    try {
+                        raw = await runGit(workspace.path, `diff --no-index --unified=3 -- /dev/null ${quoted}`)
+                    } catch (e: any) {
+                        raw = e?.stdout ?? ''
+                    }
+                } else {
+                    raw = await runGit(workspace.path, `diff --unified=3 ${range} -- ${quoted}`)
+                    if (!raw.trim()) {
+                        // Renames with no content change produce empty output.
+                        raw = await runGit(workspace.path, `diff --unified=3 --find-renames ${range} -- ${quoted}`)
+                    }
+                }
+
+                return { success: true, data: parseFileDiff(raw, filePath, status) }
+            } catch (e: any) {
+                return { success: false, error: e.message, errorType: 'UNKNOWN_ERROR' }
+            }
+        }
+    )
+
+    /**
+     * Types review feedback into an agent's terminal.
+     *
+     * The text is written without a trailing newline on purpose: the reviewer
+     * gets to read what is about to be sent, and presses Enter themselves.
+     * Auto-submitting would make a misdirected comment unrecoverable.
+     */
+    ipcMain.handle('send-text-to-terminal', (_e, terminalId: string, text: string): IPCResult<null> => {
+        try {
+            terminalManager.writeToTerminal(terminalId, text)
+            return { success: true, data: null }
+        } catch (e: any) {
+            return { success: false, error: e.message, errorType: 'UNKNOWN_ERROR' }
+        }
+    })
+
+    // ---------------------------------------------------------------------
+    // Agent integration startup
+    //
+    // Re-installing on every launch is intentional: it repairs the script paths
+    // after an app update or a move, and re-adds our entries if another tool
+    // rewrote the config. Every step is idempotent and reports failure instead
+    // of throwing, so a broken integration can never stop the app from booting.
+    // ---------------------------------------------------------------------
+    try {
+        hookInstaller.pruneSpool()
+
+        const hookSettings = getHookSettings()
+        if (hookSettings.enabled && hookIntegrationAllowed()) {
+            const state = hookInstaller.install(hookSettings)
+            console.log('[agent-hooks] Install state:', JSON.stringify(state))
+        }
+
+        agentHookBridge.start()
+        usageTracker.setAlertSettings(getUsageAlertSettings())
+        usageTracker.start()
+    } catch (error) {
+        console.error('[agent-hooks] Startup failed, continuing without integration:', error)
+    }
 
     createWindow()
 

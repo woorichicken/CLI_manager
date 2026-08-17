@@ -20,6 +20,11 @@ const SESSION_STATUS_TITLES: Record<SessionStatus, string> = {
     error: 'Error occurred'
 }
 
+// "Blocked on a human" is a different situation from "finished and quiet", and
+// it is the one worth interrupting the user for. Official hooks can tell the
+// two apart (PermissionRequest / Notification); the screen heuristic cannot.
+const AWAITING_INPUT_COLOR = 'bg-amber-400 animate-pulse ring-2 ring-amber-400/30'
+
 // Hover timing constants
 const HOVER_DELAY_MS = 300     // Delay before showing preview
 const HOVER_LINGER_MS = 400    // Keep preview visible after mouse leaves
@@ -29,6 +34,8 @@ interface SessionItemProps {
     workspace: Workspace
     isActive: boolean
     sessionStatus?: SessionStatus
+    /** Agent is blocked on a human (permission prompt / idle nudge). */
+    awaitingInput?: boolean
     isClaudeCodeSession?: boolean
     showStatusInSidebar?: boolean
     fontSize?: number  // Sidebar font size
@@ -58,6 +65,7 @@ export function SessionItem({
     workspace,
     isActive,
     sessionStatus,
+    awaitingInput,
     isClaudeCodeSession,
     showStatusInSidebar = true,
     fontSize = 14,
@@ -184,8 +192,8 @@ export function SessionItem({
 
         return (
             <div
-                className={`w-2 h-2 rounded-full ${SESSION_STATUS_COLORS[sessionStatus]} shrink-0`}
-                title={SESSION_STATUS_TITLES[sessionStatus]}
+                className={`w-2 h-2 rounded-full shrink-0 ${awaitingInput ? AWAITING_INPUT_COLOR : SESSION_STATUS_COLORS[sessionStatus]}`}
+                title={awaitingInput ? 'Waiting for you (approval or input needed)' : SESSION_STATUS_TITLES[sessionStatus]}
             />
         )
     }
