@@ -23,7 +23,7 @@
  */
 
 const { execFileSync, execSync } = require('child_process')
-const { existsSync, readFileSync, writeFileSync, rmSync, readdirSync } = require('fs')
+const { existsSync, readFileSync, writeFileSync, rmSync, renameSync, readdirSync } = require('fs')
 const { join } = require('path')
 
 const ROOT = join(__dirname, '..')
@@ -244,11 +244,16 @@ function setVersion(version) {
 }
 
 /**
- * Builds, and removes the output directory if anything goes wrong.
+ * Builds, and quarantines the output directory if anything goes wrong.
  *
- * A failed notarization leaves a signed-but-unnotarized `.app` behind. Gatekeeper
- * rejects it on the user's machine, and it looks exactly like a good build in a
- * directory listing — so it must not survive the failure that produced it.
+ * A failed build can leave a signed-but-unnotarized `.app` behind. Gatekeeper
+ * rejects it on the user's machine and it looks exactly like a good build in a
+ * directory listing, so it must not survive at the path a publish step reads.
+ *
+ * It is *moved*, not deleted: the first failure here destroyed ten minutes of
+ * completed notarization along with every clue about what went wrong, and
+ * electron-builder does not always say. Quarantine keeps the evidence while
+ * making the artifacts unpublishable.
  */
 function buildMac() {
     section('Build')
@@ -256,9 +261,24 @@ function buildMac() {
 
     try {
         execSync('pnpm build:mac', { cwd: ROOT, stdio: 'inherit' })
-    } catch {
-        log('\n  Build failed — removing release/ so a partial artifact cannot be published.')
-        rmSync(RELEASE_DIR, { recursive: true, force: true })
+    } catch (error) {
+        const signal = error?.signal
+        log(
+            signal
+                ? `\n  Build was terminated by ${signal} — this is an external kill, not a build error.`
+                : '\n  Build failed.'
+        )
+
+        if (existsSync(RELEASE_DIR)) {
+            const quarantine = join(ROOT, `release-failed-${Date.now()}`)
+            try {
+                renameSync(RELEASE_DIR, quarantine)
+                log(`  Artifacts moved to ${quarantine.replace(ROOT + '/', '')}/ — inspect, then delete.`)
+            } catch {
+                rmSync(RELEASE_DIR, { recursive: true, force: true })
+                log('  release/ removed (could not quarantine).')
+            }
+        }
         return false
     }
     return true

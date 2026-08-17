@@ -51,6 +51,7 @@ coverage/
 
 # Electron Builder output
 release/
+release-failed-*/
 dist/
 .wrangler/
 
