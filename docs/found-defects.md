@@ -64,17 +64,3 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 - Workaround: 앱을 완전 종료 후 재실행하면 2초 뒤 좌하단에 알림이 뜬다.
 - Decision: 미정 — 주기 확인(예: 6시간)만 넣을지, 창 포커스 복귀 시에도 확인할지, 알림 위치를
   좌하단(240px)에서 더 눈에 띄는 곳으로 옮길지가 함께 결정돼야 한다.
-
-### 🐛 `.gitignore` — `.claude/`를 무시해서 새 룰 파일이 조용히 커밋에서 빠진다
-- Date: 2026-08-16
-- Where: `.gitignore:61` (`.claude/`). 그런데 그 아래 10개 파일은 이미 추적 중이다
-  (`git ls-files .claude`).
-- What: 이미 추적된 파일은 계속 추적되지만, **새로 추가하는 `.claude/rules/*.md`는 무시된다.**
-  `git status`에 아무것도 안 뜨고 `git check-ignore -v`로만 확인된다. 프로젝트 규칙을 새로
-  쓰면 커밋됐다고 착각한 채 사라진다. 루트 `CLAUDE.md`와 문서 라우팅 인덱스가
-  `.claude/commands/*.md`를 참조하고 있어 실제로 저장소가 의존하는 경로다.
-- Surfaced by: 오픈소스 공개 전 점검 중 실측(`touch .claude/rules/__probe.md` → 무시됨 확인).
-- Impact: 개발 — 규칙/커맨드 추가가 유실된다. 기여자에게는 원인이 전혀 안 보인다.
-- Workaround: `git add -f .claude/...`
-- Decision: 미정 — `.claude/`에서 공유할 것(rules·commands·skills)과 로컬 전용(state, settings.local.json)을
-  갈라 `.gitignore`를 `!` 예외로 다시 쓸지, 아니면 공유분을 다른 경로로 옮길지 정해야 한다.

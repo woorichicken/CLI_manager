@@ -137,7 +137,12 @@ const store = new Store<AppConfig>({
 
 const cliSessionTracker = new CLISessionTracker()
 const terminalManager = new TerminalManager(cliSessionTracker)
-const portManager = new PortManager()
+const portManager = new PortManager(() => {
+    const settings = store.get('settings') as UserSettings | undefined
+    // Default on: turning it off is an explicit choice, not a silent regression
+    // for anyone who never opens Settings.
+    return settings?.portMonitorEnabled !== false
+})
 const systemMonitor = new SystemMonitor(store)
 
 // LoopManager: instantiated after terminalManager so it can register onOutput.

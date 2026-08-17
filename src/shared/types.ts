@@ -93,6 +93,12 @@ export interface UserSettings {
         minPort: number
         maxPort: number
     }
+    /**
+     * Poll for listening ports. Off means no `lsof` subprocesses at all — the
+     * single most expensive recurring task in the app. Manual refresh still
+     * works from the status bar.
+     */
+    portMonitorEnabled?: boolean
     github?: {
         username: string
         email: string

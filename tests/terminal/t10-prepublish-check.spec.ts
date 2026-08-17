@@ -83,12 +83,16 @@ test.describe('T10 prepublish-check', () => {
         }
     })
 
+    // Fixture credentials are assembled at runtime rather than written as
+    // literals. A realistic-looking key committed to a public repository trips
+    // GitHub's own secret scanning and every third-party scanner — including
+    // this one, which flagged its own test file the first time.
     test('vendor-prefixed API keys are caught', () => {
         const cases: Array<[string, string]> = [
-            ['openai', "const k = 'sk-abcdefghij0123456789ABCDEFghijkl'\n"],
-            ['github', "const k = 'ghp_abcdefghij0123456789ABCDEFghijklmnop'\n"],
-            ['aws', "const k = 'AKIAIOSFODNN7EXAMPLE'\n"],
-            ['private-key', '-----BEGIN RSA PRIVATE KEY-----\nMIIB\n'],
+            ['openai', `const k = '${'sk' + '-'}abcdefghij0123456789ABCDEFghijkl'\n`],
+            ['github', `const k = '${'ghp' + '_'}abcdefghij0123456789ABCDEFghijklmnop'\n`],
+            ['aws', `const k = '${'AKIA'}IOSFODNN7EXAMPLE'\n`],
+            ['private-key', `${'-----BEGIN'} RSA PRIVATE KEY-----\nMIIB\n`]
         ]
 
         for (const [label, contents] of cases) {
@@ -108,8 +112,8 @@ test.describe('T10 prepublish-check', () => {
         // random string, so only the assignment target identifies it.
         const dir = makeRepo({
             'scripts/upload.js':
-                "const R2_ACCESS_KEY_ID = '4cf0d47495e28d4a4a003e4eb5fed668';\n" +
-                "const R2_SECRET_ACCESS_KEY = '3a7d3141d095418c18dbeb6a148f3f7fb212d63670e4d343d991d8adaf42a514';\n"
+                `const R2_ACCESS${'_KEY_ID'} = '${'a'.repeat(32)}';\n` +
+                `const R2_SECRET${'_ACCESS_KEY'} = '${'b'.repeat(64)}';\n`
         })
         try {
             const result = runChecker(dir, ['--only=secrets'])

@@ -410,10 +410,17 @@ export class HookInstaller {
         // Codex notify
         try {
             if (existsSync(this.codexConfigPath)) {
-                const lines = readFileSync(this.codexConfigPath, 'utf-8').split('\n')
-                const restore = state.codexNotifyOriginal ?? null
-                const { lines: nextLines } = this.setCodexNotify(lines, restore)
-                writeFileSync(this.codexConfigPath, nextLines.join('\n'), 'utf-8')
+                const raw = readFileSync(this.codexConfigPath, 'utf-8')
+
+                // Only touch `notify` when it is ours. Without this check an
+                // uninstall deletes whatever the user had configured — and the
+                // enable path runs uninstall() first, so the very act of
+                // switching the integration on destroyed their notify program.
+                if (raw.includes(this.codexNotifyScriptPath) || raw.includes(HOOK_MARKER)) {
+                    const restore = state.codexNotifyOriginal ?? null
+                    const { lines: nextLines } = this.setCodexNotify(raw.split('\n'), restore)
+                    writeFileSync(this.codexConfigPath, nextLines.join('\n'), 'utf-8')
+                }
             }
         } catch (error) {
             result.codexNotify = { installed: false, error: error instanceof Error ? error.message : String(error) }
@@ -503,9 +510,16 @@ export class HookInstaller {
  * Suppresses installation during automated tests so a test run can never
  * rewrite the developer's real ~/.claude or ~/.codex configuration.
  *
+ * `CLIMANAGER_ALLOW_HOOK_INSTALL=1` opts back in. That exists because Electron
+ * resolves `userData` from the OS, not from `$HOME`, so isolating the app's
+ * storage requires CLIMANGER_TEST_USERDATA while isolating the *config* files
+ * requires a faked `$HOME` — and a hands-on test needs both at once. Only set
+ * it together with a faked `$HOME`; with the real one it edits real files.
+ *
  * Kept free of any electron import so HookInstaller stays a plain filesystem
  * module that can be exercised directly.
  */
 export function hookIntegrationAllowed(): boolean {
+    if (process.env.CLIMANAGER_ALLOW_HOOK_INSTALL === '1') return true
     return !process.env.CLIMANGER_TEST_USERDATA && !process.env.CLIMANGER_TEST_HEADLESS
 }

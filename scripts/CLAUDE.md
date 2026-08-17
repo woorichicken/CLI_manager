@@ -45,6 +45,11 @@ node scripts/prepublish-check.cjs --list # check names
 node scripts/prepublish-check.cjs --only=secrets
 ```
 
+The `ignored-but-tracked` check exists because `.gitignore` once listed
+`.claude/` while ten files under it were tracked: new rule files were dropped
+without appearing in `git status`. That class of mistake is invisible by
+inspection, so it is enforced here rather than remembered.
+
 It scans **tracked content only** — local scratch files are not the repository's
 problem, and scanning them produces noise that trains people to skip the gate.
 Failures block; warnings do not. Its own checks are pinned by

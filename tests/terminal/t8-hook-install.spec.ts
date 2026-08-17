@@ -160,6 +160,46 @@ test.describe('T8 hook install safety', () => {
         }
     })
 
+    test('an uninstall before anything was installed leaves foreign entries alone', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            // This is the enable path: the IPC handler calls uninstall() first so
+            // a target that was just switched off is removed. On a fresh machine
+            // that call ran against config it had never written, and it deleted
+            // the user's own `notify` program — found by driving the real UI.
+            const installer = new HookInstaller()
+            installer.uninstall()
+
+            expect(fs.readFileSync(fixture.codexPath, 'utf-8')).toBe(EXISTING_CODEX_CONFIG)
+
+            const settings = JSON.parse(fs.readFileSync(fixture.claudePath, 'utf-8'))
+            expect(settings.statusLine.command).toBe('/usr/local/bin/my-hud')
+            expect(JSON.stringify(settings.hooks.SessionStart)).toContain('other-tool.cjs')
+        } finally {
+            fixture.restore()
+        }
+    })
+
+    test('the enable-then-disable round trip restores a third-party notify', () => {
+        const fixture = setupFixture({ withExisting: true })
+
+        try {
+            const installer = new HookInstaller()
+
+            // Exactly what set-hook-integration does when the toggle goes on.
+            installer.uninstall()
+            installer.install(ALL_TARGETS)
+
+            expect(fs.readFileSync(fixture.codexPath, 'utf-8')).toContain('codex-notify.sh')
+
+            installer.uninstall()
+            expect(fs.readFileSync(fixture.codexPath, 'utf-8')).toBe(EXISTING_CODEX_CONFIG)
+        } finally {
+            fixture.restore()
+        }
+    })
+
     test('re-installing is idempotent and never chains a script to itself', () => {
         const fixture = setupFixture({ withExisting: true })
 

@@ -1167,6 +1167,37 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                             {/* Port Monitoring Settings */}
                             {activeCategory === 'port-monitoring' && (
                                 <>
+                                    <div className="mb-6 pb-6 border-b border-white/10">
+                                        <h3 className="text-sm font-semibold text-white mb-1">Port Monitoring</h3>
+                                        <p className="text-xs text-gray-400 mb-3">
+                                            Detect local dev servers by polling every 5 seconds.
+                                        </p>
+                                        <div className="flex items-center justify-between">
+                                            <div className="pr-4">
+                                                <p className="text-sm text-gray-300">Enable background polling</p>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    This is the app's most expensive recurring task — it runs one{' '}
+                                                    <code className="text-gray-400">lsof</code> for the port list plus one
+                                                    per listening process. Turning it off stops all of it; the refresh
+                                                    button in the status bar still works on demand.
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => setSettings(prev => ({
+                                                    ...prev,
+                                                    portMonitorEnabled: !(prev.portMonitorEnabled !== false)
+                                                }))}
+                                                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                                                    settings.portMonitorEnabled !== false ? 'bg-blue-600' : 'bg-white/20'
+                                                }`}
+                                            >
+                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                    settings.portMonitorEnabled !== false ? 'translate-x-6' : 'translate-x-1'
+                                                }`} />
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <div>
                                         <h3 className="text-sm font-semibold text-white mb-1">Port Filter</h3>
                                         <p className="text-xs text-gray-400 mb-3">
