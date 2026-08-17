@@ -19,6 +19,19 @@ import { UpdateNotification, UpdateStatus } from './components/UpdateNotificatio
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useTemplates } from './hooks/useTemplates'
 
+/** Let the window settle before spending anything on a network check. */
+const UPDATE_CHECK_STARTUP_DELAY_MS = 2000
+
+/**
+ * Re-check while the app stays open. Six hours is frequent enough that a
+ * release reaches a long-running install the same day, and rare enough that it
+ * is invisible in request volume.
+ */
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+/** Minimum gap between focus-triggered checks, so alt-tabbing costs nothing. */
+const UPDATE_CHECK_FOCUS_THROTTLE_MS = 30 * 60 * 1000
+
 function App() {
     const [workspaces, setWorkspaces] = useState<Workspace[]>([])
     const [folders, setFolders] = useState<WorkspaceFolder[]>([])
@@ -258,11 +271,19 @@ function App() {
         })
     }, [])
 
-    // Check for updates on app start
+    // Check for updates on start, then keep checking.
+    //
+    // A startup-only check effectively means "never" for this app: it exists to
+    // keep terminal sessions alive, so it is normally left running for weeks.
+    // v1.6.0 shipped and the maintainer's own install sat on 1.5.1 for two
+    // months because the app was never restarted.
     useEffect(() => {
+        let cancelled = false
+
         const checkUpdate = async () => {
             try {
                 const result = await window.api.checkForUpdate() as any
+                if (cancelled) return
                 if (result.success && result.hasUpdate && result.version) {
                     setUpdateVersion(result.version)
                     setShowUpdateNotification(true)
@@ -273,8 +294,27 @@ function App() {
         }
 
         // Check after a short delay to let the app initialize
-        const timer = setTimeout(checkUpdate, 2000)
-        return () => clearTimeout(timer)
+        const startupTimer = setTimeout(checkUpdate, UPDATE_CHECK_STARTUP_DELAY_MS)
+        const periodicTimer = setInterval(checkUpdate, UPDATE_CHECK_INTERVAL_MS)
+
+        // Returning to the app is the moment a user is most receptive to an
+        // update prompt, and it costs one request. Throttled so alt-tabbing
+        // does not turn into a request per focus.
+        let lastFocusCheck = 0
+        const onFocus = () => {
+            const now = Date.now()
+            if (now - lastFocusCheck < UPDATE_CHECK_FOCUS_THROTTLE_MS) return
+            lastFocusCheck = now
+            void checkUpdate()
+        }
+        window.addEventListener('focus', onFocus)
+
+        return () => {
+            cancelled = true
+            clearTimeout(startupTimer)
+            clearInterval(periodicTimer)
+            window.removeEventListener('focus', onFocus)
+        }
     }, [])
 
     // Listen for update status changes (downloading, ready, etc.)
