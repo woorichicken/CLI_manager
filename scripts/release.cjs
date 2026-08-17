@@ -22,7 +22,7 @@
  * `release/` is the kind of artifact that gets uploaded by mistake.
  */
 
-const { execFileSync, execSync } = require('child_process')
+const { execFileSync, execSync, spawnSync } = require('child_process')
 const { existsSync, readFileSync, writeFileSync, rmSync, renameSync, readdirSync } = require('fs')
 const { join } = require('path')
 
@@ -53,13 +53,18 @@ function run(cmd, args, options = {}) {
     return execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf-8', stdio: 'pipe', ...options })
 }
 
-/** Runs a command for its exit status only, never throwing. */
+/**
+ * Runs a command and returns its combined output, never throwing.
+ *
+ * Both streams are captured deliberately. `spctl` and `codesign` write their
+ * entire report to stderr, so a stdout-only read returns an empty string and
+ * every pattern match fails — which is how a correctly notarized 1.7.0 build
+ * was reported as unsigned and unnotarized.
+ */
 function tryRun(cmd, args, options = {}) {
-    try {
-        return { ok: true, out: run(cmd, args, options) }
-    } catch (error) {
-        return { ok: false, out: `${error.stdout ?? ''}${error.stderr ?? ''}`, status: error.status }
-    }
+    const result = spawnSync(cmd, args, { cwd: ROOT, encoding: 'utf-8', ...options })
+    const out = `${result.stdout ?? ''}${result.stderr ?? ''}`
+    return { ok: result.status === 0 && !result.error, out, status: result.status }
 }
 
 // ---------------------------------------------------------------------------
