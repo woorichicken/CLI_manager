@@ -17,6 +17,7 @@ gains an outward-facing effect belongs there, documented, not here.
 
 | Script | Kind | Purpose | Side effects |
 |---|---|---|---|
+| `release.cjs` | manual | Release orchestrator: preflight, build, artifact verification, publish | Commits, tags, pushes, creates a GitHub release |
 | `prepublish-check.cjs` | manual / CI | Repository hygiene gate: committed credentials, personal absolute paths, tracked-but-ignored files, oversized files, unpushed release commits | None (read-only) |
 | `sync-node-pty-prebuilds.cjs` | automatic | Runs on `postinstall`. Repairs `node-pty` native binaries when an install leaves wrong-arch `pty.node` / non-executable `spawn-helper`. | Rewrites files under `node_modules/node-pty/build/Release` |
 | `mock-cli/claude-mock.cjs` | manual | Generates Claude-Code-shaped terminal output (fps, history size, full-clear cadence) for the terminal tests | None |
@@ -34,6 +35,36 @@ It runs under Electron-as-Node because it needs the repo's `node-pty`:
 ```bash
 ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron scripts/mock-cli/record-claude.cjs
 ```
+
+## Releasing
+
+`release.cjs` is the only supported way to cut a release. Run the preflight any
+time — it changes nothing:
+
+```bash
+pnpm release:check                       # preflight only
+pnpm release -- --version 1.7.0 --notes /tmp/notes.md
+```
+
+The ordering is deliberate. Every cheap, checkable precondition runs before the
+build, because the build is where they used to surface: a v1.6.1 attempt spent
+minutes signing and then died at notarization on an expired Apple agreement that
+one read-only API call reports instantly. Preflight covers branch and push state,
+version availability, signing identity, **notarization reachability**, repository
+hygiene, typecheck and tests.
+
+After the build it asks the artifacts — not the build log — whether they are
+publishable: `spctl` must report `source=Notarized Developer ID`, and
+`latest-mac.yml` must advertise the version being released. electron-builder can
+exit 0 with an app Gatekeeper will reject, so the build's own success is not
+evidence.
+
+On any failure the version bump is reverted and `release/` is deleted. A
+signed-but-unnotarized `.app` left in that directory looks identical to a good
+one in a listing, and is the artifact most likely to be uploaded by mistake.
+
+Release notes are written by hand and passed with `--notes`; `--generate-notes`
+is the fallback.
 
 ## Pre-publish gate
 

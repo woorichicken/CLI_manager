@@ -11,6 +11,8 @@
     "postinstall": "node scripts/sync-node-pty-prebuilds.cjs",
     "typecheck": "tsc --noEmit",
     "check:publish": "node scripts/prepublish-check.cjs",
+    "release:check": "node scripts/release.cjs --check",
+    "release": "node scripts/release.cjs",
     "test:term": "playwright test",
     "test:term:baseline": "METRICS_LABEL=baseline playwright test",
     "build:mac": "electron-vite build && electron-builder --mac",
