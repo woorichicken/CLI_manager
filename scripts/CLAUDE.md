@@ -18,6 +18,7 @@ gains an outward-facing effect belongs there, documented, not here.
 | Script | Kind | Purpose | Side effects |
 |---|---|---|---|
 | `release.cjs` | manual | Release orchestrator: preflight, build, artifact verification, publish | Commits, tags, pushes, creates a GitHub release |
+| `post-release.cjs` | manual | Distribution after a release: R2 upload, website download links, changelog row | Uploads to R2, commits and pushes the website repo, writes to the changelog database |
 | `prepublish-check.cjs` | manual / CI | Repository hygiene gate: committed credentials, personal absolute paths, tracked-but-ignored files, oversized files, unpushed release commits | None (read-only) |
 | `sync-node-pty-prebuilds.cjs` | automatic | Runs on `postinstall`. Repairs `node-pty` native binaries when an install leaves wrong-arch `pty.node` / non-executable `spawn-helper`. | Rewrites files under `node_modules/node-pty/build/Release` |
 | `mock-cli/claude-mock.cjs` | manual | Generates Claude-Code-shaped terminal output (fps, history size, full-clear cadence) for the terminal tests | None |
@@ -65,6 +66,34 @@ one in a listing, and is the artifact most likely to be uploaded by mistake.
 
 Release notes are written by hand and passed with `--notes`; `--generate-notes`
 is the fallback.
+
+## Distributing after a release
+
+`release.cjs` stops at the GitHub release. `post-release.cjs` does the rest:
+
+```bash
+node scripts/post-release.cjs --version 1.7.0 --check
+DATABASE_URL=... node scripts/post-release.cjs --version 1.7.0 --notes notes.json
+```
+
+Order is load-bearing. The R2 upload is verified against the **public** URL —
+status 200 *and* a content length matching the local file — before the website
+is rewritten to point at it. An upload API call returning success is not the
+same fact as a working download, and the site is what users click. If R2
+verification fails the website is left untouched, still pointing at the previous
+release, which is the safe state.
+
+The site's version strings are found by reading the current version out of the
+files rather than assuming it, and a repository-wide grep afterwards fails the
+run if any stale reference survives in a file not on the known list.
+
+`DATABASE_URL` is read from the environment. A connection string committed here
+would be a credential in a public repository, and `prepublish-check` would
+rightly fail on it.
+
+The changelog SQL is fed on **stdin**, not `-c`: psql only interpolates `:'var'`
+placeholders for file or stdin input and forwards them verbatim to the server
+otherwise, which fails as a syntax error.
 
 ## Pre-publish gate
 
