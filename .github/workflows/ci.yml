@@ -49,6 +49,15 @@ jobs:
       - name: Repository hygiene checks
         run: node scripts/prepublish-check.cjs
 
+      # Scope: production dependencies only — those are what ship to users.
+      # Threshold: critical. Electron publishes high-severity advisories
+      # continuously and their fixes land in later majors, so a `high` gate here
+      # would be red permanently, and a permanently red gate gets disabled. That
+      # failure mode is what lets a real one through. Dependabot carries the
+      # high/moderate stream as reviewable PRs instead.
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level critical
+
       # Two terminal tests replay a recording that is gitignored, so they cannot
       # run here. See docs/found-defects.md — until that is resolved this step
       # deliberately excludes them rather than pretending the suite is green.

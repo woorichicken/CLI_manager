@@ -1,0 +1,21 @@
+# Dependency updates. Without this the repository only learns about a
+# vulnerability when someone runs `pnpm audit` by hand — which is how a critical
+# RCE in simple-git (GHSA-r275-fr43-pm7q) sat in a shipped release unnoticed.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine bumps; security fixes still arrive separately and
+      # immediately, which is the point.
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

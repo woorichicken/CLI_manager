@@ -64,6 +64,30 @@ this directory is public in the published repository.
 `~/.codex/prompts` for contributors driving the repo with Codex. It is contributor setup, not a
 release step.
 
+## Dependency security
+
+This is a public repository shipping a signed desktop app, so the question that matters is what
+reaches users — not what is installed on a developer's machine.
+
+- CI runs `pnpm audit --prod --audit-level critical` on every push.
+- Dependabot (`.github/dependabot.yml`) opens weekly PRs and separate, immediate ones for
+  security fixes.
+
+**Why the gate sits at `critical` rather than `high`:** Electron publishes high-severity advisories
+continuously and their fixes usually land in a later major. A `high` gate would be red permanently,
+and a permanently red gate gets switched off — which is the state that lets a real finding through.
+The high/moderate stream is handled as reviewable Dependabot PRs instead.
+
+Check the shipped surface directly when in doubt:
+
+```bash
+pnpm audit --prod          # what users get
+pnpm audit                 # includes the dev tree
+```
+
+Keep `@types/*` in `devDependencies`. In `dependencies` they inflate both the shipped tree and this
+report — `@types/uuid` was pulling a second `uuid` into the production audit until 2026-08-18.
+
 ## Update triggers
 
 Update when a `package.json` script gains or loses a side effect, when a distribution target
