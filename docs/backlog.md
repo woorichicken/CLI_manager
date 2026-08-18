@@ -67,6 +67,15 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   판정을 포기한다(`t9-agent-modules.spec.ts`의 "a genuinely ambiguous cwd is not guessed at").
 - Owner: Human Review (설계 변경 승인 필요)
 
+### `.env.release` — 배포 자격증명이 이 머신에만 있고 백업이 없다
+- Discovered: 2026-08-18, 배포 자산 정리 중
+- Why deferred: 어디에 백업할지(1Password / 다른 안전한 곳)는 소유자 결정이고, 이번 요청 범위 밖.
+- Trigger: 머신 교체·재설치·디스크 장애 전에. 또는 다른 사람이 릴리즈를 돌려야 할 때.
+- Evidence: `.env.release`(권한 600, gitignored)에 R2 키 4개가 있고 이 파일이 유일한 사본이다.
+  잃으면 Cloudflare에서 키를 재발급해야 하며, 재발급 전까지 `post-release.cjs`가 preflight에서
+  막힌다(`R2 credentials missing`).
+- Owner: Human Review
+
 ## Blocked
 
 없음.
