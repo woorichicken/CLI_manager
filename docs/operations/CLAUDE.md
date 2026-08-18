@@ -3,7 +3,7 @@ description: Before building, publishing, or distributing a release — anything
 authority: Release and distribution procedures, including their side effects and prerequisites
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # Operations

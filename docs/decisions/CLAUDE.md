@@ -3,7 +3,7 @@ description: When a design choice looks arbitrary and you are about to change it
 authority: Rationale for non-obvious architectural choices, and what would reverse them
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # Decisions
@@ -25,6 +25,7 @@ know X".
 | [0001](0001-hook-delivery-via-file-spool.md) | Agent hook events are delivered by file spool, not HTTP | active |
 | [0002](0002-wrap-not-replace-user-config.md) | Third-party hook config is wrapped, never replaced | active |
 | [0003](0003-keep-heuristic-as-fallback.md) | The screen heuristic stays alongside official hooks | active |
+| [0004](0004-periodic-update-check.md) | Update checks repeat on a timer, not only at startup | active |
 
 ## Template
 

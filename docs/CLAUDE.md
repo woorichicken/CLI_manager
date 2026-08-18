@@ -3,7 +3,7 @@ description: When writing, moving, or retiring a document in this repository
 authority: Documentation authoring and lifecycle rules for docs/
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # docs/ Authoring Rules
@@ -22,7 +22,7 @@ description: When a reader needs this, stated as a situation
 authority: What this document is the source of truth for
 status: active | review-needed | superseded | archived
 owner: maintainer
-last-reviewed: YYYY-MM-DD
+last-reviewed: 2026-08-18
 ---
 ```
 

@@ -3,7 +3,7 @@ description: When picking up deferred work, or when parking something found mid-
 authority: Work observed in this repository and consciously not done yet
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # Backlog

@@ -3,7 +3,7 @@ description: When adding or debugging an integration with an external AI CLI (ho
 authority: Observed behaviour of external CLIs that CLI Manager depends on and cannot control
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # External CLI Integrations

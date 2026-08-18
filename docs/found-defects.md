@@ -3,7 +3,7 @@ description: When touching an area that misbehaves, or when triaging a report ag
 authority: Defects observed in this repository and deliberately not fixed yet
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # Found Defects
@@ -45,22 +45,3 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 
 ---
-
-### 🐛 `src/renderer/src/App.tsx` — 업데이트 확인이 시작 시 1회뿐이라 계속 켜두면 영영 모른다
-- Date: 2026-08-16
-- Where: `App.tsx:262` 부근 `setTimeout(checkUpdate, 2000)`, `src/main/index.ts:878`
-  `autoUpdater.checkForUpdatesAndNotify()`. 둘 다 앱 기동 시 1회만 실행되고
-  재확인 타이머가 없다(`grep -n "setInterval" src/main/index.ts src/renderer/src/App.tsx`에
-  업데이트 관련 항목 없음).
-- What: CLI Manager는 터미널 세션을 유지하는 게 목적이라 몇 주씩 안 끄고 쓰는 앱이다. 그 사용
-  패턴에서는 "시작 시 1회 확인"이 사실상 "확인 안 함"이 된다. 실제로 v1.6.0이 2026-06-23에
-  나왔는데 설치본은 2개월 가까이 1.5.1에 머물러 있었다.
-- Surfaced by: "1.6.0 업데이트가 안 된다"는 제보를 조사하다가. 설치본을 격리 userData로 직접
-  띄워 로그를 읽은 결과 업데이트 체인은 **전부 정상**이었다 — `Update available: 1.6.0`을 찾고,
-  매니페스트도 받아오고, 1.6.0 빌드도 설치본과 **같은 팀 ID(65FBP4FBDV)로 서명 + 공증**돼 있다.
-  못 본 이유는 재확인이 없어서다.
-- Impact: 사용자 — 릴리즈가 나가도 도달하지 않는다. 오픈소스로 배포 중이라 보안 수정을 내보내도
-  같은 문제가 생긴다.
-- Workaround: 앱을 완전 종료 후 재실행하면 2초 뒤 좌하단에 알림이 뜬다.
-- Decision: 미정 — 주기 확인(예: 6시간)만 넣을지, 창 포커스 복귀 시에도 확인할지, 알림 위치를
-  좌하단(240px)에서 더 눈에 띄는 곳으로 옮길지가 함께 결정돼야 한다.

@@ -57,6 +57,10 @@ release-failed-*/
 dist/
 .wrangler/
 
+# Planning artifacts from the retired /spec-first workflow. Kept on disk as a
+# record of how a shipped feature was planned; not repository content.
+.review-artifacts/
+
 # Claude Code / AI tools state
 .omc/
 .omx/

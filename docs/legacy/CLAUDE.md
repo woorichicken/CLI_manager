@@ -3,7 +3,7 @@ description: When a document contradicts the code and you need to know whether i
 authority: Retention rules for historical material that is no longer current
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # Legacy

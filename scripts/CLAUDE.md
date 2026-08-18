@@ -3,7 +3,7 @@ description: Before running, adding, or removing a script in scripts/
 authority: What each script does, whether it is safe to run, and where new ones belong
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # scripts/
@@ -129,6 +129,17 @@ one locally before running the full suite on a new machine:
 ```bash
 ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron scripts/mock-cli/record-claude.cjs
 ```
+
+## Package commands that call these
+
+| Command | Runs |
+|---|---|
+| `pnpm check:publish` | `prepublish-check.cjs` — repository hygiene gate |
+| `pnpm release:check` | `release.cjs --check` — release preflight, changes nothing |
+| `pnpm release` | `release.cjs` — build and publish (pass `--version`) |
+| `pnpm release:post` | `post-release.cjs` — R2, website links, changelog |
+| `pnpm test:term` | Playwright terminal + agent suites |
+| `pnpm test:term:baseline` | Same suite, writing metrics under a `baseline` label for before/after comparison |
 
 ## Adding a script
 

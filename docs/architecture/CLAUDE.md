@@ -3,7 +3,7 @@ description: When changing IPC, storage, or a subsystem and you need the current
 authority: Feature inventory, data flow, session lifecycle, storage schema, and the IPC channel list
 status: active
 owner: maintainer
-last-reviewed: 2026-08-16
+last-reviewed: 2026-08-18
 ---
 
 # Architecture Reference
