@@ -45,7 +45,7 @@
     "autoprefixer": "^10.4.17",
     "electron": "^39.8.10",
     "electron-builder": "^26.0.12",
-    "electron-vite": "^4.0.1",
+    "electron-vite": "^5.0.0",
     "postcss": "^8.4.35",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
