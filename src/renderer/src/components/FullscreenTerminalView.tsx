@@ -13,6 +13,7 @@ interface FullscreenTerminalViewProps {
         showScrollButtons: boolean
     }
     hooksSettings?: HooksSettings
+    fileLinksEnabled?: boolean
 }
 
 // Find session and its workspace from session ID
@@ -55,7 +56,8 @@ export function FullscreenTerminalView({
     terminalFontFamily,
     shell,
     keyboardSettings,
-    hooksSettings
+    hooksSettings,
+    fileLinksEnabled = true
 }: FullscreenTerminalViewProps) {
     const [workspaces, setWorkspaces] = useState<Workspace[]>([])
     const [sessionStatuses, setSessionStatuses] = useState<Map<string, { status: SessionStatus, isClaudeCode: boolean }>>(new Map())
@@ -142,6 +144,7 @@ export function FullscreenTerminalView({
                                     shell={shell}
                                     keyboardSettings={keyboardSettings}
                                     hooksSettings={hooksSettings}
+                                    fileLinksEnabled={fileLinksEnabled}
                                 />
                             </div>
                         </div>

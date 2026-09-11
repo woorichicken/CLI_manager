@@ -734,6 +734,41 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* Terminal File Links */}
+                                    <div className="mt-6 pt-6 border-t border-white/10">
+                                        <h3 className="text-sm font-semibold text-white mb-1">File Links in Terminal</h3>
+                                        <p className="text-xs text-gray-400 mb-4">
+                                            Underline file paths in terminal output so they can be opened in your editor
+                                        </p>
+
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm text-gray-300">Open File Paths on ⌘-Click</p>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    Off means terminal output is never scanned for file paths, and no
+                                                    click can pull the editor in front of this window
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => setSettings(prev => ({
+                                                    ...prev,
+                                                    terminalFileLinks: !(prev.terminalFileLinks ?? true)
+                                                }))}
+                                                className={`relative w-11 h-6 rounded-full transition-colors ${
+                                                    (settings.terminalFileLinks ?? true)
+                                                        ? 'bg-emerald-600'
+                                                        : 'bg-white/20'
+                                                }`}
+                                            >
+                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                    (settings.terminalFileLinks ?? true)
+                                                        ? 'translate-x-6'
+                                                        : 'translate-x-1'
+                                                }`} />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </>
                             )}
 
@@ -1486,6 +1521,34 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                         </p>
 
                                         <div className="space-y-4">
+                                            {/* Show / hide worktrees */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Show Worktrees</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Off hides worktree workspaces and their menu entries, and skips
+                                                        the worktree scan on startup. Running sessions are left alone.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        showWorktrees: !(prev.showWorktrees ?? true)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
+                                                        (settings.showWorktrees ?? true)
+                                                            ? 'bg-emerald-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.showWorktrees ?? true)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
                                             <div>
                                                 <label className="block text-xs text-gray-400 mb-1">Worktree Storage Path</label>
                                                 <div className="flex gap-2">

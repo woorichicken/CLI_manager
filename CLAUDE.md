@@ -220,6 +220,11 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
    - pty 청크를 4ms 윈도우로 병합 후 renderer로 전송 (TUI 1프레임 = 1메시지)
 4. **터미널 데이터 리스너는 effect cleanup에서 해제** (dataCleanup)
    - 과거에 Promise 콜백 반환값으로 잘못 등록되어 리스너 누수 있었음
+5. **워크스페이스별 터미널 목록에는 안정적인 key가 있어야 한다** (App.tsx)
+   - 목록이 `workspaces.map(...)` → `sessions.map(...)` 중첩 배열이라, 바깥에 key가 없으면 React가
+     **index로** 짝을 맞춘다. 워크트리 sync·워크스페이스 삭제로 배열이 줄면 그 뒤 전부가 언마운트
+     → 재마운트된다. PTY는 살아남지만(`TerminalManager`가 기존 id를 건너뜀) xterm 버퍼가 통째로
+     날아가 "터미널이 리셋됐다"로 보인다. 회귀는 `t12-workspace-list-remount.spec.ts`가 잡는다
 
 ### Agent Hook Invariants (회귀 주의)
 
@@ -270,13 +275,22 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 82건
+- **위치**: `tests/terminal/` — 86건
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
     남아 있던 Codex notify 삭제 버그를 잡은 유일한 테스트라, 느려도(14초) 유지한다
+  - T12 워크스페이스 목록 리마운트 — 목록이 줄어도 뒤쪽 터미널이 다시 마운트되지 않아야 한다.
+    판정은 DOM 노드 동일성으로 한다(스크롤백만 보면 타이밍에 속는다)
+  - T13 워크트리 숨김 — 설정 토글이 저장값이 아니라 **사이드바**를 바꾸는지
+  - T14 터미널 링크 — OSC 8 링크가 `shell.openExternal`까지 도달하는지, 파일경로는 수식키 없이
+    클릭했을 때 에디터를 띄우지 **않는지**. 둘 다 끝단(main의 shell / 가짜 에디터 스크립트)에서 본다
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
+  - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이
+    깔아주는 node-pty는 Node ABI용이라 Electron이 못 읽는다(`Cannot find module
+    '../build/Debug/pty.node'`로 모든 앱 구동 테스트가 죽는다). postinstall 스크립트는 이 경우를
+    덮지 못하고 SKIP 로그만 남긴다 — [`docs/backlog.md`](docs/backlog.md) 참고.
 - **Headless 기본**: 테스트 창은 화면에 표시되지 않음 (`CLIMANGER_TEST_HEADLESS=1` 자동 설정, hidden window + backgroundThrottling 해제). 눈으로 보면서 디버깅하려면 `CLIMANGER_TEST_HEADED=1 pnpm test:term`
 - **격리**: `CLIMANGER_TEST_USERDATA`로 userData를 임시 디렉토리로 분리 — 실사용 설정을 건드리지 않음
   - 에이전트 통합은 추가로 `CLIMANAGER_HOME`(훅 스풀)·`CODEX_HOME`(사용량)·`HOME`(T8)까지 임시 디렉토리로 돌린다.

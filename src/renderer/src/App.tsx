@@ -214,15 +214,25 @@ function App() {
 
     // Load workspaces, settings, and license info on mount
     useEffect(() => {
+        // One read, two consumers: the startup scan below needs the setting
+        // before it runs, and the state update needs the whole object.
+        const settingsPromise = window.api.getSettings()
+
         const loadInitialData = async () => {
-            try {
-                // Startup one-time sync: import/remove worktree workspaces based on git worktree list.
-                const syncResult = await window.api.syncWorktreeWorkspaces()
-                if (!syncResult.success) {
-                    console.error('[startup-sync] Failed to sync worktrees:', syncResult.error)
+            const startupSettings = await settingsPromise.catch(() => null)
+
+            // Startup one-time sync: import/remove worktree workspaces based on git worktree list.
+            // Skipped when worktrees are hidden — the scan spawns one
+            // `git worktree list` per parent workspace for output nobody sees.
+            if (startupSettings?.showWorktrees ?? true) {
+                try {
+                    const syncResult = await window.api.syncWorktreeWorkspaces()
+                    if (!syncResult.success) {
+                        console.error('[startup-sync] Failed to sync worktrees:', syncResult.error)
+                    }
+                } catch (err) {
+                    console.error('[startup-sync] Failed to sync worktrees:', err)
                 }
-            } catch (err) {
-                console.error('[startup-sync] Failed to sync worktrees:', err)
             }
 
             const loadedWorkspaces = await window.api.getWorkspaces()
@@ -259,7 +269,7 @@ function App() {
             console.error('Failed to load workspaces:', err)
         })
 
-        window.api.getSettings().then(loadedSettings => {
+        settingsPromise.then(loadedSettings => {
             if (loadedSettings) {
                 setSettings(loadedSettings)
                 if (!loadedSettings.hasCompletedOnboarding) {
@@ -1097,8 +1107,24 @@ function App() {
 
         const homeSettingsChanged = oldShowHome !== newShowHome || oldHomePath !== newHomePath
 
+        const worktreesNowHidden = (settings.showWorktrees ?? true) && !(newSettings.showWorktrees ?? true)
+
         setSettings(newSettings)
         await window.api.saveSettings(newSettings)
+
+        // Hiding worktrees removes their sidebar entry, so an active worktree
+        // session would leave a terminal on screen with nothing selected in the
+        // sidebar. Fall back to the parent workspace; sessions keep running.
+        if (worktreesNowHidden && activeWorkspace?.parentWorkspaceId) {
+            const parent = workspaces.find(w => w.id === activeWorkspace.parentWorkspaceId)
+            const parentSession = parent?.sessions?.[0]
+            if (parent && parentSession) {
+                handleSelect(parent, parentSession)
+            } else {
+                setActiveWorkspace(null)
+                setActiveSession(null)
+            }
+        }
 
         // Reload workspaces if home workspace settings changed
         if (homeSettingsChanged) {
@@ -1122,6 +1148,7 @@ function App() {
                 shell={settings.defaultShell}
                 keyboardSettings={settings.keyboard}
                 hooksSettings={settings.hooks}
+                fileLinksEnabled={settings.terminalFileLinks ?? true}
             />
         )
     }
@@ -1163,6 +1190,7 @@ function App() {
                     onClose={() => setIsSidebarOpen(false)}
                     fontSize={settings.fontSize}
                     showSessionCount={settings.showSessionCount}
+                    showWorktrees={settings.showWorktrees ?? true}
                     splitLayout={splitLayout}
                     onDragStartSession={handleSidebarDragStart}
                     onDragEndSession={handleSidebarDragEnd}
@@ -1368,8 +1396,16 @@ function App() {
                         )}
 
                     {/* ALL terminals - ALWAYS rendered to prevent unmount/remount */}
+                    {/*
+                      * The per-workspace list MUST carry a stable key. Without one React
+                      * matches these nested arrays by index, so any change to the workspace
+                      * array — a worktree sync importing or removing one — shifts every
+                      * later position and remounts the TerminalViews there. The PTY survives
+                      * (TerminalManager skips ids it already owns) but the xterm buffer is
+                      * thrown away, which reads as "every terminal got reset".
+                      */}
                     {workspaces.map(workspace => (
-                        workspace.sessions?.map(session => {
+                        <React.Fragment key={workspace.id}>{workspace.sessions?.map(session => {
                             const splitIndex = splitLayout?.sessionIds.indexOf(session.id) ?? -1
                             const isInSplit = splitIndex >= 0
                             const isActive = activeSession?.id === session.id
@@ -1500,6 +1536,7 @@ function App() {
                                             shell={settings.defaultShell}
                                             keyboardSettings={settings.keyboard}
                                             hooksSettings={settings.hooks}
+                                            fileLinksEnabled={settings.terminalFileLinks ?? true}
                                             disablePtyResize={isInGridView}
                                         />
                                         <SessionMemo
@@ -1518,7 +1555,7 @@ function App() {
                                     </div>
                                 </div>
                             )
-                        })
+                        })}</React.Fragment>
                     ))}
 
                         {!activeSession && !splitLayout && (

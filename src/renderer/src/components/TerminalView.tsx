@@ -34,12 +34,51 @@ interface TerminalViewProps {
         showScrollButtons: boolean
     }
     hooksSettings?: HooksSettings
+    // Cmd/Ctrl+Click on a file path opens it in the editor. Off means the
+    // provider is never registered, so terminal output carries no file links.
+    fileLinksEnabled?: boolean
     // Grid Window에서는 PTY resize를 비활성화 (메인 앱과 크기 충돌 방지)
     disablePtyResize?: boolean
 }
 
 // Default terminal font family (fallback when no custom font is set)
 const DEFAULT_TERMINAL_FONT_FAMILY = 'Menlo, Monaco, "Courier New", monospace'
+
+/**
+ * Protocols a terminal is allowed to hand to the OS.
+ *
+ * Terminal output is untrusted: anything the agent prints — including the
+ * contents of a file it read — can carry an OSC 8 hyperlink with an arbitrary
+ * scheme. Editor schemes are here because Codex emits them for file citations
+ * (`file_opener` defaults to "vscode").
+ */
+const ALLOWED_LINK_PROTOCOLS = new Set([
+    'http:',
+    'https:',
+    'file:',
+    'vscode:',
+    'vscode-insiders:',
+    'cursor:',
+    'windsurf:'
+])
+
+function openLinkExternally(uri: string): void {
+    let protocol: string
+    try {
+        protocol = new URL(uri).protocol
+    } catch {
+        console.warn('[Terminal] Ignoring unparsable link:', uri)
+        return
+    }
+
+    if (!ALLOWED_LINK_PROTOCOLS.has(protocol)) {
+        console.warn('[Terminal] Blocked link with disallowed protocol:', protocol)
+        return
+    }
+
+    window.api.openExternal(uri)
+}
+
 const VIEWPORT_REFRESH_ANSI_REGEX = /\x1b\[[0-9;?]*[HJKf]|\x1b\[\?1049[hl]/
 
 export function TerminalView({
@@ -56,6 +95,7 @@ export function TerminalView({
     shell,
     keyboardSettings,
     hooksSettings,
+    fileLinksEnabled = true,
     disablePtyResize = false
 }: TerminalViewProps) {
     // Compute effective font family with fallback
@@ -401,7 +441,16 @@ export function TerminalView({
             // Without this, ED2 (CSI 2J) permanently destroys the viewport
             // portion of the conversation; with it, erased content is pushed
             // into scrollback instead (PuTTY behavior, also used by VS Code).
-            scrollOnEraseInDisplay: true
+            scrollOnEraseInDisplay: true,
+            // OSC 8 hyperlinks (Codex emits these for links and file citations).
+            // Without a handler xterm falls back to confirm() + window.open() with
+            // no URL, which Electron's window-open handler denies — the click then
+            // goes nowhere at all. allowNonHttpProtocols lets editor schemes through;
+            // openLinkExternally is the allowlist that keeps that safe.
+            linkHandler: {
+                allowNonHttpProtocols: true,
+                activate: (_event, uri) => openLinkExternally(uri)
+            }
         })
 
         const fitAddon = new FitAddon()
@@ -409,8 +458,7 @@ export function TerminalView({
 
         // URL links addon (http://, https://, localhost, etc.)
         const webLinksAddon = new WebLinksAddon((_event, uri) => {
-            console.log('[WebLinks] Clicked:', uri)
-            window.open(uri, '_blank')
+            openLinkExternally(uri)
         })
         term.loadAddon(webLinksAddon)
 
@@ -427,9 +475,6 @@ export function TerminalView({
             (cols) => applyTerminalDimensions({ cols, rows: xtermRef.current?.rows ?? term.rows }),
             (rows) => applyTerminalDimensions({ cols: xtermRef.current?.cols ?? term.cols, rows })
         )
-
-        // Register file path link provider (Cmd+Click to open in editor)
-        registerFilePathLinks(term, cwd)
 
         // Context menu handler for right-click on selected text
         const contextMenuHandler = (e: MouseEvent) => {
@@ -638,6 +683,25 @@ export function TerminalView({
     // fontSize는 별도 useEffect에서 동적으로 처리하므로 의존성에서 제외
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, cwd])
+
+    // File path links live in their own effect so toggling the setting takes
+    // effect immediately — rebuilding the terminal here would wipe scrollback.
+    // Declared after the terminal effect so xtermRef is populated on mount.
+    useEffect(() => {
+        const term = xtermRef.current
+        if (!term || !fileLinksEnabled) return
+
+        const linkProvider = registerFilePathLinks(term, cwd)
+        return () => {
+            // The terminal may already be disposed when cwd changes; that
+            // tears the provider down with it.
+            try {
+                linkProvider.dispose()
+            } catch {
+                // no-op
+            }
+        }
+    }, [fileLinksEnabled, id, cwd])
 
     // Context menu handlers
     const closeContextMenu = useCallback(() => {

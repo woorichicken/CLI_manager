@@ -76,6 +76,32 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   막힌다(`R2 credentials missing`).
 - Owner: Human Review
 
+### `scripts/sync-node-pty-prebuilds.cjs` — 새 클론·워크트리에서 앱 구동 테스트가 전부 죽는다
+- Discovered: 2026-09-11, 워크트리에서 t12~t14를 붙이며
+- Why deferred: 이번 범위(사용자 보고 4건) 밖이고, 고치는 방법이 두 갈래라 선택이 필요하다 —
+  postinstall이 `electron-builder install-app-deps`를 직접 부르게 할지(설치가 매번 느려진다),
+  아니면 SKIP을 경고로 올리고 문서로 안내할지.
+- Trigger: 새 머신·새 워크트리에서 `pnpm test:term`을 돌려야 할 때. 또는 CI가 캐시 없이 도는 날.
+- Evidence: `pnpm install --frozen-lockfile` 직후 Electron이 뜨자마자 죽는다 —
+  `Cannot find module '../build/Debug/pty.node'` (node-pty가 Node ABI로 빌드돼 있다). postinstall은
+  `[node-pty] SKIP: missing prebuilds dir .../prebuilds/darwin-arm64`만 남기고 성공으로 끝난다
+  (node-pty@1.0.0에는 그 디렉토리가 아예 없다). 해결: `pnpm exec electron-builder install-app-deps`
+  (electronVersion=39.8.10, arm64, 약 30초). 현재는 루트 `CLAUDE.md`의 실행 절차에만 적어뒀다.
+- Owner: Maintainer
+
+### `src/main/index.ts` — worktree sync가 심링크 경로를 다른 경로로 읽어 워크스페이스를 자기 자신의 워크트리로 등록한다
+- Discovered: 2026-09-11, T12를 쓰다가 시딩한 워크스페이스가 이유 없이 하나 늘어서
+- Why deferred: 제품 결함이지만 이번 보고 4건과 무관하고, 고치려면 `realpath` 도입이 기존 등록
+  경로 비교 전반에 영향을 준다(이미 저장된 워크스페이스 경로도 같이 정규화해야 하는지 판단 필요).
+- Trigger: 사용자가 심링크 아래(`/tmp`, 일부 홈 구성) 워크스페이스를 등록했을 때. 또는 워크트리
+  목록에 "내가 만든 적 없는 워크트리"가 생겼다는 제보가 오면.
+- Evidence: `syncWorktreeWorkspaces()`는 `path.resolve()`로만 비교하는데(`index.ts:440` 부근)
+  `git worktree list --porcelain`은 realpath를 돌려준다. macOS에서 `/var/folders/...`(mkdtemp)로
+  등록한 워크스페이스를 git이 `/private/var/folders/...`로 보고해 `item.path === parentResolvedPath`
+  가 false가 되고, 그 부모 자신이 discovered 목록에 남아 새 워크트리 워크스페이스로 import된다.
+  실측: 워크스페이스 3개를 시드했는데 `getWorkspaces()`가 4개를 돌려줬다(home 포함 시 4→5).
+- Owner: Maintainer
+
 ## Blocked
 
 없음.

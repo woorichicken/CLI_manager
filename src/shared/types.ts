@@ -88,6 +88,12 @@ export interface UserSettings {
     defaultShell: string
     defaultEditor: EditorType
     customEditorPath?: string  // Custom editor command or path
+    /**
+     * Turn file paths in terminal output into ⌘-clickable links (default: true).
+     * Off unregisters the link provider entirely, so no click can hand focus to
+     * the editor.
+     */
+    terminalFileLinks?: boolean
     portFilter?: {
         enabled: boolean
         minPort: number
@@ -118,6 +124,13 @@ export interface UserSettings {
     portActionLogs?: PortActionLog[]
     // Git Worktree 설정
     worktreePath?: string  // 커스텀 worktree 저장 경로 (없으면 기본 경로 사용)
+    /**
+     * Show worktree workspaces in the sidebar (default: true). Off also skips the
+     * startup worktree scan — one `git worktree list` per parent workspace — and
+     * hides the worktree context menu entries. Existing worktree sessions keep
+     * running; they just have no entry point until this is turned back on.
+     */
+    showWorktrees?: boolean
     hasCompletedOnboarding?: boolean
     // Home Workspace 설정
     showHomeWorkspace?: boolean  // 홈 워크스페이스 표시 여부 (기본값: true)

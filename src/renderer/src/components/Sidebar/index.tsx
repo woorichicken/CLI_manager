@@ -84,6 +84,7 @@ interface SidebarProps {
     onClose: () => void
     fontSize?: number  // Sidebar font size for workspace/session names
     showSessionCount?: boolean  // Show session count next to workspace names
+    showWorktrees?: boolean  // Show worktree workspaces and their menu entries
     // Split view props
     splitLayout?: SplitTerminalLayout | null
     onDragStartSession?: (sessionId: string) => void
@@ -131,6 +132,7 @@ export function Sidebar({
     onClose,
     fontSize = 14,
     showSessionCount = false,
+    showWorktrees = true,
     splitLayout,
     onDragStartSession,
     onDragEndSession
@@ -576,6 +578,7 @@ export function Sidebar({
                 const workspace = workspaces.find(w => w.id === menuOpen.workspaceId)
                 return (
                     <WorkspaceContextMenu
+                        showWorktrees={showWorktrees}
                         x={menuOpen.x}
                         y={menuOpen.y}
                         workspaceId={menuOpen.workspaceId}
@@ -830,7 +833,9 @@ export function Sidebar({
                                 <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Pinned</span>
                             </div>
                             {pinnedWorkspaces.map(workspace => {
-                                const childWorktrees = workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                const childWorktrees = showWorktrees
+                                    ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                    : []
                                 return (
                                     <WorkspaceItem
                                         key={workspace.id}
@@ -932,7 +937,9 @@ export function Sidebar({
                                 {folder.isExpanded && folderWorkspaces.length > 0 && (
                                     <div className="ml-3 pl-2 border-l border-white/5 space-y-0.5">
                                         {folderWorkspaces.map(workspace => {
-                                            const childWorktrees = workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                            const childWorktrees = showWorktrees
+                                                ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                                : []
                                             return (
                                                 <WorkspaceItem
                                                     key={workspace.id}
@@ -980,7 +987,9 @@ export function Sidebar({
                         className="space-y-0.5"
                     >
                         {regularWorkspaces.map(workspace => {
-                            const childWorktrees = workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                            const childWorktrees = showWorktrees
+                                ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                : []
                             return (
                                 <ReorderableWorkspace
                                     key={workspace.id}

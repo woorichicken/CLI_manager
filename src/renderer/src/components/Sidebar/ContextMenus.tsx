@@ -22,6 +22,7 @@ interface WorkspaceContextMenuProps {
     onReloadWorktrees: () => void | Promise<void>
     onOpenSettings: () => void
     onClose: () => void
+    showWorktrees?: boolean  // Hide worktree entries when the feature is turned off
 }
 
 /**
@@ -44,7 +45,8 @@ export function WorkspaceContextMenu({
     onTerminateAll,
     onReloadWorktrees,
     onOpenSettings,
-    onClose
+    onClose,
+    showWorktrees = true
 }: WorkspaceContextMenuProps) {
     const handleCopyPath = async () => {
         try {
@@ -169,14 +171,16 @@ export function WorkspaceContextMenu({
             </button>
 
             {/* Reload Worktrees */}
-            <button
-                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
-                onClick={handleReloadWorktrees}
-                title="Sync worktree workspaces from git"
-            >
-                <RefreshCw size={12} className="text-gray-400 shrink-0" />
-                <span className="truncate">Reload Worktrees</span>
-            </button>
+            {showWorktrees && (
+                <button
+                    className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                    onClick={handleReloadWorktrees}
+                    title="Sync worktree workspaces from git"
+                >
+                    <RefreshCw size={12} className="text-gray-400 shrink-0" />
+                    <span className="truncate">Reload Worktrees</span>
+                </button>
+            )}
 
             {/* Terminate All Terminals */}
             {sessions.length > 0 && (
@@ -251,19 +255,23 @@ export function WorkspaceContextMenu({
             <div className="border-t border-white/10 my-0.5"></div>
 
             {/* Worktree */}
-            <button
-                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
-                onClick={() => {
-                    onAddSession('worktree')
-                    onClose()
-                }}
-                title="Create git worktree"
-            >
-                <GitBranch size={12} className="text-gray-400 shrink-0" />
-                <span className="truncate">New Worktree</span>
-            </button>
+            {showWorktrees && (
+                <>
+                    <button
+                        className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                        onClick={() => {
+                            onAddSession('worktree')
+                            onClose()
+                        }}
+                        title="Create git worktree"
+                    >
+                        <GitBranch size={12} className="text-gray-400 shrink-0" />
+                        <span className="truncate">New Worktree</span>
+                    </button>
 
-            <div className="border-t border-white/10 my-0.5"></div>
+                    <div className="border-t border-white/10 my-0.5"></div>
+                </>
+            )}
 
             {/* Manage Templates */}
             <button

@@ -23,6 +23,17 @@ export interface SeedSession {
     cwd?: string
 }
 
+export interface SeedWorkspace {
+    id: string
+    name: string
+    /** Defaults to the repo root. */
+    path?: string
+    sessions: SeedSession[]
+    /** Set to seed a worktree workspace hanging off another workspace. */
+    parentWorkspaceId?: string
+    branchName?: string
+}
+
 export interface TermState {
     viewportY: number
     baseY: number
@@ -43,23 +54,33 @@ export interface LaunchResult {
 }
 
 export async function launchAppWithSessions(sessions: SeedSession[]): Promise<LaunchResult> {
+    return launchAppWithWorkspaces([{ id: 'test-ws', name: 'TestWS', sessions }])
+}
+
+/**
+ * Seed more than one workspace — needed whenever a test depends on the shape of
+ * the workspace list itself (ordering, worktree children, add/remove).
+ */
+export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[]): Promise<LaunchResult> {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-test-'))
+    const sessions = workspaces.flatMap(w => w.sessions)
 
     const config = {
-        workspaces: [
-            {
-                id: 'test-ws',
-                name: 'TestWS',
-                path: REPO_ROOT,
-                sessions: sessions.map(s => ({
-                    id: s.id,
-                    name: s.name,
-                    cwd: s.cwd ?? REPO_ROOT,
-                    type: 'regular'
-                })),
-                createdAt: 1700000000000
-            }
-        ],
+        workspaces: workspaces.map((workspace, index) => ({
+            id: workspace.id,
+            name: workspace.name,
+            path: workspace.path ?? REPO_ROOT,
+            sessions: workspace.sessions.map(s => ({
+                id: s.id,
+                name: s.name,
+                cwd: s.cwd ?? workspace.path ?? REPO_ROOT,
+                type: 'regular'
+            })),
+            // get-workspaces sorts by createdAt, so seeded order has to be encoded here
+            createdAt: 1700000000000 + index,
+            ...(workspace.parentWorkspaceId ? { parentWorkspaceId: workspace.parentWorkspaceId } : {}),
+            ...(workspace.branchName ? { branchName: workspace.branchName } : {})
+        })),
         playgroundPath: userDataDir,
         customTemplates: [],
         settings: {
@@ -108,7 +129,7 @@ export async function launchAppWithSessions(sessions: SeedSession[]): Promise<La
         }
     })
 
-    await page.getByText('TestWS').first().waitFor({ timeout: 30_000 })
+    await page.getByText(workspaces[0].name).first().waitFor({ timeout: 30_000 })
     await page.waitForFunction(
         (expected: number) => {
             const dbg = (window as unknown as { __termDebug?: { ids: () => string[] } }).__termDebug

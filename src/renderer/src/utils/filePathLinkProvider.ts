@@ -1,4 +1,4 @@
-import { Terminal, ILinkProvider, ILink, IBufferCell } from '@xterm/xterm'
+import { Terminal, ILinkProvider, ILink, IBufferCell, IDisposable } from '@xterm/xterm'
 
 /**
  * File Path Link Provider for xterm.js
@@ -6,16 +6,29 @@ import { Terminal, ILinkProvider, ILink, IBufferCell } from '@xterm/xterm'
  */
 
 // File extensions to recognize (longer extensions first to avoid partial matches)
-const FILE_EXTENSIONS = 'tsx|jsx|ts|js|json|mdx|md|scss|sass|less|css|html|vue|svelte|py|rb|go|rs|java|kt|swift|cpp|hpp|cs|c|h|bash|zsh|sh|fish|yaml|yml|toml|ini|env|sql|graphql|prisma|php'
+const FILE_EXTENSIONS = 'tsx|jsx|cjs|mjs|cts|mts|ts|js|json|mdx|md|scss|sass|less|css|html|vue|svelte|py|rb|go|rs|java|kt|swift|cpp|hpp|cs|c|h|bash|zsh|sh|fish|yaml|yml|toml|ini|env|sql|graphql|prisma|php'
+
+// Guards shared by both patterns.
+//
+// LEADING: a path may not start right after `:` `/` or a word character. This is
+// what keeps URLs out — in `https://github.com/o/r/pull/1` the `//github.c` slice
+// would otherwise match, because `c` is a valid extension and `.com` contains it.
+//
+// TRAILING: the extension may not be followed by another word character, so
+// `.com` no longer matches `c` and `.tsx:411` still does.
+const PATH_START_GUARD = '(?<![:/\\w])'
+const EXTENSION_END_GUARD = '(?![\\w])'
 
 // Regex for file paths
 // Group 1: path, Group 2: line, Group 3: column
 const FILE_PATH_REGEX = new RegExp(
+    PATH_START_GUARD +
     '(' +
     // Relative path starting with known dirs (supports [id], [slug], etc.)
     `(?:\\./|(?:src|app|lib|pages|components|utils|hooks|types|styles|tests?|spec|__tests__|public|assets|api|services|models|packages|modules|features|core|common|shared|apps)/)` +
     `[\\w\\-./\\[\\]]+\\.(?:${FILE_EXTENSIONS})` +
     ')' +
+    EXTENSION_END_GUARD +
     // Optional line number
     `(?::(\\d+))?` +
     // Optional column number
@@ -26,9 +39,11 @@ const FILE_PATH_REGEX = new RegExp(
 // Separate regex for absolute paths or project-root paths
 // Matches /path/to/file.ext (will be resolved by main process)
 const ABSOLUTE_PATH_REGEX = new RegExp(
+    PATH_START_GUARD +
     '(' +
     `/[\\w\\-./\\[\\]]+\\.(?:${FILE_EXTENSIONS})` +
     ')' +
+    EXTENSION_END_GUARD +
     `(?::(\\d+))?` +
     `(?::(\\d+))?`,
     'g'
@@ -40,11 +55,8 @@ const ABSOLUTE_PATH_REGEX = new RegExp(
 class FilePathLinkProvider implements ILinkProvider {
     constructor(
         private _terminal: Terminal,
-        private _cwd: string,
         private _handler: (path: string, line?: number, column?: number) => void
-    ) {
-        console.log('[FilePathLink] Provider created for cwd:', _cwd)
-    }
+    ) {}
 
     provideLinks(lineNumber: number, callback: (links: ILink[] | undefined) => void): void {
         const links = this._computeLinks(lineNumber)
@@ -98,16 +110,18 @@ class FilePathLinkProvider implements ILinkProvider {
 
                 matchedRanges.push({ start: matchStart, end: matchEnd })
 
-                console.log('[FilePathLink] Found:', filePath, 'at', { startX, startY, endX, endY })
-
                 links.push({
                     range: {
                         start: { x: startX + 1, y: startY + 1 },
                         end: { x: endX, y: endY + 1 }
                     },
                     text,
-                    activate: () => {
-                        console.log('[FilePathLink] Clicked:', filePath, 'line:', line)
+                    activate: (event: MouseEvent) => {
+                        // xterm activates links on a plain click. Opening an editor from
+                        // that steals window focus, so a bare click — placing the cursor,
+                        // starting a selection — must not launch anything. Require the
+                        // same modifier VS Code and iTerm use.
+                        if (!event.metaKey && !event.ctrlKey) return
                         this._handler(filePath, line, column)
                     }
                 })
@@ -211,9 +225,11 @@ class FilePathLinkProvider implements ILinkProvider {
 }
 
 /**
- * Register file path link provider to a terminal
+ * Register file path link provider to a terminal.
+ * Returns the disposable so callers can turn the feature off without
+ * rebuilding the terminal.
  */
-export function registerFilePathLinks(term: Terminal, cwd: string): void {
+export function registerFilePathLinks(term: Terminal, cwd: string): IDisposable {
     const handler = (path: string, line?: number, column?: number) => {
         window.api.openFileInEditor(path, cwd, line, column)
             .then(result => {
@@ -226,5 +242,5 @@ export function registerFilePathLinks(term: Terminal, cwd: string): void {
             })
     }
 
-    term.registerLinkProvider(new FilePathLinkProvider(term, cwd, handler))
+    return term.registerLinkProvider(new FilePathLinkProvider(term, handler))
 }
