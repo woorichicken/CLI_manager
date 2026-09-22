@@ -87,7 +87,11 @@ test('enabling and disabling the integration through the UI leaves config as fou
     await page.screenshot({ path: '/tmp/ho-1-before.png' })
 
     console.log('=== STEP 2: 통합 켜기 (실제 파일 수정됨) ===')
-    const toggles = page.locator('button.relative.w-11.h-6')
+    // Scoped to the hooks section: Settings > Agents also holds other toggles
+    // (the AI Control API sits above it), so "the first toggle" is not this one.
+    const toggles = page
+        .locator('div:has(> h3:text-is("Official Agent Hooks"))')
+        .locator('button.relative.w-11.h-6')
     await toggles.first().click()
     await page.waitForTimeout(2500)
     await page.screenshot({ path: '/tmp/ho-2-enabled.png' })

@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent } from '../shared/types'
 
 declare global {
     interface Window {
@@ -187,6 +187,13 @@ declare global {
             getDiffSummary: (workspaceId: string, base: DiffBase) => Promise<IPCResult<DiffSummary>>
             getFileDiff: (workspaceId: string, filePath: string, base: DiffBase) => Promise<IPCResult<FileDiff>>
             sendTextToTerminal: (terminalId: string, text: string) => Promise<IPCResult<null>>
+
+            // AI Control API
+            getControlApiState: () => Promise<ControlApiState>
+            setControlApi: (settings: ControlApiSettings) => Promise<ControlApiState>
+            regenerateControlApiToken: () => Promise<ControlApiState>
+            releaseAiSession: (sessionId: string) => Promise<boolean>
+            onControlApiSession: (callback: (event: ControlApiSessionEvent) => void) => () => void
         }
     }
 }

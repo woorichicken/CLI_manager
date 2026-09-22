@@ -26,6 +26,7 @@ know X".
 | [0002](0002-wrap-not-replace-user-config.md) | Third-party hook config is wrapped, never replaced | active |
 | [0003](0003-keep-heuristic-as-fallback.md) | The screen heuristic stays alongside official hooks | active |
 | [0004](0004-periodic-update-check.md) | Update checks repeat on a timer, not only at startup | active |
+| [0005](0005-ai-control-api-local-http.md) | An AI drives sessions through an opt-in local HTTP API | active |
 
 ## Template
 

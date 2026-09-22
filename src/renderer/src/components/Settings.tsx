@@ -5,6 +5,7 @@ import { Reorder } from 'framer-motion'
 import { v4 as uuidv4 } from 'uuid'
 import { KeyboardSettings } from './KeyboardSettings'
 import { AgentIntegrationSettings } from './AgentIntegrationSettings'
+import { ControlApiSettings } from './ControlApiSettings'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
@@ -998,6 +999,12 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                             )}
 
                             {/* Hooks Settings (Session Monitoring) */}
+                            {activeCategory === 'agents' && (
+                                <ControlApiSettings
+                                    config={settings.controlApi}
+                                    onChange={(controlApi) => setSettings(prev => ({ ...prev, controlApi }))}
+                                />
+                            )}
                             {activeCategory === 'agents' && (
                                 <AgentIntegrationSettings
                                     hooks={settings.agentHooks}

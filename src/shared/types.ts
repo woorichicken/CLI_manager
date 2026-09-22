@@ -37,6 +37,12 @@ export interface TerminalSession {
     cliSessionId?: string
     cliToolName?: string
     memo?: string  // Quick notepad text per session
+    /**
+     * Set while an external AI drives this session through the Control API.
+     * The API may only type into and read sessions carrying this flag, so
+     * clearing it (Disconnect AI) is how the user takes a session back.
+     */
+    aiControl?: AiControlInfo
 }
 
 export interface TerminalTemplate {
@@ -158,6 +164,8 @@ export interface UserSettings {
     feedbackEmail?: string
     // Loop Dashboard: loop-count detection tuning
     loopDetection?: LoopDetectionConfig
+    // Local HTTP/MCP API that lets an AI open and drive terminal sessions
+    controlApi?: ControlApiSettings
 }
 
 // Hooks settings for AI tool session monitoring
@@ -617,4 +625,55 @@ export interface DiffSummary {
     files: DiffFileSummary[]
     totalAdditions: number
     totalDeletions: number
+}
+
+// ============================================
+// AI Control API Types
+// ============================================
+//
+// A local HTTP server (127.0.0.1 only, bearer token) that lets an AI agent open
+// sessions in CLI Manager, type into them and read what they print — so the
+// work happens in a terminal the user can watch and step into, instead of in
+// a headless `claude -p` run nobody sees.
+
+export interface AiControlInfo {
+    /** Who is driving the session, e.g. 'mcp' or a client-supplied name. */
+    client: string
+    since: number
+}
+
+export interface ControlApiSettings {
+    enabled: boolean
+    /** 0 picks a free port on every start — useful for tests, awkward for MCP config. */
+    port: number
+}
+
+export const DEFAULT_CONTROL_API: ControlApiSettings = {
+    enabled: false,
+    port: 47821,
+}
+
+/** What Settings shows: the server as it actually is, not as configured. */
+export interface ControlApiState {
+    running: boolean
+    port: number | null
+    url: string | null
+    mcpUrl: string | null
+    token: string
+    /** File other tools read to discover url + token without copy-paste. */
+    discoveryPath: string
+    error?: string
+}
+
+/** Main -> renderer: the API changed the session list or a session's flags. */
+export interface ControlApiSessionEvent {
+    type: 'opened' | 'closed' | 'updated' | 'focus'
+    workspaceId: string
+    sessionId: string
+    /** Present on 'opened' / 'updated'. */
+    session?: TerminalSession
+    /** Present on 'opened' when the API registered a folder that was not a workspace yet. */
+    workspace?: Workspace
+    /** 'opened': also select the new session in the main window. */
+    focus?: boolean
 }

@@ -102,6 +102,18 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   실측: 워크스페이스 3개를 시드했는데 `getWorkspaces()`가 4개를 돌려줬다(home 포함 시 4→5).
 - Owner: Maintainer
 
+### `src/main/TerminalManager.ts` — pty가 앱의 환경변수를 통째로 물려받아 에이전트 세션 마커까지 새어 들어간다
+- Discovered: 2026-09-22, AI Control API를 실제 Claude Code로 검증하다가
+- Why deferred: 이번 범위(AI Control API) 밖이고, 어떤 변수를 걸러야 하는지(CLAUDE_CODE_* 전체인지
+  일부인지)는 Claude Code 쪽 의미를 확인해야 정할 수 있다. Finder에서 띄운 배포 앱에는 해당 변수가
+  없으므로 일반 사용자는 영향이 없다.
+- Trigger: 에이전트 세션 안에서 앱을 띄우는 개발·테스트 흐름(`pnpm dev`를 Claude Code 터미널에서
+  실행, Playwright를 에이전트가 실행)에서 내부 Claude Code 세션이 이상하게 동작한다는 제보가 나오면.
+- Evidence: Claude Code 세션이 실행한 Playwright → Electron → pty 안의 `claude`가
+  `⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker`를 띄웠다.
+  `createTerminal()`이 `env: { ...process.env, ... }`로 앱 환경을 그대로 넘긴다.
+- Owner: Maintainer
+
 ## Blocked
 
 없음.

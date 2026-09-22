@@ -55,6 +55,26 @@ invariants live in the root [`CLAUDE.md`](../../CLAUDE.md).
 - Rollout files are appended to when a session is resumed, so the newest limits are regularly in a
   file whose **name** is days old. Select by modification time.
 
+### Claude Code as a driven TUI — AI Control API (verified 2026-09-22, v2.1.278)
+
+The Control API reads Claude Code's **screen** (`src/main/TerminalMirror.ts`), so these UI strings
+are load-bearing. Checked by driving a real session through the API:
+
+- While a turn runs, the status line contains `esc to interrupt`; when idle it does not.
+- A folder Claude Code has not seen shows a trust dialog **even with
+  `--dangerously-skip-permissions`**: "Quick safety check … Is this a project you created or one you
+  trust?", options `❯ No, exit` / `Yes, I trust this folder` (unnumbered, **No is highlighted**),
+  footer `Enter to confirm · Esc to cancel`. Enter chooses No and Claude Code exits. `down`, `enter`
+  trusts it.
+- Replies render as `⏺ <text>`; a finished turn leaves `✻ <verb> for Ns`.
+- Claude Code enables bracketed paste (`ESC[?2004h`), so a multi-line prompt sent as one paste stays
+  one prompt.
+- Its HTTP MCP client works against a stateless server that answers every POST with
+  `application/json` and returns 405 on GET, configured by
+  `claude mcp add --transport http <name> <url> --header "Authorization: Bearer …"`.
+- `@xterm/headless` 6.0.0 (not a CLI, but the same kind of external fact): its `module` field names
+  `lib/xterm.mjs`, which the package does not ship. Import `lib-headless/xterm-headless.js`.
+
 ## Research notes
 
 Background material gathered before the integration was built. Kept because it records what was

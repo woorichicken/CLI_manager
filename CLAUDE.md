@@ -11,12 +11,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 릴리즈 — 빌드·공증·GitHub 게시·R2·웹사이트·changelog | [`.claude/commands/release.md`](.claude/commands/release.md) |
 | Upload CLI Manager release DMG files to Cloudflare R2. Use when the user asks to upload a release to R2, publish DMG files, or refresh the website download links. Normally invoked through scripts/post-release.cjs rather than directly. | [`.claude/skills/upload-to-r2/SKILL.md`](.claude/skills/upload-to-r2/SKILL.md) |
 | When changing IPC, storage, or a subsystem and you need the current contract | [`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) |
+| When calling, extending, or debugging the AI Control API (REST under /v1, MCP at /mcp) that lets an AI open and drive sessions | [`docs/architecture/control-api.md`](docs/architecture/control-api.md) |
 | When picking up deferred work, or when parking something found mid-task | [`docs/backlog.md`](docs/backlog.md) |
 | When writing, moving, or retiring a document in this repository | [`docs/CLAUDE.md`](docs/CLAUDE.md) |
 | When changing how agent hook events reach the app, or when tempted to replace the spool with a local server | [`docs/decisions/0001-hook-delivery-via-file-spool.md`](docs/decisions/0001-hook-delivery-via-file-spool.md) |
 | When editing a config file the user owns, or when a shared entry point already has a value | [`docs/decisions/0002-wrap-not-replace-user-config.md`](docs/decisions/0002-wrap-not-replace-user-config.md) |
 | When tempted to delete the screen-hash status detection now that official hooks exist | [`docs/decisions/0003-keep-heuristic-as-fallback.md`](docs/decisions/0003-keep-heuristic-as-fallback.md) |
 | When changing how or how often the app checks for updates | [`docs/decisions/0004-periodic-update-check.md`](docs/decisions/0004-periodic-update-check.md) |
+| When changing how an external AI drives sessions (Control API), or when a local listening port looks like it contradicts decision 0001 | [`docs/decisions/0005-ai-control-api-local-http.md`](docs/decisions/0005-ai-control-api-local-http.md) |
 | When a design choice looks arbitrary and you are about to change it | [`docs/decisions/CLAUDE.md`](docs/decisions/CLAUDE.md) |
 | When touching an area that misbehaves, or when triaging a report against known-wrong behavior | [`docs/found-defects.md`](docs/found-defects.md) |
 | When adding or debugging an integration with an external AI CLI (hooks, status line, usage data) | [`docs/integrations/CLAUDE.md`](docs/integrations/CLAUDE.md) |
@@ -94,6 +96,8 @@ pnpm build && pnpm test:term
    - `AgentStatusResolver.ts`: 이벤트/OSC/heuristic 우선순위 판정 → 터미널 상태 확정
    - `UsageTracker.ts`: Claude(statusLine) · Codex(rollout jsonl) rate limit 추적 + 임계값 알림
    - `diffParser.ts`: `git diff` plumbing 출력 파서 (numstat/name-status/unified)
+   - `ControlApiServer.ts` / `ControlApiService.ts` / `controlApiMcp.ts`: AI Control API — 로컬 HTTP(REST+MCP)로 AI가 세션을 열고 조작 ([`docs/architecture/control-api.md`](docs/architecture/control-api.md))
+   - `TerminalMirror.ts`: AI 세션 출력을 headless xterm으로 재생해 "사용자가 보는 화면"을 읽게 함
 
 2. **Renderer Process** (`src/renderer/`)
    - `App.tsx`: 메인 애플리케이션 컴포넌트, 상태 관리
@@ -243,6 +247,18 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
 6. **Codex 윈도우는 `window_minutes`로 판별**
    - `primary`/`secondary` 슬롯 위치는 플랜마다 다르다(주간이 primary인 계정 실측). 이름으로 가정 금지.
 
+### AI Control API Invariants (회귀 주의)
+
+AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드시 `t15-control-api.spec.ts`를 돌릴 것.
+근거는 [`docs/decisions/0005-ai-control-api-local-http.md`](docs/decisions/0005-ai-control-api-local-http.md).
+
+1. **기본 꺼짐 + 127.0.0.1 + 토큰 + Host/Origin 검사** — 하나라도 빼면 웹페이지·다른 머신이 셸을 조작할 수 있다
+2. **API는 자기가 연 세션(`aiControl`)만 만진다** — 사용자 세션 읽기·입력은 403. "Disconnect AI"가 회수 수단
+3. **화면에 질문이 떠 있으면 텍스트 입력 거부(409)** — Enter가 강조된 선택지를 고른다. 실측: Claude Code 폴더 신뢰 대화상자에서 "No, exit"가 선택돼 종료됐다
+4. **첫 프롬프트는 "명령이 자식 프로세스로 떴고, 그 뒤 2초 조용"일 때만** — 무음만 보면 느린 셸 프로필에서 프롬프트가 셸로 선입력된다
+5. **`@xterm/headless`는 파일 경로로 import해 번들에 넣는다** — `electron-builder.yml`은 node_modules를 allowlist로만 싣기 때문에 런타임 require는 배포 앱을 시작 시 죽인다
+6. **테스트는 `CLIMANAGER_HOME`을 반드시 격리** — 없으면 서버가 시작을 거부한다(실사용 토큰 파일 보호)
+
 ### CI
 
 `.github/workflows/ci.yml`이 모든 push/PR에서 typecheck → build → 시크릿 스캔 → 위생 검사 →
@@ -275,7 +291,7 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 86건
+- **위치**: `tests/terminal/` — 87건
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -285,6 +301,8 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
   - T13 워크트리 숨김 — 설정 토글이 저장값이 아니라 **사이드바**를 바꾸는지
   - T14 터미널 링크 — OSC 8 링크가 `shell.openExternal`까지 도달하는지, 파일경로는 수식키 없이
     클릭했을 때 에디터를 띄우지 **않는지**. 둘 다 끝단(main의 shell / 가짜 에디터 스크립트)에서 본다
+  - T15 AI Control API — 모의 에이전트(`agent-mock.cjs`)를 API로 열고·입력·대기·읽기·회수·닫기까지,
+    그리고 토큰/Host/Origin/사용자 세션 접근 거부. 판정은 프로그램이 찍은 `ANSWER[n]`·사이드바 DOM·config.json
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이
