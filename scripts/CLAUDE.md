@@ -24,6 +24,7 @@ gains an outward-facing effect belongs there, documented, not here.
 | `mock-cli/claude-mock.cjs` | manual | Generates Claude-Code-shaped terminal output (fps, history size, full-clear cadence) for the terminal tests | None |
 | `mock-cli/loop-mock.cjs` | manual | Emits burst/silence iterations so the Loop Dashboard counter can be exercised | None |
 | `mock-cli/agent-mock.cjs` | T15 | Interactive agent TUI: bracketed paste, an "esc to interrupt" spinner, an approval question — what the AI Control API reads | None |
+| `bench-control-api.mjs` | manual | Measures what the AI Control API costs: event emit with no listener, mirror parse, wait poll, mirror memory. Takes a recording; falls back to synthetic output | None |
 | `mock-cli/record-claude.cjs` | manual | Drives a **real** CLI through a pty and records the byte stream to JSONL | Spends real API tokens; writes to `mock-cli/recordings/` |
 | `mock-cli/replay.cjs` | manual | Replays a recording with original timing — the token-free way to reproduce a real session | None |
 | `mock-cli/analyze-recording.cjs` | manual | Reports ANSI sequence statistics for a recording | None |

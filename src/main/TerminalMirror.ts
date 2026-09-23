@@ -24,8 +24,12 @@ import { TerminalManager } from './TerminalManager'
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 30
 
-/** Enough history for an agent's last answer, bounded so a chatty session cannot grow without limit. */
-const MIRROR_SCROLLBACK = 5000
+/**
+ * Matches the most `read_output --tail` can return (2000 lines): history beyond
+ * that is unreachable, so keeping it would be memory nobody can read.
+ * Measured 2026-09-23: ~0.8MB per fully-filled mirror.
+ */
+const MIRROR_SCROLLBACK = 2000
 
 /**
  * Agent CLIs print this while a turn is in progress — Claude Code

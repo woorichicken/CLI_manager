@@ -188,12 +188,20 @@ function canonicalPath(p: string): string {
 }
 
 export class ControlApiService {
-    constructor(private readonly deps: ControlApiDeps) {
-        // Mirrors are in-memory; sessions flagged in a previous run need them
-        // again before the renderer respawns their ptys.
-        for (const { session } of this.aiSessions()) {
-            this.deps.mirror.attach(session.id)
-        }
+    constructor(private readonly deps: ControlApiDeps) {}
+
+    /**
+     * Starts mirroring the sessions a previous run left flagged. Called when the
+     * server starts, never before: a mirror parses every byte its terminal
+     * prints, and that cost must not exist while the API is switched off.
+     */
+    startMirroring(): void {
+        for (const { session } of this.aiSessions()) this.deps.mirror.attach(session.id)
+    }
+
+    /** Stops all mirroring. The sessions keep their flag, so enabling resumes them. */
+    stopMirroring(): void {
+        this.deps.mirror.disposeAll()
     }
 
     // ------------------------------------------------------------------

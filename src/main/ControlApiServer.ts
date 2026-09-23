@@ -82,6 +82,7 @@ function optionalBoolean(body: Record<string, unknown>, key: string): boolean | 
 }
 
 export interface ControlApiServerOptions {
+    /** Started/stopped with the server, so mirroring costs nothing while it is off. */
     service: ControlApiService
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     store: any
@@ -125,6 +126,7 @@ export class ControlApiServer {
         try {
             await this.listen(next.port)
             this.writeDiscovery()
+            this.options.service.startMirroring()
         } catch (error) {
             const code = (error as NodeJS.ErrnoException)?.code
             this.lastError = code === 'EADDRINUSE'
@@ -136,6 +138,7 @@ export class ControlApiServer {
     }
 
     async stop(): Promise<void> {
+        this.options.service.stopMirroring()
         this.removeDiscovery()
         const server = this.server
         this.server = null

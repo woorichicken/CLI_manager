@@ -150,6 +150,21 @@ curl -s "${H[@]}" -X DELETE "$URL/v1/sessions/$ID"                        # 닫�
   살아 있어야 성공하고, 아니면 `terminalStarted: false` 로 알려 준다.
 - 읽기 경로는 렌더러와 **독립**이다. 창을 숨겨도, 다른 세션을 보고 있어도 화면을 읽을 수 있다.
 
+## 비용 (2026-09-23 실측, `scripts/bench-control-api.mjs`)
+
+| 언제 | 무엇을 쓰나 |
+|---|---|
+| API **꺼짐** | 터미널당 이벤트 emit 0.2~0.4µs/청크(리스너 없음). 서버·타이머·미러 전부 없음 |
+| API 켜짐, AI 세션 없음 | 대기 중인 소켓 하나. 폴링 타이머 없음 |
+| AI 세션 1개 | 화면 미러가 출력을 한 번 더 파싱 — 5~7µs/청크(23~28MB/s). 실제 Claude 세션이 평균 0.5KB/s, 피크 4KB/s 를 내므로 **CPU 0.002%(피크 0.015%)**, 메모리 0.86MB(스크롤백 2000줄을 가득 채웠을 때) |
+| `wait` 가 떠 있는 동안 | 200ms 마다 화면 1장 검사 30~60µs → **0.03%** |
+
+비교용: 같은 머신에서 포트 모니터는 포트 11개일 때 CPU 약 7%다(루트 `CLAUDE.md`).
+
+미러는 **서버가 살아 있는 동안에만** 붙는다(`startMirroring`/`stopMirroring`). API 를 끄면
+이전에 열어 둔 AI 세션이 남아 있어도 파싱 비용은 사라진다. 스크롤백 2000줄은 `read --tail`
+이 돌려줄 수 있는 최대 줄 수와 같다 — 그 너머는 읽을 방법이 없으므로 갖고 있지 않는다.
+
 ## Renderer contract
 
 Main broadcasts `control-api-session` (`ControlApiSessionEvent`: `opened` / `updated` / `closed` /
