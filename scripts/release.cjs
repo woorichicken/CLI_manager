@@ -221,6 +221,44 @@ function checkRepoHygiene() {
     else fail('prepublish-check failed', '', 'node scripts/prepublish-check.cjs')
 }
 
+/**
+ * The DMG layout step runs a vendored Python script (dmg-builder/vendor/dmgbuild).
+ * electron-builder tries `python3` from PATH and falls back to `python`, which
+ * macOS no longer ships — so a broken `python3` surfaces as
+ * "Command failed: which python", and the retry loop then reports an unrelated
+ * hdiutil failure into a temp directory it has already cleaned up. Two builds
+ * were lost to that disguise on 2026-09-23.
+ *
+ * Measured that day: Homebrew python 3.14.7 cannot `import plistlib` — its
+ * pyexpat links `_XML_SetAllocTrackerActivationThreshold`, which the system
+ * libexpat does not export. Apple's /usr/bin/python3 works.
+ *
+ * So the gate proves a python before the build and pins it through PYTHON_PATH,
+ * which is the hook electron-builder reads.
+ */
+function checkDmgPython() {
+    section('DMG toolchain')
+
+    const candidates = [process.env.PYTHON_PATH, 'python3', '/usr/bin/python3'].filter(Boolean)
+    for (const candidate of candidates) {
+        const probe = tryRun(candidate, ['-c', 'import plistlib, sys; print(sys.version.split()[0])'])
+        if (probe.ok) {
+            const resolved = candidate.includes('/') ? candidate : tryRun('which', [candidate]).out.trim() || candidate
+            process.env.PYTHON_PATH = resolved
+            pass('python for DMG layout', `${resolved} — ${probe.out.trim()}`)
+            return
+        }
+        const reason = probe.out.split('\n').filter(Boolean).pop() ?? ''
+        warn(`unusable python: ${candidate}`, reason.slice(0, 90))
+    }
+
+    fail(
+        'no python can build the DMG layout',
+        '',
+        'install a python3 whose plistlib imports, or export PYTHON_PATH=/usr/bin/python3'
+    )
+}
+
 function checkBuildHealth({ skipTests }) {
     section('Build health')
 
@@ -466,6 +504,7 @@ function main() {
     if (version) checkVersion(version)
     checkSigning()
     checkNotarizationAccess()
+    checkDmgPython()
     checkRepoHygiene()
     checkBuildHealth({ skipTests })
 
