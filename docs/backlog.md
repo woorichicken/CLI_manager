@@ -114,6 +114,18 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   `createTerminal()`이 `env: { ...process.env, ... }`로 앱 환경을 그대로 넘긴다.
 - Owner: Maintainer
 
+### `src/main/ControlApiServer.ts` — MCP 없이 쓰려면 사용자가 curl 을 직접 조립해야 한다
+- Discovered: 2026-09-23, Control API 를 스킬로 감싸면서
+- Why deferred: 제품에 CLI 를 붙이려면 배포 형태(앱 번들 안의 bin? npx? Homebrew?)와 PATH
+  등록 방식을 정해야 하고, 그건 이번 범위 밖이다. 지금은 REST 예제와 유지 관리자의 로컬
+  스킬 스크립트(의존성 없는 Node 단일 파일)로 충분하다.
+- Trigger: MCP 를 안 쓰는 사용자가 "명령줄에서 쓰고 싶다"고 하거나, 앱과 함께 배포할 CLI 가
+  필요해질 때. 참고 구현: `~/skills/macbook-cc/climanager-session/scripts/clim.mjs`
+  (발견 파일에서 url·token 을 읽고 REST 만 호출, 종료 코드로 질문 대기/회수/시간 초과 구분).
+- Evidence: `docs/architecture/control-api.md`「MCP 없이 쓰기」의 curl 예제는 토큰을 발견
+  파일에서 꺼내는 준비 과정을 매번 요구한다.
+- Owner: Maintainer
+
 ## Blocked
 
 없음.

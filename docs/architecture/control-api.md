@@ -100,6 +100,56 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 `focus_session`, `release_session`, `close_session`. Domain errors come back as tool results with
 `isError: true` so the model can read them; screen results are plain text, not JSON.
 
+## MCP 없이 쓰기 (REST + 셸)
+
+MCP 를 설정하지 않아도 쓸 수 있다. 주소와 토큰은 발견 파일에서 읽는다.
+
+```bash
+URL=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.climanager/control-api.json')))['url'])")
+TOKEN=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.climanager/control-api.json')))['token'])")
+H=(-H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json')
+
+curl -s "${H[@]}" "$URL/v1/templates"                                     # 무엇을 실행할 수 있나
+curl -s "${H[@]}" -d "{\"path\":\"$PWD\",\"template\":\"claude-code\",\"prompt\":\"fix the failing test\"}" \
+     "$URL/v1/sessions"                                                   # 열기 (session.id 를 받는다)
+curl -s "${H[@]}" -d '{"timeoutMs":300000}' "$URL/v1/sessions/$ID/wait"    # 끝날 때까지 기다리기
+curl -s "${H[@]}" -d '{"keys":["down","enter"]}' "$URL/v1/sessions/$ID/input"   # 질문에 답하기
+curl -s "${H[@]}" -X DELETE "$URL/v1/sessions/$ID"                        # 닫기
+```
+
+에이전트가 쓸 때는 **HTTP 상태 코드로 분기**한다: `409 awaiting_input` 은 화면에 질문이
+있다는 뜻이므로 텍스트 대신 `keys` 로 답하고, `403 not_controlled` 는 사용자가 세션을
+회수했다는 뜻이므로 그 세션 사용을 멈춘다. `wait` 의 `timedOut: true` 는 실패가 아니라
+"아직 실행 중"이다.
+
+## 요청 하나가 도는 길
+
+```
+클라이언트            앱(단일 프로세스)                                 사용자 화면
+  | POST /v1/sessions   ControlApiServer
+  |-------------------> 토큰·Host·Origin 검사
+  |                     ControlApiService
+  |                      +- 폴더 -> 워크스페이스 해석(없으면 등록)
+  |                      +- 세션 기록 저장 (electron-store, aiControl)
+  |                      +- control-api-session 브로드캐스트 -----------> 사이드바에 녹색 세션
+  |                                                                       TerminalView 마운트
+  |                     TerminalManager <--- terminal-create -------------+
+  |                      +- node-pty spawn -> zsh --login -> 템플릿 명령
+  |  (응답은 pty 가 생긴 뒤)
+  |<--------------------
+  |                     pty 출력 --+--> 4ms 배칭 -> 렌더러 xterm (사람이 보는 화면)
+  |                                +--> TerminalMirror (headless xterm, API 전용)
+  | POST .../input      ControlApiService -> TerminalManager.writeInput
+  |-------------------> (CLISessionTracker 를 거치는, 사람 타이핑과 같은 경로)
+  | POST .../wait       200ms 간격으로 mirror 를 보고 busy/idle 판정 -> 화면 한 장 반환
+  |<--------------------
+```
+
+- 네트워크는 루프백 한 홉뿐이고 앱 밖으로 나가는 트래픽은 없다.
+- pty 를 만드는 주체는 **렌더러**다(기존 세션 생성과 같은 경로). 그래서 세션 열기는 창이
+  살아 있어야 성공하고, 아니면 `terminalStarted: false` 로 알려 준다.
+- 읽기 경로는 렌더러와 **독립**이다. 창을 숨겨도, 다른 세션을 보고 있어도 화면을 읽을 수 있다.
+
 ## Renderer contract
 
 Main broadcasts `control-api-session` (`ControlApiSessionEvent`: `opened` / `updated` / `closed` /
