@@ -124,6 +124,53 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   (발견 파일에서 url·token 을 읽고 REST 만 호출, 종료 코드로 질문 대기/회수/시간 초과 구분).
 - Evidence: `docs/architecture/control-api.md`「MCP 없이 쓰기」의 curl 예제는 토큰을 발견
   파일에서 꺼내는 준비 과정을 매번 요구한다.
+### `.github/workflows/release.yml` — 태그 워크플로가 공증본을 무서명 빌드로 덮어쓸 수 있다
+- Discovered: 2026-09-12, v1.8.0 게시 직전
+- Why deferred: 워크플로를 지울지(릴리즈는 이미 로컬 스크립트로 한다), 시크릿을 넣어 살릴지,
+  태그 트리거만 뗄지는 소유자 결정이다. 이번 배포에서는 실행을 수동으로 취소했다.
+- Trigger: **매 릴리즈.** `release.cjs --publish`가 `v*` 태그를 push하는 순간 이 워크플로가 뜬다.
+- Evidence: 저장소 시크릿이 0개(`gh secret list` 빈 결과)인데 build-mac 잡이 `pnpm publish:mac`을
+  돌리고, `electron-builder.yml`은 `releaseType: release`라 이미 게시된 릴리즈에 **같은 파일명으로**
+  올린다 — 서명·공증 없는 DMG와 `latest-mac.yml`(자동업데이트 피드)이 공증본을 대체하게 된다.
+  지금까지 막은 건 설계가 아니라 우연이다: v1.5.1·v1.6.0·v1.7.0 세 번 모두 `Install dependencies`
+  에서 `@vscode/ripgrep` postinstall이 GitHub 다운로드 403(비인증 레이트리밋)으로 죽었다.
+  v1.8.0은 run 34665292966을 queued 상태에서 취소했다. 403이 안 나는 날 그대로 사고가 난다.
+- 2026-09-23 갱신: v1.9.0 배포 때 태그를 밀기 전에 워크플로를 **수동 비활성화**했다
+  (`gh workflow disable 215359425`). 지금은 사고가 구조적으로 막혀 있지만, 그 대가로 태그 기반
+  자동 릴리즈 경로가 사라진 상태다. 소유자가 셋 중 하나를 정해야 한다: 워크플로 삭제 / 시크릿을
+  넣어 살리기 / 비활성화 유지.
+- Owner: Human Review
+
+### `scripts/release.cjs` — 릴리즈 게이트의 테스트가 빌드 없이 기존 `out/`을 돌린다
+- Discovered: 2026-09-12, v1.8.0 preflight가 새 코드와 무관하게 실패해서
+- Why deferred: 게이트 앞에 `pnpm build`를 넣는 한 줄 수정이지만 이번 요청(배포) 범위 밖이고,
+  게이트 동작을 바꾸는 변경이라 따로 검토하는 게 맞다.
+- Trigger: 다음 릴리즈 전. 특히 main을 pull만 하고 `pnpm build`를 안 한 채 `--check`를 돌릴 때.
+- Evidence: `checkBuildHealth()`는 typecheck 후 바로 `pnpm test:term`을 부르는데, 테스트는
+  `out/main/index.js`를 띄운다. 주 체크아웃의 `out/`이 2026-08-18 빌드라 새 스펙(t12~t14)이 실패했고,
+  `pnpm build` 후엔 86건 전부 통과했다. 오늘은 **거짓 실패**였지만 반대 경우가 위험하다 — `out/`이
+  옛 코드면 새 코드의 회귀가 **통과한 채로** 서명·게시된다. 게이트가 소스가 아니라 산출물을 검사한다.
+- Owner: Maintainer
+
+### `.github/workflows/ci.yml` — main CI가 2026-08-18 이후 한 번도 끝까지 가지 못했다
+- Discovered: 2026-09-12, v1.8.0 배포 후 CI 결과를 확인하다가
+- Why deferred: 원인이 macOS 러너에서의 테스트 소요 시간인지 특정 스펙의 행(hang)인지 가르려면
+  CI 로그를 스펙 단위로 봐야 하고, 이번 범위 밖이다.
+- Trigger: CI를 머지·릴리즈 판단 근거로 쓰기 전. 지금은 "CI 통과"라는 신호가 존재하지 않는다.
+- Evidence: `timeout-minutes: 25`. run 34663545892(8ce09a1)의 verify 잡이 01:01:50 → 01:27:09에
+  `Terminal + agent tests` 단계에서 cancelled. b15daa3·6ac2a85·94f17f4도 cancelled, 591ff51은 failure.
+  로컬에서는 같은 스위트가 수 분(86건)에 끝난다. `concurrency: cancel-in-progress: true`도 있어
+  연속 push 시 앞 실행이 취소되는 것과 타임아웃 취소가 목록에서 구분되지 않는다.
+- Owner: Maintainer
+
+### `scripts/release.cjs` — 프리플라이트 테스트가 간헐적으로 실패하는데 원인을 못 잡았다
+- Discovered: 2026-09-23, v1.9.0 배포 중 두 번
+- Why deferred: 실패가 재현되지 않았고(직접 돌린 전체 스위트는 87건 통과), 배포를 멈추고 추적할
+  단계가 아니었다. 같은 날 게이트가 실패 내역을 남기도록 고쳤으니(5e3edff) 다음에 재현되면
+  어느 스펙인지 바로 나온다.
+- Trigger: 다음 릴리즈에서 또 실패하면 그때 남는 `/tmp/release-tests-*.log` 로 스펙을 특정한다.
+- Evidence: `--check` 1회차와 `--build` 1회차가 `tests failed` 로 멈췄고, 사이에 돌린
+  `pnpm test:term` 은 87 passed (3.7m). 세 번째 `--check` 도 87 passed.
 - Owner: Maintainer
 
 ## Blocked
