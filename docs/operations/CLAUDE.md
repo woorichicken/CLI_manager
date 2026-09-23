@@ -68,16 +68,17 @@ Measured: Homebrew python 3.14.7 cannot `import plistlib` — its `pyexpat` link
 `PYTHON_PATH`. If preflight says "no python can build the DMG layout", fix the interpreter — do not
 start a ten-minute build.
 
-### Pushing the tag wakes a workflow that can overwrite the notarized release
+### A tag no longer triggers anything — keep it that way
 
-`.github/workflows/release.yml` ("Build and Release") triggers on `v*`, and this repository has **no
-signing secrets**, so it would build unsigned artifacts and upload them under the same filenames —
-including `latest-mac.yml`, the auto-update feed. Earlier releases survived by accident (the run
-always died at dependency install).
+`.github/workflows/release.yml` ("Build and Release") used to run on every `v*` tag. This repository
+has **no signing secrets**, so that job built unsigned artifacts and uploaded them under the same
+filenames — including `latest-mac.yml`, the auto-update feed. Nothing broke only by accident: the
+run always died at dependency install before it could upload.
 
-It is **disabled manually** (`gh workflow disable 215359425 -R woorichicken/CLI_manager`) since
-v1.9.0. Leave it that way unless the owner decides otherwise — see [`../backlog.md`](../backlog.md).
-A tag push is therefore safe, but check `gh run list --workflow "Build and Release"` if that changes.
+It was deleted after v1.9.0 (owner decision, 2026-09-23). Releases run from this machine through
+`release.cjs`, which is the documented path. **Do not re-add a tag-triggered publish workflow
+without putting the signing and notarization secrets in the repository first** — otherwise the first
+green run replaces a notarized release with an unsigned one.
 
 ### Verify the distribution from outside, not from the script's own report
 

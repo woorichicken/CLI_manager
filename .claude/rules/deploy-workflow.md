@@ -57,8 +57,9 @@ Two hazards have bitten this repository; both are gated now, and both are descri
 
 - The DMG step needs a working Python. Preflight proves one and pins `PYTHON_PATH`; a broken
   interpreter otherwise surfaces as an unrelated `hdiutil` failure ten minutes into a build.
-- The `v*` tag wakes the "Build and Release" workflow, which has no signing secrets and would
-  replace the notarized assets. It is disabled; keep it disabled unless the owner says otherwise.
+- A `v*` tag triggers no workflow any more: the tag-triggered publish job was deleted after v1.9.0
+  because it had no signing secrets and would have replaced the notarized assets. Do not re-add one
+  without the secrets.
 
 ## Release notes
 

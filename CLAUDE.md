@@ -268,7 +268,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 [`docs/found-defects.md`](docs/found-defects.md) 참고. 스위트가 green인 척하지 않으려고
 명시적으로 뺐다.
 
-`.github/workflows/release.yml`은 `v*` 태그에만 걸리며 현재 릴리즈는 로컬 스크립트로 한다
+릴리즈는 로컬 스크립트로만 한다 — 태그로 도는 게시 워크플로는 서명 시크릿이 없어 공증본을
+덮어쓸 수 있어 v1.9.0 이후 삭제했다
 ([`.claude/rules/deploy-workflow.md`](.claude/rules/deploy-workflow.md)).
 
 ### 성능: 무엇이 실제로 비싼가 (2026-08-17 실측)

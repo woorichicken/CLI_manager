@@ -124,23 +124,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   (발견 파일에서 url·token 을 읽고 REST 만 호출, 종료 코드로 질문 대기/회수/시간 초과 구분).
 - Evidence: `docs/architecture/control-api.md`「MCP 없이 쓰기」의 curl 예제는 토큰을 발견
   파일에서 꺼내는 준비 과정을 매번 요구한다.
-### `.github/workflows/release.yml` — 태그 워크플로가 공증본을 무서명 빌드로 덮어쓸 수 있다
-- Discovered: 2026-09-12, v1.8.0 게시 직전
-- Why deferred: 워크플로를 지울지(릴리즈는 이미 로컬 스크립트로 한다), 시크릿을 넣어 살릴지,
-  태그 트리거만 뗄지는 소유자 결정이다. 이번 배포에서는 실행을 수동으로 취소했다.
-- Trigger: **매 릴리즈.** `release.cjs --publish`가 `v*` 태그를 push하는 순간 이 워크플로가 뜬다.
-- Evidence: 저장소 시크릿이 0개(`gh secret list` 빈 결과)인데 build-mac 잡이 `pnpm publish:mac`을
-  돌리고, `electron-builder.yml`은 `releaseType: release`라 이미 게시된 릴리즈에 **같은 파일명으로**
-  올린다 — 서명·공증 없는 DMG와 `latest-mac.yml`(자동업데이트 피드)이 공증본을 대체하게 된다.
-  지금까지 막은 건 설계가 아니라 우연이다: v1.5.1·v1.6.0·v1.7.0 세 번 모두 `Install dependencies`
-  에서 `@vscode/ripgrep` postinstall이 GitHub 다운로드 403(비인증 레이트리밋)으로 죽었다.
-  v1.8.0은 run 34665292966을 queued 상태에서 취소했다. 403이 안 나는 날 그대로 사고가 난다.
-- 2026-09-23 갱신: v1.9.0 배포 때 태그를 밀기 전에 워크플로를 **수동 비활성화**했다
-  (`gh workflow disable 215359425`). 지금은 사고가 구조적으로 막혀 있지만, 그 대가로 태그 기반
-  자동 릴리즈 경로가 사라진 상태다. 소유자가 셋 중 하나를 정해야 한다: 워크플로 삭제 / 시크릿을
-  넣어 살리기 / 비활성화 유지.
-- Owner: Human Review
-
 ### `scripts/release.cjs` — 릴리즈 게이트의 테스트가 빌드 없이 기존 `out/`을 돌린다
 - Discovered: 2026-09-12, v1.8.0 preflight가 새 코드와 무관하게 실패해서
 - Why deferred: 게이트 앞에 `pnpm build`를 넣는 한 줄 수정이지만 이번 요청(배포) 범위 밖이고,
