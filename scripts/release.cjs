@@ -29,6 +29,7 @@
 
 const { execFileSync, execSync, spawnSync } = require('child_process')
 const { existsSync, readFileSync, writeFileSync, rmSync, renameSync, readdirSync } = require('fs')
+const { tmpdir } = require('os')
 const { join } = require('path')
 
 const ROOT = join(__dirname, '..')
@@ -233,13 +234,27 @@ function checkBuildHealth({ skipTests }) {
     }
 
     log('  ....  running tests (a few minutes)')
-    const tests = tryRun('pnpm', ['test:term'], { stdio: 'pipe' })
+    const tests = tryRun('pnpm', ['test:term'], { stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 })
     if (tests.ok) {
         const count = (tests.out.match(/✓/g) ?? []).length
         pass('tests', `${count} passed`)
-    } else {
-        fail('tests failed', '', 'pnpm test:term')
+        return
     }
+
+    // The captured output is the only record of what failed: a preflight that
+    // says "tests failed" and throws the names away leaves an intermittent
+    // failure untraceable, which is how one cost a release two build slots.
+    const logPath = join(tmpdir(), `release-tests-${Date.now()}.log`)
+    try {
+        writeFileSync(logPath, tests.out)
+    } catch {
+        // Not being able to save the log must not hide the failure itself.
+    }
+    const failures = tests.out
+        .split('\n')
+        .filter((line) => /✘|✗|Error:|TimeoutError|failed|passed/.test(line))
+        .slice(-12)
+    fail('tests failed', failures.length ? `\n${failures.join('\n')}` : '', `pnpm test:term — full output: ${logPath}`)
 }
 
 // ---------------------------------------------------------------------------
