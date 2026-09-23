@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, Trash2, GripVertical } from 'lucide-react'
+import { Terminal, Trash2, GripVertical, Bot } from 'lucide-react'
 import clsx from 'clsx'
 import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion'
 import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/types'
@@ -24,6 +24,19 @@ const SESSION_STATUS_TITLES: Record<SessionStatus, string> = {
 // it is the one worth interrupting the user for. Official hooks can tell the
 // two apart (PermissionRequest / Notification); the screen heuristic cannot.
 const AWAITING_INPUT_COLOR = 'bg-amber-400 animate-pulse ring-2 ring-amber-400/30'
+
+// Sessions an AI drives through the Control API are green instead of blue, so
+// the user can tell at a glance which terminals something else may type into.
+const ROW_CLASSES = {
+    user: {
+        active: 'bg-blue-500/20 text-blue-200',
+        idle: 'text-gray-400 hover:bg-white/5 hover:text-gray-300'
+    },
+    ai: {
+        active: 'bg-emerald-500/20 text-emerald-200',
+        idle: 'text-emerald-300/80 hover:bg-emerald-500/10 hover:text-emerald-200'
+    }
+}
 
 // Hover timing constants
 const HOVER_DELAY_MS = 300     // Delay before showing preview
@@ -88,6 +101,7 @@ export function SessionItem({
     const lingerTimeoutRef = useRef<NodeJS.Timeout | null>(null)
     const itemRef = useRef<HTMLDivElement>(null)
     const dragControls = useDragControls()
+    const rowClasses = session.aiControl ? ROW_CLASSES.ai : ROW_CLASSES.user
 
     React.useEffect(() => {
         if (isRenaming && inputRef.current) {
@@ -219,11 +233,10 @@ export function SessionItem({
                 dragListener={false}
                 dragControls={dragControls}
                 transition={{ layout: { duration: 0 } }}
+                data-session-item={session.id}
                 className={clsx(
                     "flex items-center gap-1 py-1 px-1.5 rounded transition-colors text-sm group",
-                    isActive
-                        ? "bg-blue-500/20 text-blue-200"
-                        : "text-gray-400 hover:bg-white/5 hover:text-gray-300"
+                    isActive ? rowClasses.active : rowClasses.idle
                 )}
                 onContextMenu={(e) => onContextMenu(e, workspace.id, session.id)}
                 onMouseEnter={handleMouseEnter}
@@ -266,7 +279,16 @@ export function SessionItem({
                     onClick={() => !isRenaming && onSelect(workspace, session)}
                     className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
                 >
-                    <Terminal size={14} className="shrink-0" />
+                    {session.aiControl ? (
+                        <span
+                            className="shrink-0 flex"
+                            title={`Driven by AI (${session.aiControl.client}) — right-click → Disconnect AI to take it back`}
+                        >
+                            <Bot size={14} className="text-emerald-400" />
+                        </span>
+                    ) : (
+                        <Terminal size={14} className="shrink-0" />
+                    )}
                     {isRenaming ? (
                         <input
                             ref={inputRef}

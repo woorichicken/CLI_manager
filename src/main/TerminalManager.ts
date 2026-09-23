@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
+import { EventEmitter } from 'events'
 import os from 'os'
-import { execSync } from 'child_process'
+import { execFile, execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { CLISessionTracker } from './CLISessionTracker'
 const pty = require('node-pty')
@@ -25,6 +26,26 @@ const ANSI_REGEX = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[PX^_].*?\x1b\
 const OUTPUT_FLUSH_MS = 4
 const OUTPUT_FLUSH_BYTES = 256 * 1024
 
+/**
+ * Lifecycle events for observers that need a pty without owning it (the
+ * Control API's screen mirror). Emitted after the existing rendering work, so
+ * a slow listener can never delay terminal output reaching the renderer.
+ */
+export interface TerminalEvents {
+    created: (id: string, cols: number, rows: number) => void
+    output: (id: string, data: string) => void
+    resized: (id: string, cols: number, rows: number) => void
+    exited: (id: string) => void
+}
+
+export declare interface TerminalEventBus {
+    on<E extends keyof TerminalEvents>(event: E, listener: TerminalEvents[E]): this
+    off<E extends keyof TerminalEvents>(event: E, listener: TerminalEvents[E]): this
+    emit<E extends keyof TerminalEvents>(event: E, ...args: Parameters<TerminalEvents[E]>): boolean
+}
+
+export class TerminalEventBus extends EventEmitter {}
+
 interface PendingOutput {
     chunks: string[]
     bytes: number
@@ -38,6 +59,9 @@ export class TerminalManager {
     private readonly PREVIEW_BUFFER_LINES = 10
     private cliTracker: CLISessionTracker | null = null
     private pendingOutput: Map<string, PendingOutput> = new Map()
+    private sizes: Map<string, { cols: number; rows: number }> = new Map()
+
+    readonly events = new TerminalEventBus()
 
     /**
      * Optional hook called for every raw PTY output chunk, after buffering and
@@ -234,38 +258,20 @@ export class TerminalManager {
         })
 
         ipcMain.on('terminal-input', (_, id: string, data: string) => {
-            const ptyProcess = this.terminals.get(id)
-            if (!ptyProcess) return
-
-            // Route through CLI session tracker for interception
-            if (this.cliTracker) {
-                const intercepted = this.cliTracker.processInput(
-                    id,
-                    data,
-                    (d) => ptyProcess.write(d)
-                )
-                if (intercepted) return
-            }
-
-            ptyProcess.write(data)
+            this.writeInput(id, data)
         })
 
         ipcMain.handle('terminal-resize', (_, id: string, cols: number, rows: number) => {
             const ptyProcess = this.terminals.get(id)
             if (ptyProcess) {
                 ptyProcess.resize(cols, rows)
+                this.sizes.set(id, { cols, rows })
+                this.events.emit('resized', id, cols, rows)
             }
         })
 
         ipcMain.handle('terminal-kill', (_, id: string) => {
-            const ptyProcess = this.terminals.get(id)
-            if (ptyProcess) {
-                ptyProcess.kill()
-                this.terminals.delete(id)
-                this.clearBuffer(id)
-                this.clearPendingOutput(id)
-                this.cliTracker?.cleanup(id)
-            }
+            this.killTerminal(id)
         })
 
         // Check if terminal has running child processes
@@ -284,6 +290,64 @@ export class TerminalManager {
             const channel = `terminal-clear-${id}`
             BrowserWindow.getAllWindows().forEach(win => {
                 win.webContents.send(channel)
+            })
+        })
+    }
+
+    /**
+     * Keyboard input as if the user typed it. Goes through the CLI session
+     * tracker exactly like renderer keystrokes, so input from the Control API
+     * gets the same `--session-id` injection a human would.
+     * Returns false when the terminal does not exist (yet).
+     */
+    writeInput(id: string, data: string): boolean {
+        const ptyProcess = this.terminals.get(id)
+        if (!ptyProcess) return false
+
+        if (this.cliTracker) {
+            const intercepted = this.cliTracker.processInput(
+                id,
+                data,
+                (d) => ptyProcess.write(d)
+            )
+            if (intercepted) return true
+        }
+
+        ptyProcess.write(data)
+        return true
+    }
+
+    killTerminal(id: string): void {
+        const ptyProcess = this.terminals.get(id)
+        if (!ptyProcess) return
+        ptyProcess.kill()
+        this.terminals.delete(id)
+        this.sizes.delete(id)
+        this.clearBuffer(id)
+        this.clearPendingOutput(id)
+        this.cliTracker?.cleanup(id)
+        this.events.emit('exited', id)
+    }
+
+    hasTerminal(id: string): boolean {
+        return this.terminals.has(id)
+    }
+
+    getSize(id: string): { cols: number; rows: number } | null {
+        return this.sizes.get(id) ?? null
+    }
+
+    /**
+     * Non-blocking variant of the running-process check, for callers that poll
+     * (the Control API waits for a started command this way). pgrep exits 1
+     * when there is no child, which is an answer, not an error.
+     */
+    hasChildProcess(id: string): Promise<boolean> {
+        const ptyProcess = this.terminals.get(id)
+        if (!ptyProcess) return Promise.resolve(false)
+        return new Promise((resolve) => {
+            execFile('pgrep', ['-P', String(ptyProcess.pid)], (error, stdout) => {
+                resolve(!error && stdout.trim().length > 0)
             })
         })
     }
@@ -419,9 +483,20 @@ export class TerminalManager {
             // Additive hook: notify LoopManager (or any observer) of raw output.
             // No-op when unset; does not affect existing rendering behavior.
             this.onOutput?.(id, data)
+            this.events.emit('output', id, data)
+        })
+
+        ptyProcess.onExit(() => {
+            // Only report the pty we spawned: a kill-and-recreate with the same
+            // id must not have the old process's exit mark the new one dead.
+            if (this.terminals.get(id) === ptyProcess) {
+                this.events.emit('exited', id)
+            }
         })
 
         this.terminals.set(id, ptyProcess)
+        this.sizes.set(id, { cols, rows })
+        this.events.emit('created', id, cols, rows)
     }
 
     /**

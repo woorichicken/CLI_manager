@@ -57,11 +57,19 @@ export async function launchAppWithSessions(sessions: SeedSession[]): Promise<La
     return launchAppWithWorkspaces([{ id: 'test-ws', name: 'TestWS', sessions }])
 }
 
+export interface LaunchOptions {
+    /** Merged over the default seeded settings. */
+    settings?: Record<string, unknown>
+    customTemplates?: Array<{ id: string; name: string; icon: string; description: string; command: string }>
+    /** Extra environment for the app process (e.g. CLIMANAGER_HOME). */
+    env?: Record<string, string>
+}
+
 /**
  * Seed more than one workspace — needed whenever a test depends on the shape of
  * the workspace list itself (ordering, worktree children, add/remove).
  */
-export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[]): Promise<LaunchResult> {
+export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], options: LaunchOptions = {}): Promise<LaunchResult> {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-test-'))
     const sessions = workspaces.flatMap(w => w.sessions)
 
@@ -82,7 +90,7 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[]): Prom
             ...(workspace.branchName ? { branchName: workspace.branchName } : {})
         })),
         playgroundPath: userDataDir,
-        customTemplates: [],
+        customTemplates: options.customTemplates ?? [],
         settings: {
             theme: 'dark',
             fontSize: 14,
@@ -103,7 +111,8 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[]): Prom
                     showInSidebar: true,
                     autoDismissSeconds: 5
                 }
-            }
+            },
+            ...(options.settings ?? {})
         }
     }
     fs.writeFileSync(path.join(userDataDir, 'config.json'), JSON.stringify(config))
@@ -115,7 +124,8 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[]): Prom
             CLIMANGER_TEST_USERDATA: userDataDir,
             CLIMANGER_TERM_DEBUG: '1',
             // Windows stay hidden during tests (set CLIMANGER_TEST_HEADED=1 to watch)
-            CLIMANGER_TEST_HEADLESS: process.env.CLIMANGER_TEST_HEADED === '1' ? '0' : '1'
+            CLIMANGER_TEST_HEADLESS: process.env.CLIMANGER_TEST_HEADED === '1' ? '0' : '1',
+            ...(options.env ?? {})
         } as Record<string, string>
     })
 

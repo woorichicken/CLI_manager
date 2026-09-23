@@ -5,7 +5,7 @@ import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import logoIcon from '../../resources/logo-final.png?asset'
 import Store from 'electron-store'
-import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest, HookIntegrationSettings, UsageAlertSettings, UsageSnapshot, HookInstallState, AgentStatusUpdate, DEFAULT_HOOK_INTEGRATION, DEFAULT_USAGE_ALERTS, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource } from '../shared/types'
+import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest, HookIntegrationSettings, UsageAlertSettings, UsageSnapshot, HookInstallState, AgentStatusUpdate, DEFAULT_HOOK_INTEGRATION, DEFAULT_USAGE_ALERTS, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API } from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import simpleGit from 'simple-git'
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
@@ -24,6 +24,9 @@ import { AgentHookBridge } from './AgentHookBridge'
 import { AgentStatusResolver, TerminalLookupEntry } from './AgentStatusResolver'
 import { UsageTracker, UsageThresholdAlert } from './UsageTracker'
 import { parseDiffSummary, parseFileDiff } from './diffParser'
+import { TerminalMirror } from './TerminalMirror'
+import { ControlApiService } from './ControlApiService'
+import { ControlApiServer } from './ControlApiServer'
 import { net } from 'electron'
 
 // Set app name for development mode
@@ -200,6 +203,32 @@ const broadcast = (channel: string, payload: unknown): void => {
     for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) window.webContents.send(channel, payload)
     }
+}
+
+// ---------------------------------------------------------------------------
+// AI Control API
+//
+// Lets an AI open sessions here and drive them while the user watches. Off
+// until enabled in Settings > Agents; see ControlApiServer for the safety model.
+// ---------------------------------------------------------------------------
+
+const terminalMirror = new TerminalMirror(terminalManager)
+const controlApiService = new ControlApiService({
+    store,
+    terminals: terminalManager,
+    mirror: terminalMirror,
+    broadcast,
+    hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId)
+})
+const controlApiServer = new ControlApiServer({
+    service: controlApiService,
+    store,
+    appVersion: app.getVersion()
+})
+
+const getControlApiSettings = (): ControlApiSettings => {
+    const settings = store.get('settings') as UserSettings | undefined
+    return { ...DEFAULT_CONTROL_API, ...(settings?.controlApi ?? {}) }
 }
 
 agentHookBridge.on('agent-event', (event) => {
@@ -1281,6 +1310,7 @@ app.whenReady().then(async () => {
         }
 
         store.set('workspaces', workspaces.filter((w: Workspace) => w.id !== id))
+        for (const session of workspace.sessions ?? []) controlApiService.forgetSession(session.id)
         return true
     })
 
@@ -1289,6 +1319,8 @@ app.whenReady().then(async () => {
         const workspace = workspaces.find((w: Workspace) => w.id === workspaceId)
 
         if (!workspace) return false
+
+        controlApiService.forgetSession(sessionId)
 
         // Remove session from workspace
         workspace.sessions = workspace.sessions.filter(s => s.id !== sessionId)
@@ -2874,6 +2906,27 @@ app.whenReady().then(async () => {
      * gets to read what is about to be sent, and presses Enter themselves.
      * Auto-submitting would make a misdirected comment unrecoverable.
      */
+    // ---------------------------------------------------------------------
+    // AI Control API IPC
+    // ---------------------------------------------------------------------
+
+    ipcMain.handle('get-control-api-state', (): ControlApiState => controlApiServer.state())
+
+    /** Applies immediately, like the hook toggle: the verified server state is the only honest answer. */
+    ipcMain.handle('set-control-api', async (_e, next: ControlApiSettings): Promise<ControlApiState> => {
+        const settings = (store.get('settings') as UserSettings) || ({} as UserSettings)
+        const merged = { ...DEFAULT_CONTROL_API, ...next }
+        store.set('settings', { ...settings, controlApi: merged })
+        return controlApiServer.apply(merged)
+    })
+
+    ipcMain.handle('regenerate-control-api-token', (): ControlApiState => controlApiServer.regenerateToken())
+
+    /** Sidebar "Disconnect AI": the session keeps running, the API loses access. */
+    ipcMain.handle('control-api-release-session', (_e, sessionId: string): boolean =>
+        controlApiService.clearAiControl(sessionId)
+    )
+
     ipcMain.handle('send-text-to-terminal', (_e, terminalId: string, text: string): IPCResult<null> => {
         try {
             terminalManager.writeToTerminal(terminalId, text)
@@ -2907,6 +2960,11 @@ app.whenReady().then(async () => {
         console.error('[agent-hooks] Startup failed, continuing without integration:', error)
     }
 
+    // apply() never throws; a port conflict shows up in Settings instead of blocking boot.
+    void controlApiServer.apply(getControlApiSettings()).then((state) => {
+        if (state.error) console.error('[control-api]', state.error)
+    })
+
     createWindow()
 
     app.on('activate', function () {
@@ -2932,6 +2990,12 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit()
     }
+})
+
+// Remove the discovery file so tools do not try a server that is gone.
+app.on('will-quit', () => {
+    void controlApiServer.stop()
+    terminalMirror.disposeAll()
 })
 
 // Handle app quit request (Cmd+Q or close button)

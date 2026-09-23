@@ -699,6 +699,13 @@ export function Sidebar({
                         window.api.clearTerminal(sessionMenuOpen.sessionId)
                         setSessionMenuOpen(null)
                     }}
+                    onDisconnectAi={
+                        workspaces
+                            .find(w => w.id === sessionMenuOpen.workspaceId)
+                            ?.sessions.find(s => s.id === sessionMenuOpen.sessionId)?.aiControl
+                            ? () => { void window.api.releaseAiSession(sessionMenuOpen.sessionId) }
+                            : undefined
+                    }
                     onClose={() => setSessionMenuOpen(null)}
                 />
             )}

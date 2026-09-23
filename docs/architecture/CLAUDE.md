@@ -78,6 +78,11 @@ rules stay in the root; this file is the inventory.
 - Escape 키로 즉시 닫기
 - 세션 삭제 시 메모도 자동 삭제 (TerminalSession.memo 필드)
 
+#### 12. AI Control API (NEW)
+- 다른 AI(Claude Code 등)가 폴더를 골라 세션을 열고, 템플릿 실행·프롬프트 입력·완료 대기·화면 읽기를 한다
+- 사용자는 그 세션을 앱에서 그대로 보고 끼어들 수 있다 — AI 세션은 사이드바 녹색 + 헤더 "AI connected"
+- REST(`/v1`) + MCP(`/mcp`), 로컬 전용·토큰 필수·기본 꺼짐. 계약: [`control-api.md`](control-api.md)
+
 ## Data Flow
 
 ```
@@ -114,7 +119,8 @@ User Action (Renderer)
           name: string,
           cwd: string,
           type: 'regular' | 'worktree',
-          memo?: string               // Session memo text
+          memo?: string,              // Session memo text
+          aiControl?: { client: string, since: number }  // Opened by the AI Control API
         }
       ],
       createdAt: number,
@@ -125,7 +131,8 @@ User Action (Renderer)
   ],
   playgroundPath: string,
   customTemplates: TerminalTemplate[],
-  settings: UserSettings
+  settings: UserSettings,           // settings.controlApi = { enabled, port }
+  controlApiToken?: string          // Kept outside settings so a stale save-settings cannot rotate it
 }
 ```
 
@@ -165,6 +172,12 @@ User Action (Renderer)
 - `git-diff-summary`: 변경 파일 목록 (untracked 포함)
 - `git-file-diff`: 단일 파일 unified diff
 - `send-text-to-terminal`: 리뷰 코멘트를 세션 터미널에 입력 (**개행 없이** — 제출은 사용자가)
+
+#### AI Control API (NEW)
+- `get-control-api-state` / `set-control-api`: 서버 실제 상태 조회 · 켜기/끄기/포트 적용 (즉시 반영)
+- `regenerate-control-api-token`: 토큰 재발급 (기존 클라이언트 연결 끊김)
+- `control-api-release-session`: 사이드바 "Disconnect AI" — 세션은 유지, API 접근만 회수
+- `control-api-session` (main → renderer): API가 세션을 열기/닫기/갱신/포커스했음을 알림
 
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)

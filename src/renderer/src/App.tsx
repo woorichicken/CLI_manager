@@ -10,7 +10,7 @@ import { FileSearch } from './components/FileSearch'
 import { ConfirmationModal } from './components/Sidebar/Modals'
 import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, EditorType, TerminalTemplate, PortActionLog, SessionStatus, SplitTerminalLayout, AgentStatusSource } from '../../shared/types'
 import { getErrorMessage } from './utils/errorMessages'
-import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare } from 'lucide-react'
+import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare, Bot } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
 import { FullscreenTerminalView } from './components/FullscreenTerminalView'
 import { SystemMonitorPopover } from './components/SystemMonitorPopover'
@@ -205,6 +205,53 @@ function App() {
             cancelled = true
             unsubscribe()
         }
+    }, [])
+
+    // AI Control API: sessions an AI opened, closed or handed back. Store is
+    // already updated by the main process; this mirrors it into React state.
+    // Sidebar ordering appends ids it has not seen, so orders need no update.
+    const [pendingFocusSessionId, setPendingFocusSessionId] = useState<string | null>(null)
+
+    useEffect(() => {
+        // Grid/fullscreen windows render the same App; only the main window follows focus requests.
+        const isMainWindow = new URLSearchParams(window.location.search).get('mode') !== 'fullscreen'
+
+        return window.api.onControlApiSession((event) => {
+            switch (event.type) {
+                case 'opened': {
+                    const session = event.session
+                    if (!session) return
+                    setWorkspaces(prev => {
+                        if (!prev.some(w => w.id === event.workspaceId)) {
+                            return event.workspace ? [...prev, event.workspace] : prev
+                        }
+                        return prev.map(w => w.id === event.workspaceId && !w.sessions.some(s => s.id === session.id)
+                            ? { ...w, sessions: [...w.sessions, session] }
+                            : w)
+                    })
+                    if (event.focus && isMainWindow) setPendingFocusSessionId(session.id)
+                    return
+                }
+                case 'updated': {
+                    const session = event.session
+                    if (!session) return
+                    // Replace, not merge: a released session arrives without aiControl.
+                    setWorkspaces(prev => prev.map(w => w.id === event.workspaceId
+                        ? { ...w, sessions: w.sessions.map(s => s.id === session.id ? session : s) }
+                        : w))
+                    return
+                }
+                case 'closed':
+                    setWorkspaces(prev => prev.map(w => w.id === event.workspaceId
+                        ? { ...w, sessions: w.sessions.filter(s => s.id !== event.sessionId) }
+                        : w))
+                    setActiveSession(prev => (prev?.id === event.sessionId ? null : prev))
+                    return
+                case 'focus':
+                    if (isMainWindow) setPendingFocusSessionId(event.sessionId)
+                    return
+            }
+        })
     }, [])
 
     // 터미널 폰트 크기 조정 상수
@@ -408,6 +455,25 @@ function App() {
             return next
         })
     }
+
+    const activeAiControl = activeSession
+        ? workspaces.find(w => w.id === activeWorkspace?.id)?.sessions.find(s => s.id === activeSession.id)?.aiControl
+        : undefined
+
+    // Select a session the AI asked to show, once it exists in state. Deferred
+    // through state because the 'opened' event and the select must not race.
+    useEffect(() => {
+        if (!pendingFocusSessionId) return
+        for (const workspace of workspaces) {
+            const session = workspace.sessions.find(s => s.id === pendingFocusSessionId)
+            if (session) {
+                setPendingFocusSessionId(null)
+                handleSelect(workspace, session)
+                return
+            }
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingFocusSessionId, workspaces])
 
     // Handle session status change from Claude Code hooks
     const handleSessionStatusChange = (sessionId: string, status: SessionStatus, isClaudeCode: boolean) => {
@@ -1218,6 +1284,17 @@ function App() {
                                 {activeWorkspace ? activeWorkspace.name : 'Select a workspace to get started'}
                             </span>
                         )}
+                        {/* Read the live session, not activeSession: that object is not refreshed when the AI flag changes */}
+                        {!splitLayout && activeAiControl && activeSession && (
+                            <span
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-300"
+                                title={`Driven by AI (${activeAiControl.client}). Right-click the session → Disconnect AI to take it back.`}
+                                data-ai-badge={activeSession.id}
+                            >
+                                <Bot size={11} />
+                                AI connected
+                            </span>
+                        )}
                     </div>
                     <div className="flex items-center gap-2 no-drag">
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
@@ -1552,6 +1629,10 @@ function App() {
                                             initialMemo={session.memo}
                                             visible={isVisible && !isInGridView}
                                         />
+                                        {/* AI Control API: a green edge marks a terminal something else may type into */}
+                                        {session.aiControl && isVisible && !isInGridView && (
+                                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500/70 z-30 pointer-events-none" />
+                                        )}
                                     </div>
                                 </div>
                             )

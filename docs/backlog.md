@@ -102,6 +102,30 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   실측: 워크스페이스 3개를 시드했는데 `getWorkspaces()`가 4개를 돌려줬다(home 포함 시 4→5).
 - Owner: Maintainer
 
+### `src/main/TerminalManager.ts` — pty가 앱의 환경변수를 통째로 물려받아 에이전트 세션 마커까지 새어 들어간다
+- Discovered: 2026-09-22, AI Control API를 실제 Claude Code로 검증하다가
+- Why deferred: 이번 범위(AI Control API) 밖이고, 어떤 변수를 걸러야 하는지(CLAUDE_CODE_* 전체인지
+  일부인지)는 Claude Code 쪽 의미를 확인해야 정할 수 있다. Finder에서 띄운 배포 앱에는 해당 변수가
+  없으므로 일반 사용자는 영향이 없다.
+- Trigger: 에이전트 세션 안에서 앱을 띄우는 개발·테스트 흐름(`pnpm dev`를 Claude Code 터미널에서
+  실행, Playwright를 에이전트가 실행)에서 내부 Claude Code 세션이 이상하게 동작한다는 제보가 나오면.
+- Evidence: Claude Code 세션이 실행한 Playwright → Electron → pty 안의 `claude`가
+  `⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker`를 띄웠다.
+  `createTerminal()`이 `env: { ...process.env, ... }`로 앱 환경을 그대로 넘긴다.
+- Owner: Maintainer
+
+### `src/main/ControlApiServer.ts` — MCP 없이 쓰려면 사용자가 curl 을 직접 조립해야 한다
+- Discovered: 2026-09-23, Control API 를 스킬로 감싸면서
+- Why deferred: 제품에 CLI 를 붙이려면 배포 형태(앱 번들 안의 bin? npx? Homebrew?)와 PATH
+  등록 방식을 정해야 하고, 그건 이번 범위 밖이다. 지금은 REST 예제와 유지 관리자의 로컬
+  스킬 스크립트(의존성 없는 Node 단일 파일)로 충분하다.
+- Trigger: MCP 를 안 쓰는 사용자가 "명령줄에서 쓰고 싶다"고 하거나, 앱과 함께 배포할 CLI 가
+  필요해질 때. 참고 구현: `~/skills/macbook-cc/climanager-session/scripts/clim.mjs`
+  (발견 파일에서 url·token 을 읽고 REST 만 호출, 종료 코드로 질문 대기/회수/시간 초과 구분).
+- Evidence: `docs/architecture/control-api.md`「MCP 없이 쓰기」의 curl 예제는 토큰을 발견
+  파일에서 꺼내는 준비 과정을 매번 요구한다.
+- Owner: Maintainer
+
 ## Blocked
 
 없음.

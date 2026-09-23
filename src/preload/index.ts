@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -262,7 +262,22 @@ const api = {
     getFileDiff: (workspaceId: string, filePath: string, base: DiffBase): Promise<IPCResult<FileDiff>> =>
         ipcRenderer.invoke('git-file-diff', workspaceId, filePath, base),
     sendTextToTerminal: (terminalId: string, text: string): Promise<IPCResult<null>> =>
-        ipcRenderer.invoke('send-text-to-terminal', terminalId, text)
+        ipcRenderer.invoke('send-text-to-terminal', terminalId, text),
+
+    // --- AI Control API ----------------------------------------------------
+
+    getControlApiState: (): Promise<ControlApiState> => ipcRenderer.invoke('get-control-api-state'),
+    setControlApi: (settings: ControlApiSettings): Promise<ControlApiState> =>
+        ipcRenderer.invoke('set-control-api', settings),
+    regenerateControlApiToken: (): Promise<ControlApiState> => ipcRenderer.invoke('regenerate-control-api-token'),
+    releaseAiSession: (sessionId: string): Promise<boolean> =>
+        ipcRenderer.invoke('control-api-release-session', sessionId),
+
+    onControlApiSession: (callback: (event: ControlApiSessionEvent) => void) => {
+        const listener = (_e: unknown, event: ControlApiSessionEvent) => callback(event)
+        ipcRenderer.on('control-api-session', listener)
+        return () => ipcRenderer.removeListener('control-api-session', listener)
+    }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
