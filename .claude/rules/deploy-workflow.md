@@ -45,10 +45,20 @@ is left pointing at the previous release, which is the safe state.
 |---|---|
 | Signing / notarization (`CSC_*`, `APPLE_*`) | Shell environment |
 | R2 (`R2_*`) | `.env.release` in the repo root — **gitignored**, loaded automatically |
-| `DATABASE_URL` (changelog) | Passed on the command line, never stored in the repo |
+| `DATABASE_URL` (changelog) | Passed on the command line — the value lives in `~/Downloads/solhun-web-page/.env.local`, never in this repo |
 
 Nothing here belongs in a tracked file. `pnpm check:publish` fails the run if a credential-shaped
 string is ever committed.
+
+## Before you tag
+
+Two hazards have bitten this repository; both are gated now, and both are described in
+[`../../docs/operations/CLAUDE.md`](../../docs/operations/CLAUDE.md):
+
+- The DMG step needs a working Python. Preflight proves one and pins `PYTHON_PATH`; a broken
+  interpreter otherwise surfaces as an unrelated `hdiutil` failure ten minutes into a build.
+- The `v*` tag wakes the "Build and Release" workflow, which has no signing secrets and would
+  replace the notarized assets. It is disabled; keep it disabled unless the owner says otherwise.
 
 ## Release notes
 

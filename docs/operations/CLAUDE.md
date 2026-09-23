@@ -48,6 +48,53 @@ Before any publish:
 2. `pnpm typecheck` and `pnpm build` pass.
 3. `pnpm test:term` green — the terminal pipeline has no runtime guard, so a regression here ships.
 
+## Release hazards (measured 2026-09-23, v1.9.0)
+
+Three things cost two build slots and nearly shipped an unsigned app. All three are now gated or
+disabled; this section exists so the next release does not rediscover them.
+
+### The DMG step runs Python, and a broken one lies about itself
+
+`electron-builder` builds the DMG window layout with a vendored Python script. It tries `python3`
+from `PATH` and falls back to `python`, which macOS no longer ships — so a broken `python3` surfaces
+as `Command failed: which python`, and the retry loop then reports `unable to execute hdiutil`
+against a temp directory it has already cleaned up. **The visible error names the wrong tool.**
+
+Measured: Homebrew python 3.14.7 cannot `import plistlib` — its `pyexpat` links
+`_XML_SetAllocTrackerActivationThreshold`, which the system libexpat does not export. Apple's
+`/usr/bin/python3` works.
+
+`release.cjs` now proves a python by importing `plistlib` before the build and pins it through
+`PYTHON_PATH`. If preflight says "no python can build the DMG layout", fix the interpreter — do not
+start a ten-minute build.
+
+### Pushing the tag wakes a workflow that can overwrite the notarized release
+
+`.github/workflows/release.yml` ("Build and Release") triggers on `v*`, and this repository has **no
+signing secrets**, so it would build unsigned artifacts and upload them under the same filenames —
+including `latest-mac.yml`, the auto-update feed. Earlier releases survived by accident (the run
+always died at dependency install).
+
+It is **disabled manually** (`gh workflow disable 215359425 -R woorichicken/CLI_manager`) since
+v1.9.0. Leave it that way unless the owner decides otherwise — see [`../backlog.md`](../backlog.md).
+A tag push is therefore safe, but check `gh run list --workflow "Build and Release"` if that changes.
+
+### Verify the distribution from outside, not from the script's own report
+
+`post-release.cjs` checks its own steps; these are the user-facing facts:
+
+```bash
+curl -sI "https://pub-dc249db286af4c1991fedf690157891d.r2.dev/cli-manager-<version>-arm64.dmg" | head -1
+curl -sL https://www.solhun.com | grep -o "cli-manager-[0-9.]*-arm64.dmg" | head -1
+curl -sL https://github.com/woorichicken/CLI_manager/releases/latest/download/latest-mac.yml | head -1
+```
+
+Use **`www.solhun.com`**: the apex redirects (307) and returns a 15-byte body, so grepping it finds
+no version and reads like a failed deploy.
+
+Test failures inside the gate now leave their full output at `/tmp/release-tests-<ts>.log`, named in
+the failure message.
+
 ## Cloudflare R2
 
 DMG distribution runs inside `post-release.cjs`, which wraps the
