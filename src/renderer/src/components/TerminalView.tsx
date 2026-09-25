@@ -614,7 +614,7 @@ export function TerminalView({
                         const rewritten = await window.api.rewriteCliCommand(initialCommand)
                         if (rewritten && workspaceId) {
                             // Store CLI session info and send rewritten command
-                            window.api.updateSessionCliInfo(workspaceId, id, rewritten.cliSessionId, rewritten.cliToolName)
+                            window.api.updateSessionCliInfo(workspaceId, id, rewritten.cliSessionId, rewritten.cliToolName, rewritten.baseCommand)
                             window.api.writeTerminal(id, rewritten.command + '\n')
                         } else {
                             window.api.writeTerminal(id, initialCommand + '\n')

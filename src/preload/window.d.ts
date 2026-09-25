@@ -92,9 +92,9 @@ declare global {
 
             // CLI Session Tracking
             onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string }) => void) => () => void
-            updateSessionCliInfo: (workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string) => Promise<boolean>
+            updateSessionCliInfo: (workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string) => Promise<boolean>
             clearSessionCliInfo: (workspaceId: string, sessionId: string) => Promise<boolean>
-            rewriteCliCommand: (command: string) => Promise<{ command: string; cliSessionId: string; cliToolName: string } | null>
+            rewriteCliCommand: (command: string) => Promise<{ command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null>
 
             // System Monitor
             getSystemInfo: () => Promise<SystemInfo>

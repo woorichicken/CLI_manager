@@ -83,6 +83,17 @@ rules stay in the root; this file is the inventory.
 - 사용자는 그 세션을 앱에서 그대로 보고 끼어들 수 있다 — AI 세션은 사이드바 녹색 + 헤더 "AI connected"
 - REST(`/v1`) + MCP(`/mcp`), 로컬 전용·토큰 필수·기본 꺼짐. 계약: [`control-api.md`](control-api.md)
 
+#### 13. CLI 세션 재개 (resume)
+- 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
+- **별칭도 인식한다** — 사용자가 `cldy`로 띄워도 `claude`로 판정한다. 시작 시 `zsh -ic alias`를
+  한 번 읽어 매핑을 만든다(`CLISessionTracker.setAliases`). 실측 2026-09-25: 이게 없어서 템플릿으로
+  연 세션은 id가 아예 안 붙었고, 재시작하면 **조용히 새 대화로 시작**했다
+- **재개는 원본 명령으로** — `cldy --resume <id>`. `claude --resume`로 재조립하면 별칭이 들고 있던
+  플래그(bypass 모드·모델 선택)가 사라진다
+- `glm-on && cldy`처럼 앞에 준비 명령이 붙어도 마지막 명령으로 판정한다
+- 시작 시 `validateCliSessionIds()`가 Claude 대화 파일이 없는 id를 지운다 — 그래서 대화 기록 저장이
+  꺼진 세션은 재개되지 않는다. 회귀는 `t17-session-resume.spec.ts`
+
 ## Data Flow
 
 ```
@@ -120,6 +131,9 @@ User Action (Renderer)
           cwd: string,
           type: 'regular' | 'worktree',
           memo?: string,              // Session memo text
+          cliSessionId?: string,      // --session-id injected when the agent started
+          cliToolName?: string,
+          cliCommand?: string,        // What started it (`cldy`) — resume repeats this, not `claude`
           aiControl?: { client: string, since: number }  // Opened by the AI Control API
         }
       ],

@@ -1619,8 +1619,10 @@ function App() {
                                             fontSize={terminalFontSize}
                                             fontFamily={settings.terminalFontFamily}
                                             initialCommand={session.initialCommand}
+                                            // Resume with the command that started it: an alias
+                                            // (`cldy`) carries flags that `claude` alone would drop.
                                             resumeCommand={session.cliSessionId && session.cliToolName
-                                                ? `${session.cliToolName === 'claude' ? 'claude' : session.cliToolName} --resume ${session.cliSessionId}`
+                                                ? `${session.cliCommand || session.cliToolName} --resume ${session.cliSessionId}`
                                                 : undefined}
                                             workspaceId={workspace.id}
                                             shell={settings.defaultShell}

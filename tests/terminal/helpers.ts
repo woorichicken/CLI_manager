@@ -21,6 +21,12 @@ export interface SeedSession {
     id: string
     name: string
     cwd?: string
+    /** Typed into the terminal once it exists — what a template session carries. */
+    initialCommand?: string
+    /** Set together to seed a session that should resume instead of restarting. */
+    cliSessionId?: string
+    cliToolName?: string
+    cliCommand?: string
 }
 
 export interface SeedWorkspace {
@@ -82,7 +88,11 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
                 id: s.id,
                 name: s.name,
                 cwd: s.cwd ?? workspace.path ?? REPO_ROOT,
-                type: 'regular'
+                type: 'regular',
+                ...(s.initialCommand ? { initialCommand: s.initialCommand } : {}),
+                ...(s.cliSessionId ? { cliSessionId: s.cliSessionId } : {}),
+                ...(s.cliToolName ? { cliToolName: s.cliToolName } : {}),
+                ...(s.cliCommand ? { cliCommand: s.cliCommand } : {})
             })),
             // get-workspaces sorts by createdAt, so seeded order has to be encoded here
             createdAt: 1700000000000 + index,

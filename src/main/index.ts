@@ -139,6 +139,31 @@ const store = new Store<AppConfig>({
 }) as any
 
 const cliSessionTracker = new CLISessionTracker()
+
+/**
+ * Reads the user's shell aliases once, so an agent started through one (`cldy`)
+ * is still recognised and gets a `--session-id`. Without it the session cannot
+ * be resumed after a restart — it silently starts a new conversation instead.
+ * Interactive shell on purpose: aliases live in .zshrc, which `-c` alone skips.
+ */
+const loadShellAliases = async (): Promise<void> => {
+    try {
+        const settings = store.get('settings') as UserSettings | undefined
+        const shell = settings?.defaultShell || process.env.SHELL || '/bin/zsh'
+        const { stdout } = await execAsync(`${shell} -ic alias`, { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 })
+        const aliases: Record<string, string> = {}
+        for (const line of stdout.split('\n')) {
+            const match = /^(?:alias\s+)?([A-Za-z0-9_.:-]+)=(.*)$/.exec(line.trim())
+            if (!match) continue
+            aliases[match[1]] = match[2].replace(/^'([\s\S]*)'$/, '$1').replace(/^"([\s\S]*)"$/, '$1')
+        }
+        cliSessionTracker.setAliases(aliases)
+        console.log(`[cli-session] loaded ${Object.keys(aliases).length} shell aliases`)
+    } catch (error) {
+        // Not fatal: without aliases only alias-started sessions lose resume.
+        console.warn('[cli-session] could not read shell aliases:', error)
+    }
+}
 const terminalManager = new TerminalManager(cliSessionTracker)
 const portManager = new PortManager(() => {
     const settings = store.get('settings') as UserSettings | undefined
@@ -809,6 +834,7 @@ function validateCliSessionIds(): void {
                     console.log(`[validateCliSessionIds] CLEAR stale session ${session.cliSessionId} (no file)`)
                     delete session.cliSessionId
                     delete session.cliToolName
+                    delete session.cliCommand
                     modified = true
                 }
             }
@@ -1045,6 +1071,7 @@ app.whenReady().then(async () => {
             if (session) {
                 session.cliSessionId = info.cliSessionId
                 session.cliToolName = info.cliToolName
+                session.cliCommand = info.baseCommand
                 store.set('workspaces', workspaces)
 
                 // Notify renderer
@@ -1066,7 +1093,7 @@ app.whenReady().then(async () => {
     }
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)
-    ipcMain.handle('update-session-cli-info', (_, workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string): boolean => {
+    ipcMain.handle('update-session-cli-info', (_, workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string): boolean => {
         console.log(`[update-session-cli-info] Persisting cliSessionId=${cliSessionId} for session=${sessionId}`)
         const workspaces = store.get('workspaces') as Workspace[]
         const ws = workspaces.find((w: Workspace) => w.id === workspaceId)
@@ -1075,6 +1102,7 @@ app.whenReady().then(async () => {
         if (!session) return false
         session.cliSessionId = cliSessionId
         session.cliToolName = cliToolName
+        if (cliCommand) session.cliCommand = cliCommand
         store.set('workspaces', workspaces)
         return true
     })
@@ -1088,12 +1116,13 @@ app.whenReady().then(async () => {
         if (!session) return false
         delete session.cliSessionId
         delete session.cliToolName
+        delete session.cliCommand
         store.set('workspaces', workspaces)
         return true
     })
 
     // Rewrite a command through CLISessionTracker (for template/initialCommand)
-    ipcMain.handle('rewrite-cli-command', (_, command: string): { command: string; cliSessionId: string; cliToolName: string } | null => {
+    ipcMain.handle('rewrite-cli-command', (_, command: string): { command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null => {
         const result = cliSessionTracker.rewriteCommand(command)
         console.log(`[rewrite-cli-command] "${command}" → ${result ? `"${result.command}" (id=${result.cliSessionId})` : 'null (not a CLI tool)'}`)
         return result
@@ -2959,6 +2988,8 @@ app.whenReady().then(async () => {
     } catch (error) {
         console.error('[agent-hooks] Startup failed, continuing without integration:', error)
     }
+
+    void loadShellAliases()
 
     // apply() never throws; a port conflict shows up in Settings instead of blocking boot.
     void controlApiServer.apply(getControlApiSettings()).then((state) => {

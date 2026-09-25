@@ -13,6 +13,12 @@ export interface CLISessionInfo {
     terminalId: string
     cliToolName: string
     cliSessionId: string
+    /**
+     * The command as the user wrote it, without the injected flag — `cldy`, not
+     * `claude`. Resuming has to repeat it: `claude --resume <id>` would drop
+     * whatever the alias carried (bypass mode, a model choice, an env switch).
+     */
+    baseCommand: string
 }
 
 const DEFAULT_CLI_TOOLS: CLIToolConfig[] = [
@@ -21,6 +27,10 @@ const DEFAULT_CLI_TOOLS: CLIToolConfig[] = [
         commands: ['claude'],
         sessionFlag: '--session-id',
         resumeFlag: '--resume',
+        // Only flags that make a session id meaningless belong here. Measured
+        // 2026-09-25: `claude --dangerously-skip-permissions --session-id <uuid>`
+        // starts fine and `--resume <uuid>` brings the conversation back, so
+        // keeping that flag on this list only cost users their history.
         skipIfFlags: [
             '--session-id',
             '--resume',
@@ -31,8 +41,7 @@ const DEFAULT_CLI_TOOLS: CLIToolConfig[] = [
             '--print',
             '-h',
             '--help',
-            '--version',
-            '--dangerously-skip-permissions'
+            '--version'
         ],
         nonInteractiveSubcommands: [
             'install',
@@ -49,10 +58,25 @@ const DEFAULT_CLI_TOOLS: CLIToolConfig[] = [
 export class CLISessionTracker {
     private lineBuffers: Map<string, string> = new Map()
     private cliTools: CLIToolConfig[]
+    /** Shell alias -> what it expands to, so `cldy` can be recognised as claude. */
+    private aliases: Map<string, string> = new Map()
     public onSessionDetected?: (info: CLISessionInfo) => void
 
     constructor(cliTools?: CLIToolConfig[]) {
         this.cliTools = cliTools ?? DEFAULT_CLI_TOOLS
+    }
+
+    /**
+     * Teaches the tracker the user's shell aliases.
+     *
+     * Most people start an agent through one (`cldy`), and an alias is invisible
+     * to us otherwise: the command never matches a known tool, no session id is
+     * injected, and the session cannot be resumed after a restart. Appending the
+     * flag to the alias works because the shell expands it in place —
+     * `cldy --session-id X` becomes `claude … --session-id X`.
+     */
+    setAliases(aliases: Record<string, string>): void {
+        this.aliases = new Map(Object.entries(aliases))
     }
 
     /**
@@ -117,7 +141,8 @@ export class CLISessionTracker {
             this.onSessionDetected?.({
                 terminalId,
                 cliToolName: result.config.name,
-                cliSessionId: sessionId
+                cliSessionId: sessionId,
+                baseCommand: buffer
             })
 
             return true
@@ -140,6 +165,7 @@ export class CLISessionTracker {
         command: string
         cliSessionId: string
         cliToolName: string
+        baseCommand: string
     } | null {
         const trimmed = command.trim()
         if (!trimmed) return null
@@ -151,7 +177,8 @@ export class CLISessionTracker {
         return {
             command: `${trimmed} ${result.config.sessionFlag} ${sessionId}`,
             cliSessionId: sessionId,
-            cliToolName: result.config.name
+            cliToolName: result.config.name,
+            baseCommand: trimmed
         }
     }
 
@@ -178,22 +205,30 @@ export class CLISessionTracker {
     private shouldIntercept(
         commandLine: string
     ): { config: CLIToolConfig } | null {
-        const tokens = commandLine.split(/\s+/)
+        // Templates chain setup before the agent (`glm-on && cldy`). The flag is
+        // appended to the whole line, so it lands on the last command — which is
+        // also the one that has to be recognised.
+        const lastSegment = commandLine.split(/&&|;/).pop()?.trim() ?? commandLine
+        const tokens = lastSegment.split(/\s+/)
         if (tokens.length === 0) return null
 
         const baseCommand = tokens[0]
 
         // Find matching CLI tool by command name
         // Handle both bare command and full path (e.g., /usr/local/bin/claude)
+        // An alias is resolved first: `cldy` is claude wearing a hat.
         const commandName = baseCommand.split('/').pop() || baseCommand
+        const expansion = this.aliases.get(commandName)
+        const effectiveTokens = expansion ? `${expansion} ${tokens.slice(1).join(' ')}`.trim().split(/\s+/) : tokens
+        const effectiveName = (effectiveTokens[0] ?? '').split('/').pop() || ''
         const config = this.cliTools.find((t) =>
-            t.commands.includes(commandName)
+            t.commands.includes(effectiveName)
         )
         if (!config) return null
 
         // Check for non-interactive subcommands (second token)
-        if (tokens.length > 1) {
-            const subcommand = tokens[1]
+        if (effectiveTokens.length > 1) {
+            const subcommand = effectiveTokens[1]
             if (
                 config.nonInteractiveSubcommands.includes(subcommand)
             ) {
@@ -202,7 +237,7 @@ export class CLISessionTracker {
         }
 
         // Check for skip flags anywhere in the command
-        for (const token of tokens) {
+        for (const token of effectiveTokens) {
             if (config.skipIfFlags.includes(token)) {
                 return null
             }

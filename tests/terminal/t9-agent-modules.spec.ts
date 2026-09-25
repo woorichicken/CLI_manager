@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { CLISessionTracker } from '../../src/main/CLISessionTracker'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -487,5 +488,59 @@ test.describe('T9 diff parsing', () => {
         const prompt = buildReviewPrompt('src/api.ts', [], '이 파일 전체 정리해줘')
         expect(prompt).toContain('src/api.ts')
         expect(prompt).toContain('이 파일 전체 정리해줘')
+    })
+})
+
+/**
+ * T9 — CLISessionTracker.
+ *
+ * Its whole job is to make a session resumable: inject `--session-id` when an
+ * agent is started, so a restart can `--resume` the same conversation instead
+ * of silently beginning a new one. Measured 2026-09-25 on a real install: every
+ * session started from the user's templates (`cldy`, `glm-on && cldy`) had no
+ * session id at all, because the tracker only recognised the literal `claude`.
+ */
+test.describe('T9 CLISessionTracker', () => {
+    const tracker = (): CLISessionTracker => {
+        const t = new CLISessionTracker()
+        t.setAliases({ cldy: 'claude --dangerously-skip-permissions', ll: 'ls -la' })
+        return t
+    }
+
+    test('a plain command still gets a session id', () => {
+        const result = tracker().rewriteCommand('claude')
+        expect(result?.command).toMatch(/^claude --session-id [0-9a-f-]{36}$/)
+        expect(result?.baseCommand).toBe('claude')
+    })
+
+    test('an alias is recognised and keeps its own name for resuming', () => {
+        const result = tracker().rewriteCommand('cldy')
+        expect(result, 'cldy expands to claude, so it must be tracked').not.toBeNull()
+        expect(result?.cliToolName).toBe('claude')
+        expect(result?.command).toMatch(/^cldy --session-id [0-9a-f-]{36}$/)
+        // Resuming repeats this, not `claude` — otherwise bypass mode is lost.
+        expect(result?.baseCommand).toBe('cldy')
+    })
+
+    test('a command chained after setup is still recognised', () => {
+        const result = tracker().rewriteCommand('glm-on && cldy')
+        expect(result?.command).toMatch(/^glm-on && cldy --session-id [0-9a-f-]{36}$/)
+        expect(result?.baseCommand).toBe('glm-on && cldy')
+    })
+
+    test('--dangerously-skip-permissions no longer blocks tracking', () => {
+        // Verified against Claude Code 2.1.282: the two flags coexist and the
+        // resulting session resumes.
+        expect(tracker().rewriteCommand('claude --dangerously-skip-permissions')).not.toBeNull()
+    })
+
+    test('flags that make a session id meaningless are still skipped', () => {
+        for (const command of ['claude --resume abc', 'claude -p "hi"', 'claude --help', 'claude mcp list']) {
+            expect(tracker().rewriteCommand(command), command).toBeNull()
+        }
+    })
+
+    test('an unrelated alias is left alone', () => {
+        expect(tracker().rewriteCommand('ll')).toBeNull()
     })
 })

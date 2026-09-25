@@ -128,11 +128,11 @@ const api = {
         ipcRenderer.on('cli-session-detected', handler)
         return () => ipcRenderer.removeListener('cli-session-detected', handler)
     },
-    updateSessionCliInfo: (workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string): Promise<boolean> =>
-        ipcRenderer.invoke('update-session-cli-info', workspaceId, sessionId, cliSessionId, cliToolName),
+    updateSessionCliInfo: (workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string): Promise<boolean> =>
+        ipcRenderer.invoke('update-session-cli-info', workspaceId, sessionId, cliSessionId, cliToolName, cliCommand),
     clearSessionCliInfo: (workspaceId: string, sessionId: string): Promise<boolean> =>
         ipcRenderer.invoke('clear-session-cli-info', workspaceId, sessionId),
-    rewriteCliCommand: (command: string): Promise<{ command: string; cliSessionId: string; cliToolName: string } | null> =>
+    rewriteCliCommand: (command: string): Promise<{ command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null> =>
         ipcRenderer.invoke('rewrite-cli-command', command),
 
     // System Monitor

@@ -36,6 +36,11 @@ export interface TerminalSession {
     initialCommand?: string
     cliSessionId?: string
     cliToolName?: string
+    /**
+     * The command that started this CLI session, as written (`cldy`, not
+     * `claude`). Resuming repeats it so an alias keeps whatever it carried.
+     */
+    cliCommand?: string
     memo?: string  // Quick notepad text per session
     /**
      * Set while an external AI drives this session through the Control API.
