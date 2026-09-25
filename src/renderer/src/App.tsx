@@ -211,6 +211,12 @@ function App() {
     // already updated by the main process; this mirrors it into React state.
     // Sidebar ordering appends ids it has not seen, so orders need no update.
     const [pendingFocusSessionId, setPendingFocusSessionId] = useState<string | null>(null)
+    /**
+     * Sessions the AI asked to show. Showing one must not move the keyboard:
+     * the user may be typing in another terminal, and measured 2026-09-25 the
+     * focus did not even land on the new terminal — it was simply lost.
+     */
+    const apiFocusSessionIds = useRef<Set<string>>(new Set())
 
     useEffect(() => {
         // Grid/fullscreen windows render the same App; only the main window follows focus requests.
@@ -229,7 +235,10 @@ function App() {
                             ? { ...w, sessions: [...w.sessions, session] }
                             : w)
                     })
-                    if (event.focus && isMainWindow) setPendingFocusSessionId(session.id)
+                    if (event.focus && isMainWindow) {
+                        apiFocusSessionIds.current.add(session.id)
+                        setPendingFocusSessionId(session.id)
+                    }
                     return
                 }
                 case 'updated': {
@@ -248,7 +257,10 @@ function App() {
                     setActiveSession(prev => (prev?.id === event.sessionId ? null : prev))
                     return
                 case 'focus':
-                    if (isMainWindow) setPendingFocusSessionId(event.sessionId)
+                    if (isMainWindow) {
+                        apiFocusSessionIds.current.add(event.sessionId)
+                        setPendingFocusSessionId(event.sessionId)
+                    }
                     return
             }
         })
@@ -1593,6 +1605,7 @@ function App() {
                                             id={session.id}
                                             cwd={session.cwd}
                                             visible={isVisible && !isInGridView}
+                                            shouldFocusOnShow={() => !apiFocusSessionIds.current.delete(session.id)}
                                             onSessionStatusChange={handleSessionStatusChange}
                                             onFocus={(sessionId) => {
                                                 // Update active split pane when terminal gains focus

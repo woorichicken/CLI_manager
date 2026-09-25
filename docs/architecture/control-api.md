@@ -69,7 +69,7 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | GET | `/v1/sessions/:id/output` | `?mode=screen\|tail&lines=` | `{ session, mode, cols, rows, lines[] }` |
 | POST | `/v1/sessions/:id/input` | `text`, `submit` (default true), `keys[]`, `force` | session |
 | POST | `/v1/sessions/:id/wait` | `timeoutMs` (≤600000), `quietMs`, `lines` | output + `{ timedOut, waitedMs }` |
-| POST | `/v1/sessions/:id/focus` | | session (the app switches to it; the window is not raised) |
+| POST | `/v1/sessions/:id/focus` | | session (the app switches to it; the window is never raised) |
 | POST | `/v1/sessions/:id/release` | | hands it to the user; API loses access |
 | DELETE | `/v1/sessions/:id` | | kills the pty and removes the session |
 
@@ -85,6 +85,16 @@ Status codes that carry meaning: `403 not_controlled` (not the API's session, or
 - `keys` run after `text`: a single character, or `enter escape tab shift-tab backspace space up
   down left right ctrl-c ctrl-d ctrl-l ctrl-u`.
 - Input goes through `CLISessionTracker` like typing, so a typed `claude` still gets `--session-id`.
+
+### Showing a session costs the user's caret
+
+`focus` (and `/focus`) switches which session the app displays. The window is never raised, but the
+switch itself has a price that cannot be engineered away: a terminal inside a hidden container is
+blurred by the browser, so whatever the user was typing in loses the caret. Measured 2026-09-25.
+
+So `focus` defaults to false, and the app makes sure the **newly shown terminal does not pick the
+caret up** — otherwise the user's next keystrokes would land in the agent's prompt. Use `focus` only
+when the user asked to watch. `t16-api-focus.spec.ts` holds both halves.
 
 ### Opening with a prompt
 

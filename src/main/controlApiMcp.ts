@@ -83,7 +83,11 @@ const TOOLS: ToolDefinition[] = [
                     type: 'string',
                     description: 'Text to submit after the program has started and gone quiet (e.g. the task for Claude Code).'
                 },
-                focus: { type: 'boolean', description: 'Also switch the app to this session. Default false.' }
+                focus: {
+                    type: 'boolean',
+                    description:
+                        'Switch the app to this session. Default false — use it only when the user asked to watch, because switching takes the caret out of whatever terminal they were typing in.'
+                }
             }
         }
     },
@@ -144,7 +148,8 @@ const TOOLS: ToolDefinition[] = [
     },
     {
         name: 'focus_session',
-        description: 'Switch CLI Manager to show this session, so the user can watch it.',
+        description:
+            'Switch CLI Manager to show this session. Only when the user asked to see it: switching interrupts whatever terminal they were typing in.',
         inputSchema: { type: 'object', properties: { ...sessionIdProperty }, required: ['session_id'] }
     },
     {

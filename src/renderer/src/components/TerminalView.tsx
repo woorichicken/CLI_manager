@@ -21,6 +21,12 @@ interface TerminalViewProps {
     id: string
     cwd: string
     visible: boolean
+    /**
+     * Asked once when this terminal becomes visible: should it take the
+     * keyboard? A click should (you typed to get here); a switch the AI asked
+     * for should not — the user may be typing in another terminal.
+     */
+    shouldFocusOnShow?: () => boolean
     onSessionStatusChange?: (sessionId: string, status: SessionStatus, isClaudeCode: boolean) => void
     onFocus?: (sessionId: string) => void  // Called when terminal gains focus (for split view active pane)
     fontSize?: number
@@ -85,6 +91,7 @@ export function TerminalView({
     id,
     cwd,
     visible,
+    shouldFocusOnShow,
     onSessionStatusChange,
     onFocus,
     fontSize = 14,
@@ -155,6 +162,10 @@ export function TerminalView({
     // 2초(4회 폴링) 동안 연속 Running 판정 시에만 전환
     const runningCountRef = useRef<number>(0)
     const RUNNING_DEBOUNCE_COUNT = 4  // 500ms * 4 = 2초
+
+    // 가시성 effect 안에서 최신 값을 읽어야 해서 ref 로 들고 있는다.
+    const shouldFocusOnShowRef = useRef(shouldFocusOnShow)
+    shouldFocusOnShowRef.current = shouldFocusOnShow
 
     // visible을 ref로 추적 (closure 문제 해결)
     const visibleRef = useRef<boolean>(visible)
@@ -392,7 +403,7 @@ export function TerminalView({
                 requestResize({
                     immediate: true,
                     flush: true,
-                    focus: true
+                    focus: shouldFocusOnShowRef.current?.() ?? true
                 })
                 requestAnimationFrame(() => {
                     forceViewportRefresh()
