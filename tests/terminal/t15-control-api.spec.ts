@@ -43,6 +43,7 @@ interface ApiSession {
     awaitingInput: boolean
     workspaceId: string
     controlledBy: string
+    memo: string
 }
 
 test.describe('T15 AI Control API', () => {
@@ -121,7 +122,19 @@ test.describe('T15 AI Control API', () => {
         expect(opened.json.terminalStarted).toBe(true)
         expect(opened.json.promptSent, opened.json.note).toBe(true)
         expect(opened.json.session.controlledBy).toBe('t15')
+        expect(opened.json.session.memo).toBe('')
         const sessionId = opened.json.session.id
+        const aiWorkspaceId = opened.json.session.workspaceId
+
+        // Memo: what the user writes in the session's memo pad reaches the API.
+        await page.evaluate(
+            ([ws, id]) =>
+                (window as unknown as { api: { updateSessionMemo: (w: string, s: string, m: string) => Promise<boolean> } })
+                    .api.updateSessionMemo(ws, id, 'T15MEMO keep the tests green'),
+            [aiWorkspaceId, sessionId]
+        )
+        const withMemo = await api<ApiSession>('GET', `/v1/sessions/${sessionId}`)
+        expect(withMemo.json.memo).toBe('T15MEMO keep the tests green')
 
         // Sidebar: the session exists, in green, under the new workspace.
         await page.getByText(path.basename(aiFolder)).first().waitFor({ timeout: 15_000 })

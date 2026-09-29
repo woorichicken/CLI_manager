@@ -53,6 +53,9 @@ restarts; the sidebar draws such sessions in green with a bot icon, and the head
 `awaitingInput: true` — the bottom 15 lines of the screen show a question (permission prompt,
 folder-trust dialog, "Enter to confirm · Esc to cancel"), or a hook reported one. Answer with keys.
 
+`memo` — the text of the session's memo pad (Cmd+J), `''` when empty. Read-only: the API has no way to
+write it, and like everything else it is only returned for sessions under AI control.
+
 ## REST
 
 All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels the session owner

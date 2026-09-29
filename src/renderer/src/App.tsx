@@ -809,6 +809,7 @@ function App() {
     // Prevents rapid electron-store writes during drag (onReorder fires every pointer move)
     const sessionReorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const workspaceReorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const folderReorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     // 세션 순서 변경 핸들러
     // Note: workspaces 상태를 변경하지 않고 sessionOrders만 변경하여 터미널 재렌더링 방지
@@ -926,6 +927,17 @@ function App() {
         if (workspaceReorderTimerRef.current) clearTimeout(workspaceReorderTimerRef.current)
         workspaceReorderTimerRef.current = setTimeout(() => {
             window.api.reorderWorkspaces(newOrder)
+        }, 300)
+    }
+
+    // Folder order change handler - folders hold no terminals, so the array itself can be reordered
+    const handleReorderFolders = (newFolders: WorkspaceFolder[]) => {
+        setFolders(newFolders)
+
+        // Debounced save - onReorder fires on every pointer move during a drag
+        if (folderReorderTimerRef.current) clearTimeout(folderReorderTimerRef.current)
+        folderReorderTimerRef.current = setTimeout(() => {
+            window.api.reorderFolders(newFolders.map(f => f.id))
         }, 300)
     }
 
@@ -1263,6 +1275,7 @@ function App() {
                     onRemoveFolder={handleRemoveFolder}
                     onToggleFolderExpanded={handleToggleFolderExpanded}
                     onMoveWorkspaceToFolder={handleMoveWorkspaceToFolder}
+                    onReorderFolders={handleReorderFolders}
                     width={sidebarWidth}
                     setWidth={setSidebarWidth}
                     onClose={() => setIsSidebarOpen(false)}

@@ -113,6 +113,8 @@ export interface ApiSession {
     awaitingInput: boolean
     controlledBy: string
     connectedAt: string
+    /** The session's memo pad (Cmd+J). Empty when the user wrote none. */
+    memo: string
 }
 
 export interface ApiOutput {
@@ -570,7 +572,8 @@ export class ControlApiService {
             state: this.stateOf(session.id, DEFAULT_QUIET_MS),
             awaitingInput: this.deps.mirror.showsAwaitingInput(session.id) || hook?.awaitingInput === true,
             controlledBy: session.aiControl?.client ?? '',
-            connectedAt: new Date(session.aiControl?.since ?? 0).toISOString()
+            connectedAt: new Date(session.aiControl?.since ?? 0).toISOString(),
+            memo: session.memo ?? ''
         }
     }
 
