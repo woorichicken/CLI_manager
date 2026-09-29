@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { KeyboardSettings } from './KeyboardSettings'
 import { AgentIntegrationSettings } from './AgentIntegrationSettings'
 import { ControlApiSettings } from './ControlApiSettings'
+import { CHANGELOG_URL } from '../constants/links'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
@@ -312,7 +313,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                             </button>
                                         </div>
                                         <a
-                                            href="https://solhun.com/changelog"
+                                            href={CHANGELOG_URL}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-[9px] text-blue-500 hover:text-blue-400"
