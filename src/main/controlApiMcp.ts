@@ -211,7 +211,10 @@ function formatScreen(output: ApiOutput | ApiWaitResult): string {
         'timedOut' in output ? `waited ${Math.round(output.waitedMs / 100) / 10}s${output.timedOut ? ' · TIMED OUT (still busy)' : ''}` : null,
         `--- ${output.mode} (${output.lines.length} lines${output.cols ? `, ${output.cols}x${output.rows}` : ''}) ---`
     ].filter(Boolean)
-    return [...header, ...output.lines].join('\n')
+    const footer = output.suggestion
+        ? [`--- input box shows a suggestion (dim text, not typed by anyone): ${output.suggestion} ---`]
+        : []
+    return [...header, ...output.lines, ...footer].join('\n')
 }
 
 async function callTool(

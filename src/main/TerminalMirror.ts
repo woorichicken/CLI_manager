@@ -45,12 +45,17 @@ const BUSY_PATTERN = /esc to interrupt/i
  * whatever option is highlighted — so the API refuses text while one is shown.
  *
  * Checked against Claude Code 2.1 (trust dialog: "Yes, I trust this folder",
- * footer "Enter to confirm · Esc to cancel") and Codex approval prompts.
+ * footer "Enter to confirm · Esc to cancel") and Codex approval prompts. Codex
+ * asks about a new folder in its own words ("Do you trust the contents of this
+ * directory?" … "Press enter to continue"); missing it once let a first prompt
+ * be typed into that dialog and vanish while the API reported it sent.
  */
 const AWAITING_INPUT_PATTERNS = [
     /Enter to confirm/i,
     /Esc to cancel/i,
     /trust this folder/i,
+    /Do you trust the contents of this directory/i,
+    /Press enter to continue/i,
     /Do you want to (proceed|make|create|allow|run)/i,
     /No, and tell Claude what to do differently/,
     /Would you like to (run|make|apply)/i,
@@ -62,6 +67,20 @@ const FLUSH_TIMEOUT_MS = 1000
 
 /** Agent dialogs put the question a few lines above the options at the bottom. */
 const QUESTION_REGION_LINES = 15
+
+/**
+ * Claude Code draws its input box between two full-width rules. Matched on the
+ * trimmed row, so a rule with a label inside it does not count.
+ */
+const INPUT_BOX_RULE = /^─{20,}$/
+
+/** What an agent's input box currently holds, split by how it is drawn. */
+export interface InputBox {
+    /** Text drawn normally — what was typed (by the user or the API). */
+    typed: string
+    /** Text drawn dim — the agent's suggestion for the next prompt, never typed by anyone. */
+    suggestion: string
+}
 
 interface Mirror {
     term: HeadlessTerminal
@@ -161,6 +180,57 @@ export class TerminalMirror {
         return mirror ? { cols: mirror.term.cols, rows: mirror.term.rows } : null
     }
 
+    /**
+     * The input box at the bottom of the screen (the rows between the last two
+     * rules), or null when the program draws none. Dim cells are reported
+     * separately: Claude Code shows its next-prompt suggestion there in dim
+     * text, and plain text alone cannot tell it from something a person typed.
+     */
+    inputBox(id: string): InputBox | null {
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return null
+        const buffer = mirror.term.buffer.active
+        const rules: number[] = []
+        for (let row = mirror.term.rows - 1; row >= 0 && rules.length < 2; row--) {
+            const text = buffer.getLine(buffer.viewportY + row)?.translateToString(true).trim() ?? ''
+            if (INPUT_BOX_RULE.test(text)) rules.push(row)
+        }
+        if (rules.length < 2) return null
+
+        const [bottom, top] = rules
+        const typed: string[] = []
+        const suggestion: string[] = []
+        const cell = buffer.getNullCell()
+        for (let row = top + 1; row < bottom; row++) {
+            const line = buffer.getLine(buffer.viewportY + row)
+            if (!line) continue
+            let typedRow = ''
+            let suggestionRow = ''
+            for (let col = 0; col < line.length; col++) {
+                line.getCell(col, cell)
+                // Wide characters occupy a second, empty cell.
+                if (cell.getWidth() === 0) continue
+                const chars = cell.getChars()
+                // Claude Code draws the spaces inside dim text without the dim
+                // attribute (seen replaying a real session), so blanks belong to both.
+                if (chars.trim() === '') {
+                    typedRow += ' '
+                    suggestionRow += ' '
+                } else if (cell.isDim()) {
+                    suggestionRow += chars
+                } else {
+                    typedRow += chars
+                }
+            }
+            typed.push(collapseSpaces(typedRow))
+            suggestion.push(collapseSpaces(suggestionRow))
+        }
+        return {
+            typed: stripPromptGlyph(typed.filter(Boolean).join(' ')),
+            suggestion: suggestion.filter(Boolean).join(' ')
+        }
+    }
+
     /** The screen currently shows an agent turn in progress. */
     showsBusy(id: string): boolean {
         return this.screen(id).some((line) => BUSY_PATTERN.test(line))
@@ -207,6 +277,15 @@ export class TerminalMirror {
             mirror.term.resize(cols, rows)
         }
     }
+}
+
+function collapseSpaces(text: string): string {
+    return text.replace(/\s+/g, ' ').trim()
+}
+
+/** The box starts with a prompt glyph ("❯" or ">"); it is decoration, not input. */
+function stripPromptGlyph(text: string): string {
+    return text.replace(/^[❯>]\s*/, '').trim()
 }
 
 function trimTrailingBlank(lines: string[]): string[] {

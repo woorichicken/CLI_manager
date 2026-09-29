@@ -11,11 +11,30 @@
  * multi-line prompt) so a test can check exactly what was submitted, and how
  * many times.
  *
- * Usage: node scripts/mock-cli/agent-mock.cjs [--work-ms 1500]
+ * Options that reproduce what real agents do to the API:
+ *   --box            draw a Claude Code style input box (two rules around "❯ input"),
+ *                    with a dim next-prompt suggestion after each answer
+ *   --drop-enters N  ignore the first N Enters on a non-empty box (a CLI under heavy load)
+ *   --codex-trust    start with Codex's "Do you trust the contents of this directory?" dialog
+ * Always: ESC followed by a character within 500ms is read as Alt+character and
+ * dropped, the way terminal programs parse it.
+ *
+ * Usage: node scripts/mock-cli/agent-mock.cjs [--work-ms 1500] [--box] [--drop-enters N] [--codex-trust]
  */
 
-const argIndex = process.argv.indexOf('--work-ms')
-const WORK_MS = argIndex > 0 ? Number(process.argv[argIndex + 1]) : 1500
+const argValue = (name) => {
+    const index = process.argv.indexOf(name)
+    return index > 0 ? process.argv[index + 1] : undefined
+}
+const WORK_MS = Number(argValue('--work-ms') ?? 1500)
+const BOX = process.argv.includes('--box')
+let enterDropsLeft = Number(argValue('--drop-enters') ?? 0)
+const CODEX_TRUST = process.argv.includes('--codex-trust')
+const META_WINDOW_MS = 500
+const RULE = '─'.repeat(30)
+const SUGGESTION = 'run the tests next'
+const TRUST_DIALOG =
+    'Do you trust the contents of this directory?\r\n› 1. Yes, continue\r\n  2. No, quit\r\nPress enter to continue\r\n'
 const SPINNER_FRAME_MS = 100
 const FRAMES = ['✻', '✢', '✳', '∗']
 const PASTE_START = '\x1b[200~'
@@ -28,15 +47,39 @@ let inPaste = false
 let busy = false
 let asking = false
 let submitted = 0
+let trusting = CODEX_TRUST
+let escapeAt = 0
+let inCsi = false
+let boxDrawn = false
+let showSuggestion = false
 
 const out = (text) => process.stdout.write(text)
-const prompt = () => out('> ')
+
+// --box: the box is always the last three rows, and the cursor sits on its bottom rule.
+function clearBox() {
+    if (boxDrawn) out('\x1b[2A\r\x1b[J')
+    boxDrawn = false
+}
+function drawBox() {
+    clearBox()
+    const content = input || !showSuggestion ? input : `\x1b[2m${SUGGESTION}\x1b[22m`
+    out(`${RULE}\r\n❯ ${content}\r\n${RULE}`)
+    boxDrawn = true
+}
+const prompt = () => (BOX ? drawBox() : out('> '))
 
 function submit() {
     const text = input
     input = ''
     submitted++
-    out('\r\n')
+    if (BOX) {
+        clearBox()
+        showSuggestion = false
+        // Like Claude Code, the submitted prompt stays in the transcript above the box.
+        out(`> ${text}\r\n`)
+    } else {
+        out('\r\n')
+    }
 
     if (text.trim() === 'ASK') {
         asking = true
@@ -57,11 +100,40 @@ function submit() {
         const lines = text.split('\n')
         out(`\r\x1b[2KANSWER[${submitted}]: ${lines.length > 1 ? `lines=${lines.length}` : text}\r\n`)
         busy = false
+        showSuggestion = true
         prompt()
     }, WORK_MS)
 }
 
 function handleChar(ch) {
+    // Terminal key parsing: ESC then a character soon after is Alt+character.
+    if (inCsi) {
+        if (/[A-Za-z~]/.test(ch)) inCsi = false
+        return
+    }
+    if (ch === '\x1b') {
+        escapeAt = Date.now()
+        return
+    }
+    if (escapeAt) {
+        const meta = Date.now() - escapeAt < META_WINDOW_MS
+        escapeAt = 0
+        if (meta && ch === '[') {
+            inCsi = true
+            return
+        }
+        if (meta) return
+    }
+
+    if (trusting) {
+        if (ch === '1' || ch === '\r') {
+            trusting = false
+            out('\x1b[4A\r\x1b[J')
+            out('TRUSTED\r\n')
+            prompt()
+        }
+        return
+    }
     if (asking) {
         if (ch === '1' || ch === '\r' || ch === '2') {
             asking = false
@@ -81,6 +153,19 @@ function handleChar(ch) {
         const normalized = ch === '\r' ? '\n' : ch
         input += normalized
         out(normalized === '\n' ? '\r\n  ' : normalized)
+        return
+    }
+    if (BOX) {
+        if (ch === '\r') {
+            if (!input) return
+            if (enterDropsLeft > 0) {
+                enterDropsLeft--
+                return
+            }
+            return submit()
+        }
+        input = ch === '\x7f' ? input.slice(0, -1) : input + ch
+        drawBox()
         return
     }
     if (ch === '\r') return submit()
@@ -114,4 +199,5 @@ process.stdin.resume()
 
 out('\x1b[?2004h')
 out('agent-mock ready\r\n')
-prompt()
+if (trusting) out(TRUST_DIALOG)
+else prompt()
