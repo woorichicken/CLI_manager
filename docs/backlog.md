@@ -209,6 +209,28 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   제안: `GET /v1/events` 또는 `POST /v1/wait-any` — busy→idle·질문 대기 전환을 이벤트로, 백그라운드 셸 대기는 제외.
 - Owner: 없음
 
+### 개선안 — 사용자가 연 기존 세션을 AI 에게 넘기기(adopt)
+- Discovered: 2026-09-29, "API 가 기존 터미널 세션도 접근 가능한가" 질문에 범위를 잡다가
+- Why deferred: API 가 자기가 연 세션만 만진다는 건 보안 경계(루트 `CLAUDE.md` Control API 불변식 2번,
+  [`decisions/0005`](decisions/0005-ai-control-api-local-http.md))라 바꿀지는 사람이 정해야 한다. 또 넘긴 직후의
+  화면을 얻는 방법이 정해지지 않았다.
+- Trigger: 사용자가 이미 돌고 있는 세션을 AI 에게 맡기고 싶다고 할 때
+- Evidence: 사용자 세션에 입력하면 `requireControlled()`(`src/main/ControlApiService.ts` 483행 부근)가 403
+  `not_controlled` 를 낸다. 미러는 `aiControl` 세션에만 붙고(`TerminalMirror.ts` 19행 주석) 붙인 시점부터 바이트를 재생하므로,
+  넘긴 직후엔 현재 화면을 모른다. 리페인트(SIGWINCH)로 얻으면 터미널 렌더링 불변식 2번(스크롤백 오염)과 충돌한다.
+  제안: 세션 우클릭 "AI 에게 연결"로 사용자가 명시적으로 넘긴다(Disconnect AI 의 짝). 초기 화면은 renderer xterm 버퍼를
+  `SerializeAddon` 으로 직렬화해 미러에 먹이는 방안을 먼저 검토한다.
+- Owner: Human Review (보안 경계 변경)
+
+### 개선안 — Control API 로 세션 메모 쓰기
+- Discovered: 2026-09-29, API 응답에 `memo`(읽기 전용)를 추가하면서
+- Why deferred: 쓰기는 AI 가 사용자가 적은 메모를 바꾸게 되는 일이라 허용 여부가 사람 결정이다.
+- Trigger: AI 가 작업 인계 노트·진행 상황을 메모에 남기게 하고 싶을 때
+- Evidence: 읽기는 `describe()` 가 `session.memo` 를 돌려준다. 쓰기 경로는 renderer IPC `update-session-memo`
+  (`src/main/index.ts` 1385행 부근)뿐이다. 열 때 고를 것: 덮어쓰기 vs 덧붙이기, 사용자가 메모를 편집 중일 때의 충돌,
+  `aiControl` 세션만 허용(기존 경계 유지).
+- Owner: Human Review
+
 ## Blocked
 
 없음.
