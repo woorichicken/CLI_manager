@@ -9,22 +9,23 @@ import { WorkspaceContextMenu, WorktreeContextMenu, BranchMenu, SessionContextMe
 import { BranchPromptModal } from './Modals'
 
 /**
- * ReorderableWorkspace - 워크스페이스 드래그 앤 드롭을 위한 래퍼 컴포넌트
- * 각 워크스페이스마다 useDragControls 훅을 사용해야 하므로 별도 컴포넌트로 분리
+ * ReorderableRow - 워크스페이스·폴더 드래그 앤 드롭을 위한 래퍼 컴포넌트
+ * 각 행마다 useDragControls 훅을 사용해야 하므로 별도 컴포넌트로 분리
  */
-interface ReorderableWorkspaceProps {
-    workspace: Workspace
+interface ReorderableRowProps<T> {
+    value: T
+    title: string
     children: React.ReactNode
     onDragStart: () => void
     onDragEnd: () => void
 }
 
-function ReorderableWorkspace({ workspace, children, onDragStart, onDragEnd }: ReorderableWorkspaceProps) {
+function ReorderableRow<T>({ value, title, children, onDragStart, onDragEnd }: ReorderableRowProps<T>) {
     const dragControls = useDragControls()
 
     return (
         <Reorder.Item
-            value={workspace}
+            value={value}
             dragListener={false}
             dragControls={dragControls}
             transition={{ layout: { duration: 0 } }}
@@ -42,7 +43,7 @@ function ReorderableWorkspace({ workspace, children, onDragStart, onDragEnd }: R
                         }
                     }}
                     className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 z-10 cursor-grab active:cursor-grabbing p-0.5 opacity-0 group-hover/workspace:opacity-50 hover:!opacity-100 transition-opacity"
-                    title="Drag to reorder workspace"
+                    title={title}
                 >
                     <GripVertical size={12} className="text-gray-500" />
                 </div>
@@ -79,6 +80,7 @@ interface SidebarProps {
     onRemoveFolder: (folderId: string) => void
     onToggleFolderExpanded: (folderId: string) => void
     onMoveWorkspaceToFolder: (workspaceId: string, folderId: string | null) => void
+    onReorderFolders: (folders: WorkspaceFolder[]) => void
     width: number
     setWidth: (width: number) => void
     onClose: () => void
@@ -127,6 +129,7 @@ export function Sidebar({
     onRemoveFolder,
     onToggleFolderExpanded,
     onMoveWorkspaceToFolder,
+    onReorderFolders,
     width,
     setWidth,
     onClose,
@@ -163,6 +166,8 @@ export function Sidebar({
 
     // Track workspace drag state to prevent toggle on drag
     const isDraggingWorkspaceRef = useRef(false)
+    // Same purpose for folders: the header's click toggles expand, and a drag ends with a click
+    const isDraggingFolderRef = useRef(false)
 
     // Vertical resizing logic (Playground section height)
     const [playgroundHeight, setPlaygroundHeight] = useState(() => {
@@ -879,112 +884,136 @@ export function Sidebar({
                         </>
                     )}
 
-                    {/* Folders */}
-                    {folders.map(folder => {
-                        const folderWorkspaces = workspaces.filter(w =>
-                            w.folderId === folder.id && !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned
-                        )
-                        return (
-                            <div key={folder.id}>
-                                <div
-                                    className="group/folder flex items-center justify-between py-1 px-2 rounded hover:bg-white/5 cursor-pointer transition-colors"
-                                    onClick={() => onToggleFolderExpanded(folder.id)}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault()
-                                        e.stopPropagation()
-                                        setFolderMenuOpen({ x: e.clientX, y: e.clientY, folderId: folder.id })
+                    {/* Folders - drag & drop reorder supported */}
+                    <Reorder.Group
+                        axis="y"
+                        values={folders}
+                        onReorder={onReorderFolders}
+                        className="space-y-0.5"
+                    >
+                        {folders.map(folder => {
+                            const folderWorkspaces = workspaces.filter(w =>
+                                w.folderId === folder.id && !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned
+                            )
+                            return (
+                                <ReorderableRow
+                                    key={folder.id}
+                                    value={folder}
+                                    title="Drag to reorder folder"
+                                    onDragStart={() => {
+                                        isDraggingFolderRef.current = true
+                                    }}
+                                    onDragEnd={() => {
+                                        // Delay reset so click event is ignored first
+                                        setTimeout(() => {
+                                            isDraggingFolderRef.current = false
+                                        }, 0)
                                     }}
                                 >
-                                    <div className="flex items-center gap-2 overflow-hidden min-w-0">
-                                        {folder.isExpanded ? (
-                                            <ChevronDown size={14} className="text-gray-400 shrink-0" />
-                                        ) : (
-                                            <ChevronRight size={14} className="text-gray-400 shrink-0" />
-                                        )}
-                                        <Folder size={14} className="text-amber-400/70 shrink-0" />
-                                        {renamingFolderId === folder.id ? (
-                                            <input
-                                                autoFocus
-                                                className="bg-transparent border border-white/20 rounded px-1 text-xs outline-none focus:border-blue-500 w-full"
-                                                defaultValue={folder.name}
-                                                style={{ fontSize: `${fontSize}px` }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        const value = (e.target as HTMLInputElement).value.trim()
+                                    <div
+                                        data-testid={`folder-header-${folder.id}`}
+                                        className="group/folder flex items-center justify-between py-1 px-2 rounded hover:bg-white/5 cursor-pointer transition-colors"
+                                        onClick={() => {
+                                            if (isDraggingFolderRef.current) return
+                                            onToggleFolderExpanded(folder.id)
+                                        }}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            setFolderMenuOpen({ x: e.clientX, y: e.clientY, folderId: folder.id })
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-2 overflow-hidden min-w-0">
+                                            {folder.isExpanded ? (
+                                                <ChevronDown size={14} className="text-gray-400 shrink-0" />
+                                            ) : (
+                                                <ChevronRight size={14} className="text-gray-400 shrink-0" />
+                                            )}
+                                            <Folder size={14} className="text-amber-400/70 shrink-0" />
+                                            {renamingFolderId === folder.id ? (
+                                                <input
+                                                    autoFocus
+                                                    className="bg-transparent border border-white/20 rounded px-1 text-xs outline-none focus:border-blue-500 w-full"
+                                                    defaultValue={folder.name}
+                                                    style={{ fontSize: `${fontSize}px` }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            const value = (e.target as HTMLInputElement).value.trim()
+                                                            if (value) {
+                                                                onRenameFolder(folder.id, value)
+                                                            }
+                                                            setRenamingFolderId(null)
+                                                        }
+                                                        if (e.key === 'Escape') {
+                                                            setRenamingFolderId(null)
+                                                        }
+                                                    }}
+                                                    onBlur={(e) => {
+                                                        const value = e.target.value.trim()
                                                         if (value) {
                                                             onRenameFolder(folder.id, value)
                                                         }
                                                         setRenamingFolderId(null)
-                                                    }
-                                                    if (e.key === 'Escape') {
-                                                        setRenamingFolderId(null)
-                                                    }
-                                                }}
-                                                onBlur={(e) => {
-                                                    const value = e.target.value.trim()
-                                                    if (value) {
-                                                        onRenameFolder(folder.id, value)
-                                                    }
-                                                    setRenamingFolderId(null)
-                                                }}
-                                                onClick={(e) => e.stopPropagation()}
-                                            />
-                                        ) : (
-                                            <span className="text-amber-100/80 font-medium truncate" style={{ fontSize: `${fontSize}px` }}>
-                                                {folder.name}
-                                            </span>
-                                        )}
-                                        {showSessionCount && folderWorkspaces.length > 0 && (
-                                            <span className="text-[10px] text-gray-500 shrink-0">
-                                                ({folderWorkspaces.length})
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                                {folder.isExpanded && folderWorkspaces.length > 0 && (
-                                    <div className="ml-3 pl-2 border-l border-white/5 space-y-0.5">
-                                        {folderWorkspaces.map(workspace => {
-                                            const childWorktrees = showWorktrees
-                                                ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
-                                                : []
-                                            return (
-                                                <WorkspaceItem
-                                                    key={workspace.id}
-                                                    workspace={workspace}
-                                                    childWorktrees={childWorktrees}
-                                                    expanded={expanded.has(workspace.id)}
-                                                    expandedSet={expanded}
-                                                    branchInfo={workspaceBranches.get(workspace.id)}
-                                                    activeSessionId={activeSessionId}
-                                                    sessionStatuses={sessionStatuses}
-                                                    hooksSettings={hooksSettings}
-                                                    terminalPreview={terminalPreview}
-                                                    renamingSessionId={renamingSessionId}
-                                                    fontSize={fontSize}
-                                                    showSessionCount={showSessionCount}
-                                                    isPinned={false}
-                                                    onToggleExpand={toggleExpand}
-                                                    onContextMenu={handleContextMenu}
-                                                    onSessionContextMenu={handleSessionContextMenu}
-                                                    onBranchClick={handleBranchClick}
-                                                    onSelect={onSelect}
-                                                    onRemoveSession={onRemoveSession}
-                                                    onRemoveWorkspace={onRemoveWorkspace}
-                                                    onOpenInEditor={onOpenInEditor}
-                                                    onRenameSession={handleRenameSubmit}
-                                                    onRenameCancel={() => setRenamingSessionId(null)}
-                                                    onReorderSessions={onReorderSessions}
-                                                    splitLayout={splitLayout}
-                                                    onDragStartSession={onDragStartSession}
-                                                    onDragEndSession={onDragEndSession}
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
                                                 />
-                                            )
-                                        })}
+                                            ) : (
+                                                <span className="text-amber-100/80 font-medium truncate" style={{ fontSize: `${fontSize}px` }}>
+                                                    {folder.name}
+                                                </span>
+                                            )}
+                                            {showSessionCount && folderWorkspaces.length > 0 && (
+                                                <span className="text-[10px] text-gray-500 shrink-0">
+                                                    ({folderWorkspaces.length})
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
-                                )}
-                            </div>
-                        )
-                    })}
+                                    {folder.isExpanded && folderWorkspaces.length > 0 && (
+                                        <div className="ml-3 pl-2 border-l border-white/5 space-y-0.5">
+                                            {folderWorkspaces.map(workspace => {
+                                                const childWorktrees = showWorktrees
+                                                    ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                                    : []
+                                                return (
+                                                    <WorkspaceItem
+                                                        key={workspace.id}
+                                                        workspace={workspace}
+                                                        childWorktrees={childWorktrees}
+                                                        expanded={expanded.has(workspace.id)}
+                                                        expandedSet={expanded}
+                                                        branchInfo={workspaceBranches.get(workspace.id)}
+                                                        activeSessionId={activeSessionId}
+                                                        sessionStatuses={sessionStatuses}
+                                                        hooksSettings={hooksSettings}
+                                                        terminalPreview={terminalPreview}
+                                                        renamingSessionId={renamingSessionId}
+                                                        fontSize={fontSize}
+                                                        showSessionCount={showSessionCount}
+                                                        isPinned={false}
+                                                        onToggleExpand={toggleExpand}
+                                                        onContextMenu={handleContextMenu}
+                                                        onSessionContextMenu={handleSessionContextMenu}
+                                                        onBranchClick={handleBranchClick}
+                                                        onSelect={onSelect}
+                                                        onRemoveSession={onRemoveSession}
+                                                        onRemoveWorkspace={onRemoveWorkspace}
+                                                        onOpenInEditor={onOpenInEditor}
+                                                        onRenameSession={handleRenameSubmit}
+                                                        onRenameCancel={() => setRenamingSessionId(null)}
+                                                        onReorderSessions={onReorderSessions}
+                                                        splitLayout={splitLayout}
+                                                        onDragStartSession={onDragStartSession}
+                                                        onDragEndSession={onDragEndSession}
+                                                    />
+                                                )
+                                            })}
+                                        </div>
+                                    )}
+                                </ReorderableRow>
+                            )
+                        })}
+                    </Reorder.Group>
 
                     {/* Regular workspaces - drag & drop reorder supported */}
                     <Reorder.Group
@@ -998,9 +1027,10 @@ export function Sidebar({
                                 ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
                                 : []
                             return (
-                                <ReorderableWorkspace
+                                <ReorderableRow
                                     key={workspace.id}
-                                    workspace={workspace}
+                                    value={workspace}
+                                    title="Drag to reorder workspace"
                                     onDragStart={() => {
                                         isDraggingWorkspaceRef.current = true
                                     }}
@@ -1040,7 +1070,7 @@ export function Sidebar({
                                         onDragStartSession={onDragStartSession}
                                         onDragEndSession={onDragEndSession}
                                     />
-                                </ReorderableWorkspace>
+                                </ReorderableRow>
                             )
                         })}
                     </Reorder.Group>

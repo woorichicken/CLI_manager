@@ -1,7 +1,7 @@
 import http from 'http'
 import { AddressInfo } from 'net'
 import { randomBytes, timingSafeEqual } from 'crypto'
-import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from 'fs'
+import { chmodSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API } from '../shared/types'
@@ -219,11 +219,18 @@ export class ControlApiServer {
         }
     }
 
+    /**
+     * Only the process that wrote the file may delete it. A dev build or a test
+     * instance shares the same path, and when it quit it used to delete the file
+     * of the app still running — leaving tools thinking the API was off.
+     */
     private removeDiscovery(): void {
         try {
+            const written = JSON.parse(readFileSync(this.discoveryPath, 'utf-8')) as { pid?: unknown }
+            if (written.pid !== process.pid) return
             unlinkSync(this.discoveryPath)
         } catch {
-            // Not there: nothing to clean up.
+            // Missing or unreadable: not ours to clean up.
         }
     }
 

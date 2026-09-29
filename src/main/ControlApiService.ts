@@ -50,6 +50,27 @@ const SUBMIT_DELAY_PER_CHAR_MS = 0.02
 const SUBMIT_DELAY_MAX_MS = 1_500
 const KEY_GAP_MS = 60
 
+/**
+ * A fixed delay before Enter is not always enough: under heavy load (load
+ * average ~40, six sessions at once) Claude Code left a long prompt sitting in
+ * its input box. When the program draws an input box, the API checks that
+ * Enter emptied it and presses Enter again if not. An extra Enter on an empty
+ * box does nothing, so a late-but-successful submit is harmless.
+ */
+const SUBMIT_CONFIRM_MS = 3_000
+const SUBMIT_CONFIRM_POLL_MS = 250
+const SUBMIT_RETRIES = 2
+/** Enough of the prompt to recognise it in the box, short enough not to wrap. */
+const SUBMIT_HEAD_CHARS = 16
+
+/**
+ * Terminals read ESC followed quickly by a character as Alt+character, so text
+ * sent right after an Escape key vanished. Node's readline waits 500ms before
+ * deciding a lone ESC is a key press; waiting a little longer is on the safe side.
+ */
+const ESCAPE_SETTLE_MS = 600
+const ESCAPE = '\x1b'
+
 const MAX_OUTPUT_LINES = 2000
 const DEFAULT_OUTPUT_LINES = 60
 const MAX_TEXT_LENGTH = 100_000
@@ -113,6 +134,8 @@ export interface ApiSession {
     awaitingInput: boolean
     controlledBy: string
     connectedAt: string
+    /** The session's memo pad (Cmd+J). Empty when the user wrote none. */
+    memo: string
 }
 
 export interface ApiOutput {
@@ -121,6 +144,11 @@ export interface ApiOutput {
     cols: number | null
     rows: number | null
     lines: string[]
+    /**
+     * Text the agent shows dimmed in its empty input box as a suggested next
+     * prompt. It appears in `lines` too, but nobody typed it. Null when none.
+     */
+    suggestion: string | null
 }
 
 export interface ApiWaitResult extends ApiOutput {
@@ -188,6 +216,9 @@ function canonicalPath(p: string): string {
 }
 
 export class ControlApiService {
+    /** When each session last received a lone Escape from the API. */
+    private readonly lastEscapeAt = new Map<string, number>()
+
     constructor(private readonly deps: ControlApiDeps) {}
 
     /**
@@ -246,12 +277,14 @@ export class ControlApiService {
         const screen = mode === 'tail'
             ? this.deps.mirror.tail(sessionId, lines)
             : this.deps.mirror.screen(sessionId).slice(-lines)
+        const box = this.deps.mirror.inputBox(sessionId)
         return {
             session: this.describe(workspace, session),
             mode,
             cols: size?.cols ?? null,
             rows: size?.rows ?? null,
-            lines: screen
+            lines: screen,
+            suggestion: box && !box.typed && box.suggestion ? box.suggestion : null
         }
     }
 
@@ -318,8 +351,13 @@ export class ControlApiService {
                     'The program is asking a question (for example whether to trust this folder), so the prompt was not sent. ' +
                     'Read the screen, answer it with send_input keys (e.g. ["down","enter"]), then send the prompt.'
             } else {
-                await this.sendInput(session.id, { text: input.prompt, submit: true })
-                result.promptSent = true
+                const submitted = await this.typeAndSubmit(session.id, { text: input.prompt, submit: true })
+                result.promptSent = submitted
+                if (!submitted) {
+                    result.note =
+                        'The prompt was typed but is still in the input box after pressing Enter three times. ' +
+                        'Read the screen and press enter with send_input keys.'
+                }
             }
             result.session = this.getSession(session.id)
         }
@@ -328,7 +366,14 @@ export class ControlApiService {
     }
 
     async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession> {
+        await this.typeAndSubmit(sessionId, input)
         const { workspace, session } = this.requireControlled(sessionId)
+        return this.describe(workspace, session)
+    }
+
+    /** Returns false only when the text is provably still sitting unsubmitted in the input box. */
+    private async typeAndSubmit(sessionId: string, input: SendInputInput): Promise<boolean> {
+        this.requireControlled(sessionId)
         const keys = (input.keys ?? []).map((key) => resolveKey(key))
 
         if (input.text === undefined && keys.length === 0) {
@@ -357,24 +402,67 @@ export class ControlApiService {
             }
         }
 
+        let submitted = true
         if (input.text !== undefined) {
             const submit = input.submit !== false
             const text = submit ? input.text.replace(/[\r\n]+$/, '') : input.text
             if (text.length > 0) {
-                this.deps.terminals.writeInput(sessionId, this.encodeText(sessionId, text))
+                await this.settleAfterEscape(sessionId)
+                this.write(sessionId, this.encodeText(sessionId, text))
             }
             if (submit) {
                 await sleep(submitDelay(text.length))
-                this.deps.terminals.writeInput(sessionId, '\r')
+                this.write(sessionId, '\r')
+                if (text.length > 0) submitted = await this.confirmSubmitted(sessionId, text)
             }
         }
 
         for (const key of keys) {
             await sleep(KEY_GAP_MS)
-            this.deps.terminals.writeInput(sessionId, key)
+            // Escape followed by any key would read as Alt+key, not two presses.
+            // Escape twice stays fast: Claude Code reads a double Escape as its own gesture.
+            if (key !== ESCAPE) await this.settleAfterEscape(sessionId)
+            this.write(sessionId, key)
         }
 
-        return this.describe(workspace, session)
+        return submitted
+    }
+
+    private write(sessionId: string, data: string): void {
+        this.deps.terminals.writeInput(sessionId, data)
+        if (data === ESCAPE) this.lastEscapeAt.set(sessionId, Date.now())
+    }
+
+    private async settleAfterEscape(sessionId: string): Promise<void> {
+        const since = Date.now() - (this.lastEscapeAt.get(sessionId) ?? 0)
+        if (since < ESCAPE_SETTLE_MS) await sleep(ESCAPE_SETTLE_MS - since)
+    }
+
+    /**
+     * After Enter, the prompt should leave the input box. Only checked when the
+     * program draws one and the prompt was visible in it; anything else (a
+     * shell, a multi-line paste shown as a placeholder) is taken as submitted.
+     */
+    private async confirmSubmitted(sessionId: string, text: string): Promise<boolean> {
+        const head = text.replace(/\s+/g, ' ').trim().slice(0, SUBMIT_HEAD_CHARS)
+        if (!head) return true
+        const stillInBox = async (): Promise<boolean> => {
+            await this.deps.mirror.flush(sessionId)
+            const box = this.deps.mirror.inputBox(sessionId)
+            return box !== null && box.typed.includes(head)
+        }
+
+        for (let attempt = 0; attempt <= SUBMIT_RETRIES; attempt++) {
+            const deadline = Date.now() + SUBMIT_CONFIRM_MS
+            while (Date.now() < deadline) {
+                if (!(await stillInBox())) return true
+                await sleep(SUBMIT_CONFIRM_POLL_MS)
+            }
+            if (attempt === SUBMIT_RETRIES) break
+            console.warn(`[control-api] prompt still in the input box of ${sessionId}; pressing Enter again`)
+            this.write(sessionId, '\r')
+        }
+        return !(await stillInBox())
     }
 
     /**
@@ -426,6 +514,7 @@ export class ControlApiService {
         const { workspace } = this.requireControlled(sessionId)
         this.deps.terminals.killTerminal(sessionId)
         this.deps.mirror.detach(sessionId)
+        this.lastEscapeAt.delete(sessionId)
 
         const workspaces = this.workspaces()
         const target = workspaces.find((w) => w.id === workspace.id)
@@ -457,6 +546,7 @@ export class ControlApiService {
     /** The user deleted a session or workspace; drop what we held for it. */
     forgetSession(sessionId: string): void {
         this.deps.mirror.detach(sessionId)
+        this.lastEscapeAt.delete(sessionId)
     }
 
     // ------------------------------------------------------------------
@@ -570,7 +660,8 @@ export class ControlApiService {
             state: this.stateOf(session.id, DEFAULT_QUIET_MS),
             awaitingInput: this.deps.mirror.showsAwaitingInput(session.id) || hook?.awaitingInput === true,
             controlledBy: session.aiControl?.client ?? '',
-            connectedAt: new Date(session.aiControl?.since ?? 0).toISOString()
+            connectedAt: new Date(session.aiControl?.since ?? 0).toISOString(),
+            memo: session.memo ?? ''
         }
     }
 

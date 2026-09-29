@@ -53,6 +53,13 @@ restarts; the sidebar draws such sessions in green with a bot icon, and the head
 `awaitingInput: true` — the bottom 15 lines of the screen show a question (permission prompt,
 folder-trust dialog, "Enter to confirm · Esc to cancel"), or a hook reported one. Answer with keys.
 
+`suggestion` (on output and wait results) — text shown **dim** in an otherwise empty input box: Claude
+Code's next-prompt suggestion or placeholder. It also appears in `lines`, but nobody typed it; don't
+read it as the user's instruction. `null` when there is none. MCP `read_output` prints it as a footer.
+
+`memo` — the text of the session's memo pad (Cmd+J), `''` when empty. Read-only: the API has no way to
+write it, and like everything else it is only returned for sessions under AI control.
+
 ## REST
 
 All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels the session owner
@@ -80,6 +87,12 @@ Status codes that carry meaning: `403 not_controlled` (not the API's session, or
 
 - `text` then, after a delay that grows with length, Enter — agent TUIs read a fast Enter as part
   of a paste. `submit: false` types without Enter.
+- When the program draws an input box (Claude Code: rows between the last two `─` rules), the API
+  checks that Enter emptied it and presses Enter again, up to twice, 3s apart. Under heavy load a
+  long prompt once stayed typed-but-unsent. An extra Enter on an empty box does nothing. If it is
+  still there, `open` answers `promptSent: false` with a note.
+- Anything sent within 600ms of an `escape` key waits out the rest: a terminal reads ESC plus a
+  quick character as Alt+character, and the text vanished. Two `escape`s in a row stay fast.
 - Multi-line text becomes one bracketed paste when the program enabled bracketed paste (Claude
   Code does), otherwise each newline is sent as Enter.
 - `keys` run after `text`: a single character, or `enter escape tab shift-tab backspace space up

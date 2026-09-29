@@ -69,6 +69,8 @@ export interface LaunchOptions {
     customTemplates?: Array<{ id: string; name: string; icon: string; description: string; command: string }>
     /** Extra environment for the app process (e.g. CLIMANAGER_HOME). */
     env?: Record<string, string>
+    /** Sidebar folders, stored in this order. */
+    folders?: Array<{ id: string; name: string; isExpanded?: boolean; createdAt: number }>
 }
 
 /**
@@ -101,6 +103,7 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
         })),
         playgroundPath: userDataDir,
         customTemplates: options.customTemplates ?? [],
+        ...(options.folders ? { folders: options.folders } : {}),
         settings: {
             theme: 'dark',
             fontSize: 14,
