@@ -86,11 +86,11 @@ green run replaces a notarized release with an unsigned one.
 
 ```bash
 curl -sI "https://pub-dc249db286af4c1991fedf690157891d.r2.dev/cli-manager-<version>-arm64.dmg" | head -1
-curl -sL https://www.solhun.com | grep -o "cli-manager-[0-9.]*-arm64.dmg" | head -1
+curl -sL https://climanager.solhun.com | grep -o "cli-manager-[0-9.]*-arm64.dmg" | head -1
 curl -sL https://github.com/woorichicken/CLI_manager/releases/latest/download/latest-mac.yml | head -1
 ```
 
-Use **`www.solhun.com`**: the apex redirects (307) and returns a 15-byte body, so grepping it finds
+Use **`climanager.solhun.com`**: since 2026-09-30 `solhun.com` is a personal portfolio, so grepping it finds
 no version and reads like a failed deploy.
 
 Test failures inside the gate now leave their full output at `/tmp/release-tests-<ts>.log`, named in

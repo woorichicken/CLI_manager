@@ -9,7 +9,7 @@
   [![Open Source](https://img.shields.io/badge/open%20source-%E2%9D%A4-red.svg)](https://github.com/woorichicken/CLI_manager)
   [![GitHub release](https://img.shields.io/github/v/release/woorichicken/CLI_manager)](https://github.com/woorichicken/CLI_manager/releases/latest)
 
-  [**Download for macOS**](https://github.com/woorichicken/CLI_manager/releases/latest) · [Website](https://solhun.com) · [Report a Bug](https://github.com/woorichicken/CLI_manager/issues)
+  [**Download for macOS**](https://github.com/woorichicken/CLI_manager/releases/latest) · [Website](https://climanager.solhun.com) · [Report a Bug](https://github.com/woorichicken/CLI_manager/issues)
 </div>
 
 ---
