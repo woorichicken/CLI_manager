@@ -156,6 +156,26 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   `pnpm test:term` 은 87 passed (3.7m). 세 번째 `--check` 도 87 passed.
 - Owner: Maintainer
 
+### `scripts/post-release.cjs` — 웹사이트 저장소가 뒤처져 있으면 링크 커밋을 만든 뒤에야 push 가 거부된다
+- Discovered: 2026-10-01, v1.11.0 배포 중
+- Why deferred: 배포 도중이라 손으로 풀고 넘어갔다(`git pull --rebase origin main` 후 `git push origin main`).
+- Trigger: 다음 릴리즈 전
+- Evidence: 프리플라이트는 `website repo clean`·`website on main` 만 본다. 웹사이트 로컬 main 이 origin 보다 14커밋
+  뒤처진 상태에서 링크 갱신 커밋을 만들었고 `push failed — … fast-forwards` 로 끝났다(R2 업로드와 changelog 는 성공,
+  종료는 `COMPLETED WITH FAILURES`). "no stale version references" 검사도 낡은 트리를 본 것이다.
+  제안: 프리플라이트에서 `git fetch` 후 `HEAD..origin/main` 이 비어 있는지 확인하거나 먼저 `pull --ff-only`.
+- Owner: Maintainer
+
+### `.github/workflows/ci.yml` — 의존성 설치 단계에서 `@vscode/ripgrep` postinstall 이 실패한다
+- Discovered: 2026-10-01, PR #16 의 CI 를 확인하다가
+- Why deferred: 접근 규칙 변경과 무관하고, 아래 "main CI 가 끝까지 가지 못했다" 항목과 원인이 같은지부터 갈라야 한다.
+- Trigger: CI 를 머지 판단 근거로 쓰기 전
+- Evidence: run 36729620173 의 verify 잡이 59초 만에 `Install dependencies` 에서 끝났다.
+  `.../node_modules/@vscode/ripgrep postinstall: Failed` → `ELIFECYCLE Command failed with exit code 1`.
+  스택이 HTTP 응답 처리(`ClientRequest`·`TLSSocket`)라 바이너리 다운로드 실패로 보인다(GitHub API 요청 한도 가능성 — 미확인).
+  같은 날 main 의 실행도 failure 다.
+- Owner: Maintainer
+
 ### 개선안 — 여러 AI 세션의 상태 변화를 한 번에 기다리는 `watch`
 - Discovered: 2026-09-29, 저녁 매니저 세션이 세션 5~6개를 동시에 관리하며
 - Why deferred: 이번엔 외부 스크립트(상태를 20초마다 폴링하고 busy→idle 전환만 알림)로 대신했다.
