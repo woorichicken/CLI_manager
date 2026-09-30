@@ -333,6 +333,11 @@ export class TerminalManager {
         return this.terminals.has(id)
     }
 
+    /** Ids of every terminal with a live pty. */
+    listTerminalIds(): string[] {
+        return [...this.terminals.keys()]
+    }
+
     getSize(id: string): { cols: number; rows: number } | null {
         return this.sizes.get(id) ?? null
     }

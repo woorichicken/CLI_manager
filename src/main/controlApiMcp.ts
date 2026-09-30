@@ -29,7 +29,9 @@ Typical flow:
 3. wait_for_idle, then read_output. Or pass wait_seconds to send_input to do both in one call.
 4. Repeat send_input / wait_for_idle as needed. close_session when done, or release_session to hand it to the user.
 
-Rules: you can only access sessions you opened. The user sees them highlighted in green and may type into them or disconnect them at any time — re-read the screen before acting, and stop if a call says the session is not under AI control. If a screen shows a question (awaitingInput: true) — a permission prompt, or Claude Code asking whether to trust a new folder — read the options and answer with send_input keys (e.g. ["down","enter"], ["1"]); text is refused until the question is gone. Trusting a folder or approving an action is the user's call: only accept when the user's request clearly covers it.`
+You can also work in sessions the user opened: list_sessions with scope "all" (use query — there can be hundreds) finds them, and the same tools apply. Do this only when the user's request points at that session. A session's screen may be missing older output when screenPartial is true.
+
+Rules: the first time you read, type into, wait on or focus a session it is marked as AI-driven and highlighted in green, so the user can see where you are working. They may type into it or disconnect it at any time — re-read the screen before acting. If a call reports "disconnected", the user took the session back: stop working in it unless they ask you to continue. Closing a session kills whatever runs in it; never close one you did not open unless the user asked. If a screen shows a question (awaitingInput: true) — a permission prompt, or Claude Code asking whether to trust a new folder — read the options and answer with send_input keys (e.g. ["down","enter"], ["1"]); text is refused until the question is gone. Trusting a folder or approving an action is the user's call: only accept when the user's request clearly covers it.`
 
 interface JsonRpcRequest {
     jsonrpc?: string
@@ -64,8 +66,15 @@ const TOOLS: ToolDefinition[] = [
     },
     {
         name: 'list_sessions',
-        description: 'List the sessions under your control with their state (starting, busy, idle, exited).',
-        inputSchema: { type: 'object', properties: {} }
+        description:
+            'List sessions with their state (starting, busy, idle, exited). By default only the ones marked as AI-driven; scope "all" includes every session the user has open.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                scope: { type: 'string', enum: ['ai', 'all'], description: 'Default "ai".' },
+                query: { type: 'string', description: 'Case-insensitive substring of the session name, workspace name or folder.' }
+            }
+        }
     },
     {
         name: 'open_session',
@@ -153,13 +162,23 @@ const TOOLS: ToolDefinition[] = [
         inputSchema: { type: 'object', properties: { ...sessionIdProperty }, required: ['session_id'] }
     },
     {
+        name: 'rename_session',
+        description: 'Change the name a session shows in the CLI Manager sidebar (up to 80 characters).',
+        inputSchema: {
+            type: 'object',
+            properties: { ...sessionIdProperty, name: { type: 'string', description: 'The new name.' } },
+            required: ['session_id', 'name']
+        }
+    },
+    {
         name: 'release_session',
-        description: 'Hand a session to the user: it keeps running, but you lose access to it.',
+        description: 'Hand a session to the user: it keeps running and is no longer marked as AI-driven.',
         inputSchema: { type: 'object', properties: { ...sessionIdProperty }, required: ['session_id'] }
     },
     {
         name: 'close_session',
-        description: 'Stop a session you opened and remove it from CLI Manager.',
+        description:
+            'Stop a session and remove it from CLI Manager. Whatever runs in it is killed. Works on any session, so only close one you did not open when the user asked for it.',
         inputSchema: { type: 'object', properties: { ...sessionIdProperty }, required: ['session_id'] }
     }
 ]
@@ -208,7 +227,8 @@ function formatScreen(output: ApiOutput | ApiWaitResult): string {
     const s = output.session
     const header = [
         `session ${s.id} (${s.name}) · state: ${s.state} · awaitingInput: ${s.awaitingInput}`,
-        'timedOut' in output ? `waited ${Math.round(output.waitedMs / 100) / 10}s${output.timedOut ? ' · TIMED OUT (still busy)' : ''}` : null,
+        'timedOut' in output ? `waited ${Math.round(output.waitedMs / 100) / 10}s${output.timedOut ? ' · TIMED OUT (still busy)' : ''}${output.sleptMs > 0 ? ` · the machine slept ${Math.round(output.sleptMs / 1000)}s of that` : ''}` : null,
+        s.screenPartial ? 'screen copy started mid-session: output printed before that is missing' : null,
         `--- ${output.mode} (${output.lines.length} lines${output.cols ? `, ${output.cols}x${output.rows}` : ''}) ---`
     ].filter(Boolean)
     const footer = output.suggestion
@@ -230,7 +250,11 @@ async function callTool(
         case 'list_templates':
             return JSON.stringify(service.listTemplates(), null, 1)
         case 'list_sessions':
-            return JSON.stringify(service.listSessions(), null, 1)
+        {
+            const scope = str(args, 'scope')
+            if (scope !== undefined && scope !== 'ai' && scope !== 'all') throw new InvalidParams('scope must be "ai" or "all"')
+            return JSON.stringify(service.listSessions({ scope, query: str(args, 'query') }), null, 1)
+        }
         case 'open_session': {
             const result = await service.openSession({
                 path: str(args, 'path'),
@@ -250,11 +274,12 @@ async function callTool(
                 text: str(args, 'text'),
                 submit: bool(args, 'submit'),
                 keys: strList(args, 'keys'),
-                force: bool(args, 'force')
+                force: bool(args, 'force'),
+                client
             })
             const waitMs = seconds(num(args, 'wait_seconds'), 0)
             if (waitMs === 0) return JSON.stringify({ sent: true, session }, null, 1)
-            return formatScreen(await service.waitForIdle(sessionId, { timeoutMs: waitMs, signal }))
+            return formatScreen(await service.waitForIdle(sessionId, { timeoutMs: waitMs, signal, client }))
         }
         case 'wait_for_idle':
             return formatScreen(
@@ -262,21 +287,24 @@ async function callTool(
                     timeoutMs: seconds(num(args, 'timeout_seconds'), DEFAULT_WAIT_SECONDS),
                     quietMs: num(args, 'quiet_ms'),
                     lines: num(args, 'lines'),
-                    signal
+                    signal,
+                    client
                 })
             )
         case 'read_output': {
             const mode = str(args, 'mode')
             if (mode !== undefined && mode !== 'screen' && mode !== 'tail') throw new InvalidParams('mode must be "screen" or "tail"')
             return formatScreen(
-                await service.readOutput(str(args, 'session_id', true)!, { mode, lines: num(args, 'lines') })
+                await service.readOutput(str(args, 'session_id', true)!, { mode, lines: num(args, 'lines'), client })
             )
         }
         case 'focus_session':
-            return JSON.stringify(service.focusSession(str(args, 'session_id', true)!), null, 1)
+            return JSON.stringify(service.focusSession(str(args, 'session_id', true)!, client), null, 1)
+        case 'rename_session':
+            return JSON.stringify(service.renameSession(str(args, 'session_id', true)!, str(args, 'name', true)!), null, 1)
         case 'release_session':
             service.releaseSession(str(args, 'session_id', true)!)
-            return 'Released. The session keeps running for the user; you no longer have access to it.'
+            return 'Released. The session keeps running for the user and is no longer marked as AI-driven.'
         case 'close_session':
             service.closeSession(str(args, 'session_id', true)!)
             return 'Closed.'

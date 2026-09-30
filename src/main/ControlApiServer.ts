@@ -354,7 +354,13 @@ export class ControlApiServer {
             route('GET', '/v1/health', () => ({ ok: true, app: 'CLI Manager', version: this.options.appVersion })),
             route('GET', '/v1/workspaces', ({ query }) => service.listWorkspaces(query.get('query') ?? undefined)),
             route('GET', '/v1/templates', () => service.listTemplates()),
-            route('GET', '/v1/sessions', () => service.listSessions()),
+            route('GET', '/v1/sessions', ({ query }) => {
+                const scope = query.get('scope') ?? undefined
+                if (scope !== undefined && scope !== 'ai' && scope !== 'all') {
+                    throw new ControlApiError(400, 'bad_request', 'scope must be "ai" or "all"')
+                }
+                return service.listSessions({ scope, query: query.get('query') ?? undefined })
+            }),
             route('POST', '/v1/sessions', ({ body, client }) =>
                 service.openSession({
                     path: optionalString(body, 'path'),
@@ -368,14 +374,14 @@ export class ControlApiServer {
                 })
             ),
             route('GET', '/v1/sessions/:id', ({ params }) => service.getSession(params.id)),
-            route('GET', '/v1/sessions/:id/output', ({ params, query }) => {
+            route('GET', '/v1/sessions/:id/output', ({ params, query, client }) => {
                 const mode = query.get('mode') ?? undefined
                 if (mode !== undefined && mode !== 'screen' && mode !== 'tail') {
                     throw new ControlApiError(400, 'bad_request', 'mode must be "screen" or "tail"')
                 }
-                return service.readOutput(params.id, { mode, lines: optionalNumber(query.get('lines'), 'lines') })
+                return service.readOutput(params.id, { mode, lines: optionalNumber(query.get('lines'), 'lines'), client })
             }),
-            route('POST', '/v1/sessions/:id/input', ({ params, body }) => {
+            route('POST', '/v1/sessions/:id/input', ({ params, body, client }) => {
                 const keys = body.keys
                 if (keys !== undefined && (!Array.isArray(keys) || keys.some((k) => typeof k !== 'string'))) {
                     throw new ControlApiError(400, 'bad_request', 'keys must be an array of strings')
@@ -384,18 +390,25 @@ export class ControlApiServer {
                     text: optionalString(body, 'text'),
                     submit: optionalBoolean(body, 'submit'),
                     keys: keys as string[] | undefined,
-                    force: optionalBoolean(body, 'force')
+                    force: optionalBoolean(body, 'force'),
+                    client
                 })
             }),
-            route('POST', '/v1/sessions/:id/wait', ({ params, body, signal }) =>
+            route('POST', '/v1/sessions/:id/wait', ({ params, body, signal, client }) =>
                 service.waitForIdle(params.id, {
                     timeoutMs: optionalNumber(body.timeoutMs, 'timeoutMs'),
                     quietMs: optionalNumber(body.quietMs, 'quietMs'),
                     lines: optionalNumber(body.lines, 'lines'),
-                    signal
+                    signal,
+                    client
                 })
             ),
-            route('POST', '/v1/sessions/:id/focus', ({ params }) => service.focusSession(params.id)),
+            route('POST', '/v1/sessions/:id/focus', ({ params, client }) => service.focusSession(params.id, client)),
+            route('POST', '/v1/sessions/:id/rename', ({ params, body }) => {
+                const name = optionalString(body, 'name')
+                if (name === undefined) throw new ControlApiError(400, 'bad_request', 'name is required')
+                return service.renameSession(params.id, name)
+            }),
             route('POST', '/v1/sessions/:id/release', ({ params }) => {
                 service.releaseSession(params.id)
                 return { ok: true }

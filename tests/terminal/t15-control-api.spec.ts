@@ -42,7 +42,9 @@ interface ApiSession {
     state: string
     awaitingInput: boolean
     workspaceId: string
+    aiControlled: boolean
     controlledBy: string
+    screenPartial: boolean
     memo: string
 }
 
@@ -107,10 +109,14 @@ test.describe('T15 AI Control API', () => {
         const templates = await api<Array<{ name: string }>>('GET', '/v1/templates')
         expect(templates.json.map(t => t.name)).toContain('agent-mock')
 
-        // --- The user's own session is out of reach ------------------------
-        const denied = await api<{ error: { code: string } }>('POST', `/v1/sessions/${USER_SESSION_ID}/input`, { text: 'rm -rf /' })
-        expect(denied.status).toBe(403)
-        expect(denied.json.error.code).toBe('not_controlled')
+        // --- The user's own session: listed on request, not marked yet -----
+        expect((await api<ApiSession[]>('GET', '/v1/sessions')).json).toEqual([])
+        const everything = await api<ApiSession[]>('GET', '/v1/sessions?scope=all&query=t15usersess')
+        expect(everything.json.map(s => s.id)).toEqual([USER_SESSION_ID])
+        expect(everything.json[0].aiControlled).toBe(false)
+        expect(everything.json[0].controlledBy).toBe('')
+        // Looking it up is not working in it.
+        expect((await api<ApiSession>('GET', `/v1/sessions/${USER_SESSION_ID}`)).json.aiControlled).toBe(false)
 
         // --- Open: new folder + template + first prompt --------------------
         const opened = await api<{ session: ApiSession; createdWorkspace: boolean; terminalStarted: boolean; promptSent: boolean; note?: string }>(
@@ -214,18 +220,64 @@ test.describe('T15 AI Control API', () => {
         const read = await mcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'read_output', arguments: { session_id: sessionId, mode: 'tail', lines: 200 } } })
         expect(read.json.result.isError).toBeFalsy()
         expect(read.json.result.content[0].text).toContain('ANSWER[1]: hello world')
-        const mcpDenied = await mcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'read_output', arguments: { session_id: USER_SESSION_ID } } })
-        expect(mcpDenied.json.result.isError).toBe(true)
-        expect(mcpDenied.json.result.content[0].text).toContain('not_controlled')
+        // --- A session the user opened: reachable, and marked once touched --
+        const userRow = page.locator(`[data-session-item="${USER_SESSION_ID}"]`)
+        const mcpUser = await mcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'read_output', arguments: { session_id: USER_SESSION_ID } } })
+        expect(mcpUser.json.result.isError).toBeFalsy()
+        await expect(userRow).toHaveClass(/emerald/, { timeout: 5_000 })
+        const marked = await api<ApiSession>('GET', `/v1/sessions/${USER_SESSION_ID}`)
+        expect(marked.json.aiControlled).toBe(true)
+        // The app mirrored it from the start, so nothing the shell printed is missing.
+        expect(marked.json.screenPartial).toBe(false)
+        expect((await api('POST', `/v1/sessions/${USER_SESSION_ID}/input`, { text: 'echo T15USER-$((40+2))' })).status).toBe(200)
+        const userScreen = await api<{ lines: string[]; timedOut: boolean }>('POST', `/v1/sessions/${USER_SESSION_ID}/wait`, { timeoutMs: 30_000 })
+        expect(userScreen.json.lines.join('\n')).toContain('T15USER-42')
+        const mcpAll = await mcp({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'list_sessions', arguments: { scope: 'all' } } })
+        expect(mcpAll.json.result.content[0].text).toContain(USER_SESSION_ID)
 
-        // --- The user takes the session back from the sidebar -------------
+        // Rename: the sidebar and config.json follow, and an empty name is refused.
+        const renamed = await api<ApiSession>('POST', `/v1/sessions/${USER_SESSION_ID}/rename`, { name: '  T15RENAMED  ' })
+        expect(renamed.json.name).toBe('T15RENAMED')
+        await expect(userRow).toContainText('T15RENAMED', { timeout: 5_000 })
+        const renamedStore = JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8'))
+        expect(renamedStore.workspaces.flatMap((w: { sessions: Array<{ id: string; name: string }> }) => w.sessions)
+            .find((s: { id: string }) => s.id === USER_SESSION_ID)?.name).toBe('T15RENAMED')
+        expect((await api('POST', `/v1/sessions/${USER_SESSION_ID}/rename`, { name: '   ' })).status).toBe(400)
+        const mcpRename = await mcp({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'rename_session', arguments: { session_id: sessionId, name: 'T15AIRENAMED' } } })
+        expect(mcpRename.json.result.isError).toBeFalsy()
+        await expect(aiRow).toContainText('T15AIRENAMED', { timeout: 5_000 })
+
+        // Release takes the mark off; the session stays, and stays reachable.
+        expect((await api('POST', `/v1/sessions/${USER_SESSION_ID}/release`)).status).toBe(200)
+        await expect(userRow).not.toHaveClass(/emerald/, { timeout: 5_000 })
+        expect((await api<ApiSession[]>('GET', '/v1/sessions')).json.map(s => s.id)).not.toContain(USER_SESSION_ID)
+
+        // --- Disconnect AI interrupts a wait in flight ---------------------
+        const interrupted = api<{ error: { code: string } }>('POST', `/v1/sessions/${sessionId}/wait`, { timeoutMs: 60_000, quietMs: 40_000 })
+        await page.waitForTimeout(500)
         await aiRow.click({ button: 'right' })
         await page.getByText('Disconnect AI').click()
         await expect(aiRow).not.toHaveClass(/emerald/, { timeout: 5_000 })
-        const afterRelease = await api<{ error: { code: string } }>('POST', `/v1/sessions/${sessionId}/input`, { text: 'still there?' })
-        expect(afterRelease.status).toBe(403)
-        // Released, not closed: the terminal is still in the app.
+        const stopped = await interrupted
+        expect(stopped.status).toBe(409)
+        expect(stopped.json.error.code).toBe('disconnected')
+        // Disconnected, not closed: the terminal is still in the app.
         await expect(aiRow).toHaveCount(1)
+
+        // --- Reconnect: the same session is reachable again, screen intact --
+        const back = await api<{ lines: string[]; session: ApiSession }>('GET', `/v1/sessions/${sessionId}/output?mode=tail&lines=200`)
+        expect(back.status).toBe(200)
+        expect(back.json.lines.join('\n')).toContain('ANSWER[1]: hello world')
+        expect(back.json.session.screenPartial).toBe(false)
+        await expect(aiRow).toHaveClass(/emerald/, { timeout: 5_000 })
+        await api('POST', `/v1/sessions/${sessionId}/input`, { text: 'after reconnect' })
+        const reconnected = await api<{ lines: string[] }>('POST', `/v1/sessions/${sessionId}/wait`, { timeoutMs: 30_000 })
+        expect(reconnected.json.lines.join('\n')).toContain('after reconnect')
+
+        // --- Close works on a session the user opened ----------------------
+        expect((await api('DELETE', `/v1/sessions/${USER_SESSION_ID}`)).status).toBe(200)
+        await expect(userRow).toHaveCount(0, { timeout: 5_000 })
+        expect((await api('GET', `/v1/sessions/${USER_SESSION_ID}`)).status).toBe(404)
 
         // --- A shell that exits on its own is reported as exited ----------
         const quitter = await api<{ session: ApiSession }>('POST', '/v1/sessions', { path: aiFolder, command: 'exit', name: 'T15EXIT' })

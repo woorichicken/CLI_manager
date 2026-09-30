@@ -134,7 +134,7 @@ User Action (Renderer)
           cliSessionId?: string,      // --session-id injected when the agent started
           cliToolName?: string,
           cliCommand?: string,        // What started it (`cldy`) — resume repeats this, not `claude`
-          aiControl?: { client: string, since: number }  // Opened by the AI Control API
+          aiControl?: { client: string, since: number }  // Mark: an AI works in this session (Control API)
         }
       ],
       createdAt: number,

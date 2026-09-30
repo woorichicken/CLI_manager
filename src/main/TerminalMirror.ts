@@ -16,8 +16,11 @@ import { TerminalManager } from './TerminalManager'
  * stream yields every intermediate frame glued together; replaying it through
  * an emulator yields the final screen.
  *
- * Only API sessions get a mirror. Parsing every terminal a second time would
- * cost CPU for output nobody reads.
+ * While the Control API is on, every terminal gets a mirror from the moment
+ * its pty starts, because the API may read any session and a mirror only knows
+ * what was printed after it was attached. Asking the program to repaint instead
+ * would send SIGWINCH, which leaves repaint debris in the user's scrollback.
+ * While the API is off there are no mirrors, so the cost is zero.
  */
 
 /** Pty size before the renderer reports the real one. Matches TerminalView's fallback. */
@@ -86,16 +89,23 @@ interface Mirror {
     term: HeadlessTerminal
     lastOutputAt: number
     exited: boolean
+    /** Attached to a pty that was already running, so earlier output is missing. */
+    partial: boolean
 }
 
 export class TerminalMirror {
     private readonly mirrors = new Map<string, Mirror>()
+    private mirrorAll = false
 
     constructor(private readonly terminals: TerminalManager) {
         terminals.events.on('created', (id, cols, rows) => {
+            // Runs before the new pty's first output is delivered, so a mirror
+            // attached here sees everything.
+            if (this.mirrorAll) this.attach(id)
             const mirror = this.mirrors.get(id)
             if (!mirror) return
             mirror.exited = false
+            mirror.partial = false
             this.resize(mirror, cols, rows)
         })
         terminals.events.on('resized', (id, cols, rows) => {
@@ -124,7 +134,21 @@ export class TerminalMirror {
             scrollback: MIRROR_SCROLLBACK,
             allowProposedApi: true
         })
-        this.mirrors.set(id, { term, lastOutputAt: 0, exited: false })
+        this.mirrors.set(id, { term, lastOutputAt: 0, exited: false, partial: this.terminals.hasTerminal(id) })
+    }
+
+    /**
+     * Mirror every terminal, present and future. Terminals that are already
+     * running start with an empty mirror and are reported as partial.
+     */
+    setMirrorAll(enabled: boolean): void {
+        this.mirrorAll = enabled
+        if (enabled) for (const id of this.terminals.listTerminalIds()) this.attach(id)
+    }
+
+    /** True when output printed before the mirror was attached is missing from it. */
+    isPartial(id: string): boolean {
+        return this.mirrors.get(id)?.partial ?? false
     }
 
     detach(id: string): void {

@@ -3,7 +3,7 @@ description: When picking up deferred work, or when parking something found mid-
 authority: Work observed in this repository and consciously not done yet
 status: active
 owner: maintainer
-last-reviewed: 2026-08-18
+last-reviewed: 2026-09-30
 ---
 
 # Backlog
@@ -165,18 +165,32 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   제안: `GET /v1/events` 또는 `POST /v1/wait-any` — busy→idle·질문 대기 전환을 이벤트로, 백그라운드 셸 대기는 제외.
 - Owner: 없음
 
-### 개선안 — 사용자가 연 기존 세션을 AI 에게 넘기기(adopt)
-- Discovered: 2026-09-29, "API 가 기존 터미널 세션도 접근 가능한가" 질문에 범위를 잡다가
-- Why deferred: API 가 자기가 연 세션만 만진다는 건 보안 경계(루트 `CLAUDE.md` Control API 불변식 2번,
-  [`decisions/0005`](decisions/0005-ai-control-api-local-http.md))라 바꿀지는 사람이 정해야 한다. 또 넘긴 직후의
-  화면을 얻는 방법이 정해지지 않았다.
-- Trigger: 사용자가 이미 돌고 있는 세션을 AI 에게 맡기고 싶다고 할 때
-- Evidence: 사용자 세션에 입력하면 `requireControlled()`(`src/main/ControlApiService.ts` 483행 부근)가 403
-  `not_controlled` 를 낸다. 미러는 `aiControl` 세션에만 붙고(`TerminalMirror.ts` 19행 주석) 붙인 시점부터 바이트를 재생하므로,
-  넘긴 직후엔 현재 화면을 모른다. 리페인트(SIGWINCH)로 얻으면 터미널 렌더링 불변식 2번(스크롤백 오염)과 충돌한다.
-  제안: 세션 우클릭 "AI 에게 연결"로 사용자가 명시적으로 넘긴다(Disconnect AI 의 짝). 초기 화면은 renderer xterm 버퍼를
-  `SerializeAddon` 으로 직렬화해 미러에 먹이는 방안을 먼저 검토한다.
-- Owner: Human Review (보안 경계 변경)
+### `src/main/ControlApiService.ts` — 사용자와 AI 가 같은 세션에 동시에 입력하면 글자가 섞인다
+- Discovered: 2026-09-30, Control API 가 모든 세션에 닿도록 바꾸면서
+  ([`decisions/0006`](decisions/0006-control-api-reaches-every-session.md))
+- Why deferred: 접근 규칙을 바꾸는 작업의 범위 밖이고, 막는 방식(사용자 타이핑 중 API 입력 거부 vs 대기열)이
+  사람 결정이다.
+- Trigger: AI 가 사용자 세션에 입력한 글자가 사용자 입력과 섞였다는 보고가 나올 때
+- Evidence: `typeAndSubmit()` 은 화면에 질문이 있는지만 보고 `terminals.writeInput()` 을 부른다. 사용자 키 입력도 같은
+  pty 로 바로 간다. 중재하는 코드가 없다.
+- Owner: Human Review
+
+### `src/main/ControlApiService.ts` — API 를 켠 채로 특정 세션만 AI 에게서 잠글 방법이 없다
+- Discovered: 2026-09-30, 같은 작업
+- Why deferred: 0006 에서 "켜져 있으면 전부 열림"으로 정했다. Disconnect AI 는 걸려 있던 `wait` 만 끊는다.
+- Trigger: 사용자가 API 를 끄지 않고 세션 하나를 AI 로부터 지키고 싶다고 할 때
+- Evidence: `connect()` 가 표시 없는 세션을 첫 접근에서 다시 표시한다. 0006 의 Reversal 에 설계(세션별 차단 +
+  "Connect to AI")를 적어 뒀다.
+- Owner: Human Review
+
+### `src/main/index.ts` — 앱을 재시작하면 AI 세션의 돌던 작업과 화면이 사라진다
+- Discovered: 2026-09-30, "노트북이 꺼지면 연결이 끊긴다"를 조사하며
+- Why deferred: 이번 범위는 잠자기까지였다(잠자기는 `t20-control-api-sleep.spec.ts` 로 고정).
+- Trigger: 재시작 후 AI 가 세션을 이어받아야 할 때
+- Evidence: 재시작 후 `aiControl` 과 세션 id 는 남지만 pty 는 새로 뜨고 미러는 비어 있다. AI 는 빈 화면을 idle 로 읽을 수
+  있다. 제안: 세션 응답에 "재시작됨" 표시, AI 세션은 `--resume` 으로 다시 띄우기. `clearAllCliSessionIds()`
+  (`src/main/index.ts` 849행 부근)는 정의만 있고 호출처가 없어 대화 id 는 종료 때 지워지지 않는다.
+- Owner: 없음
 
 ### 개선안 — Control API 로 세션 메모 쓰기
 - Discovered: 2026-09-29, API 응답에 `memo`(읽기 전용)를 추가하면서

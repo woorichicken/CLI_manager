@@ -15,10 +15,12 @@ import { TerminalMirror } from './TerminalMirror'
  * What the Control API can do, independent of transport. The HTTP routes and
  * the MCP tools are both thin adapters over this class.
  *
- * Access rule: the API reads the workspace list and templates, but it may only
- * type into and read sessions carrying `aiControl` — the ones it opened. The
- * user's own terminals stay out of reach, and "Disconnect AI" in the sidebar
- * clears the flag, which is how a session is taken back.
+ * Access rule: while the API is switched on it reaches every session in the
+ * app, including the ones the user opened (decision 0006). `aiControl` is no
+ * longer a permission — it is the visible mark that an AI is working in a
+ * session. Opening a session sets it, and so does the first read, input, wait
+ * or focus on a session that does not carry it. "Disconnect AI" and
+ * `release` clear the mark; switching the API off is what ends access.
  */
 
 /** Output-silence that counts as "settled" when nothing else says the agent is busy. */
@@ -39,6 +41,14 @@ const STARTUP_TIMEOUT_MS = 60_000
 
 const WAIT_POLL_MS = 200
 const MAX_WAIT_MS = 10 * 60 * 1000
+
+/**
+ * A poll that comes back this much later than it asked to means the process
+ * was not running — the machine slept. That time is taken out of a wait's
+ * budget: otherwise every wait in flight times out the instant the lid opens.
+ * Measured with the app frozen for 8s: a 5s wait returned timedOut after 8.3s.
+ */
+const SLEEP_GAP_MS = 5_000
 
 /**
  * Agent TUIs treat a burst of characters as a paste; an Enter inside that
@@ -74,6 +84,8 @@ const ESCAPE = '\x1b'
 const MAX_OUTPUT_LINES = 2000
 const DEFAULT_OUTPUT_LINES = 60
 const MAX_TEXT_LENGTH = 100_000
+/** Same cap open_session applies; the sidebar truncates long names anyway. */
+const MAX_NAME_LENGTH = 80
 
 /** Named keys an agent may press. Anything else must be a single literal character. */
 export const NAMED_KEYS: Record<string, string> = {
@@ -132,8 +144,17 @@ export interface ApiSession {
     command: string | null
     state: SessionState
     awaitingInput: boolean
+    /** Marked in the app as driven by an AI. False for a session no AI has touched (or that was released). */
+    aiControlled: boolean
+    /** Client that marked it, or '' when not marked. */
     controlledBy: string
+    /** ISO time it was marked, or '' when not marked. */
     connectedAt: string
+    /**
+     * The screen copy started after the terminal was already running (the API
+     * was switched on mid-session), so output from before that is missing.
+     */
+    screenPartial: boolean
     /** The session's memo pad (Cmd+J). Empty when the user wrote none. */
     memo: string
 }
@@ -154,6 +175,15 @@ export interface ApiOutput {
 export interface ApiWaitResult extends ApiOutput {
     timedOut: boolean
     waitedMs: number
+    /** Time the machine spent asleep during the wait; not counted against the timeout. */
+    sleptMs: number
+}
+
+export interface ListSessionsInput {
+    /** 'ai' (default): sessions marked as AI-driven. 'all': every session in the app. */
+    scope?: 'ai' | 'all'
+    /** Case-insensitive substring of the session name, workspace name or folder. */
+    query?: string
 }
 
 export interface OpenSessionInput {
@@ -181,6 +211,8 @@ export interface SendInputInput {
     keys?: string[]
     /** Send text even though the screen shows a question. */
     force?: boolean
+    /** Who is typing; recorded when this is the first touch of a session. */
+    client?: string
 }
 
 export interface WaitInput {
@@ -188,6 +220,7 @@ export interface WaitInput {
     quietMs?: number
     lines?: number
     signal?: AbortSignal
+    client?: string
 }
 
 export interface ControlApiDeps {
@@ -222,16 +255,17 @@ export class ControlApiService {
     constructor(private readonly deps: ControlApiDeps) {}
 
     /**
-     * Starts mirroring the sessions a previous run left flagged. Called when the
-     * server starts, never before: a mirror parses every byte its terminal
-     * prints, and that cost must not exist while the API is switched off.
+     * Starts mirroring every terminal. Called when the server starts, never
+     * before: a mirror parses every byte its terminal prints, and that cost
+     * must not exist while the API is switched off.
      */
     startMirroring(): void {
-        for (const { session } of this.aiSessions()) this.deps.mirror.attach(session.id)
+        this.deps.mirror.setMirrorAll(true)
     }
 
-    /** Stops all mirroring. The sessions keep their flag, so enabling resumes them. */
+    /** Stops all mirroring. The sessions keep their mark, so enabling resumes them. */
     stopMirroring(): void {
+        this.deps.mirror.setMirrorAll(false)
         this.deps.mirror.disposeAll()
     }
 
@@ -259,17 +293,31 @@ export class ControlApiService {
         return templates.map((t) => ({ id: t.id, name: t.name, command: t.command, description: t.description ?? '' }))
     }
 
-    listSessions(): ApiSession[] {
-        return this.aiSessions().map(({ workspace, session }) => this.describe(workspace, session))
+    listSessions(input: ListSessionsInput = {}): ApiSession[] {
+        const needle = input.query?.trim().toLowerCase()
+        return this.workspaces()
+            .flatMap((workspace) => workspace.sessions.map((session) => ({ workspace, session })))
+            .filter(({ session }) => input.scope === 'all' || session.aiControl)
+            .filter(({ workspace, session }) =>
+                !needle ||
+                session.name.toLowerCase().includes(needle) ||
+                workspace.name.toLowerCase().includes(needle) ||
+                (session.cwd ?? '').toLowerCase().includes(needle)
+            )
+            .map(({ workspace, session }) => this.describe(workspace, session))
     }
 
+    /** Looking a session up does not mark it; only working in it does. */
     getSession(sessionId: string): ApiSession {
-        const { workspace, session } = this.requireControlled(sessionId)
+        const { workspace, session } = this.requireSession(sessionId)
         return this.describe(workspace, session)
     }
 
-    async readOutput(sessionId: string, options: { lines?: number; mode?: 'screen' | 'tail' } = {}): Promise<ApiOutput> {
-        const { workspace, session } = this.requireControlled(sessionId)
+    async readOutput(
+        sessionId: string,
+        options: { lines?: number; mode?: 'screen' | 'tail'; client?: string } = {}
+    ): Promise<ApiOutput> {
+        const { workspace, session } = this.connect(sessionId, options.client)
         await this.deps.mirror.flush(sessionId)
         const mode = options.mode ?? 'screen'
         const lines = clampLines(options.lines)
@@ -299,7 +347,7 @@ export class ControlApiService {
         const templateName = input.template ? this.findTemplate(input.template)?.name : undefined
         const session: TerminalSession = {
             id: uuidv4(),
-            name: (input.name?.trim() || templateName || 'AI Terminal').slice(0, 80),
+            name: (input.name?.trim() || templateName || 'AI Terminal').slice(0, MAX_NAME_LENGTH),
             cwd: workspace.path,
             type: 'regular',
             ...(command ? { initialCommand: command } : {}),
@@ -366,14 +414,15 @@ export class ControlApiService {
     }
 
     async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession> {
+        this.connect(sessionId, input.client)
         await this.typeAndSubmit(sessionId, input)
-        const { workspace, session } = this.requireControlled(sessionId)
+        const { workspace, session } = this.requireSession(sessionId)
         return this.describe(workspace, session)
     }
 
     /** Returns false only when the text is provably still sitting unsubmitted in the input box. */
     private async typeAndSubmit(sessionId: string, input: SendInputInput): Promise<boolean> {
-        this.requireControlled(sessionId)
+        this.requireSession(sessionId)
         const keys = (input.keys ?? []).map((key) => resolveKey(key))
 
         if (input.text === undefined && keys.length === 0) {
@@ -471,10 +520,12 @@ export class ControlApiService {
      * Returns the screen either way, flagged `timedOut` when it never settled.
      */
     async waitForIdle(sessionId: string, input: WaitInput = {}): Promise<ApiWaitResult> {
-        this.requireControlled(sessionId)
+        this.connect(sessionId, input.client)
         const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 120_000, 0), MAX_WAIT_MS)
         const quietMs = Math.max(input.quietMs ?? DEFAULT_QUIET_MS, 200)
         const started = Date.now()
+        let sleptMs = 0
+        const elapsed = (): number => Date.now() - started - sleptMs
 
         let timedOut = false
         for (;;) {
@@ -482,36 +533,67 @@ export class ControlApiService {
             const state = this.stateOf(sessionId, quietMs)
             // At least one quiet window after the call starts, so a wait issued
             // right after send_input cannot return before the agent reacted.
-            const settled = (state === 'idle' && Date.now() - started >= quietMs) || state === 'exited'
+            const settled = (state === 'idle' && elapsed() >= quietMs) || state === 'exited'
             if (settled) break
             if (input.signal?.aborted) break
-            if (Date.now() - started >= timeoutMs) {
+            if (elapsed() >= timeoutMs) {
                 timedOut = true
                 break
             }
+            const before = Date.now()
             await sleep(WAIT_POLL_MS)
-            // The session may be closed or released while we wait.
-            this.requireControlled(sessionId)
+            const gap = Date.now() - before - WAIT_POLL_MS
+            if (gap >= SLEEP_GAP_MS) sleptMs += gap
+            // The user may close the session, or take it back, while we wait.
+            // Stopping here is what makes "Disconnect AI" interrupt the AI.
+            if (!this.requireSession(sessionId).session.aiControl) {
+                throw new ControlApiError(
+                    409,
+                    'disconnected',
+                    'The user disconnected this session while you were waiting. Stop working in it unless the user asks you to continue.'
+                )
+            }
         }
 
-        const output = await this.readOutput(sessionId, { lines: input.lines, mode: 'screen' })
-        return { ...output, timedOut, waitedMs: Date.now() - started }
+        const output = await this.readOutput(sessionId, { lines: input.lines, mode: 'screen', client: input.client })
+        return { ...output, timedOut, waitedMs: Date.now() - started, sleptMs }
     }
 
-    focusSession(sessionId: string): ApiSession {
-        const { workspace, session } = this.requireControlled(sessionId)
+    focusSession(sessionId: string, client?: string): ApiSession {
+        const { workspace, session } = this.connect(sessionId, client)
         this.emit({ type: 'focus', workspaceId: workspace.id, sessionId })
         return this.describe(workspace, session)
     }
 
-    /** Hands the session to the user: it keeps running, the API loses access. */
+    /**
+     * Renames a session in the sidebar. A label change, not work inside the
+     * terminal, so it does not mark the session as AI-driven.
+     */
+    renameSession(sessionId: string, name: string): ApiSession {
+        const trimmed = name.trim().slice(0, MAX_NAME_LENGTH)
+        if (!trimmed) throw new ControlApiError(400, 'bad_request', 'name must not be empty.')
+
+        const workspaces = this.workspaces()
+        for (const workspace of workspaces) {
+            const session = workspace.sessions.find((s) => s.id === sessionId)
+            if (!session) continue
+            session.name = trimmed
+            this.deps.store.set('workspaces', workspaces)
+            this.emit({ type: 'updated', workspaceId: workspace.id, sessionId, session: { ...session } })
+            return this.describe(workspace, session)
+        }
+        throw new ControlApiError(404, 'not_found', `No session with id ${sessionId}. It may have been closed.`)
+    }
+
+    /** Hands the session to the user: it keeps running and loses its AI mark. */
     releaseSession(sessionId: string): void {
-        this.requireControlled(sessionId)
+        this.requireSession(sessionId)
         this.clearAiControl(sessionId)
     }
 
+    /** Works on any session, including ones the user opened. */
     closeSession(sessionId: string): void {
-        const { workspace } = this.requireControlled(sessionId)
+        const { workspace } = this.requireSession(sessionId)
         this.deps.terminals.killTerminal(sessionId)
         this.deps.mirror.detach(sessionId)
         this.lastEscapeAt.delete(sessionId)
@@ -536,7 +618,8 @@ export class ControlApiService {
             if (!session?.aiControl) continue
             delete session.aiControl
             this.deps.store.set('workspaces', workspaces)
-            this.deps.mirror.detach(sessionId)
+            // The mirror stays: the API can still read this session later, and a
+            // mirror attached then would have missed everything printed until then.
             this.emit({ type: 'updated', workspaceId: workspace.id, sessionId, session: { ...session } })
             return true
         }
@@ -560,23 +643,31 @@ export class ControlApiService {
         }))
     }
 
-    private aiSessions(): Array<{ workspace: Workspace; session: TerminalSession }> {
-        return this.workspaces().flatMap((workspace) =>
-            workspace.sessions.filter((s) => s.aiControl).map((session) => ({ workspace, session }))
-        )
+    private requireSession(sessionId: string): { workspace: Workspace; session: TerminalSession } {
+        for (const workspace of this.workspaces()) {
+            const session = workspace.sessions.find((s) => s.id === sessionId)
+            if (session) return { workspace, session }
+        }
+        throw new ControlApiError(404, 'not_found', `No session with id ${sessionId}. It may have been closed.`)
     }
 
-    private requireControlled(sessionId: string): { workspace: Workspace; session: TerminalSession } {
-        for (const workspace of this.workspaces()) {
+    /**
+     * Marks a session as AI-driven the first time the API works in it, so the
+     * user sees which of their terminals something else may type into. A
+     * session that already carries the mark keeps its original client and time.
+     */
+    private connect(sessionId: string, client?: string): { workspace: Workspace; session: TerminalSession } {
+        const workspaces = this.workspaces()
+        for (const workspace of workspaces) {
             const session = workspace.sessions.find((s) => s.id === sessionId)
             if (!session) continue
             if (!session.aiControl) {
-                throw new ControlApiError(
-                    403,
-                    'not_controlled',
-                    'This session is not under AI control. Only sessions opened through the API are accessible, and the user may disconnect them.'
-                )
+                session.aiControl = { client: client || 'api', since: Date.now() }
+                this.deps.store.set('workspaces', workspaces)
+                this.emit({ type: 'updated', workspaceId: workspace.id, sessionId, session: { ...session } })
             }
+            // Covers a session whose terminal has not started yet.
+            this.deps.mirror.attach(sessionId)
             return { workspace, session }
         }
         throw new ControlApiError(404, 'not_found', `No session with id ${sessionId}. It may have been closed.`)
@@ -659,8 +750,10 @@ export class ControlApiService {
             command: session.initialCommand ?? null,
             state: this.stateOf(session.id, DEFAULT_QUIET_MS),
             awaitingInput: this.deps.mirror.showsAwaitingInput(session.id) || hook?.awaitingInput === true,
+            aiControlled: session.aiControl !== undefined,
             controlledBy: session.aiControl?.client ?? '',
-            connectedAt: new Date(session.aiControl?.since ?? 0).toISOString(),
+            connectedAt: session.aiControl ? new Date(session.aiControl.since).toISOString() : '',
+            screenPartial: this.deps.mirror.isPartial(session.id),
             memo: session.memo ?? ''
         }
     }
