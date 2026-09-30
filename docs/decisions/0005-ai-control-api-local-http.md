@@ -32,9 +32,9 @@ JSON-only responses) at `/mcp` so Claude Code can use it as a tool server with o
 - **Closed by default at every layer.** Off until enabled in Settings > Agents; bound to
   `127.0.0.1`; bearer token on every request; `Host` must be `127.0.0.1`/`localhost` (DNS
   rebinding) and any foreign `Origin` is rejected (a web page cannot drive it).
-- **The API reaches only sessions it opened** (`TerminalSession.aiControl`). It can list folders and
-  templates, but cannot read or type into the user's own terminals. "Disconnect AI" in the sidebar
-  clears the flag, which is how the user takes a session back mid-task.
+- ~~**The API reaches only sessions it opened.**~~ Superseded by
+  [0006](0006-control-api-reaches-every-session.md): while the API is on it reaches every session,
+  and `aiControl` is a visible mark rather than a permission.
 - **Text is refused while the screen shows a question.** Enter on a selection dialog picks the
   highlighted option. Verified against Claude Code 2.1.278: a prompt typed into the folder-trust
   dialog selected "No, exit" and closed the agent. Keys are always allowed; `force: true` overrides.
@@ -60,16 +60,14 @@ JSON-only responses) at `/mcp` so Claude Code can use it as a tool server with o
 - Busy/idle and question detection read English UI strings of external CLIs. A vendor UI change
   can make `wait_for_idle` return early or miss a dialog; `integrations/CLAUDE.md` records the
   strings and the date they were checked.
-- Each API session costs one extra terminal emulator in the main process. User sessions cost
-  nothing.
+- Each mirrored session costs one extra terminal emulator in the main process. Since 0006 that is
+  every terminal while the API is on.
 
 ## Reversal
 
 - If hooks gain an exact pane identity (the Orca pane-key design in 0001's reversal), hook events
   can replace screen parsing for busy/idle — keep the screen for question detection unless hooks
   report those too.
-- If a use case needs the AI to drive sessions the user opened, add an explicit per-session
-  "Connect to AI" hand-off rather than widening the access rule. The screen mirror would then need
-  seeding, because it only sees output from the moment it is attached.
+- The access rule was widened on 2026-09-30; see [0006](0006-control-api-reaches-every-session.md).
 - If the MCP surface grows past a handful of methods (resources, prompts, server-initiated
   requests), switch to the official SDK instead of extending the hand-rolled handler.

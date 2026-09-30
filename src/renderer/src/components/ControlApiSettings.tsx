@@ -111,14 +111,15 @@ export function ControlApiSettings({ config, onChange }: ControlApiSettingsProps
             </h3>
             <p className="text-xs text-gray-400 mb-4">
                 Let an AI (Claude Code, Codex, scripts) open sessions here, run your templates, type prompts and read the
-                results — in terminals you can watch and step into. Sessions it opens are shown in green.
+                results — in terminals you can watch and step into. Sessions it works in are shown in green.
             </p>
 
             <div className="flex items-center justify-between">
                 <div>
                     <p className="text-sm text-gray-300">Enable AI Control API</p>
                     <p className="text-xs text-gray-500 mt-1">
-                        Local only (127.0.0.1) and token-protected. The AI can only touch sessions it opened.
+                        Local only (127.0.0.1) and token-protected. While enabled, the AI can read, type into and close every
+                        session in this app, including the ones you opened.
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -212,7 +213,8 @@ export function ControlApiSettings({ config, onChange }: ControlApiSettingsProps
                     <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded">
                         <p className="text-xs text-blue-200">
                             <strong>Tip:</strong> Ask your AI something like "open a claude-code session in ~/project and have it
-                            fix the failing test". To take a session back, right-click it → Disconnect AI.
+                            fix the failing test". Right-click a green session → Disconnect AI to interrupt the AI there; turn this
+                            switch off to end its access.
                         </p>
                     </div>
                 </div>

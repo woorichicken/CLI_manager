@@ -31,15 +31,24 @@ in test mode without it.
 
 ## Access rule
 
+While the API is switched on it reaches **every session in the app**, including the ones the user
+opened. Rationale: [`../decisions/0006-control-api-reaches-every-session.md`](../decisions/0006-control-api-reaches-every-session.md).
+
 | Can | Cannot |
 |---|---|
-| List workspaces and templates | Read or type into sessions the user opened |
-| Open sessions (and register a new folder as a workspace) | Act on a session after the user clicks **Disconnect AI** |
-| Drive, read, focus, release, close sessions it opened | Type text while the screen shows a question (unless `force: true`) |
+| List workspaces, templates and sessions | Anything while the API is switched off |
+| Open sessions (and register a new folder as a workspace) | Type text while the screen shows a question (unless `force: true`) |
+| Read, type into, wait on, focus, release and close any session | Keep waiting after the user clicks **Disconnect AI** (`409 disconnected`) |
 
-A session it opened carries `aiControl: { client, since }` in the store. The flag persists across
-restarts; the sidebar draws such sessions in green with a bot icon, and the header shows
-"AI connected".
+`aiControl: { client, since }` in the store is a **mark, not a permission**. It is set when the API
+opens a session and the first time it reads, types into, waits on or focuses one; looking a session
+up does not set it. The mark persists across restarts and machine sleep; the sidebar draws marked
+sessions in green with a bot icon, and the header shows "AI connected". `release` and
+**Disconnect AI** clear it — the next call from the API sets it again.
+
+Every terminal is mirrored from the moment its pty starts, so reconnecting to a session returns
+its real screen. The one gap: a terminal already running when the API was switched on reports
+`screenPartial: true`, and output from before that moment is missing.
 
 ## Session state
 
@@ -58,7 +67,7 @@ Code's next-prompt suggestion or placeholder. It also appears in `lines`, but no
 read it as the user's instruction. `null` when there is none. MCP `read_output` prints it as a footer.
 
 `memo` — the text of the session's memo pad (Cmd+J), `''` when empty. Read-only: the API has no way to
-write it, and like everything else it is only returned for sessions under AI control.
+write it.
 
 ## REST
 
@@ -70,17 +79,21 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | GET | `/v1/health` | | `{ ok, app, version }` |
 | GET | `/v1/workspaces` | `?query=` substring | workspaces with `kind`, session counts |
 | GET | `/v1/templates` | | `{ id, name, command, description }[]` |
-| GET | `/v1/sessions` | | sessions under AI control |
+| GET | `/v1/sessions` | `?scope=ai\|all` (default `ai`), `?query=` substring of session, workspace or folder | sessions marked as AI-driven, or all of them |
 | POST | `/v1/sessions` | `path` or `workspaceId`; `template` or `command`; `name`, `prompt`, `focus` | `{ session, createdWorkspace, terminalStarted, promptSent, note? }` |
 | GET | `/v1/sessions/:id` | | session |
 | GET | `/v1/sessions/:id/output` | `?mode=screen\|tail&lines=` | `{ session, mode, cols, rows, lines[] }` |
 | POST | `/v1/sessions/:id/input` | `text`, `submit` (default true), `keys[]`, `force` | session |
-| POST | `/v1/sessions/:id/wait` | `timeoutMs` (≤600000), `quietMs`, `lines` | output + `{ timedOut, waitedMs }` |
+| POST | `/v1/sessions/:id/wait` | `timeoutMs` (≤600000), `quietMs`, `lines` | output + `{ timedOut, waitedMs, sleptMs }` — time the machine slept is not counted against `timeoutMs` |
 | POST | `/v1/sessions/:id/focus` | | session (the app switches to it; the window is never raised) |
-| POST | `/v1/sessions/:id/release` | | hands it to the user; API loses access |
-| DELETE | `/v1/sessions/:id` | | kills the pty and removes the session |
+| POST | `/v1/sessions/:id/rename` | `name` (trimmed, ≤80 chars) | session — renames it in the sidebar; does not set the AI mark |
+| POST | `/v1/sessions/:id/release` | | hands it to the user; clears the AI mark |
+| DELETE | `/v1/sessions/:id` | | kills the pty and removes the session — any session, including the user's |
 
-Status codes that carry meaning: `403 not_controlled` (not the API's session, or disconnected),
+A session carries `aiControlled`, `controlledBy`, `connectedAt` (both `''` when unmarked) and
+`screenPartial`.
+
+Status codes that carry meaning: `409 disconnected` (the user clicked Disconnect AI during a wait),
 `404 not_found`, `409 awaiting_input` (a question is on screen), `409 not_started`.
 
 ### Input semantics
@@ -120,7 +133,7 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 `POST /mcp`, JSON-RPC 2.0, stateless, `application/json` responses; `GET` → 405. Protocol versions
 2024-11-05 … 2025-11-25 are echoed. Tools: `list_workspaces`, `list_templates`, `list_sessions`,
 `open_session`, `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
-`focus_session`, `release_session`, `close_session`. Domain errors come back as tool results with
+`focus_session`, `rename_session`, `release_session`, `close_session`. Domain errors come back as tool results with
 `isError: true` so the model can read them; screen results are plain text, not JSON.
 
 ## MCP 없이 쓰기 (REST + 셸)
@@ -141,8 +154,8 @@ curl -s "${H[@]}" -X DELETE "$URL/v1/sessions/$ID"                        # 닫�
 ```
 
 에이전트가 쓸 때는 **HTTP 상태 코드로 분기**한다: `409 awaiting_input` 은 화면에 질문이
-있다는 뜻이므로 텍스트 대신 `keys` 로 답하고, `403 not_controlled` 는 사용자가 세션을
-회수했다는 뜻이므로 그 세션 사용을 멈춘다. `wait` 의 `timedOut: true` 는 실패가 아니라
+있다는 뜻이므로 텍스트 대신 `keys` 로 답하고, `409 disconnected` 는 기다리는 도중 사용자가
+Disconnect AI 를 눌렀다는 뜻이므로 사용자가 다시 시키기 전에는 그 세션 사용을 멈춘다. `wait` 의 `timedOut: true` 는 실패가 아니라
 "아직 실행 중"이다.
 
 ## 요청 하나가 도는 길

@@ -43,9 +43,11 @@ export interface TerminalSession {
     cliCommand?: string
     memo?: string  // Quick notepad text per session
     /**
-     * Set while an external AI drives this session through the Control API.
-     * The API may only type into and read sessions carrying this flag, so
-     * clearing it (Disconnect AI) is how the user takes a session back.
+     * Set while an external AI works in this session through the Control API:
+     * when the API opens it, or the first time the API reads, types into, waits
+     * on or focuses it. A visible mark, not a permission — the API reaches every
+     * session while it is switched on. Disconnect AI clears it and interrupts a
+     * wait in flight.
      */
     aiControl?: AiControlInfo
 }
