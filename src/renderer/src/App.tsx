@@ -16,6 +16,8 @@ import { FullscreenTerminalView } from './components/FullscreenTerminalView'
 import { SystemMonitorPopover } from './components/SystemMonitorPopover'
 import { Onboarding } from './components/Onboarding'
 import { UpdateNotification, UpdateStatus } from './components/UpdateNotification'
+import { BusyOverlay } from './components/BusyOverlay'
+import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useTemplates } from './hooks/useTemplates'
 
@@ -156,6 +158,12 @@ function App() {
     const [updateVersion, setUpdateVersion] = useState<string>('')
     const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('available')
     const [updatePercent, setUpdatePercent] = useState(0)
+    // Installing an update closes every terminal and relaunches; that can take seconds.
+    const [installingUpdate, setInstallingUpdate] = useState(false)
+    // Until the stored sessions are on screen. Mounting many terminals at once
+    // blocks the page for seconds (measured: 167 sessions → 5–9s) and an empty
+    // window in the meantime reads as a hang.
+    const [sessionsRestored, setSessionsRestored] = useState(false)
 
     // 터미널 폰트 크기 (settings.fontSize와 별도 관리 - Cmd+/-로만 조절)
     const [terminalFontSize, setTerminalFontSize] = useState(14)
@@ -338,10 +346,13 @@ function App() {
                 })
             }
             setSessionOrders(initialSessionOrders)
+            setSessionsRestored(true)
         }
 
         loadInitialData().catch(err => {
             console.error('Failed to load workspaces:', err)
+            // Never leave the loading screen up over a failure.
+            setSessionsRestored(true)
         })
 
         settingsPromise.then(loadedSettings => {
@@ -412,6 +423,9 @@ function App() {
                 setUpdateVersion(data.version)
                 setUpdateStatus('ready')
                 setShowUpdateNotification(true)
+            } else if (data.status === 'installing') {
+                // Also covers an install started from Settings.
+                setInstallingUpdate(true)
             }
         })
         return cleanup
@@ -1263,6 +1277,15 @@ function App() {
         <div className="flex h-screen w-screen bg-transparent">
             {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
 
+            {installingUpdate ? (
+                <BusyOverlay
+                    title="Installing update…"
+                    detail="Closing terminals and restarting. Sessions are restored when CLI Manager reopens."
+                />
+            ) : !sessionsRestored && (
+                <BusyOverlay title="Restoring sessions…" />
+            )}
+
             {isSidebarOpen && (
                 <Sidebar
                     workspaces={sortedWorkspaces}
@@ -1650,9 +1673,7 @@ function App() {
                                             initialCommand={session.initialCommand}
                                             // Resume with the command that started it: an alias
                                             // (`cldy`) carries flags that `claude` alone would drop.
-                                            resumeCommand={session.cliSessionId && session.cliToolName
-                                                ? `${session.cliCommand || session.cliToolName} --resume ${session.cliSessionId}`
-                                                : undefined}
+                                            resumeCommand={resumeCommandFor(session)}
                                             workspaceId={workspace.id}
                                             shell={settings.defaultShell}
                                             keyboardSettings={settings.keyboard}
@@ -1790,6 +1811,7 @@ function App() {
                         window.api.downloadUpdate()
                     }}
                     onInstall={() => {
+                        setInstallingUpdate(true)
                         window.api.installUpdate()
                     }}
                     onLater={() => {

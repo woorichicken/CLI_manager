@@ -16,6 +16,11 @@
  *                    with a dim next-prompt suggestion after each answer
  *   --drop-enters N  ignore the first N Enters on a non-empty box (a CLI under heavy load)
  *   --codex-trust    start with Codex's "Do you trust the contents of this directory?" dialog
+ *   --codex-update   start with Codex's update offer ("› 1. Update now" highlighted): "2" prints
+ *                    UPDATE-SKIPPED and carries on, Enter prints UPDATE-RUN and quits
+ *   --claude-trust   start with Claude Code's folder-trust dialog: unnumbered options, cursor on
+ *                    "No, exit" (arrows move it), Enter on "No" prints EXITED and quits —
+ *                    the way the real one behaves (checked against Claude Code 2.1.286)
  * Always: ESC followed by a character within 500ms is read as Alt+character and
  * dropped, the way terminal programs parse it.
  *
@@ -30,6 +35,11 @@ const WORK_MS = Number(argValue('--work-ms') ?? 1500)
 const BOX = process.argv.includes('--box')
 let enterDropsLeft = Number(argValue('--drop-enters') ?? 0)
 const CODEX_TRUST = process.argv.includes('--codex-trust')
+const CLAUDE_TRUST = process.argv.includes('--claude-trust')
+let codexUpdating = process.argv.includes('--codex-update')
+const CODEX_UPDATE_DIALOG =
+    '  ✨  Update available! 0.155.1 -> 0.159.2\r\n› 1. Update now (runs `brew upgrade --cask codex`)\r\n  2. Skip\r\n  3. Skip until next version\r\n  Press enter to continue\r\n'
+const CODEX_UPDATE_LINES = 5
 const META_WINDOW_MS = 500
 const RULE = '─'.repeat(30)
 const SUGGESTION = 'run the tests next'
@@ -48,6 +58,8 @@ let busy = false
 let asking = false
 let submitted = 0
 let trusting = CODEX_TRUST
+let claudeTrusting = CLAUDE_TRUST
+let claudeTrustChoice = 0  // 0 = "No, exit" (where Claude Code puts the cursor), 1 = "Yes"
 let escapeAt = 0
 let inCsi = false
 let boxDrawn = false
@@ -105,10 +117,25 @@ function submit() {
     }, WORK_MS)
 }
 
+const CLAUDE_TRUST_LINES = 4
+function drawClaudeTrust(redraw) {
+    if (redraw) out(`\x1b[${CLAUDE_TRUST_LINES}A\r\x1b[J`)
+    out(' Quick safety check: Is this a project you created or one you trust?\r\n')
+    out(`${claudeTrustChoice === 0 ? ' ❯' : '  '} No, exit\r\n`)
+    out(`${claudeTrustChoice === 1 ? ' ❯' : '  '} Yes, I trust this folder\r\n`)
+    out(' Enter to confirm · Esc to cancel\r\n')
+}
+
 function handleChar(ch) {
     // Terminal key parsing: ESC then a character soon after is Alt+character.
     if (inCsi) {
-        if (/[A-Za-z~]/.test(ch)) inCsi = false
+        if (/[A-Za-z~]/.test(ch)) {
+            inCsi = false
+            if (claudeTrusting && (ch === 'A' || ch === 'B')) {
+                claudeTrustChoice = ch === 'B' ? 1 : 0
+                drawClaudeTrust(true)
+            }
+        }
         return
     }
     if (ch === '\x1b') {
@@ -125,6 +152,33 @@ function handleChar(ch) {
         if (meta) return
     }
 
+    if (codexUpdating) {
+        if (ch === '\r' || ch === '1') {
+            out('UPDATE-RUN\r\n')
+            process.exit(0)
+        }
+        if (ch === '2' || ch === '3') {
+            codexUpdating = false
+            out(`\x1b[${CODEX_UPDATE_LINES}A\r\x1b[J`)
+            out('UPDATE-SKIPPED\r\n')
+            if (trusting) out(TRUST_DIALOG)
+            else prompt()
+        }
+        return
+    }
+    if (claudeTrusting) {
+        if (ch === '\r') {
+            claudeTrusting = false
+            out(`\x1b[${CLAUDE_TRUST_LINES}A\r\x1b[J`)
+            if (claudeTrustChoice === 0) {
+                out('EXITED\r\n')
+                process.exit(0)
+            }
+            out('TRUSTED\r\n')
+            prompt()
+        }
+        return
+    }
     if (trusting) {
         if (ch === '1' || ch === '\r') {
             trusting = false
@@ -199,5 +253,7 @@ process.stdin.resume()
 
 out('\x1b[?2004h')
 out('agent-mock ready\r\n')
-if (trusting) out(TRUST_DIALOG)
+if (codexUpdating) out(CODEX_UPDATE_DIALOG)
+else if (trusting) out(TRUST_DIALOG)
+else if (claudeTrusting) drawClaudeTrust(false)
 else prompt()

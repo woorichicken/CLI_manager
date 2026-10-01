@@ -99,6 +99,7 @@ pnpm build && pnpm test:term
    - `UsageTracker.ts`: Claude(statusLine) · Codex(rollout jsonl) rate limit 추적 + 임계값 알림
    - `diffParser.ts`: `git diff` plumbing 출력 파서 (numstat/name-status/unified)
    - `ControlApiServer.ts` / `ControlApiService.ts` / `controlApiMcp.ts`: AI Control API — 로컬 HTTP(REST+MCP)로 AI가 세션을 열고 조작 ([`docs/architecture/control-api.md`](docs/architecture/control-api.md))
+   - `CodexSessionLocator.ts`: Codex 가 고른 대화 id 를 rollout 파일에서 찾아 재시작 때 `resume` 하게 함
    - `TerminalMirror.ts`: AI 세션 출력을 headless xterm으로 재생해 "사용자가 보는 화면"을 읽게 함
 
 2. **Renderer Process** (`src/renderer/`)
@@ -303,7 +304,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 88건
+- **위치**: `tests/terminal/` — 112건
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -327,6 +328,15 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T22 마스터 세션 — 터미널 안에서 `CLIMANAGER_SESSION_ID` 가 보이는지, 그 값을 `X-Caller-Session` 으로
     붙여 세션을 열면 연 쪽이 장미색·왕관(`data-session-role="master"`)이 되고 열린 쪽에 `openedBy` 가
     남는지(REST·MCP), 헤더 없음·엉터리 id 는 무변화인지, 셸이 끝나면 표시가 풀리는지
+  - T23 로딩 화면 — 세션 복원이 끝나면 "Restoring sessions…" 화면이 사라지는지, main 이 업데이트 설치를
+    알리면 "Installing update…" 화면이 뜨는지. 세션 167개 재시작은 사이드바까지 5~9초 걸린다(2026-10-01 실측)
+  - T24 복원 시 시작 질문 — 복원된(`--resume`) Claude 세션이 신뢰 질문("❯ No, exit")에서 Yes 를 고르고,
+    복원된 Codex 세션이 `codex … resume <id>` 로 뜨며 업데이트 제안("› 1. Update now")을 Skip 하는지,
+    새로 시작한 세션은 사람에게 남겨 두는지. 모의 대화상자(`agent-mock.cjs --claude-trust`)는 실제 화면을
+    본떴지만 **키를 바로 받는다** — 실제 Claude 는 질문을 그린 직후의 키를 무시했다. 그래서 감시자는 화면이
+    1.5초 조용해진 뒤 키를 하나씩 보낸다. 이 차이는 실제 Claude 복원으로만 확인된다(2026-10-01)
+  - T25 Codex 대화 찾기 — Codex 는 `--session-id` 를 받지 않아, 시작 뒤 `$CODEX_HOME/sessions` 의 rollout
+    첫 줄(`session_meta`: id·cwd·시작 시각)로 그 터미널의 대화를 찾는다. 같은 폴더에 둘이면 각자 다른 id 를 받는지
   - T18 폴더 정렬 — 사이드바 폴더를 드래그 핸들로 옮기면 순서가 config.json 까지 저장되고,
     드래그가 펼침 클릭으로 오인되지 않는지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛

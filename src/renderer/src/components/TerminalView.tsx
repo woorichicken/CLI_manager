@@ -16,6 +16,7 @@ import {
     debugCountWriteError
 } from '../utils/terminalDebug'
 import { SessionStatus, HooksSettings } from '../../../shared/types'
+import { watchStartupPrompts } from '../utils/startupPrompts'
 
 interface TerminalViewProps {
     id: string
@@ -606,6 +607,9 @@ export function TerminalView({
                     initialCommandExecutedRef.current = true
                     setTimeout(() => {
                         window.api.writeTerminal(id, resumeCommand + '\n')
+                        // A restored agent can stop on a startup question: Claude's folder
+                        // trust (cursor on "No, exit") or Codex's update offer (cursor on "Update now").
+                        watchStartupPrompts(term, (key) => window.api.writeTerminal(id, key))
                     }, 500)
                 } else if (initialCommand) {
                     initialCommandExecutedRef.current = true
@@ -618,6 +622,8 @@ export function TerminalView({
                             window.api.writeTerminal(id, rewritten.command + '\n')
                         } else {
                             window.api.writeTerminal(id, initialCommand + '\n')
+                            // Codex takes no session id; main finds the one it picks so a restart can resume it.
+                            window.api.watchCodexSession(id, initialCommand)
                         }
                     }, 500)
                 }

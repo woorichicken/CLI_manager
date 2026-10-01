@@ -132,6 +132,8 @@ const api = {
         ipcRenderer.invoke('update-session-cli-info', workspaceId, sessionId, cliSessionId, cliToolName, cliCommand),
     clearSessionCliInfo: (workspaceId: string, sessionId: string): Promise<boolean> =>
         ipcRenderer.invoke('clear-session-cli-info', workspaceId, sessionId),
+    watchCodexSession: (sessionId: string, command: string): Promise<boolean> =>
+        ipcRenderer.invoke('watch-codex-session', sessionId, command),
     rewriteCliCommand: (command: string): Promise<{ command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null> =>
         ipcRenderer.invoke('rewrite-cli-command', command),
 
