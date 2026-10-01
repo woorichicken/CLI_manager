@@ -4,6 +4,7 @@ import os from 'os'
 import { execFile, execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { CLISessionTracker } from './CLISessionTracker'
+import { SESSION_ID_ENV } from '../shared/types'
 const pty = require('node-pty')
 
 // Default shell based on platform
@@ -473,6 +474,10 @@ export class TerminalManager {
             env: {
                 ...process.env,
                 TERM_PROGRAM: 'CLImanger',
+                // Lets an agent running here identify itself to the Control API
+                // (X-Caller-Session), so the sidebar can mark it as an orchestrator.
+                // Same id on recreate: the terminal id is the session id.
+                [SESSION_ID_ENV]: id,
                 // Disable zsh's partial line indicator (the % that appears when no newline at end)
                 PROMPT_EOL_MARK: '',
                 // Ensure UTF-8 locale for proper Korean input

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -277,6 +277,12 @@ const api = {
         const listener = (_e: unknown, event: ControlApiSessionEvent) => callback(event)
         ipcRenderer.on('control-api-session', listener)
         return () => ipcRenderer.removeListener('control-api-session', listener)
+    },
+    getControlApiMasters: (): Promise<ControlApiMasters> => ipcRenderer.invoke('get-control-api-masters'),
+    onControlApiMasters: (callback: (masters: ControlApiMasters) => void) => {
+        const listener = (_e: unknown, masters: ControlApiMasters) => callback(masters)
+        ipcRenderer.on('control-api-masters', listener)
+        return () => ipcRenderer.removeListener('control-api-masters', listener)
     }
 }
 

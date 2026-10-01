@@ -52,6 +52,34 @@ Every terminal is mirrored from the moment its pty starts, so reconnecting to a 
 its real screen. The one gap: a terminal already running when the API was switched on reports
 `screenPartial: true`, and output from before that moment is missing.
 
+## Master sessions (orchestrators)
+
+An agent that runs **inside** a CLI Manager terminal and opens other sessions through the API is
+an orchestrator. The sidebar draws it in rose with a crown icon (tooltip: how many sessions it
+opened), above the green AI mark: **master > ai > user**.
+
+| Piece | Contract |
+|---|---|
+| `CLIMANAGER_SESSION_ID` | Every pty is started with its own session id in this variable (same id when the terminal is recreated). |
+| `X-Caller-Session` | Optional request header, REST and MCP alike. The caller copies its `CLIMANAGER_SESSION_ID` into it. Must match `^[A-Za-z0-9_-]{1,64}$`; anything else, or an id that names no session, is **ignored, not rejected**. |
+| Becoming master | Only when a request carrying the header **opens a session** successfully. Reads and inputs do not. |
+| `lastSeen` | Updated on every later request carrying the header. |
+| Ending | The master's shell exits, the session is closed/removed, **30 minutes** without a request carrying its id (`ORCHESTRATOR_IDLE_MS`), or the API is switched off. |
+| Persistence | **Memory only.** An app restart clears every master mark and `openedBy` — the agents that made the calls are gone, and a red row restored from disk would point at nothing. |
+
+**The header is self-reported, so it is a display hint, never a permission.** Anyone with the token
+can claim any session id. Being master grants nothing, and not being one takes nothing away — access
+is still decided only by the API being on ([decision 0006](../decisions/0006-control-api-reaches-every-session.md)).
+The master session itself is not given the green AI mark.
+
+API fields: `orchestrator: { since, lastSeen, client, openedCount } | null` (ISO times;
+`openedCount` counts opened sessions still open) and `openedBy: <master session id> | null`, on every
+session object — `GET /v1/sessions`, `GET /v1/sessions/:id`, MCP `list_sessions`, open results.
+
+For MCP, set the header in the client config, e.g. Claude Code `.mcp.json`:
+`"headers": { "X-Caller-Session": "${CLIMANAGER_SESSION_ID}" }`. With curl:
+`-H "X-Caller-Session: $CLIMANAGER_SESSION_ID"`.
+
 ## Session state
 
 | `state` | Meaning |
@@ -118,8 +146,8 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/sessions/:id/release` | | hands it to the user; clears the AI mark |
 | DELETE | `/v1/sessions/:id` | | kills the pty and removes the session — any session, including the user's |
 
-A session carries `aiControlled`, `controlledBy`, `connectedAt` (both `''` when unmarked) and
-`screenPartial`.
+A session carries `aiControlled`, `controlledBy`, `connectedAt` (both `''` when unmarked),
+`screenPartial`, `orchestrator` and `openedBy` (see [Master sessions](#master-sessions-orchestrators)).
 
 Status codes that carry meaning: `409 disconnected` (the user clicked Disconnect AI during a wait),
 `404 not_found`, `409 awaiting_input` (a question is on screen), `409 not_started`,
@@ -242,5 +270,8 @@ React state. `opened` carries `workspace` when the folder was just registered an
 sidebar folder was just created for it. `workspaceRemoved` also fires when the **user** closes the
 last session of an ephemeral workspace (`remove-session` IPC) — the renderer drops the workspace the
 same way as a sidebar delete.
+It also broadcasts `control-api-masters` (`ControlApiMasters`, the whole snapshot on every change);
+`hooks/useControlApiMasters.ts` holds it in one module-level store so each sidebar row reads it
+without its own IPC listener.
 IPC: `get-control-api-state`, `set-control-api`, `regenerate-control-api-token`,
-`control-api-release-session`.
+`control-api-release-session`, `get-control-api-masters`.

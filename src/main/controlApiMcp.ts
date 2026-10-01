@@ -265,7 +265,8 @@ async function callTool(
     name: string,
     args: Record<string, unknown>,
     client: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    caller?: string
 ): Promise<string> {
     switch (name) {
         case 'list_workspaces':
@@ -289,7 +290,8 @@ async function callTool(
                 focus: bool(args, 'focus'),
                 folder: str(args, 'folder'),
                 ephemeral: bool(args, 'ephemeral'),
-                client
+                client,
+                caller
             })
             return JSON.stringify(result, null, 1)
         }
@@ -350,7 +352,8 @@ async function handleOne(
     request: JsonRpcRequest,
     appVersion: string,
     client: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    caller?: string
 ): Promise<Record<string, unknown> | null> {
     if (!request || typeof request !== 'object' || request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
         return rpcError(request?.id, JSONRPC_INVALID_REQUEST, 'Invalid JSON-RPC request')
@@ -387,7 +390,7 @@ async function handleOne(
                 return rpcError(id, JSONRPC_INVALID_PARAMS, 'tools/call needs name and an arguments object')
             }
             try {
-                const text = await callTool(service, name, args, client, signal)
+                const text = await callTool(service, name, args, client, signal, caller)
                 return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }] } }
             } catch (error) {
                 if (error instanceof InvalidParams) return rpcError(id, JSONRPC_INVALID_PARAMS, error.message)
@@ -411,7 +414,9 @@ export async function handleMcpBody(
     rawBody: string,
     appVersion: string,
     client: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    /** X-Caller-Session, already validated. */
+    caller?: string
 ): Promise<unknown | null> {
     let parsed: unknown
     try {
@@ -423,12 +428,12 @@ export async function handleMcpBody(
     // Batches were removed in 2025-06-18 but older clients may still send them.
     if (Array.isArray(parsed)) {
         const responses = (
-            await Promise.all(parsed.map((r) => handleOne(service, r as JsonRpcRequest, appVersion, client, signal)))
+            await Promise.all(parsed.map((r) => handleOne(service, r as JsonRpcRequest, appVersion, client, signal, caller)))
         ).filter((r) => r !== null)
         return responses.length > 0 ? responses : null
     }
 
-    return handleOne(service, parsed as JsonRpcRequest, appVersion, client, signal)
+    return handleOne(service, parsed as JsonRpcRequest, appVersion, client, signal, caller)
 }
 
 export const MCP_TOOL_NAMES = TOOLS.map((t) => t.name)

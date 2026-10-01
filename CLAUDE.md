@@ -324,6 +324,9 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T21 Control API 워크스페이스 정리 — 새 등록이 사이드바 폴더(설정 기본값·id·이름·최상위)에 들어가는지
     DOM 으로, AI 등록만 해제(사용자 것 403·세션 있으면 409), ephemeral 이 마지막 세션과 함께(UI 로 닫아도)
     사라지는지, 시작 시 남은 빈 ephemeral 정리, 폴더 설정 변경이 서버를 재시작하지 않는지
+  - T22 마스터 세션 — 터미널 안에서 `CLIMANAGER_SESSION_ID` 가 보이는지, 그 값을 `X-Caller-Session` 으로
+    붙여 세션을 열면 연 쪽이 장미색·왕관(`data-session-role="master"`)이 되고 열린 쪽에 `openedBy` 가
+    남는지(REST·MCP), 헤더 없음·엉터리 id 는 무변화인지, 셸이 끝나면 표시가 풀리는지
   - T18 폴더 정렬 — 사이드바 폴더를 드래그 핸들로 옮기면 순서가 config.json 까지 저장되고,
     드래그가 펼침 클릭으로 오인되지 않는지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
