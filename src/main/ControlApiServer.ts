@@ -17,7 +17,7 @@ import { handleMcpBody } from './controlApiMcp'
  *   - every request needs `Authorization: Bearer <token>`
  *   - Host must be 127.0.0.1/localhost (defeats DNS rebinding) and a browser
  *     Origin other than our own is rejected (a web page cannot drive it)
- *   - the service only touches sessions the API itself opened
+ *   - the service only unregisters workspaces the API itself registered
  */
 
 const HOST = '127.0.0.1'
@@ -353,6 +353,10 @@ export class ControlApiServer {
         return [
             route('GET', '/v1/health', () => ({ ok: true, app: 'CLI Manager', version: this.options.appVersion })),
             route('GET', '/v1/workspaces', ({ query }) => service.listWorkspaces(query.get('query') ?? undefined)),
+            route('DELETE', '/v1/workspaces/:id', ({ params }) => {
+                service.unregisterWorkspace(params.id)
+                return { ok: true }
+            }),
             route('GET', '/v1/templates', () => service.listTemplates()),
             route('GET', '/v1/sessions', ({ query }) => {
                 const scope = query.get('scope') ?? undefined
@@ -370,6 +374,8 @@ export class ControlApiServer {
                     name: optionalString(body, 'name'),
                     prompt: optionalString(body, 'prompt'),
                     focus: optionalBoolean(body, 'focus'),
+                    folder: optionalString(body, 'folder'),
+                    ephemeral: optionalBoolean(body, 'ephemeral'),
                     client
                 })
             ),

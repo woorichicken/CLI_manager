@@ -1358,6 +1358,9 @@ app.whenReady().then(async () => {
         store.set('workspaces', workspaces.map(w =>
             w.id === workspaceId ? workspace : w
         ))
+        // A workspace the API registered as ephemeral goes with its last session,
+        // whoever closed it. The renderer hears about it on the Control API channel.
+        controlApiService.removeIfSpentEphemeral(workspaceId)
 
         return true
     })
@@ -2944,8 +2947,15 @@ app.whenReady().then(async () => {
     /** Applies immediately, like the hook toggle: the verified server state is the only honest answer. */
     ipcMain.handle('set-control-api', async (_e, next: ControlApiSettings): Promise<ControlApiState> => {
         const settings = (store.get('settings') as UserSettings) || ({} as UserSettings)
+        const previous = getControlApiSettings()
         const merged = { ...DEFAULT_CONTROL_API, ...next }
         store.set('settings', { ...settings, controlApi: merged })
+        // The folder name is read per request. Restarting the server for it
+        // would cut every wait in flight.
+        const running = controlApiServer.state().running
+        if (merged.enabled === previous.enabled && merged.port === previous.port && running === merged.enabled) {
+            return controlApiServer.state()
+        }
         return controlApiServer.apply(merged)
     })
 
@@ -2990,6 +3000,9 @@ app.whenReady().then(async () => {
     }
 
     void loadShellAliases()
+
+    // Before the window loads, so the sidebar never shows a leftover scratch registration.
+    controlApiService.pruneSpentEphemeral()
 
     // apply() never throws; a port conflict shows up in Settings instead of blocking boot.
     void controlApiServer.apply(getControlApiSettings()).then((state) => {

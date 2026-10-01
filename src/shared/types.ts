@@ -74,6 +74,20 @@ export interface Workspace {
     parentWorkspaceId?: string  // Worktree인 경우 부모 workspace ID
     branchName?: string  // Worktree의 브랜치명
     baseBranch?: string  // Worktree 생성 시 분기한 브랜치 (merge 대상)
+    /**
+     * Set when the AI Control API registered this folder. Missing means the
+     * user added it — workspaces stored before this field existed included.
+     * Only AI-registered workspaces can be unregistered through the API.
+     */
+    aiRegistration?: AiRegistrationInfo
+}
+
+export interface AiRegistrationInfo {
+    /** Client that registered it ('api', 'mcp' or a client-supplied name). */
+    client: string
+    since: number
+    /** Unregister automatically when its last session closes. */
+    ephemeral?: boolean
 }
 
 export interface WorkspaceFolder {
@@ -653,11 +667,17 @@ export interface ControlApiSettings {
     enabled: boolean
     /** 0 picks a free port on every start — useful for tests, awkward for MCP config. */
     port: number
+    /**
+     * Sidebar folder that folders newly registered by the API go into, created
+     * on first use. Empty puts them at the top level of the sidebar.
+     */
+    aiFolderName: string
 }
 
 export const DEFAULT_CONTROL_API: ControlApiSettings = {
     enabled: false,
     port: 47821,
+    aiFolderName: 'AI Work',
 }
 
 /** What Settings shows: the server as it actually is, not as configured. */
@@ -672,8 +692,16 @@ export interface ControlApiState {
     error?: string
 }
 
-/** Main -> renderer: the API changed the session list or a session's flags. */
-export interface ControlApiSessionEvent {
+/** Main -> renderer: the API changed the session list, a session's flags, or the workspace list. */
+export type ControlApiSessionEvent = ControlApiSessionChange | ControlApiWorkspaceRemoved
+
+/** A registration was removed — by the API, or because an ephemeral workspace lost its last session. */
+export interface ControlApiWorkspaceRemoved {
+    type: 'workspaceRemoved'
+    workspaceId: string
+}
+
+export interface ControlApiSessionChange {
     type: 'opened' | 'closed' | 'updated' | 'focus'
     workspaceId: string
     sessionId: string
@@ -681,6 +709,8 @@ export interface ControlApiSessionEvent {
     session?: TerminalSession
     /** Present on 'opened' when the API registered a folder that was not a workspace yet. */
     workspace?: Workspace
+    /** Present on 'opened' when the API created the sidebar folder the new workspace went into. */
+    folder?: WorkspaceFolder
     /** 'opened': also select the new session in the main window. */
     focus?: boolean
 }

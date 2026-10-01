@@ -71,7 +71,7 @@ export function WorkspaceItem({
     onDragEndSession
 }: WorkspaceItemProps) {
     return (
-        <div>
+        <div data-workspace-item={workspace.id}>
             <div
                 onClick={() => onToggleExpand(workspace.id)}
                 onContextMenu={(e) => onContextMenu(e, workspace.id)}
