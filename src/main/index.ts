@@ -18,6 +18,7 @@ import { TerminalManager } from './TerminalManager'
 import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
 import { CLISessionTracker } from './CLISessionTracker'
+import { CodexSessionLocator } from './CodexSessionLocator'
 import { LoopManager } from './LoopManager'
 import { HookInstaller, hookIntegrationAllowed } from './HookInstaller'
 import { AgentHookBridge } from './AgentHookBridge'
@@ -139,6 +140,7 @@ const store = new Store<AppConfig>({
 }) as any
 
 const cliSessionTracker = new CLISessionTracker()
+const codexSessionLocator = new CodexSessionLocator()
 
 /**
  * Reads the user's shell aliases once, so an agent started through one (`cldy`)
@@ -828,7 +830,11 @@ function validateCliSessionIds(): void {
     for (const ws of workspaces) {
         for (const session of ws.sessions) {
             if (session.cliSessionId) {
-                if (existingSessionIds.has(session.cliSessionId)) {
+                // Codex keeps its own conversations; only Claude's are in the set above.
+                const exists = session.cliToolName === 'codex'
+                    ? codexSessionLocator.exists(session.cliSessionId)
+                    : existingSessionIds.has(session.cliSessionId)
+                if (exists) {
                     console.log(`[validateCliSessionIds] KEEP session ${session.cliSessionId} (file exists)`)
                 } else {
                     console.log(`[validateCliSessionIds] CLEAR stale session ${session.cliSessionId} (no file)`)
@@ -1062,8 +1068,39 @@ app.whenReady().then(async () => {
         }
     })
 
+    /**
+     * Codex picks its own conversation id, so after a terminal starts Codex we
+     * watch for the rollout it writes and record the id — the restart then
+     * resumes that conversation instead of opening a blank one.
+     */
+    const startCodexCapture = (terminalId: string, baseCommand: string): void => {
+        const workspaces = store.get('workspaces') as Workspace[]
+        const owner = workspaces.find((w) => w.sessions.some((s: TerminalSession) => s.id === terminalId))
+        const session = owner?.sessions.find((s: TerminalSession) => s.id === terminalId)
+        if (!owner || !session) return
+        codexSessionLocator.watch(session.cwd || owner.path, Date.now(), (cliSessionId) => {
+            console.log(`[codex-session] ${terminalId} → ${cliSessionId}`)
+            persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'codex', baseCommand })
+        })
+    }
+    cliSessionTracker.onCodexStarted = startCodexCapture
+
+    ipcMain.handle('watch-codex-session', (_, sessionId: string, command: string): boolean => {
+        if (!cliSessionTracker.isCodexStart(command)) return false
+        startCodexCapture(sessionId, command.trim())
+        return true
+    })
+
     // CLI Session Tracker: when a CLI tool is detected from manual typing
     cliSessionTracker.onSessionDetected = (info) => {
+        persistDetectedSession(info)
+        // Additive: notify LoopManager so it can attach the cliSessionId to the
+        // matching LoopSession (enables --resume on restart).  No-op if the
+        // terminalId does not belong to any LoopSession.
+        loopManager.noteCliSession(info)
+    }
+
+    function persistDetectedSession(info: { terminalId: string; cliSessionId: string; cliToolName: string; baseCommand: string }): void {
         // Find which workspace/session this terminal belongs to and persist
         const workspaces = store.get('workspaces') as Workspace[]
         for (const ws of workspaces) {
@@ -1086,10 +1123,6 @@ app.whenReady().then(async () => {
                 break
             }
         }
-        // Additive: notify LoopManager so it can attach the cliSessionId to the
-        // matching LoopSession (enables --resume on restart).  No-op if the
-        // terminalId does not belong to any LoopSession.
-        loopManager.noteCliSession(info)
     }
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)

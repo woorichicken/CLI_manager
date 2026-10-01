@@ -131,8 +131,8 @@ User Action (Renderer)
           cwd: string,
           type: 'regular' | 'worktree',
           memo?: string,              // Session memo text
-          cliSessionId?: string,      // --session-id injected when the agent started
-          cliToolName?: string,
+          cliSessionId?: string,      // Claude: --session-id we injected · Codex: id found in its rollout (CodexSessionLocator)
+          cliToolName?: string,       // 'claude' (resume: <cmd> --resume <id>) · 'codex' (resume: <cmd> resume <id>)
           cliCommand?: string,        // What started it (`cldy`) — resume repeats this, not `claude`
           aiControl?: { client: string, since: number }  // Mark: an AI works in this session (Control API)
         }

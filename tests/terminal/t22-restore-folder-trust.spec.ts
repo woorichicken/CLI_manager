@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { launchAppWithWorkspaces, closeApp, termText, LaunchResult, REPO_ROOT } from './helpers'
-import { folderTrustAnswer } from '../../src/renderer/src/utils/folderTrust'
+import { startupPromptAnswer } from '../../src/renderer/src/utils/startupPrompts'
 
 /**
  * T22 — a restored Claude session gets past the folder-trust question.
@@ -43,9 +43,26 @@ test.describe('T22 restore folder trust', () => {
             ' Enter to confirm · Esc to cancel'
         ]
         // One key per press: Claude Code ignores arrow + Enter arriving as one chunk.
-        expect(folderTrustAnswer(screen)).toEqual(['\x1b[B', '\r'])
-        expect(folderTrustAnswer(['   No, exit', ' ❯ Yes, I trust this folder'])).toEqual(['\r'])
-        expect(folderTrustAnswer(['❯ hello', 'nothing to answer'])).toBeNull()
+        expect(startupPromptAnswer(screen)).toEqual(['\x1b[B', '\r'])
+        expect(startupPromptAnswer(['   No, exit', ' ❯ Yes, I trust this folder'])).toEqual(['\r'])
+        expect(startupPromptAnswer(['❯ hello', 'nothing to answer'])).toBeNull()
+
+        // Codex 0.155.1, 2026-10-01: the update offer has "Update now" highlighted; "2" skips.
+        expect(startupPromptAnswer([
+            '  ✨  Update available! 0.155.1 -> 0.159.2',
+            '› 1. Update now (runs `brew upgrade --cask codex`)',
+            '  2. Skip',
+            '  3. Skip until next version',
+            '  Press enter to continue'
+        ])).toEqual(['2'])
+        // Its trust question already has Yes highlighted; "1" alone did not confirm, Enter did.
+        expect(startupPromptAnswer([
+            '> You are in /private/tmp/x',
+            '  Do you trust the contents of this directory? Working with untrusted contents',
+            '› 1. Yes, continue',
+            '  2. No, quit',
+            '  Press enter to continue'
+        ])).toEqual(['\r'])
     })
 
     test('a restored session answers Yes; a fresh start is left to the user', async () => {
@@ -74,6 +91,31 @@ test.describe('T22 restore folder trust', () => {
         expect(fresh).not.toContain('TRUSTED')
         expect(fresh).not.toContain('EXITED')
 
+        expect(ctx.pageErrors).toEqual([])
+    })
+
+    test('a restored Codex session resumes with the subcommand and skips the update offer', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-t22-codex-'))
+        temps.push(dir)
+        const conversation = '01a0f528-7f14-7591-8327-a29f6c191685'
+        // Startup keeps a Codex id only when its rollout still exists under CODEX_HOME.
+        const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-t22-codexhome-'))
+        temps.push(codexHome)
+        const day = path.join(codexHome, 'sessions', '2026', '10', '01')
+        fs.mkdirSync(day, { recursive: true })
+        fs.writeFileSync(path.join(day, `rollout-2026-10-01T10-51-07-${conversation}.jsonl`), '{"type":"session_meta"}\n')
+        const codexMock = `node ${path.join(REPO_ROOT, 'scripts/mock-cli/agent-mock.cjs')} --codex-update`
+
+        ctx = await launchAppWithWorkspaces([{
+            id: 'ws', name: 'T22CODEX', path: dir,
+            sessions: [{ id: 's-codex', name: 'T22CODEXS', initialCommand: codexMock, cliSessionId: conversation, cliToolName: 'codex', cliCommand: codexMock }]
+        }], { env: { CODEX_HOME: codexHome } })
+
+        await expect.poll(() => termText(ctx.page, 's-codex'), { timeout: 30_000 }).toContain('UPDATE-SKIPPED')
+        const text = await termText(ctx.page, 's-codex')
+        // The command line wraps at the terminal width.
+        expect(text.replace(/\n/g, '')).toContain(`--codex-update resume ${conversation}`)
+        expect(text).not.toContain('UPDATE-RUN')
         expect(ctx.pageErrors).toEqual([])
     })
 })

@@ -17,6 +17,7 @@ import { SystemMonitorPopover } from './components/SystemMonitorPopover'
 import { Onboarding } from './components/Onboarding'
 import { UpdateNotification, UpdateStatus } from './components/UpdateNotification'
 import { BusyOverlay } from './components/BusyOverlay'
+import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useTemplates } from './hooks/useTemplates'
 
@@ -1656,9 +1657,7 @@ function App() {
                                             initialCommand={session.initialCommand}
                                             // Resume with the command that started it: an alias
                                             // (`cldy`) carries flags that `claude` alone would drop.
-                                            resumeCommand={session.cliSessionId && session.cliToolName
-                                                ? `${session.cliCommand || session.cliToolName} --resume ${session.cliSessionId}`
-                                                : undefined}
+                                            resumeCommand={resumeCommandFor(session)}
                                             workspaceId={workspace.id}
                                             shell={settings.defaultShell}
                                             keyboardSettings={settings.keyboard}

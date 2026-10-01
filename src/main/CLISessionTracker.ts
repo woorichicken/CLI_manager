@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
+import { isInteractiveCodex } from './CodexSessionLocator'
 
 export interface CLIToolConfig {
     name: string
@@ -61,6 +62,11 @@ export class CLISessionTracker {
     /** Shell alias -> what it expands to, so `cldy` can be recognised as claude. */
     private aliases: Map<string, string> = new Map()
     public onSessionDetected?: (info: CLISessionInfo) => void
+    /**
+     * A typed command starts a Codex conversation. Codex takes no session id
+     * from us, so the caller has to find the one Codex picked (CodexSessionLocator).
+     */
+    public onCodexStarted?: (terminalId: string, baseCommand: string) => void
 
     constructor(cliTools?: CLIToolConfig[]) {
         this.cliTools = cliTools ?? DEFAULT_CLI_TOOLS
@@ -129,7 +135,10 @@ export class CLISessionTracker {
             if (!buffer) return false
 
             const result = this.shouldIntercept(buffer)
-            if (!result) return false
+            if (!result) {
+                if (this.isCodexStart(buffer)) this.onCodexStarted?.(terminalId, buffer)
+                return false
+            }
 
             const sessionId = uuidv4()
             const rewritten = `${buffer} ${result.config.sessionFlag} ${sessionId}`
@@ -180,6 +189,17 @@ export class CLISessionTracker {
             cliToolName: result.config.name,
             baseCommand: trimmed
         }
+    }
+
+    /** True when the command line (aliases resolved) starts an interactive Codex conversation. */
+    isCodexStart(commandLine: string): boolean {
+        const lastSegment = commandLine.split(/&&|;/).pop()?.trim() ?? commandLine
+        const tokens = lastSegment.split(/\s+/).filter(Boolean)
+        if (tokens.length === 0) return false
+        const name = tokens[0].split('/').pop() || tokens[0]
+        const expansion = this.aliases.get(name)
+        const effective = expansion ? `${expansion} ${tokens.slice(1).join(' ')}`.trim().split(/\s+/) : tokens
+        return isInteractiveCodex(effective)
     }
 
     /**
