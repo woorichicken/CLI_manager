@@ -164,6 +164,9 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   뒤처진 상태에서 링크 갱신 커밋을 만들었고 `push failed — … fast-forwards` 로 끝났다(R2 업로드와 changelog 는 성공,
   종료는 `COMPLETED WITH FAILURES`). "no stale version references" 검사도 낡은 트리를 본 것이다.
   제안: 프리플라이트에서 `git fetch` 후 `HEAD..origin/main` 이 비어 있는지 확인하거나 먼저 `pull --ff-only`.
+  같은 원인으로 이 스크립트는 `SITE_DIR = ~/Downloads/solhun-web-page`(사이트 **주 체크아웃**)에 커밋한다 — 주 체크아웃은
+  main 그대로 두는 운영 규칙과 충돌한다(2026-09-30 확인). 임시 워크트리(`git worktree add … origin/main`)에서 커밋·push 하도록
+  바꾸면 뒤처짐 문제도 함께 사라진다. 사이트는 이제 `climanager.solhun.com` 이다(검증 명령은 PR #15 에서 갱신).
 - Owner: Maintainer
 
 ### `.github/workflows/ci.yml` — 의존성 설치 단계에서 `@vscode/ripgrep` postinstall 이 실패한다
@@ -174,6 +177,8 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   `.../node_modules/@vscode/ripgrep postinstall: Failed` → `ELIFECYCLE Command failed with exit code 1`.
   스택이 HTTP 응답 처리(`ClientRequest`·`TLSSocket`)라 바이너리 다운로드 실패로 보인다(GitHub API 요청 한도 가능성 — 미확인).
   같은 날 main 의 실행도 failure 다.
+  2026-09-30 PR #15 에서도 같은 단계 실패 — 로그상 응답이 **`Request failed: 403`**(재시도 5회). 열린 dependabot PR
+  `bump @vscode/ripgrep from 1.17.0 to 1.18.0` 이 다운로드 경로를 바꿨는지 먼저 본다(미확인).
 - Owner: Maintainer
 
 ### 개선안 — 여러 AI 세션의 상태 변화를 한 번에 기다리는 `watch`
