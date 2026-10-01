@@ -16,6 +16,7 @@ import {
     debugCountWriteError
 } from '../utils/terminalDebug'
 import { SessionStatus, HooksSettings } from '../../../shared/types'
+import { watchForFolderTrust } from '../utils/folderTrust'
 
 interface TerminalViewProps {
     id: string
@@ -606,6 +607,9 @@ export function TerminalView({
                     initialCommandExecutedRef.current = true
                     setTimeout(() => {
                         window.api.writeTerminal(id, resumeCommand + '\n')
+                        // A restored Claude session can stop on the folder-trust question
+                        // with the cursor on "No, exit" (always so in the home folder).
+                        watchForFolderTrust(term, (key) => window.api.writeTerminal(id, key))
                     }, 500)
                 } else if (initialCommand) {
                     initialCommandExecutedRef.current = true
