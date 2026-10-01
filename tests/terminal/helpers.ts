@@ -38,6 +38,8 @@ export interface SeedWorkspace {
     /** Set to seed a worktree workspace hanging off another workspace. */
     parentWorkspaceId?: string
     branchName?: string
+    /** Marks the workspace as registered by the Control API. */
+    aiRegistration?: { client: string; since: number; ephemeral?: boolean }
 }
 
 export interface TermState {
@@ -99,7 +101,8 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
             // get-workspaces sorts by createdAt, so seeded order has to be encoded here
             createdAt: 1700000000000 + index,
             ...(workspace.parentWorkspaceId ? { parentWorkspaceId: workspace.parentWorkspaceId } : {}),
-            ...(workspace.branchName ? { branchName: workspace.branchName } : {})
+            ...(workspace.branchName ? { branchName: workspace.branchName } : {}),
+            ...(workspace.aiRegistration ? { aiRegistration: workspace.aiRegistration } : {})
         })),
         playgroundPath: userDataDir,
         customTemplates: options.customTemplates ?? [],

@@ -53,6 +53,7 @@ export function ControlApiSettings({ config, onChange }: ControlApiSettingsProps
     const [state, setState] = useState<ControlApiState | null>(null)
     const [busy, setBusy] = useState(false)
     const [portDraft, setPortDraft] = useState(String(current.port))
+    const [folderDraft, setFolderDraft] = useState(current.aiFolderName)
     const [showToken, setShowToken] = useState(false)
 
     const refresh = useCallback(async () => {
@@ -71,6 +72,10 @@ export function ControlApiSettings({ config, onChange }: ControlApiSettingsProps
         setPortDraft(String(current.port))
     }, [current.port])
 
+    useEffect(() => {
+        setFolderDraft(current.aiFolderName)
+    }, [current.aiFolderName])
+
     const apply = async (next: ControlApiConfig) => {
         setBusy(true)
         try {
@@ -88,6 +93,11 @@ export function ControlApiSettings({ config, onChange }: ControlApiSettingsProps
             return
         }
         if (port !== current.port) void apply({ ...current, port })
+    }
+
+    const commitFolder = () => {
+        const aiFolderName = folderDraft.trim()
+        if (aiFolderName !== current.aiFolderName) void apply({ ...current, aiFolderName })
     }
 
     const regenerate = async () => {
@@ -159,6 +169,29 @@ export function ControlApiSettings({ config, onChange }: ControlApiSettingsProps
                                 if (e.key === 'Enter') commitPort()
                             }}
                             className="w-24 bg-black/30 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-emerald-500/50"
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                            <p className="text-sm text-gray-300">Sidebar folder for AI workspaces</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                                Folders the AI opens that are not registered yet go here (created on first use). Leave empty
+                                for the top level. Folders you already registered stay where they are.
+                            </p>
+                        </div>
+                        <input
+                            type="text"
+                            value={folderDraft}
+                            placeholder="Top level"
+                            disabled={busy}
+                            data-testid="control-api-folder-name"
+                            onChange={(e) => setFolderDraft(e.target.value)}
+                            onBlur={commitFolder}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') commitFolder()
+                            }}
+                            className="w-32 bg-black/30 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500/50"
                         />
                     </div>
 

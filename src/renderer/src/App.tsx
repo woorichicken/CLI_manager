@@ -227,6 +227,8 @@ function App() {
                 case 'opened': {
                     const session = event.session
                     if (!session) return
+                    const folder = event.folder
+                    if (folder) setFolders(prev => prev.some(f => f.id === folder.id) ? prev : [...prev, folder])
                     setWorkspaces(prev => {
                         if (!prev.some(w => w.id === event.workspaceId)) {
                             return event.workspace ? [...prev, event.workspace] : prev
@@ -262,6 +264,20 @@ function App() {
                         setPendingFocusSessionId(event.sessionId)
                     }
                     return
+                case 'workspaceRemoved': {
+                    // Same cleanup as deleting a workspace from the sidebar, minus the store write.
+                    const removedId = event.workspaceId
+                    setWorkspaces(prev => prev.filter(w => w.id !== removedId))
+                    setWorkspaceOrder(prev => prev.filter(wid => wid !== removedId))
+                    setSessionOrders(prev => {
+                        if (!prev.has(removedId)) return prev
+                        const next = new Map(prev)
+                        next.delete(removedId)
+                        return next
+                    })
+                    setActiveWorkspace(prev => (prev?.id === removedId ? null : prev))
+                    return
+                }
             }
         })
     }, [])

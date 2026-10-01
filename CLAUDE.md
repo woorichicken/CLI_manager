@@ -20,6 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | When changing how or how often the app checks for updates | [`docs/decisions/0004-periodic-update-check.md`](docs/decisions/0004-periodic-update-check.md) |
 | When changing how an external AI drives sessions (Control API), or when a local listening port looks like it contradicts decision 0001 | [`docs/decisions/0005-ai-control-api-local-http.md`](docs/decisions/0005-ai-control-api-local-http.md) |
 | When changing which sessions the Control API may touch, what the AI mark means, or when the mirror is attached | [`docs/decisions/0006-control-api-reaches-every-session.md`](docs/decisions/0006-control-api-reaches-every-session.md) |
+| When changing how the Control API registers, files or unregisters workspaces, or when tempted to let it remove one the user added | [`docs/decisions/0007-api-cleans-up-only-its-own-registrations.md`](docs/decisions/0007-api-cleans-up-only-its-own-registrations.md) |
 | When a design choice looks arbitrary and you are about to change it | [`docs/decisions/CLAUDE.md`](docs/decisions/CLAUDE.md) |
 | When touching an area that misbehaves, or when triaging a report against known-wrong behavior | [`docs/found-defects.md`](docs/found-defects.md) |
 | When adding or debugging an integration with an external AI CLI (hooks, status line, usage data) | [`docs/integrations/CLAUDE.md`](docs/integrations/CLAUDE.md) |
@@ -250,7 +251,8 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
 
 ### AI Control API Invariants (회귀 주의)
 
-AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드시 `t15-control-api.spec.ts`를 돌릴 것.
+AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드시 `t15-control-api.spec.ts`를 돌릴 것
+(워크스페이스 등록·해제를 만지면 `t21-control-api-workspaces.spec.ts`도).
 근거는 [`docs/decisions/0005-ai-control-api-local-http.md`](docs/decisions/0005-ai-control-api-local-http.md).
 
 1. **기본 꺼짐 + 127.0.0.1 + 토큰 + Host/Origin 검사** — 하나라도 빼면 웹페이지·다른 머신이 셸을 조작할 수 있다
@@ -259,6 +261,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 4. **첫 프롬프트는 "명령이 자식 프로세스로 떴고, 그 뒤 2초 조용"일 때만** — 무음만 보면 느린 셸 프로필에서 프롬프트가 셸로 선입력된다
 5. **`@xterm/headless`는 파일 경로로 import해 번들에 넣는다** — `electron-builder.yml`은 node_modules를 allowlist로만 싣기 때문에 런타임 require는 배포 앱을 시작 시 죽인다
 6. **테스트는 `CLIMANAGER_HOME`을 반드시 격리** — 없으면 서버가 시작을 거부한다(실사용 토큰 파일 보호)
+7. **API는 자기가 등록한 워크스페이스만 해제한다** — `Workspace.aiRegistration`이 없으면 사용자 것(구버전 store 포함)이라 `403`. 폴더 지정·`ephemeral`은 새로 등록할 때만 적용하고 기존 워크스페이스는 옮기지 않는다. 디스크의 파일은 절대 지우지 않는다 ([`docs/decisions/0007`](docs/decisions/0007-api-cleans-up-only-its-own-registrations.md))
 
 ### CI
 
@@ -318,6 +321,9 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     `agent-mock.cjs` 옵션(`--box`·`--drop-enters`·`--codex-trust`)으로 재현한다
   - T20 잠자기 — 앱 프로세스 트리를 SIGSTOP 으로 8초 얼렸다 깨운다. 걸려 있던 `wait` 가 잠든 시간 때문에
     시간 초과로 돌아오지 않는지, AI 표시가 사이드바·config.json 에 그대로인지
+  - T21 Control API 워크스페이스 정리 — 새 등록이 사이드바 폴더(설정 기본값·id·이름·최상위)에 들어가는지
+    DOM 으로, AI 등록만 해제(사용자 것 403·세션 있으면 409), ephemeral 이 마지막 세션과 함께(UI 로 닫아도)
+    사라지는지, 시작 시 남은 빈 ephemeral 정리, 폴더 설정 변경이 서버를 재시작하지 않는지
   - T18 폴더 정렬 — 사이드바 폴더를 드래그 핸들로 옮기면 순서가 config.json 까지 저장되고,
     드래그가 펼침 클릭으로 오인되지 않는지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
