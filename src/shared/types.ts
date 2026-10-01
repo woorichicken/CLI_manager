@@ -714,3 +714,29 @@ export interface ControlApiSessionChange {
     /** 'opened': also select the new session in the main window. */
     focus?: boolean
 }
+
+/**
+ * A session that opened other sessions through the API (an orchestrator).
+ * Identified by the self-reported X-Caller-Session header, so it is a display
+ * hint only — never a permission. Held in memory: an app restart clears it.
+ */
+export interface OrchestratorInfo {
+    since: number
+    /** Last API call carrying this session's id. Expires after a quiet period. */
+    lastSeen: number
+    client: string
+    /** Sessions it opened that are still open. */
+    openedCount: number
+}
+
+/** Main -> renderer: every current orchestrator, sent whole on each change. */
+export interface ControlApiMasters {
+    masters: Record<string, OrchestratorInfo>
+    /** Opened session id -> the orchestrator session id that opened it. */
+    openedBy: Record<string, string>
+}
+
+/** Environment variable every terminal gets, holding its own session id. */
+export const SESSION_ID_ENV = 'CLIMANAGER_SESSION_ID'
+/** Request header an orchestrator sets to the value of SESSION_ID_ENV. */
+export const CALLER_SESSION_HEADER = 'x-caller-session'

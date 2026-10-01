@@ -3,8 +3,10 @@ import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import {
     AgentStatusUpdate,
+    ControlApiMasters,
     ControlApiSessionEvent,
     DEFAULT_CONTROL_API,
+    OrchestratorInfo,
     TerminalSession,
     TerminalTemplate,
     UserSettings,
@@ -83,6 +85,14 @@ const SUBMIT_HEAD_CHARS = 16
  */
 const ESCAPE_SETTLE_MS = 600
 const ESCAPE = '\x1b'
+
+/**
+ * An orchestrator (a session that opened others through the API) that has made
+ * no API call for this long stops being shown as one. The agent in it has most
+ * likely finished; a stale red row would claim otherwise.
+ */
+export const ORCHESTRATOR_IDLE_MS = 30 * 60 * 1000
+const ORCHESTRATOR_SWEEP_MS = 60 * 1000
 
 const MAX_OUTPUT_LINES = 2000
 const DEFAULT_OUTPUT_LINES = 60
@@ -173,6 +183,13 @@ export interface ApiSession {
     screenPartial: boolean
     /** The session's memo pad (Cmd+J). Empty when the user wrote none. */
     memo: string
+    /**
+     * Set while this session is an orchestrator: it sent X-Caller-Session and
+     * opened at least one session. Self-reported, so display only.
+     */
+    orchestrator: { since: string; lastSeen: string; client: string; openedCount: number } | null
+    /** Id of the orchestrator session that opened this one, or null. */
+    openedBy: string | null
 }
 
 export interface ApiOutput {
@@ -219,6 +236,8 @@ export interface OpenSessionInput {
     /** Unregister the new workspace when its last session closes. Ignored when it already exists. */
     ephemeral?: boolean
     client: string
+    /** Session id from X-Caller-Session: the session asking, if it said so. */
+    caller?: string
 }
 
 export interface OpenSessionResult {
@@ -261,6 +280,7 @@ export interface ControlApiDeps {
 }
 
 export const CONTROL_API_SESSION_CHANNEL = 'control-api-session'
+export const CONTROL_API_MASTERS_CHANNEL = 'control-api-masters'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -279,7 +299,19 @@ export class ControlApiService {
     /** When each session last received a lone Escape from the API. */
     private readonly lastEscapeAt = new Map<string, number>()
 
-    constructor(private readonly deps: ControlApiDeps) {}
+    /**
+     * Orchestrators and who opened what. Memory only on purpose: after a
+     * restart the agents that made these calls are gone, and a red row
+     * restored from disk would point at nothing.
+     */
+    private readonly masters = new Map<string, Omit<OrchestratorInfo, 'openedCount'>>()
+    private readonly openedBy = new Map<string, string>()
+    private sweepTimer: NodeJS.Timeout | null = null
+
+    constructor(private readonly deps: ControlApiDeps) {
+        // The orchestrator's shell exited: whatever drove it is gone.
+        deps.terminals.events.on('exited', (id: string) => this.dropOrchestrator(id))
+    }
 
     /**
      * Starts mirroring every terminal. Called when the server starts, never
@@ -392,6 +424,7 @@ export class ControlApiService {
             ...(command ? { initialCommand: command } : {}),
             aiControl: { client: input.client, since: Date.now() }
         }
+        const caller = input.caller && this.hasSession(input.caller) ? input.caller : undefined
 
         // Mirror first so the very first bytes the shell prints are captured.
         this.deps.mirror.attach(session.id)
@@ -416,6 +449,7 @@ export class ControlApiService {
             ...(newFolder ? { folder: newFolder } : {}),
             focus: input.focus === true
         })
+        if (caller) this.recordOpened(caller, session.id, input.client)
 
         const terminalStarted = await this.waitForPty(session.id, PTY_START_TIMEOUT_MS)
         const result: OpenSessionResult = {
@@ -648,6 +682,7 @@ export class ControlApiService {
         this.deps.terminals.killTerminal(sessionId)
         this.deps.mirror.detach(sessionId)
         this.lastEscapeAt.delete(sessionId)
+        this.forgetOrchestration(sessionId)
 
         const workspaces = this.workspaces()
         const target = workspaces.find((w) => w.id === workspace.id)
@@ -710,6 +745,91 @@ export class ControlApiService {
     forgetSession(sessionId: string): void {
         this.deps.mirror.detach(sessionId)
         this.lastEscapeAt.delete(sessionId)
+        this.forgetOrchestration(sessionId)
+    }
+
+    // ------------------------------------------------------------------
+    // Orchestrators (display only — see OrchestratorInfo)
+    // ------------------------------------------------------------------
+
+    /** Every API call carrying X-Caller-Session. Unknown ids are ignored. */
+    noteCaller(callerId: string): void {
+        const master = this.masters.get(callerId)
+        if (master) master.lastSeen = Date.now()
+    }
+
+    mastersSnapshot(): ControlApiMasters {
+        const masters: Record<string, OrchestratorInfo> = {}
+        for (const [id, info] of this.masters) masters[id] = { ...info, openedCount: this.openedCount(id) }
+        return { masters, openedBy: Object.fromEntries(this.openedBy) }
+    }
+
+    /** The API was switched off: nothing can be orchestrating through it any more. */
+    clearOrchestrators(): void {
+        if (this.masters.size === 0 && this.openedBy.size === 0) return
+        this.masters.clear()
+        this.openedBy.clear()
+        this.stopSweep()
+        this.emitMasters()
+    }
+
+    private recordOpened(callerId: string, openedId: string, client: string): void {
+        if (callerId === openedId) return
+        const now = Date.now()
+        const master = this.masters.get(callerId)
+        if (master) master.lastSeen = now
+        else this.masters.set(callerId, { since: now, lastSeen: now, client })
+        this.openedBy.set(openedId, callerId)
+        this.startSweep()
+        this.emitMasters()
+    }
+
+    private dropOrchestrator(sessionId: string): void {
+        if (!this.masters.delete(sessionId)) return
+        if (this.masters.size === 0) this.stopSweep()
+        this.emitMasters()
+    }
+
+    /** A session went away, as an orchestrator, as one it opened, or both. */
+    private forgetOrchestration(sessionId: string): void {
+        const wasMaster = this.masters.delete(sessionId)
+        const wasOpened = this.openedBy.delete(sessionId)
+        if (!wasMaster && !wasOpened) return
+        if (this.masters.size === 0) this.stopSweep()
+        this.emitMasters()
+    }
+
+    private openedCount(masterId: string): number {
+        let count = 0
+        for (const owner of this.openedBy.values()) if (owner === masterId) count++
+        return count
+    }
+
+    private startSweep(): void {
+        if (this.sweepTimer) return
+        this.sweepTimer = setInterval(() => this.sweepIdleOrchestrators(), ORCHESTRATOR_SWEEP_MS)
+        this.sweepTimer.unref?.()
+    }
+
+    private stopSweep(): void {
+        if (this.sweepTimer) clearInterval(this.sweepTimer)
+        this.sweepTimer = null
+    }
+
+    private sweepIdleOrchestrators(): void {
+        const cutoff = Date.now() - ORCHESTRATOR_IDLE_MS
+        let changed = false
+        for (const [id, info] of this.masters) {
+            if (info.lastSeen >= cutoff) continue
+            this.masters.delete(id)
+            changed = true
+        }
+        if (this.masters.size === 0) this.stopSweep()
+        if (changed) this.emitMasters()
+    }
+
+    private emitMasters(): void {
+        this.deps.broadcast(CONTROL_API_MASTERS_CHANNEL, this.mastersSnapshot())
     }
 
     /**
@@ -795,6 +915,10 @@ export class ControlApiService {
             ...w,
             sessions: w.sessions ?? []
         }))
+    }
+
+    private hasSession(sessionId: string): boolean {
+        return this.workspaces().some((w) => w.sessions.some((s) => s.id === sessionId))
     }
 
     private requireSession(sessionId: string): { workspace: Workspace; session: TerminalSession } {
@@ -908,7 +1032,20 @@ export class ControlApiService {
             controlledBy: session.aiControl?.client ?? '',
             connectedAt: session.aiControl ? new Date(session.aiControl.since).toISOString() : '',
             screenPartial: this.deps.mirror.isPartial(session.id),
-            memo: session.memo ?? ''
+            memo: session.memo ?? '',
+            orchestrator: this.describeOrchestrator(session.id),
+            openedBy: this.openedBy.get(session.id) ?? null
+        }
+    }
+
+    private describeOrchestrator(sessionId: string): ApiSession['orchestrator'] {
+        const info = this.masters.get(sessionId)
+        if (!info) return null
+        return {
+            since: new Date(info.since).toISOString(),
+            lastSeen: new Date(info.lastSeen).toISOString(),
+            client: info.client,
+            openedCount: this.openedCount(sessionId)
         }
     }
 

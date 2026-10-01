@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters } from '../shared/types'
 
 declare global {
     interface Window {
@@ -194,6 +194,8 @@ declare global {
             regenerateControlApiToken: () => Promise<ControlApiState>
             releaseAiSession: (sessionId: string) => Promise<boolean>
             onControlApiSession: (callback: (event: ControlApiSessionEvent) => void) => () => void
+            getControlApiMasters: () => Promise<ControlApiMasters>
+            onControlApiMasters: (callback: (masters: ControlApiMasters) => void) => () => void
         }
     }
 }

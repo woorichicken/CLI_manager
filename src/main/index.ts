@@ -2962,6 +2962,9 @@ app.whenReady().then(async () => {
     ipcMain.handle('regenerate-control-api-token', (): ControlApiState => controlApiServer.regenerateToken())
 
     /** Sidebar "Disconnect AI": the session keeps running, the API loses access. */
+    /** Orchestrator marks, for a renderer that (re)loaded after they were broadcast. */
+    ipcMain.handle('get-control-api-masters', () => controlApiService.mastersSnapshot())
+
     ipcMain.handle('control-api-release-session', (_e, sessionId: string): boolean =>
         controlApiService.clearAiControl(sessionId)
     )
