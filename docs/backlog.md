@@ -169,9 +169,9 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   바꾸면 뒤처짐 문제도 함께 사라진다. 사이트는 이제 `climanager.solhun.com` 이다(검증 명령은 PR #15 에서 갱신).
 - Owner: Maintainer
 
-### `.github/workflows/ci.yml` — 의존성 설치 단계에서 `@vscode/ripgrep` postinstall 이 실패한다
+### `.github/workflows/ci.yml` — 설치 단계 403 은 지나갔고, 지금은 터미널 테스트 시간 초과로 취소된다
 - Discovered: 2026-10-01, PR #16 의 CI 를 확인하다가
-- Why deferred: 접근 규칙 변경과 무관하고, 아래 "main CI 가 끝까지 가지 못했다" 항목과 원인이 같은지부터 갈라야 한다.
+- Why deferred: 접근 규칙 변경과 무관하고, 위 "main CI 가 끝까지 가지 못했다" 항목과 원인이 같은지부터 갈라야 한다.
 - Trigger: CI 를 머지 판단 근거로 쓰기 전
 - Evidence: run 36729620173 의 verify 잡이 59초 만에 `Install dependencies` 에서 끝났다.
   `.../node_modules/@vscode/ripgrep postinstall: Failed` → `ELIFECYCLE Command failed with exit code 1`.
@@ -179,6 +179,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   같은 날 main 의 실행도 failure 다.
   2026-09-30 PR #15 에서도 같은 단계 실패 — 로그상 응답이 **`Request failed: 403`**(재시도 5회). 열린 dependabot PR
   `bump @vscode/ripgrep from 1.17.0 to 1.18.0` 이 다운로드 경로를 바꿨는지 먼저 본다(미확인).
+  **2026-10-01 갱신(PR #18·#19)**: 설치 단계는 **통과**했다(403 재현 안 됨 — 간헐적이었던 것으로 보인다).
+  대신 위 "main CI 가 끝까지 가지 못했다" 항목과 같은 모양으로 끝난다: `loop-counter` 8건(Electron 없음)만 통과하고
+  앱을 띄우는 T1·T4·T5·T6·T7 이 각 1~3분 시간 초과로 연속 ✘ → job 25분 제한에서 cancelled
+  (run 36819460593·36819462264). main 의 run 36803562450(10-01 01:57)·36734434387(09-30)도 같은 단계·같은 순서로
+  cancelled. 그래서 두 PR 은 근거 코멘트를 남기고 머지했고, 릴리즈는 로컬 `pnpm test:term` 전체를 게이트로 썼다.
+  가설(미확인): 설치 로그에 node-pty 가 Node ABI 로 빌드된다(`SOLINK_MODULE(target) Release/pty.node`) — 로컬 새 워크트리에서
+  `electron-builder install-app-deps` 없이 앱 구동 테스트가 전부 죽는 것과 같은 원인일 수 있다. CI 에 그 단계를 넣고 1회 돌려 가른다.
+  덧붙여 앱이 안 뜨는 테스트가 3분씩 기다려 25분을 다 쓰므로, 첫 구동 실패에서 빨리 끝내는 장치가 있으면 원인이 로그에 바로 남는다.
 - Owner: Maintainer
 
 ### 개선안 — 여러 AI 세션의 상태 변화를 한 번에 기다리는 `watch`
