@@ -3,7 +3,7 @@ description: When calling, extending, or debugging the AI Control API (REST unde
 authority: Endpoint, tool, and state contract of the AI Control API
 status: active
 owner: maintainer
-last-reviewed: 2026-09-22
+last-reviewed: 2026-10-01
 ---
 
 # AI Control API
@@ -13,7 +13,8 @@ terminals the user watches. Why it is shaped this way:
 [`../decisions/0005-ai-control-api-local-http.md`](../decisions/0005-ai-control-api-local-http.md).
 
 Code: `src/main/ControlApiServer.ts` (HTTP, auth, routes) · `ControlApiService.ts` (behaviour) ·
-`controlApiMcp.ts` (MCP tools) · `TerminalMirror.ts` (screen) · test `tests/terminal/t15-control-api.spec.ts`.
+`controlApiMcp.ts` (MCP tools) · `TerminalMirror.ts` (screen) · tests `tests/terminal/t15-control-api.spec.ts`
+(sessions) and `t21-control-api-workspaces.spec.ts` (workspace registration).
 
 ## Turning it on
 
@@ -39,6 +40,7 @@ opened. Rationale: [`../decisions/0006-control-api-reaches-every-session.md`](..
 | List workspaces, templates and sessions | Anything while the API is switched off |
 | Open sessions (and register a new folder as a workspace) | Type text while the screen shows a question (unless `force: true`) |
 | Read, type into, wait on, focus, release and close any session | Keep waiting after the user clicks **Disconnect AI** (`409 disconnected`) |
+| Unregister a workspace **it registered**, once it has no sessions | Unregister, move or re-flag a workspace the user added (`403 not_ai_registered`) |
 
 `aiControl: { client, since }` in the store is a **mark, not a permission**. It is set when the API
 opens a session and the first time it reads, types into, waits on or focuses one; looking a session
@@ -49,6 +51,34 @@ sessions in green with a bot icon, and the header shows "AI connected". `release
 Every terminal is mirrored from the moment its pty starts, so reconnecting to a session returns
 its real screen. The one gap: a terminal already running when the API was switched on reports
 `screenPartial: true`, and output from before that moment is missing.
+
+## Master sessions (orchestrators)
+
+An agent that runs **inside** a CLI Manager terminal and opens other sessions through the API is
+an orchestrator. The sidebar draws it in rose with a crown icon (tooltip: how many sessions it
+opened), above the green AI mark: **master > ai > user**.
+
+| Piece | Contract |
+|---|---|
+| `CLIMANAGER_SESSION_ID` | Every pty is started with its own session id in this variable (same id when the terminal is recreated). |
+| `X-Caller-Session` | Optional request header, REST and MCP alike. The caller copies its `CLIMANAGER_SESSION_ID` into it. Must match `^[A-Za-z0-9_-]{1,64}$`; anything else, or an id that names no session, is **ignored, not rejected**. |
+| Becoming master | Only when a request carrying the header **opens a session** successfully. Reads and inputs do not. |
+| `lastSeen` | Updated on every later request carrying the header. |
+| Ending | The master's shell exits, the session is closed/removed, **30 minutes** without a request carrying its id (`ORCHESTRATOR_IDLE_MS`), or the API is switched off. |
+| Persistence | **Memory only.** An app restart clears every master mark and `openedBy` — the agents that made the calls are gone, and a red row restored from disk would point at nothing. |
+
+**The header is self-reported, so it is a display hint, never a permission.** Anyone with the token
+can claim any session id. Being master grants nothing, and not being one takes nothing away — access
+is still decided only by the API being on ([decision 0006](../decisions/0006-control-api-reaches-every-session.md)).
+The master session itself is not given the green AI mark.
+
+API fields: `orchestrator: { since, lastSeen, client, openedCount } | null` (ISO times;
+`openedCount` counts opened sessions still open) and `openedBy: <master session id> | null`, on every
+session object — `GET /v1/sessions`, `GET /v1/sessions/:id`, MCP `list_sessions`, open results.
+
+For MCP, set the header in the client config, e.g. Claude Code `.mcp.json`:
+`"headers": { "X-Caller-Session": "${CLIMANAGER_SESSION_ID}" }`. With curl:
+`-H "X-Caller-Session: $CLIMANAGER_SESSION_ID"`.
 
 ## Session state
 
@@ -69,6 +99,31 @@ read it as the user's instruction. `null` when there is none. MCP `read_output` 
 `memo` — the text of the session's memo pad (Cmd+J), `''` when empty. Read-only: the API has no way to
 write it.
 
+## Workspace registration
+
+Opening a session in a folder that is not a workspace yet registers it. Without care those pile up
+— 11 worktree and `/tmp` registrations were deleted by hand on 2026-10-01. Rationale:
+[`../decisions/0007-api-cleans-up-only-its-own-registrations.md`](../decisions/0007-api-cleans-up-only-its-own-registrations.md).
+
+| Field (store) | Set when | Effect |
+|---|---|---|
+| `Workspace.aiRegistration: { client, since, ephemeral? }` | The API registered the folder | `registeredBy: "ai"`; `DELETE /v1/workspaces/:id` allowed. **Missing = the user's** — every workspace stored before this field existed counts as the user's |
+| `Workspace.folderId` | On registration only | The sidebar folder (group) it is filed under |
+| `aiRegistration.ephemeral` | `open` with `ephemeral: true` | The workspace is unregistered when its last session closes — whether the API closed it or the user did. A startup sweep removes one left without sessions |
+
+`folder` on open: an existing folder's **id**, or a **name** (case-insensitive) — a name that does not
+exist creates that folder. `""` puts it at the top level. Omitted → Settings > Agents > AI Control
+API > **Sidebar folder for AI workspaces** (default `AI Work`; empty = top level). `folder` and
+`ephemeral` apply **only when the call registers the folder**; on an existing workspace they are
+ignored and `note` says so — the API never moves what the user arranged.
+
+Unregistering removes the sidebar entry only. Files on disk are never touched. Refused while the
+workspace has sessions (`409 has_sessions`) or worktree workspaces under it (`409 has_worktrees`).
+The sidebar folder is kept even when it becomes empty — it is shared by later registrations.
+
+Changing the folder setting does not restart the server (waits in flight would be cut); only
+`enabled` and `port` do.
+
 ## REST
 
 All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels the session owner
@@ -77,10 +132,11 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | GET | `/v1/health` | | `{ ok, app, version }` |
-| GET | `/v1/workspaces` | `?query=` substring | workspaces with `kind`, session counts |
+| GET | `/v1/workspaces` | `?query=` substring | workspaces with `kind`, session counts, `folder` (`{ id, name }` or `null`), `registeredBy` (`ai`\|`user`), `registeredByClient`, `ephemeral` |
+| DELETE | `/v1/workspaces/:id` | | unregisters a workspace the API registered (files untouched). `403 not_ai_registered`, `409 has_sessions`, `409 has_worktrees`, `404 workspace_not_found` |
 | GET | `/v1/templates` | | `{ id, name, command, description }[]` |
 | GET | `/v1/sessions` | `?scope=ai\|all` (default `ai`), `?query=` substring of session, workspace or folder | sessions marked as AI-driven, or all of them |
-| POST | `/v1/sessions` | `path` or `workspaceId`; `template` or `command`; `name`, `prompt`, `focus` | `{ session, createdWorkspace, terminalStarted, promptSent, note? }` |
+| POST | `/v1/sessions` | `path` or `workspaceId`; `template` or `command`; `name`, `prompt`, `focus`; `folder`, `ephemeral` (new registrations only) | `{ session, workspace, createdWorkspace, createdFolder, terminalStarted, promptSent, note? }` |
 | GET | `/v1/sessions/:id` | | session |
 | GET | `/v1/sessions/:id/output` | `?mode=screen\|tail&lines=` | `{ session, mode, cols, rows, lines[] }` |
 | POST | `/v1/sessions/:id/input` | `text`, `submit` (default true), `keys[]`, `force` | session |
@@ -90,11 +146,12 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/sessions/:id/release` | | hands it to the user; clears the AI mark |
 | DELETE | `/v1/sessions/:id` | | kills the pty and removes the session — any session, including the user's |
 
-A session carries `aiControlled`, `controlledBy`, `connectedAt` (both `''` when unmarked) and
-`screenPartial`.
+A session carries `aiControlled`, `controlledBy`, `connectedAt` (both `''` when unmarked),
+`screenPartial`, `orchestrator` and `openedBy` (see [Master sessions](#master-sessions-orchestrators)).
 
 Status codes that carry meaning: `409 disconnected` (the user clicked Disconnect AI during a wait),
-`404 not_found`, `409 awaiting_input` (a question is on screen), `409 not_started`.
+`404 not_found`, `409 awaiting_input` (a question is on screen), `409 not_started`,
+`403 not_ai_registered` / `409 has_sessions` (unregistering a workspace).
 
 ### Input semantics
 
@@ -132,8 +189,8 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 
 `POST /mcp`, JSON-RPC 2.0, stateless, `application/json` responses; `GET` → 405. Protocol versions
 2024-11-05 … 2025-11-25 are echoed. Tools: `list_workspaces`, `list_templates`, `list_sessions`,
-`open_session`, `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
-`focus_session`, `rename_session`, `release_session`, `close_session`. Domain errors come back as tool results with
+`open_session` (with `folder`, `ephemeral`), `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
+`focus_session`, `rename_session`, `release_session`, `close_session`, `unregister_workspace`. Domain errors come back as tool results with
 `isError: true` so the model can read them; screen results are plain text, not JSON.
 
 ## MCP 없이 쓰기 (REST + 셸)
@@ -151,7 +208,11 @@ curl -s "${H[@]}" -d "{\"path\":\"$PWD\",\"template\":\"claude-code\",\"prompt\"
 curl -s "${H[@]}" -d '{"timeoutMs":300000}' "$URL/v1/sessions/$ID/wait"    # 끝날 때까지 기다리기
 curl -s "${H[@]}" -d '{"keys":["down","enter"]}' "$URL/v1/sessions/$ID/input"   # 질문에 답하기
 curl -s "${H[@]}" -X DELETE "$URL/v1/sessions/$ID"                        # 닫기
+curl -s "${H[@]}" -X DELETE "$URL/v1/workspaces/$WS"                      # API 가 등록한 폴더를 사이드바에서 해제
 ```
+
+`/tmp`·워크트리처럼 한 번 쓰고 버릴 폴더는 열 때 `"ephemeral": true` 를 주면 마지막 세션이
+닫힐 때 등록도 같이 사라진다.
 
 에이전트가 쓸 때는 **HTTP 상태 코드로 분기**한다: `409 awaiting_input` 은 화면에 질문이
 있다는 뜻이므로 텍스트 대신 `keys` 로 답하고, `409 disconnected` 는 기다리는 도중 사용자가
@@ -204,6 +265,13 @@ Disconnect AI 를 눌렀다는 뜻이므로 사용자가 다시 시키기 전에
 ## Renderer contract
 
 Main broadcasts `control-api-session` (`ControlApiSessionEvent`: `opened` / `updated` / `closed` /
-`focus`). The store is already updated when it arrives; `App.tsx` mirrors it into React state.
+`focus` / `workspaceRemoved`). The store is already updated when it arrives; `App.tsx` mirrors it into
+React state. `opened` carries `workspace` when the folder was just registered and `folder` when a
+sidebar folder was just created for it. `workspaceRemoved` also fires when the **user** closes the
+last session of an ephemeral workspace (`remove-session` IPC) — the renderer drops the workspace the
+same way as a sidebar delete.
+It also broadcasts `control-api-masters` (`ControlApiMasters`, the whole snapshot on every change);
+`hooks/useControlApiMasters.ts` holds it in one module-level store so each sidebar row reads it
+without its own IPC listener.
 IPC: `get-control-api-state`, `set-control-api`, `regenerate-control-api-token`,
-`control-api-release-session`.
+`control-api-release-session`, `get-control-api-masters`.

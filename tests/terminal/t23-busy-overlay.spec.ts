@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { launchAppWithWorkspaces, closeApp, LaunchResult } from './helpers'
 
 /**
- * T21 — the loading screens around a restart.
+ * T23 — the loading screens around a restart.
  *
  * Restoring many sessions blocks the window for seconds (measured: 167
  * sessions → 5–9s before the sidebar appears), and installing an update kills
@@ -10,7 +10,7 @@ import { launchAppWithWorkspaces, closeApp, LaunchResult } from './helpers'
  * here: the restore screen goes away once sessions are on screen — a loader
  * that never leaves is worse than none — and an install shows its own screen.
  */
-test.describe('T21 busy overlay', () => {
+test.describe('T23 busy overlay', () => {
     let ctx: LaunchResult
 
     test.afterEach(async () => {

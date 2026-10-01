@@ -6,7 +6,7 @@ import { launchAppWithWorkspaces, closeApp, termText, LaunchResult, REPO_ROOT } 
 import { startupPromptAnswer } from '../../src/renderer/src/utils/startupPrompts'
 
 /**
- * T22 — a restored Claude session gets past the folder-trust question.
+ * T24 — a restored Claude session gets past the folder-trust question.
  *
  * Claude Code asks whether to trust a folder it has no record for, and never
  * keeps one for the home folder, so a session restored there stops on the
@@ -24,7 +24,7 @@ function seedClaudeTranscript(sessionId: string): string {
     return configDir
 }
 
-test.describe('T22 restore folder trust', () => {
+test.describe('T24 restore startup prompts', () => {
     let ctx: LaunchResult
     const temps: string[] = []
 

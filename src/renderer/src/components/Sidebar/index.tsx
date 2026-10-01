@@ -970,7 +970,7 @@ export function Sidebar({
                                         </div>
                                     </div>
                                     {folder.isExpanded && folderWorkspaces.length > 0 && (
-                                        <div className="ml-3 pl-2 border-l border-white/5 space-y-0.5">
+                                        <div data-folder-body={folder.id} className="ml-3 pl-2 border-l border-white/5 space-y-0.5">
                                             {folderWorkspaces.map(workspace => {
                                                 const childWorktrees = showWorktrees
                                                     ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)

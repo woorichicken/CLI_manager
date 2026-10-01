@@ -5,7 +5,7 @@ import path from 'path'
 import { CodexSessionLocator, isInteractiveCodex } from '../../src/main/CodexSessionLocator'
 
 /**
- * T23 — finding the conversation a Codex terminal started.
+ * T25 — finding the conversation a Codex terminal started.
  *
  * Codex takes no session id from us; it writes a rollout file whose first line
  * names the conversation, its folder and its start time. These cases pin how
@@ -20,7 +20,7 @@ function writeRollout(home: string, id: string, cwd: string, startedAt: Date): v
     fs.writeFileSync(path.join(dir, `rollout-${startedAt.toISOString().slice(0, 19).replace(/:/g, '-')}-${id}.jsonl`), JSON.stringify(meta) + '\n')
 }
 
-test.describe('T23 Codex session locator', () => {
+test.describe('T25 Codex session locator', () => {
     test('only an interactive codex start counts', () => {
         const split = (s: string): string[] => s.split(/\s+/)
         expect(isInteractiveCodex(split('codex'))).toBe(true)

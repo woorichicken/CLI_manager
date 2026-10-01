@@ -4,7 +4,7 @@ import { randomBytes, timingSafeEqual } from 'crypto'
 import { chmodSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API } from '../shared/types'
+import { CALLER_SESSION_HEADER, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API } from '../shared/types'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { handleMcpBody } from './controlApiMcp'
 
@@ -17,7 +17,11 @@ import { handleMcpBody } from './controlApiMcp'
  *   - every request needs `Authorization: Bearer <token>`
  *   - Host must be 127.0.0.1/localhost (defeats DNS rebinding) and a browser
  *     Origin other than our own is rejected (a web page cannot drive it)
- *   - the service only touches sessions the API itself opened
+ *   - while on, it reaches every session; the AI mark is a label, not a permission (decision 0006)
+ *   - the service only unregisters workspaces the API itself registered
+ *
+ * X-Caller-Session is self-reported by whoever holds the token, so it only
+ * changes how the sidebar draws a session — never what the caller may do.
  */
 
 const HOST = '127.0.0.1'
@@ -25,6 +29,8 @@ const MAX_BODY_BYTES = 1024 * 1024
 const TOKEN_BYTES = 24
 const TOKEN_STORE_KEY = 'controlApiToken'
 const DISCOVERY_FILE = 'control-api.json'
+/** Session ids are UUIDs; this is looser so an unexpected-but-harmless id is not an error. */
+const CALLER_SESSION_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 
 type JsonHandler = (ctx: RequestContext) => Promise<unknown> | unknown
 
@@ -34,6 +40,7 @@ interface RequestContext {
     params: Record<string, string>
     client: string
     signal: AbortSignal
+    caller?: string
 }
 
 interface Route {
@@ -58,6 +65,12 @@ function sanitizeClient(value: string | string[] | undefined, fallback: string):
     const raw = Array.isArray(value) ? value[0] : value
     const cleaned = (raw ?? '').replace(/[^\w .@-]/g, '').trim().slice(0, 40)
     return cleaned || fallback
+}
+
+/** A malformed header is ignored, not rejected: it is a display hint, and old clients must keep working. */
+function parseCaller(value: string | string[] | undefined): string | undefined {
+    const raw = (Array.isArray(value) ? value[0] : value)?.trim()
+    return raw && CALLER_SESSION_PATTERN.test(raw) ? raw : undefined
 }
 
 function optionalString(body: Record<string, unknown>, key: string): string | undefined {
@@ -139,6 +152,7 @@ export class ControlApiServer {
 
     async stop(): Promise<void> {
         this.options.service.stopMirroring()
+        this.options.service.clearOrchestrators()
         this.removeDiscovery()
         const server = this.server
         this.server = null
@@ -281,12 +295,14 @@ export class ControlApiServer {
 
             const url = new URL(req.url ?? '/', `http://${HOST}`)
             const method = req.method ?? 'GET'
+            const caller = parseCaller(req.headers[CALLER_SESSION_HEADER])
+            if (caller) this.options.service.noteCaller(caller)
 
             if (url.pathname === '/mcp') {
                 if (method !== 'POST') return send(405, undefined, { Allow: 'POST' })
                 const raw = await this.readBody(req)
                 const client = sanitizeClient(req.headers['x-client-name'], 'mcp')
-                const response = await handleMcpBody(this.options.service, raw, this.options.appVersion, client, abort.signal)
+                const response = await handleMcpBody(this.options.service, raw, this.options.appVersion, client, abort.signal, caller)
                 return response === null ? send(202) : send(200, response)
             }
 
@@ -317,7 +333,8 @@ export class ControlApiServer {
                     query: url.searchParams,
                     params,
                     client: sanitizeClient(req.headers['x-client-name'], 'api'),
-                    signal: abort.signal
+                    signal: abort.signal,
+                    caller
                 })
                 return send(200, result ?? { ok: true })
             }
@@ -353,6 +370,10 @@ export class ControlApiServer {
         return [
             route('GET', '/v1/health', () => ({ ok: true, app: 'CLI Manager', version: this.options.appVersion })),
             route('GET', '/v1/workspaces', ({ query }) => service.listWorkspaces(query.get('query') ?? undefined)),
+            route('DELETE', '/v1/workspaces/:id', ({ params }) => {
+                service.unregisterWorkspace(params.id)
+                return { ok: true }
+            }),
             route('GET', '/v1/templates', () => service.listTemplates()),
             route('GET', '/v1/sessions', ({ query }) => {
                 const scope = query.get('scope') ?? undefined
@@ -361,7 +382,7 @@ export class ControlApiServer {
                 }
                 return service.listSessions({ scope, query: query.get('query') ?? undefined })
             }),
-            route('POST', '/v1/sessions', ({ body, client }) =>
+            route('POST', '/v1/sessions', ({ body, client, caller }) =>
                 service.openSession({
                     path: optionalString(body, 'path'),
                     workspaceId: optionalString(body, 'workspaceId'),
@@ -370,7 +391,10 @@ export class ControlApiServer {
                     name: optionalString(body, 'name'),
                     prompt: optionalString(body, 'prompt'),
                     focus: optionalBoolean(body, 'focus'),
-                    client
+                    folder: optionalString(body, 'folder'),
+                    ephemeral: optionalBoolean(body, 'ephemeral'),
+                    client,
+                    caller
                 })
             ),
             route('GET', '/v1/sessions/:id', ({ params }) => service.getSession(params.id)),

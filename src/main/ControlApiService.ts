@@ -3,10 +3,15 @@ import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import {
     AgentStatusUpdate,
+    ControlApiMasters,
     ControlApiSessionEvent,
+    DEFAULT_CONTROL_API,
+    OrchestratorInfo,
     TerminalSession,
     TerminalTemplate,
-    Workspace
+    UserSettings,
+    Workspace,
+    WorkspaceFolder
 } from '../shared/types'
 import { TerminalManager } from './TerminalManager'
 import { TerminalMirror } from './TerminalMirror'
@@ -81,6 +86,14 @@ const SUBMIT_HEAD_CHARS = 16
 const ESCAPE_SETTLE_MS = 600
 const ESCAPE = '\x1b'
 
+/**
+ * An orchestrator (a session that opened others through the API) that has made
+ * no API call for this long stops being shown as one. The agent in it has most
+ * likely finished; a stale red row would claim otherwise.
+ */
+export const ORCHESTRATOR_IDLE_MS = 30 * 60 * 1000
+const ORCHESTRATOR_SWEEP_MS = 60 * 1000
+
 const MAX_OUTPUT_LINES = 2000
 const DEFAULT_OUTPUT_LINES = 60
 const MAX_TEXT_LENGTH = 100_000
@@ -118,6 +131,11 @@ export class ControlApiError extends Error {
     }
 }
 
+export interface ApiFolderRef {
+    id: string
+    name: string
+}
+
 export interface ApiWorkspace {
     id: string
     name: string
@@ -126,6 +144,14 @@ export interface ApiWorkspace {
     branchName?: string
     sessionCount: number
     aiSessionCount: number
+    /** Sidebar folder (group) it sits in, or null at the top level. */
+    folder: ApiFolderRef | null
+    /** 'ai' when the Control API registered it; only those can be unregistered through the API. */
+    registeredBy: 'ai' | 'user'
+    /** Client that registered it, or '' for 'user'. */
+    registeredByClient: string
+    /** Unregisters itself when its last session closes. */
+    ephemeral: boolean
 }
 
 export interface ApiTemplate {
@@ -157,6 +183,13 @@ export interface ApiSession {
     screenPartial: boolean
     /** The session's memo pad (Cmd+J). Empty when the user wrote none. */
     memo: string
+    /**
+     * Set while this session is an orchestrator: it sent X-Caller-Session and
+     * opened at least one session. Self-reported, so display only.
+     */
+    orchestrator: { since: string; lastSeen: string; client: string; openedCount: number } | null
+    /** Id of the orchestrator session that opened this one, or null. */
+    openedBy: string | null
 }
 
 export interface ApiOutput {
@@ -194,12 +227,25 @@ export interface OpenSessionInput {
     name?: string
     focus?: boolean
     prompt?: string
+    /**
+     * Sidebar folder for a newly registered workspace: an existing folder's id
+     * or name, or a new name (created). '' means top level. Omitted means the
+     * folder named in Settings. Ignored when the workspace already exists.
+     */
+    folder?: string
+    /** Unregister the new workspace when its last session closes. Ignored when it already exists. */
+    ephemeral?: boolean
     client: string
+    /** Session id from X-Caller-Session: the session asking, if it said so. */
+    caller?: string
 }
 
 export interface OpenSessionResult {
     session: ApiSession
+    workspace: ApiWorkspace
     createdWorkspace: boolean
+    /** A sidebar folder was created for the new workspace. */
+    createdFolder: boolean
     terminalStarted: boolean
     promptSent: boolean
     note?: string
@@ -234,6 +280,7 @@ export interface ControlApiDeps {
 }
 
 export const CONTROL_API_SESSION_CHANNEL = 'control-api-session'
+export const CONTROL_API_MASTERS_CHANNEL = 'control-api-masters'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -252,7 +299,19 @@ export class ControlApiService {
     /** When each session last received a lone Escape from the API. */
     private readonly lastEscapeAt = new Map<string, number>()
 
-    constructor(private readonly deps: ControlApiDeps) {}
+    /**
+     * Orchestrators and who opened what. Memory only on purpose: after a
+     * restart the agents that made these calls are gone, and a red row
+     * restored from disk would point at nothing.
+     */
+    private readonly masters = new Map<string, Omit<OrchestratorInfo, 'openedCount'>>()
+    private readonly openedBy = new Map<string, string>()
+    private sweepTimer: NodeJS.Timeout | null = null
+
+    constructor(private readonly deps: ControlApiDeps) {
+        // The orchestrator's shell exited: whatever drove it is gone.
+        deps.terminals.events.on('exited', (id: string) => this.dropOrchestrator(id))
+    }
 
     /**
      * Starts mirroring every terminal. Called when the server starts, never
@@ -275,17 +334,10 @@ export class ControlApiService {
 
     listWorkspaces(query?: string): ApiWorkspace[] {
         const needle = query?.trim().toLowerCase()
+        const folders = this.folders()
         return this.workspaces()
             .filter((w) => !needle || w.name.toLowerCase().includes(needle) || w.path.toLowerCase().includes(needle))
-            .map((w) => ({
-                id: w.id,
-                name: w.name,
-                path: w.path,
-                kind: w.isHome ? 'home' : w.isPlayground ? 'playground' : w.parentWorkspaceId ? 'worktree' : 'folder',
-                ...(w.branchName ? { branchName: w.branchName } : {}),
-                sessionCount: w.sessions?.length ?? 0,
-                aiSessionCount: (w.sessions ?? []).filter((s) => s.aiControl).length
-            }))
+            .map((w) => this.describeWorkspace(w, folders))
     }
 
     listTemplates(): ApiTemplate[] {
@@ -343,6 +395,25 @@ export class ControlApiService {
     async openSession(input: OpenSessionInput): Promise<OpenSessionResult> {
         const command = this.resolveCommand(input.template, input.command)
         const { workspace, created } = this.resolveWorkspace(input.workspaceId, input.path)
+        const notes: string[] = []
+
+        let newFolder: WorkspaceFolder | undefined
+        if (created) {
+            workspace.aiRegistration = {
+                client: input.client,
+                since: Date.now(),
+                ...(input.ephemeral ? { ephemeral: true } : {})
+            }
+            const placement = this.resolveFolder(input.folder)
+            if (placement) {
+                workspace.folderId = placement.folder.id
+                if (placement.created) newFolder = placement.folder
+            }
+        } else if (input.folder !== undefined || input.ephemeral) {
+            // Moving or re-flagging a workspace the user may have arranged is not
+            // the API's call; it only places what it registers itself.
+            notes.push('The folder was already registered, so folder and ephemeral were ignored.')
+        }
 
         const templateName = input.template ? this.findTemplate(input.template)?.name : undefined
         const session: TerminalSession = {
@@ -353,6 +424,7 @@ export class ControlApiService {
             ...(command ? { initialCommand: command } : {}),
             aiControl: { client: input.client, since: Date.now() }
         }
+        const caller = input.caller && this.hasSession(input.caller) ? input.caller : undefined
 
         // Mirror first so the very first bytes the shell prints are captured.
         this.deps.mirror.attach(session.id)
@@ -364,6 +436,8 @@ export class ControlApiService {
             const target = workspaces.find((w) => w.id === workspace.id)!
             target.sessions = [...(target.sessions ?? []), session]
         }
+        // Folder before workspace: the renderer files the workspace under its folder on arrival.
+        if (newFolder) this.deps.store.set('folders', [...this.folders(), newFolder])
         this.deps.store.set('workspaces', workspaces)
 
         this.emit({
@@ -372,39 +446,50 @@ export class ControlApiService {
             sessionId: session.id,
             session,
             ...(created ? { workspace: { ...workspace, sessions: [session] } } : {}),
+            ...(newFolder ? { folder: newFolder } : {}),
             focus: input.focus === true
         })
+        if (caller) this.recordOpened(caller, session.id, input.client)
 
         const terminalStarted = await this.waitForPty(session.id, PTY_START_TIMEOUT_MS)
         const result: OpenSessionResult = {
             session: this.getSession(session.id),
+            workspace: this.getWorkspace(workspace.id),
             createdWorkspace: created,
+            createdFolder: newFolder !== undefined,
             terminalStarted,
-            promptSent: false
+            promptSent: false,
+            ...(notes.length ? { note: notes.join(' ') } : {})
+        }
+        const addNote = (note: string): void => {
+            result.note = result.note ? `${result.note} ${note}` : note
         }
 
         if (!terminalStarted) {
-            result.note = 'The session was added but CLI Manager did not start its terminal yet. Is the main window open?'
+            addNote('The session was added but CLI Manager did not start its terminal yet. Is the main window open?')
             return result
         }
 
         if (input.prompt?.trim()) {
             const ready = await this.waitForStartup(session.id, command !== undefined)
             if (!ready) {
-                result.note =
+                addNote(
                     'The program did not finish starting within a minute, so the prompt was not sent. ' +
                     'Read the screen, then send the prompt with send_input.'
+                )
             } else if (this.deps.mirror.showsAwaitingInput(session.id)) {
-                result.note =
+                addNote(
                     'The program is asking a question (for example whether to trust this folder), so the prompt was not sent. ' +
                     'Read the screen, answer it with send_input keys (e.g. ["down","enter"]), then send the prompt.'
+                )
             } else {
                 const submitted = await this.typeAndSubmit(session.id, { text: input.prompt, submit: true })
                 result.promptSent = submitted
                 if (!submitted) {
-                    result.note =
+                    addNote(
                         'The prompt was typed but is still in the input box after pressing Enter three times. ' +
                         'Read the screen and press enter with send_input keys.'
+                    )
                 }
             }
             result.session = this.getSession(session.id)
@@ -597,6 +682,7 @@ export class ControlApiService {
         this.deps.terminals.killTerminal(sessionId)
         this.deps.mirror.detach(sessionId)
         this.lastEscapeAt.delete(sessionId)
+        this.forgetOrchestration(sessionId)
 
         const workspaces = this.workspaces()
         const target = workspaces.find((w) => w.id === workspace.id)
@@ -604,6 +690,35 @@ export class ControlApiService {
         this.deps.store.set('workspaces', workspaces)
 
         this.emit({ type: 'closed', workspaceId: workspace.id, sessionId })
+        this.removeIfSpentEphemeral(workspace.id)
+    }
+
+    /**
+     * Unregisters a workspace the API registered. The folder on disk is never
+     * touched — this only takes it off the sidebar. Refused for anything the
+     * user added, and while sessions or worktrees still hang off it.
+     */
+    unregisterWorkspace(workspaceId: string): void {
+        const workspace = this.workspaces().find((w) => w.id === workspaceId)
+        if (!workspace) throw new ControlApiError(404, 'workspace_not_found', `No workspace with id ${workspaceId}.`)
+        if (!workspace.aiRegistration || workspace.isHome || workspace.isPlayground) {
+            throw new ControlApiError(
+                403,
+                'not_ai_registered',
+                'The user added this workspace; only workspaces the API registered can be unregistered. Ask the user to remove it.'
+            )
+        }
+        if (workspace.sessions.length > 0) {
+            throw new ControlApiError(
+                409,
+                'has_sessions',
+                `The workspace still has ${workspace.sessions.length} open session(s). Close them first.`
+            )
+        }
+        if (this.workspaces().some((w) => w.parentWorkspaceId === workspaceId)) {
+            throw new ControlApiError(409, 'has_worktrees', 'Worktree workspaces are registered under this one. Remove them first.')
+        }
+        this.removeWorkspace(workspaceId)
     }
 
     // ------------------------------------------------------------------
@@ -630,17 +745,180 @@ export class ControlApiService {
     forgetSession(sessionId: string): void {
         this.deps.mirror.detach(sessionId)
         this.lastEscapeAt.delete(sessionId)
+        this.forgetOrchestration(sessionId)
+    }
+
+    // ------------------------------------------------------------------
+    // Orchestrators (display only — see OrchestratorInfo)
+    // ------------------------------------------------------------------
+
+    /** Every API call carrying X-Caller-Session. Unknown ids are ignored. */
+    noteCaller(callerId: string): void {
+        const master = this.masters.get(callerId)
+        if (master) master.lastSeen = Date.now()
+    }
+
+    mastersSnapshot(): ControlApiMasters {
+        const masters: Record<string, OrchestratorInfo> = {}
+        for (const [id, info] of this.masters) masters[id] = { ...info, openedCount: this.openedCount(id) }
+        return { masters, openedBy: Object.fromEntries(this.openedBy) }
+    }
+
+    /** The API was switched off: nothing can be orchestrating through it any more. */
+    clearOrchestrators(): void {
+        if (this.masters.size === 0 && this.openedBy.size === 0) return
+        this.masters.clear()
+        this.openedBy.clear()
+        this.stopSweep()
+        this.emitMasters()
+    }
+
+    private recordOpened(callerId: string, openedId: string, client: string): void {
+        if (callerId === openedId) return
+        const now = Date.now()
+        const master = this.masters.get(callerId)
+        if (master) master.lastSeen = now
+        else this.masters.set(callerId, { since: now, lastSeen: now, client })
+        this.openedBy.set(openedId, callerId)
+        this.startSweep()
+        this.emitMasters()
+    }
+
+    private dropOrchestrator(sessionId: string): void {
+        if (!this.masters.delete(sessionId)) return
+        if (this.masters.size === 0) this.stopSweep()
+        this.emitMasters()
+    }
+
+    /** A session went away, as an orchestrator, as one it opened, or both. */
+    private forgetOrchestration(sessionId: string): void {
+        const wasMaster = this.masters.delete(sessionId)
+        const wasOpened = this.openedBy.delete(sessionId)
+        if (!wasMaster && !wasOpened) return
+        if (this.masters.size === 0) this.stopSweep()
+        this.emitMasters()
+    }
+
+    private openedCount(masterId: string): number {
+        let count = 0
+        for (const owner of this.openedBy.values()) if (owner === masterId) count++
+        return count
+    }
+
+    private startSweep(): void {
+        if (this.sweepTimer) return
+        this.sweepTimer = setInterval(() => this.sweepIdleOrchestrators(), ORCHESTRATOR_SWEEP_MS)
+        this.sweepTimer.unref?.()
+    }
+
+    private stopSweep(): void {
+        if (this.sweepTimer) clearInterval(this.sweepTimer)
+        this.sweepTimer = null
+    }
+
+    private sweepIdleOrchestrators(): void {
+        const cutoff = Date.now() - ORCHESTRATOR_IDLE_MS
+        let changed = false
+        for (const [id, info] of this.masters) {
+            if (info.lastSeen >= cutoff) continue
+            this.masters.delete(id)
+            changed = true
+        }
+        if (this.masters.size === 0) this.stopSweep()
+        if (changed) this.emitMasters()
+    }
+
+    private emitMasters(): void {
+        this.deps.broadcast(CONTROL_API_MASTERS_CHANNEL, this.mastersSnapshot())
+    }
+
+    /**
+     * A session was removed from this workspace (by the user or the API). An
+     * ephemeral workspace goes with its last session. Returns true when it did.
+     */
+    removeIfSpentEphemeral(workspaceId: string): boolean {
+        const workspace = this.workspaces().find((w) => w.id === workspaceId)
+        if (!workspace?.aiRegistration?.ephemeral || workspace.sessions.length > 0) return false
+        if (this.workspaces().some((w) => w.parentWorkspaceId === workspaceId)) return false
+        this.removeWorkspace(workspaceId)
+        return true
+    }
+
+    /**
+     * Startup sweep: an ephemeral workspace left without sessions (the app quit
+     * between the last close and the cleanup) would otherwise stay forever.
+     */
+    pruneSpentEphemeral(): void {
+        for (const workspace of this.workspaces()) this.removeIfSpentEphemeral(workspace.id)
     }
 
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
 
+    private folders(): WorkspaceFolder[] {
+        return (this.deps.store.get('folders') as WorkspaceFolder[] | undefined) ?? []
+    }
+
+    private removeWorkspace(workspaceId: string): void {
+        this.deps.store.set('workspaces', this.workspaces().filter((w) => w.id !== workspaceId))
+        this.emit({ type: 'workspaceRemoved', workspaceId })
+    }
+
+    private getWorkspace(workspaceId: string): ApiWorkspace {
+        const workspace = this.workspaces().find((w) => w.id === workspaceId)
+        if (!workspace) throw new ControlApiError(404, 'workspace_not_found', `No workspace with id ${workspaceId}.`)
+        return this.describeWorkspace(workspace, this.folders())
+    }
+
+    private describeWorkspace(w: Workspace, folders: WorkspaceFolder[]): ApiWorkspace {
+        const folder = w.folderId ? folders.find((f) => f.id === w.folderId) : undefined
+        return {
+            id: w.id,
+            name: w.name,
+            path: w.path,
+            kind: w.isHome ? 'home' : w.isPlayground ? 'playground' : w.parentWorkspaceId ? 'worktree' : 'folder',
+            ...(w.branchName ? { branchName: w.branchName } : {}),
+            sessionCount: w.sessions?.length ?? 0,
+            aiSessionCount: (w.sessions ?? []).filter((s) => s.aiControl).length,
+            folder: folder ? { id: folder.id, name: folder.name } : null,
+            registeredBy: w.aiRegistration ? 'ai' : 'user',
+            registeredByClient: w.aiRegistration?.client ?? '',
+            ephemeral: w.aiRegistration?.ephemeral === true
+        }
+    }
+
+    /**
+     * Where a newly registered workspace goes. An id or a name (case-insensitive)
+     * of an existing folder wins; any other name creates that folder. '' is the
+     * top level, and omitted falls back to the folder named in Settings.
+     * The new folder is returned unsaved — the caller stores it with the workspace.
+     */
+    private resolveFolder(requested?: string): { folder: WorkspaceFolder; created: boolean } | null {
+        const name = (requested ?? this.defaultFolderName()).trim().slice(0, MAX_NAME_LENGTH)
+        if (!name) return null
+        const folders = this.folders()
+        const found =
+            folders.find((f) => f.id === name) ??
+            folders.find((f) => f.name.trim().toLowerCase() === name.toLowerCase())
+        if (found) return { folder: found, created: false }
+        return { folder: { id: uuidv4(), name, isExpanded: true, createdAt: Date.now() }, created: true }
+    }
+
+    private defaultFolderName(): string {
+        const settings = this.deps.store.get('settings') as UserSettings | undefined
+        return { ...DEFAULT_CONTROL_API, ...(settings?.controlApi ?? {}) }.aiFolderName ?? ''
+    }
+
     private workspaces(): Workspace[] {
         return ((this.deps.store.get('workspaces') as Workspace[] | undefined) ?? []).map((w) => ({
             ...w,
             sessions: w.sessions ?? []
         }))
+    }
+
+    private hasSession(sessionId: string): boolean {
+        return this.workspaces().some((w) => w.sessions.some((s) => s.id === sessionId))
     }
 
     private requireSession(sessionId: string): { workspace: Workspace; session: TerminalSession } {
@@ -754,7 +1032,20 @@ export class ControlApiService {
             controlledBy: session.aiControl?.client ?? '',
             connectedAt: session.aiControl ? new Date(session.aiControl.since).toISOString() : '',
             screenPartial: this.deps.mirror.isPartial(session.id),
-            memo: session.memo ?? ''
+            memo: session.memo ?? '',
+            orchestrator: this.describeOrchestrator(session.id),
+            openedBy: this.openedBy.get(session.id) ?? null
+        }
+    }
+
+    private describeOrchestrator(sessionId: string): ApiSession['orchestrator'] {
+        const info = this.masters.get(sessionId)
+        if (!info) return null
+        return {
+            since: new Date(info.since).toISOString(),
+            lastSeen: new Date(info.lastSeen).toISOString(),
+            client: info.client,
+            openedCount: this.openedCount(sessionId)
         }
     }
 

@@ -28,6 +28,7 @@ know X".
 | [0004](0004-periodic-update-check.md) | Update checks repeat on a timer, not only at startup | active |
 | [0005](0005-ai-control-api-local-http.md) | An AI drives sessions through an opt-in local HTTP API | active (access rule superseded by 0006) |
 | [0006](0006-control-api-reaches-every-session.md) | While the Control API is on, it reaches every session | active |
+| [0007](0007-api-cleans-up-only-its-own-registrations.md) | The API cleans up only the workspaces it registered | active |
 
 ## Template
 

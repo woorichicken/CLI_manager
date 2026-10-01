@@ -29,6 +29,8 @@ Typical flow:
 3. wait_for_idle, then read_output. Or pass wait_seconds to send_input to do both in one call.
 4. Repeat send_input / wait_for_idle as needed. close_session when done, or release_session to hand it to the user.
 
+Folders you open that are not registered yet are added to the user's sidebar (in the folder set in their settings, or the one you pass as folder). For scratch, /tmp or one-off worktree folders pass ephemeral: true so the registration goes away with the last session, or call unregister_workspace after closing. Never unregister what the user added — it is refused anyway.
+
 You can also work in sessions the user opened: list_sessions with scope "all" (use query — there can be hundreds) finds them, and the same tools apply. Do this only when the user's request points at that session. A session's screen may be missing older output when screenPartial is true.
 
 Rules: the first time you read, type into, wait on or focus a session it is marked as AI-driven and highlighted in green, so the user can see where you are working. They may type into it or disconnect it at any time — re-read the screen before acting. If a call reports "disconnected", the user took the session back: stop working in it unless they ask you to continue. Closing a session kills whatever runs in it; never close one you did not open unless the user asked. If a screen shows a question (awaitingInput: true) — a permission prompt, or Claude Code asking whether to trust a new folder — read the options and answer with send_input keys (e.g. ["down","enter"], ["1"]); text is refused until the question is gone. Trusting a folder or approving an action is the user's call: only accept when the user's request clearly covers it.`
@@ -53,7 +55,8 @@ const sessionIdProperty = {
 const TOOLS: ToolDefinition[] = [
     {
         name: 'list_workspaces',
-        description: 'List folders registered in CLI Manager (the user has many — use query to filter by name or path).',
+        description:
+            'List folders registered in CLI Manager (the user has many — use query to filter by name or path). Each shows its sidebar folder, whether you (registeredBy "ai") or the user registered it, and whether it is ephemeral.',
         inputSchema: {
             type: 'object',
             properties: { query: { type: 'string', description: 'Case-insensitive substring of the name or path.' } }
@@ -96,8 +99,28 @@ const TOOLS: ToolDefinition[] = [
                     type: 'boolean',
                     description:
                         'Switch the app to this session. Default false — use it only when the user asked to watch, because switching takes the caret out of whatever terminal they were typing in.'
+                },
+                folder: {
+                    type: 'string',
+                    description:
+                        'Sidebar folder (group) to file a newly registered workspace under: an existing folder id or name, or a new name to create. "" = top level. Default: the folder set in CLI Manager settings. Ignored when the path is already registered.'
+                },
+                ephemeral: {
+                    type: 'boolean',
+                    description:
+                        'Unregister the new workspace automatically when its last session closes — use it for scratch or temporary folders. Ignored when the path is already registered.'
                 }
             }
+        }
+    },
+    {
+        name: 'unregister_workspace',
+        description:
+            'Remove a workspace you registered from the CLI Manager sidebar. Files on disk are not touched. Refused for workspaces the user added, and while the workspace still has open sessions (close them first).',
+        inputSchema: {
+            type: 'object',
+            properties: { workspace_id: { type: 'string', description: 'Id from list_workspaces or open_session.' } },
+            required: ['workspace_id']
         }
     },
     {
@@ -242,7 +265,8 @@ async function callTool(
     name: string,
     args: Record<string, unknown>,
     client: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    caller?: string
 ): Promise<string> {
     switch (name) {
         case 'list_workspaces':
@@ -264,7 +288,10 @@ async function callTool(
                 name: str(args, 'name'),
                 prompt: str(args, 'prompt'),
                 focus: bool(args, 'focus'),
-                client
+                folder: str(args, 'folder'),
+                ephemeral: bool(args, 'ephemeral'),
+                client,
+                caller
             })
             return JSON.stringify(result, null, 1)
         }
@@ -305,6 +332,9 @@ async function callTool(
         case 'release_session':
             service.releaseSession(str(args, 'session_id', true)!)
             return 'Released. The session keeps running for the user and is no longer marked as AI-driven.'
+        case 'unregister_workspace':
+            service.unregisterWorkspace(str(args, 'workspace_id', true)!)
+            return 'Unregistered. The folder on disk is untouched.'
         case 'close_session':
             service.closeSession(str(args, 'session_id', true)!)
             return 'Closed.'
@@ -322,7 +352,8 @@ async function handleOne(
     request: JsonRpcRequest,
     appVersion: string,
     client: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    caller?: string
 ): Promise<Record<string, unknown> | null> {
     if (!request || typeof request !== 'object' || request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
         return rpcError(request?.id, JSONRPC_INVALID_REQUEST, 'Invalid JSON-RPC request')
@@ -359,7 +390,7 @@ async function handleOne(
                 return rpcError(id, JSONRPC_INVALID_PARAMS, 'tools/call needs name and an arguments object')
             }
             try {
-                const text = await callTool(service, name, args, client, signal)
+                const text = await callTool(service, name, args, client, signal, caller)
                 return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }] } }
             } catch (error) {
                 if (error instanceof InvalidParams) return rpcError(id, JSONRPC_INVALID_PARAMS, error.message)
@@ -383,7 +414,9 @@ export async function handleMcpBody(
     rawBody: string,
     appVersion: string,
     client: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    /** X-Caller-Session, already validated. */
+    caller?: string
 ): Promise<unknown | null> {
     let parsed: unknown
     try {
@@ -395,12 +428,12 @@ export async function handleMcpBody(
     // Batches were removed in 2025-06-18 but older clients may still send them.
     if (Array.isArray(parsed)) {
         const responses = (
-            await Promise.all(parsed.map((r) => handleOne(service, r as JsonRpcRequest, appVersion, client, signal)))
+            await Promise.all(parsed.map((r) => handleOne(service, r as JsonRpcRequest, appVersion, client, signal, caller)))
         ).filter((r) => r !== null)
         return responses.length > 0 ? responses : null
     }
 
-    return handleOne(service, parsed as JsonRpcRequest, appVersion, client, signal)
+    return handleOne(service, parsed as JsonRpcRequest, appVersion, client, signal, caller)
 }
 
 export const MCP_TOOL_NAMES = TOOLS.map((t) => t.name)

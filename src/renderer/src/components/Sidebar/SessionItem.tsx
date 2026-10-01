@@ -1,9 +1,10 @@
 import React, { useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, Trash2, GripVertical, Bot } from 'lucide-react'
+import { Terminal, Trash2, GripVertical, Bot, Crown } from 'lucide-react'
 import clsx from 'clsx'
 import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion'
 import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/types'
+import { useControlApiMasters } from '../../hooks/useControlApiMasters'
 
 // Session status colors (claude-squad 방식)
 const SESSION_STATUS_COLORS: Record<SessionStatus, string> = {
@@ -27,7 +28,16 @@ const AWAITING_INPUT_COLOR = 'bg-amber-400 animate-pulse ring-2 ring-amber-400/3
 
 // Sessions an AI drives through the Control API are green instead of blue, so
 // the user can tell at a glance which terminals something else may type into.
-const ROW_CLASSES = {
+// An orchestrator — the session whose agent opened other sessions — is rose,
+// so the one directing the others stands out from the ones being directed.
+// Priority: master > ai > user.
+type SessionRole = 'master' | 'ai' | 'user'
+
+const ROW_CLASSES: Record<SessionRole, { active: string; idle: string }> = {
+    master: {
+        active: 'bg-rose-500/20 text-rose-200',
+        idle: 'text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200'
+    },
     user: {
         active: 'bg-blue-500/20 text-blue-200',
         idle: 'text-gray-400 hover:bg-white/5 hover:text-gray-300'
@@ -101,7 +111,9 @@ export function SessionItem({
     const lingerTimeoutRef = useRef<NodeJS.Timeout | null>(null)
     const itemRef = useRef<HTMLDivElement>(null)
     const dragControls = useDragControls()
-    const rowClasses = session.aiControl ? ROW_CLASSES.ai : ROW_CLASSES.user
+    const orchestrator = useControlApiMasters().masters[session.id]
+    const role: SessionRole = orchestrator ? 'master' : session.aiControl ? 'ai' : 'user'
+    const rowClasses = ROW_CLASSES[role]
 
     React.useEffect(() => {
         if (isRenaming && inputRef.current) {
@@ -234,6 +246,7 @@ export function SessionItem({
                 dragControls={dragControls}
                 transition={{ layout: { duration: 0 } }}
                 data-session-item={session.id}
+                data-session-role={role}
                 className={clsx(
                     "flex items-center gap-1 py-1 px-1.5 rounded transition-colors text-sm group",
                     isActive ? rowClasses.active : rowClasses.idle
@@ -279,7 +292,15 @@ export function SessionItem({
                     onClick={() => !isRenaming && onSelect(workspace, session)}
                     className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
                 >
-                    {session.aiControl ? (
+                    {orchestrator ? (
+                        <span
+                            className="shrink-0 flex"
+                            data-master-icon
+                            title={`Master session — opened ${orchestrator.openedCount} AI session${orchestrator.openedCount === 1 ? '' : 's'}`}
+                        >
+                            <Crown size={14} className="text-rose-400" />
+                        </span>
+                    ) : session.aiControl ? (
                         <span
                             className="shrink-0 flex"
                             title={`Driven by AI (${session.aiControl.client}) — right-click → Disconnect AI to take it back`}
