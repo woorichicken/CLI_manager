@@ -10,7 +10,14 @@
     />
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Shown until React's first render replaces it: the bundle loads and runs before anything else can paint. -->
+    <div id="root">
+      <div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font:500 14px -apple-system,BlinkMacSystemFont,sans-serif;color:#d1d5db;background:rgba(30,30,30,0.95)">
+        <div style="width:24px;height:24px;border:3px solid rgba(96,165,250,0.25);border-top-color:#60a5fa;border-radius:50%;animation:boot-spin 0.8s linear infinite"></div>
+        <div>Restoring sessions…</div>
+      </div>
+      <style>@keyframes boot-spin { to { transform: rotate(360deg) } }</style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

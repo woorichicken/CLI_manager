@@ -3272,11 +3272,19 @@ ipcMain.handle('download-update', async () => {
     }
 })
 
+/** Long enough for every window to paint the "Installing update…" screen before main blocks. */
+const INSTALL_PAINT_DELAY_MS = 150
+
 ipcMain.handle('install-update', () => {
     // Set isQuitting flag to skip before-quit dialog
     isQuitting = true
-    // Clean up all terminals before installing update
-    terminalManager.killAll()
-    // Install and restart with update
-    autoUpdater.quitAndInstall()
+    // Killing every pty and handing over to the installer blocks this process
+    // for seconds; tell the windows first so they show why instead of freezing.
+    sendUpdateStatus('installing')
+    setTimeout(() => {
+        // Clean up all terminals before installing update
+        terminalManager.killAll()
+        // Install and restart with update
+        autoUpdater.quitAndInstall()
+    }, INSTALL_PAINT_DELAY_MS)
 })
