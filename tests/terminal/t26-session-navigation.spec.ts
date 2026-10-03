@@ -258,8 +258,11 @@ test.describe('T26 session navigation', () => {
         await activateSession(page, 'T26TWO')
         await watchCmdW(page)
         // Inside the 500ms template window, Cmd+T's pending key used to let the next key through.
-        await page.keyboard.press('Meta+t')
-        await page.keyboard.press('Meta+w')
+        // Cmd held throughout, as a hand does it: no fresh Meta keydown between T and W.
+        await page.keyboard.down('Meta')
+        await page.keyboard.press('t')
+        await page.keyboard.press('w')
+        await page.keyboard.up('Meta')
         await expect.poll(() => cmdWSwallowed(page)).toEqual([true])
     })
 })
