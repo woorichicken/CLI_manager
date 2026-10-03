@@ -19,6 +19,7 @@ import { UpdateNotification, UpdateStatus } from './components/UpdateNotificatio
 import { BusyOverlay } from './components/BusyOverlay'
 import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { neighborSession, sidebarWorkspaceOrder } from './utils/sessionNavigation'
 import { useTemplates } from './hooks/useTemplates'
 
 /** Let the window settle before spending anything on a network check. */
@@ -1007,43 +1008,30 @@ function App() {
         window.api.clearTerminal(sessionId)
     }
 
-    // Handle closing session and navigating to previous (Cmd+W)
+    // Handle closing session and navigating to previous (Cmd+W).
+    // Same path as the sidebar's delete minus the confirmation, so both land on the same tab.
     const handleCloseSession = async (workspaceId: string, sessionId: string) => {
-        const workspace = workspaces.find(w => w.id === workspaceId)
-        if (!workspace) return
-
-        const sessions = workspace.sessions
-        const currentIndex = sessions.findIndex(s => s.id === sessionId)
-
-        // Determine which session to select after closing
-        let nextSession: TerminalSession | null = null
-        if (sessions.length > 1) {
-            // Prefer previous session, fallback to next
-            if (currentIndex > 0) {
-                nextSession = sessions[currentIndex - 1]
-            } else {
-                nextSession = sessions[currentIndex + 1]
-            }
-        }
-
-        // Navigate to next session first using handleSelect for proper UI sync
-        if (nextSession) {
-            handleSelect(workspace, nextSession)
-        } else {
-            setActiveWorkspace(workspace)
-            setActiveSession(null)
-        }
-
-        // Then remove the session (skip confirmation dialog for keyboard shortcut)
         await handleRemoveSession(workspaceId, sessionId, true)
     }
+
+    // The active workspace as it is now, with sessions in sidebar order. The
+    // `activeWorkspace` state is a snapshot from the last selection: it misses
+    // sessions added or deleted since, and keeps creation order after a drag.
+    const currentActiveWorkspace = useMemo(
+        () => (activeWorkspace ? sortedWorkspaces.find(w => w.id === activeWorkspace.id) ?? null : null),
+        [activeWorkspace, sortedWorkspaces]
+    )
+    const workspacesInSidebarOrder = useMemo(
+        () => sidebarWorkspaceOrder(sortedWorkspaces, folders, settings.showWorktrees ?? true),
+        [sortedWorkspaces, folders, settings.showWorktrees]
+    )
 
     // Centralized keyboard shortcuts (session/workspace navigation, search, sidebar, settings, etc.)
     useKeyboardShortcuts({
         settings,
-        activeWorkspace,
+        activeWorkspace: currentActiveWorkspace,
         activeSession,
-        sortedWorkspaces,
+        workspacesInSidebarOrder,
         splitLayout,
         activeSplitIndex,
         settingsOpen,
@@ -1105,6 +1093,16 @@ function App() {
             }
         }
 
+        // Pick the landing tab before the session leaves the list. Sidebar order,
+        // because that is where the user looks for "the one above".
+        const owner = sortedWorkspaces.find(w => w.id === workspaceId)
+        const neighbor = owner ? neighborSession(owner.sessions, sessionId) : null
+
+        // A split pane showing this session would otherwise stay as an empty slot.
+        if (splitLayout?.sessionIds.includes(sessionId)) {
+            handleRemoveFromSplit(sessionId)
+        }
+
         // Kill the terminal process
         await window.api.killTerminal(sessionId)
 
@@ -1129,10 +1127,19 @@ function App() {
             return next
         })
 
-        // Clear active session if it's the one being removed
-        // Skip if skipConfirm is true (called from handleCloseSession which already set the next session)
-        if (!skipConfirm && activeSession?.id === sessionId) {
-            setActiveSession(null)
+        // Removing the visible tab shows its neighbour instead of an empty screen.
+        // Functional update: the confirmation dialog awaits, and the user may have
+        // switched tabs meanwhile — then the current selection stays.
+        setActiveSession(prev => (prev?.id === sessionId ? neighbor : prev))
+        if (neighbor && activeSession?.id === sessionId) {
+            // Landing on a tab counts as seeing it, as selecting it does in handleSelect.
+            setSessionStatuses(prev => {
+                const current = prev.get(neighbor.id)
+                if (!current) return prev
+                const next = new Map(prev)
+                next.set(neighbor.id, { ...current, status: 'idle' })
+                return next
+            })
         }
     }
 
