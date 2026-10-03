@@ -190,6 +190,11 @@ test.describe('T26 session navigation', () => {
 
         await deleteFromSidebar(page, 's-2')
         await expect.poll(() => visibleSession(page)).toBe('s-1,s-3')
+        // Two panes sit side by side. A stale id would keep the three-pane grid:
+        // s-3 alone on the bottom row and an empty slot where s-2 was.
+        const paneTop = (id: string): Promise<number> =>
+            page.locator(`[data-session-id="${id}"]`).evaluate((el) => Math.round(el.getBoundingClientRect().top))
+        await expect.poll(async () => (await paneTop('s-3')) - (await paneTop('s-1'))).toBe(0)
         await expect(page.getByText('T26TWO', { exact: true })).toHaveCount(0)
     })
 
