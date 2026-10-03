@@ -19,6 +19,17 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `scripts/release.cjs` — preflight 가 빌드 없이 `pnpm test:term` 을 돌려 낡은 `out/` 을 시험한다
+- Discovered: 2026-10-03, v1.12.2 릴리즈 중
+- Why deferred: 릴리즈를 막는 건 `pnpm build` 한 번으로 풀렸다. 스크립트 순서를 바꾸는 건 별도 변경이다.
+- Trigger: 다음 릴리즈 전, 또는 preflight 테스트가 "새로 추가한 테스트만" 실패할 때.
+- Evidence: `release.cjs:275` 가 `pnpm test:term` 을 바로 부른다. `test:term` 은 빌드된 `out/` 을 구동하는데,
+  주 체크아웃의 `out/` 은 10-01 빌드(이전 코드)였다. 그래서 머지된 T26 10건 중 4건이 **이전 앱**을 상대로
+  실패했고 `PREFLIGHT FAILED` 로 멈췄다(게시물 없음). `pnpm build` 후 재실행하면 통과.
+  반대 방향이 더 위험하다 — 낡은 `out/` 이 새 코드의 회귀를 숨기면 preflight 가 **통과**해 버린다.
+- Fix direction: 테스트 전에 `pnpm build` 를 넣거나, `out/` mtime 이 HEAD 커밋 시각보다 오래면 실패시킨다.
+- Owner: 없음
+
 ### `src/main/AgentStatusResolver.ts` — Codex 세션의 "실행 중"은 훅이 아니라 입력 가로채기에 의존한다
 - Discovered: 2026-08-16, 공식 훅 통합 구현 중
 - Why deferred: Codex CLI가 제공하는 이벤트가 `agent-turn-complete` **하나뿐**이라 턴 시작 신호가
