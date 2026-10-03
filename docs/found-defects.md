@@ -23,6 +23,21 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 `App.tsx` — Control API 로 세션을 닫으면 그 탭이 보이던 화면이 빈 화면이 된다
+- Date: 2026-10-03
+- Where: `src/renderer/src/App.tsx` 의 `onSessionEvent` `case 'closed'` —
+  `setActiveSession(prev => (prev?.id === event.sessionId ? null : prev))`
+- What: 사이드바 삭제·Cmd+W 는 이제 위(없으면 아래) 탭으로 넘어가지만(T26), API 가 닫은 세션은
+  여전히 `null` 로 떨어진다. 분할 화면에 있던 세션이면 `splitLayout` 에서도 빠지지 않아 빈 칸이 남는다.
+  코드로만 확인했고 재현은 안 했다.
+- Surfaced by: 탭 이동·삭제 일관성 수정(T26) 중 같은 상태를 바꾸는 다른 경로를 훑다가.
+- Impact: 사용자 — AI 가 사용자가 보고 있던 세션을 닫으면 화면이 비고, 다음 Cmd+] 는 첫 탭으로 간다.
+- Workaround: 사이드바에서 탭을 다시 클릭.
+- Fix direction: 이 리스너는 `[]` 의존성이라 최신 `sortedWorkspaces` 를 못 본다. ref 로 최신 순서를
+  들고 `neighborSession()`(`utils/sessionNavigation.ts`)을 쓰고, 분할 칸 정리도 같이 한다.
+
+---
+
 ### 🐛 `tests/terminal/` — 두 테스트가 gitignore된 fixture에 의존해 새 클론에서 실패한다
 - Date: 2026-08-16
 - Where: `t2-scroll-bounce.spec.ts:267`, `t3-history-preservation.spec.ts:106` — 둘 다
