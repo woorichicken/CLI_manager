@@ -82,6 +82,7 @@ function matchShortcut(e: KeyboardEvent, binding: KeyBinding): boolean {
  */
 // Chord mode timeout in milliseconds
 const CHORD_TIMEOUT_MS = 500
+const MODIFIER_KEYS = new Set(['Meta', 'Control', 'Shift', 'Alt'])
 
 export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
     const {
@@ -196,6 +197,20 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         const shortcuts = getShortcuts(settings)
         console.log('[Shortcuts] Effect mounted, registering capture listener')
 
+        // Close the currently active session and go to previous.
+        // Split view has no active session — the active pane is the target.
+        const closeActiveSession = () => {
+            if (splitLayout && splitLayout.sessionIds.length > 0) {
+                const sessionId = splitLayout.sessionIds[activeSplitIndex]
+                const owner = workspacesInSidebarOrder.find(w => w.sessions.some(s => s.id === sessionId))
+                if (owner && sessionId) {
+                    onCloseSession(owner.id, sessionId)
+                }
+            } else if (activeWorkspace && activeSession) {
+                onCloseSession(activeWorkspace.id, activeSession.id)
+            }
+        }
+
         const handleKeyDown = (e: KeyboardEvent) => {
             // Handle chord mode: waiting for number key after Cmd+T
             if (chordModeRef.current.active) {
@@ -204,6 +219,9 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                     cancelChordMode()
                     return
                 }
+
+                // Pressing Cmd again on its way to the digit is not a choice yet.
+                if (MODIFIER_KEYS.has(e.key)) return
 
                 // Check if it's a number key (0-9)
                 const numMatch = e.key.match(/^[0-9]$/)
@@ -217,12 +235,12 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                     return
                 }
 
-                // Any other key cancels chord mode and creates plain terminal
+                // Any other key cancels chord mode and creates plain terminal,
+                // then is handled like any other key — returning here would let
+                // a quick Cmd+T → Cmd+W through to the menu's Close Window.
                 console.log(`[Shortcuts] Chord cancelled by key: ${e.key}`)
                 cancelChordMode()
                 onAddSession(workspaceId, undefined)
-                // Don't prevent default - let the key through
-                return
             }
 
             // Only process events with at least one modifier (when not in chord mode)
@@ -243,6 +261,20 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                 e.preventDefault()
                 e.stopPropagation()
                 onToggleMemo()
+                return
+            }
+
+            // Cmd+W is claimed before the input/modal checks below. Anything this
+            // handler lets through reaches the app menu, whose Close Window owns
+            // the same key — so pressing it in the rename field or the memo closed
+            // the whole window instead of the tab.
+            if (matchShortcut(e, shortcuts.closeSession)) {
+                e.preventDefault()
+                e.stopPropagation()
+                // A modal is in front: the tab behind it is not what the user is looking at.
+                if (settingsOpen || fileSearchOpen) return
+                console.log('[Shortcuts] matched: closeSession')
+                closeActiveSession()
                 return
             }
 
@@ -300,19 +332,6 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                     if (activeWorkspace) {
                         onSetFileSearchMode('content')
                         onSetFileSearchOpen(true)
-                    }
-                },
-                closeSession: () => {
-                    // Close the currently active session and go to previous.
-                    // Split view has no active session — the active pane is the target.
-                    if (splitLayout && splitLayout.sessionIds.length > 0) {
-                        const sessionId = splitLayout.sessionIds[activeSplitIndex]
-                        const owner = workspacesInSidebarOrder.find(w => w.sessions.some(s => s.id === sessionId))
-                        if (owner && sessionId) {
-                            onCloseSession(owner.id, sessionId)
-                        }
-                    } else if (activeWorkspace && activeSession) {
-                        onCloseSession(activeWorkspace.id, activeSession.id)
                     }
                 },
                 clearSession: () => {

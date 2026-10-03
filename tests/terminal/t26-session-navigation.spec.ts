@@ -219,4 +219,47 @@ test.describe('T26 session navigation', () => {
         await page.keyboard.press('Meta+Shift+BracketLeft')
         await expect.poll(() => visibleSession(page)).toBe('s-b')
     })
+
+    /**
+     * Whether the page swallowed the last Cmd+W. A keydown the page does not
+     * prevent goes on to the app menu, whose Close Window owns Cmd+W — that is
+     * the window-closing path. The native menu cannot be driven headless
+     * (synthetic keys never reach NSMenu, checked with sendInputEvent too), so
+     * the swallowed flag is the observable stand-in.
+     */
+    const watchCmdW = (page: Page): Promise<void> => page.evaluate(() => {
+        const w = window as unknown as { __cmdW: boolean[] }
+        w.__cmdW = []
+        // Read once dispatch is over: the hook re-registers its listener when
+        // state changes, so it may run after this one.
+        window.addEventListener('keydown', (e) => {
+            if (e.metaKey && e.code === 'KeyW') setTimeout(() => w.__cmdW.push(e.defaultPrevented), 0)
+        }, true)
+    })
+    const cmdWSwallowed = (page: Page): Promise<boolean[]> =>
+        page.evaluate(() => (window as unknown as { __cmdW: boolean[] }).__cmdW)
+
+    test('Cmd+W while renaming closes the tab, not the window', async () => {
+        const page = await launchThree()
+        await activateSession(page, 'T26TWO')
+        await watchCmdW(page)
+        // Cmd+R opens the rename field: the focus is now a plain <input>.
+        await page.keyboard.press('Meta+r')
+        await expect(page.locator('[data-session-item="s-2"] input')).toBeFocused()
+
+        await page.keyboard.press('Meta+w')
+        await expect.poll(() => cmdWSwallowed(page), { message: 'Cmd+W must not reach the menu' }).toEqual([true])
+        await expect(page.locator('[data-session-item="s-2"]')).toHaveCount(0, { timeout: 10_000 })
+        await expect.poll(() => visibleSession(page)).toBe('s-1')
+    })
+
+    test('Cmd+W right after Cmd+T does not reach the menu', async () => {
+        const page = await launchThree()
+        await activateSession(page, 'T26TWO')
+        await watchCmdW(page)
+        // Inside the 500ms template window, Cmd+T's pending key used to let the next key through.
+        await page.keyboard.press('Meta+t')
+        await page.keyboard.press('Meta+w')
+        await expect.poll(() => cmdWSwallowed(page)).toEqual([true])
+    })
 })
