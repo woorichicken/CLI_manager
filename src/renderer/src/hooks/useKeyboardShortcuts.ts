@@ -15,7 +15,8 @@ interface UseKeyboardShortcutsConfig {
     settings: UserSettings
     activeWorkspace: Workspace | null
     activeSession: TerminalSession | null
-    sortedWorkspaces: Workspace[]
+    /** Every workspace, top to bottom as the sidebar draws it. */
+    workspacesInSidebarOrder: Workspace[]
     splitLayout: SplitTerminalLayout | null
     activeSplitIndex: number
     settingsOpen: boolean
@@ -38,8 +39,27 @@ function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
     return { ...DEFAULT_SHORTCUTS, ...settings.keyboard?.shortcuts }
 }
 
+// Unshifted character for the physical keys bindings use. `e.key` reports what
+// the key types — '}' for Shift+], 'ㅅ' for T under a Korean input source — so a
+// binding stored as ']' or 't' would never match those presses on its own.
+const PUNCTUATION_BY_CODE: Record<string, string> = {
+    BracketLeft: '[', BracketRight: ']', Backquote: '`', Comma: ',', Period: '.',
+    Slash: '/', Backslash: '\\', Semicolon: ';', Quote: "'", Minus: '-', Equal: '=',
+}
+
+function keyFromCode(code: string): string | null {
+    const letter = /^Key([A-Z])$/.exec(code)
+    if (letter) return letter[1].toLowerCase()
+    const digit = /^Digit([0-9])$/.exec(code)
+    if (digit) return digit[1]
+    return PUNCTUATION_BY_CODE[code] ?? null
+}
+
 function matchShortcut(e: KeyboardEvent, binding: KeyBinding): boolean {
-    if (e.key.toLowerCase() !== binding.code.toLowerCase()) return false
+    const wanted = binding.code.toLowerCase()
+    // e.key first: it is what custom bindings were recorded from.
+    const keyMatches = e.key.toLowerCase() === wanted || keyFromCode(e.code) === wanted
+    if (!keyMatches) return false
 
     const needsMod = binding.modifiers.includes('mod')
     const needsShift = binding.modifiers.includes('shift')
@@ -62,13 +82,14 @@ function matchShortcut(e: KeyboardEvent, binding: KeyBinding): boolean {
  */
 // Chord mode timeout in milliseconds
 const CHORD_TIMEOUT_MS = 500
+const MODIFIER_KEYS = new Set(['Meta', 'Control', 'Shift', 'Alt'])
 
 export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
     const {
         settings,
         activeWorkspace,
         activeSession,
-        sortedWorkspaces,
+        workspacesInSidebarOrder,
         splitLayout,
         activeSplitIndex,
         settingsOpen,
@@ -100,6 +121,12 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         const nextIndex = (activeSplitIndex + direction + count) % count
         console.log(`[Shortcuts] navigateSplitPane: ${activeSplitIndex} → ${nextIndex}`)
         onSetActiveSplitIndex(nextIndex)
+        // The highlight alone would leave the caret in the old pane, so the next
+        // keystrokes would go to a terminal the user just moved away from.
+        const textarea = document.querySelector<HTMLTextAreaElement>(
+            `[data-session-id="${splitLayout.sessionIds[nextIndex]}"] .xterm-helper-textarea`
+        )
+        textarea?.focus()
     }, [splitLayout, activeSplitIndex, onSetActiveSplitIndex])
 
     const navigateSession = useCallback((direction: 1 | -1) => {
@@ -126,7 +153,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
     }, [activeWorkspace, activeSession, splitLayout, onSelectSession, navigateSplitPane])
 
     const navigateWorkspace = useCallback((direction: 1 | -1) => {
-        const workspacesWithSessions = sortedWorkspaces.filter(w => w.sessions.length > 0)
+        const workspacesWithSessions = workspacesInSidebarOrder.filter(w => w.sessions.length > 0)
         if (workspacesWithSessions.length === 0) {
             console.log('[Shortcuts] navigateWorkspace: no workspaces with sessions')
             return
@@ -141,7 +168,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         const targetWorkspace = workspacesWithSessions[nextIndex]
         console.log(`[Shortcuts] navigateWorkspace: ${currentIndex} → ${nextIndex} (${targetWorkspace.name})`)
         onSelectSession(targetWorkspace, targetWorkspace.sessions[0])
-    }, [sortedWorkspaces, activeWorkspace, onSelectSession])
+    }, [workspacesInSidebarOrder, activeWorkspace, onSelectSession])
 
     // Helper to cancel chord mode
     const cancelChordMode = useCallback(() => {
@@ -170,6 +197,20 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         const shortcuts = getShortcuts(settings)
         console.log('[Shortcuts] Effect mounted, registering capture listener')
 
+        // Close the currently active session and go to previous.
+        // Split view has no active session — the active pane is the target.
+        const closeActiveSession = () => {
+            if (splitLayout && splitLayout.sessionIds.length > 0) {
+                const sessionId = splitLayout.sessionIds[activeSplitIndex]
+                const owner = workspacesInSidebarOrder.find(w => w.sessions.some(s => s.id === sessionId))
+                if (owner && sessionId) {
+                    onCloseSession(owner.id, sessionId)
+                }
+            } else if (activeWorkspace && activeSession) {
+                onCloseSession(activeWorkspace.id, activeSession.id)
+            }
+        }
+
         const handleKeyDown = (e: KeyboardEvent) => {
             // Handle chord mode: waiting for number key after Cmd+T
             if (chordModeRef.current.active) {
@@ -178,6 +219,9 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                     cancelChordMode()
                     return
                 }
+
+                // Pressing Cmd again on its way to the digit is not a choice yet.
+                if (MODIFIER_KEYS.has(e.key)) return
 
                 // Check if it's a number key (0-9)
                 const numMatch = e.key.match(/^[0-9]$/)
@@ -191,12 +235,12 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                     return
                 }
 
-                // Any other key cancels chord mode and creates plain terminal
+                // Any other key cancels chord mode and creates plain terminal,
+                // then is handled like any other key — returning here would let
+                // a quick Cmd+T → Cmd+W through to the menu's Close Window.
                 console.log(`[Shortcuts] Chord cancelled by key: ${e.key}`)
                 cancelChordMode()
                 onAddSession(workspaceId, undefined)
-                // Don't prevent default - let the key through
-                return
             }
 
             // Only process events with at least one modifier (when not in chord mode)
@@ -217,6 +261,20 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                 e.preventDefault()
                 e.stopPropagation()
                 onToggleMemo()
+                return
+            }
+
+            // Cmd+W is claimed before the input/modal checks below. Anything this
+            // handler lets through reaches the app menu, whose Close Window owns
+            // the same key — so pressing it in the rename field or the memo closed
+            // the whole window instead of the tab.
+            if (matchShortcut(e, shortcuts.closeSession)) {
+                e.preventDefault()
+                e.stopPropagation()
+                // A modal is in front: the tab behind it is not what the user is looking at.
+                if (settingsOpen || fileSearchOpen) return
+                console.log('[Shortcuts] matched: closeSession')
+                closeActiveSession()
                 return
             }
 
@@ -276,12 +334,6 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                         onSetFileSearchOpen(true)
                     }
                 },
-                closeSession: () => {
-                    // Close the currently active session and go to previous
-                    if (activeWorkspace && activeSession) {
-                        onCloseSession(activeWorkspace.id, activeSession.id)
-                    }
-                },
                 clearSession: () => {
                     // Clear the currently active session
                     if (splitLayout && splitLayout.sessionIds.length > 0) {
@@ -333,6 +385,10 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         settingsOpen,
         fileSearchOpen,
         activeWorkspace,
+        activeSession,
+        splitLayout,
+        activeSplitIndex,
+        workspacesInSidebarOrder,
         templates,
         navigateSession,
         navigateWorkspace,
