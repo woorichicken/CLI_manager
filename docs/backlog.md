@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `src/renderer/src/components/TerminalView.tsx` — macOS 에서 Option 이 Meta 로 동작하지 않는다
+- Discovered: 2026-10-06, 단축키·터미널 키 충돌 점검 중
+- Why deferred: Ctrl 충돌 수정과 별개 동작이고, 켜면 Option 으로 특수문자(₩·€ 등)를 치던 사용자의 입력이 바뀐다.
+- Trigger: Option+B/F(단어 이동)·Option+Enter 가 안 된다는 제보, 또는 터미널 키 설정을 추가할 때.
+- Evidence: `src/` 에 `macOptionIsMeta` 설정이 없다(grep 0건). xterm 기본값은 false 라 Option+B 는 `∫` 를 보낸다.
+- Fix direction: Settings > Keyboard 에 "Use Option as Meta" 토글을 두고 xterm 옵션에 연결한다.
+- Owner: 없음
+
 ### `scripts/release.cjs` — preflight 가 빌드 없이 `pnpm test:term` 을 돌려 낡은 `out/` 을 시험한다
 - Discovered: 2026-10-03, v1.12.2 릴리즈 중
 - Why deferred: 릴리즈를 막는 건 `pnpm build` 한 번으로 풀렸다. 스크립트 순서를 바꾸는 건 별도 변경이다.

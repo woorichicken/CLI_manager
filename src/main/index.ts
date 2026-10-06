@@ -590,6 +590,11 @@ async function syncWorktreeWorkspaces(): Promise<WorktreeSyncSummary> {
     return summary
 }
 
+// Cmd on macOS, Ctrl elsewhere. On macOS Ctrl+- is readline's undo (C-_) and must reach the terminal.
+function isPrimaryModifier(input: Electron.Input): boolean {
+    return process.platform === 'darwin' ? input.meta : input.control
+}
+
 function createWindow(): void {
     // Create the browser window.
     mainWindow = new BrowserWindow({
@@ -626,8 +631,7 @@ function createWindow(): void {
 
     // before-input-event로 Cmd+/-/0 키를 가로채서 터미널 폰트 조정
     mainWindow.webContents.on('before-input-event', (event, input) => {
-        // macOS: meta (Cmd), Windows/Linux: control
-        const isModifier = input.meta || input.control
+        const isModifier = isPrimaryModifier(input)
 
         if (isModifier && (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0')) {
             // 기본 줌 동작 방지
@@ -707,7 +711,7 @@ function createFullscreenTerminalWindow(sessionIds: string[]): void {
 
     // Handle terminal zoom for this window
     fullscreenWindow.webContents.on('before-input-event', (event, input) => {
-        const isModifier = input.meta || input.control
+        const isModifier = isPrimaryModifier(input)
         if (isModifier && (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0')) {
             event.preventDefault()
             fullscreenWindow.webContents.send('terminal-zoom', input.key)
@@ -775,7 +779,7 @@ function createLoopWindow(): void {
 
     // Handle terminal zoom for this window (same pattern as grid window).
     win.webContents.on('before-input-event', (event, input) => {
-        const isModifier = input.meta || input.control
+        const isModifier = isPrimaryModifier(input)
         if (isModifier && (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0')) {
             event.preventDefault()
             win.webContents.send('terminal-zoom', input.key)
