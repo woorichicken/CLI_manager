@@ -345,6 +345,9 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     (`visibility`)과 `.xterm.focus`. `activeWorkspace` 상태는 선택 시점 스냅샷이라 탭 순서 계산에 쓰지 않는다.
     macOS 에서 Ctrl+W/R/K/B/P/T/[/]/J 가 단축키가 아니라 PTY 로 가는지도 본다 — 셸을 `stty -icanon` + `cat -v`
     로 두고 `^W^R…` 가 찍히는지로 판정한다(예전엔 `mod` 가 Ctrl 도 받아 Ctrl+W 가 탭을 닫았다)
+  - T27 git 동작 — Git 패널이 쓰는 simple-git 핸들러 전부(상태·스테이징·커밋·로그·push/pull·브랜치·머지/중단·
+    리셋·워크트리 추가/동기화)를 실제 저장소 + 로컬 bare 원격으로 돌리고, 결과를 `git` 명령으로 다시 확인한다.
+    simple-git 메이저 업그레이드 때 돌린다(v4 는 import·옵션 파싱·git 에 넘기는 환경변수가 바뀌었다)
   - T18 폴더 정렬 — 사이드바 폴더를 드래그 핸들로 옮기면 순서가 config.json 까지 저장되고,
     드래그가 펼침 클릭으로 오인되지 않는지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
