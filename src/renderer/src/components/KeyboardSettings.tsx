@@ -10,13 +10,13 @@ import {
     SHORTCUT_GROUP_NAMES,
 } from '../../../shared/types'
 import { RotateCcw } from 'lucide-react'
+import { isMac, hasPrimaryModifier, hasTerminalOnlyModifier } from '../utils/platform'
 
 interface KeyboardSettingsProps {
     settings: UserSettings
     setSettings: React.Dispatch<React.SetStateAction<UserSettings>>
 }
 
-const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
 
 function formatModifier(mod: string): string {
     if (mod === 'mod') return isMac ? '⌘' : 'Ctrl'
@@ -132,8 +132,11 @@ export function KeyboardSettings({ settings, setSettings }: KeyboardSettingsProp
             // Ignore bare modifier presses
             if (['Meta', 'Control', 'Shift', 'Alt'].includes(e.key)) return
 
+            // Ctrl on macOS belongs to the terminal; recording it would recreate the conflict
+            if (hasTerminalOnlyModifier(e)) return
+
             // Require at least one modifier
-            const hasMod = e.metaKey || e.ctrlKey
+            const hasMod = hasPrimaryModifier(e)
             const hasShift = e.shiftKey
             const hasAlt = e.altKey
             if (!hasMod && !hasShift && !hasAlt) return

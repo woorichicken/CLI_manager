@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, activateSession, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, activateSession, LaunchResult, writeToTerminal, waitForBufferText } from './helpers'
 
 /**
  * T26 — tab navigation, closing and deleting must agree with the sidebar.
@@ -264,5 +264,33 @@ test.describe('T26 session navigation', () => {
         await page.keyboard.press('w')
         await page.keyboard.up('Meta')
         await expect.poll(() => cmdWSwallowed(page)).toEqual([true])
+    })
+
+    // macOS only: elsewhere Ctrl is the app modifier by design.
+    test('on macOS, Ctrl keys reach the terminal instead of firing app shortcuts', async () => {
+        test.skip(process.platform !== 'darwin', 'Ctrl is the app modifier off macOS')
+        const page = await launchThree()
+        await activateSession(page, 'T26ONE')
+        // Raw-ish tty so the line discipline does not eat ^W/^R/^T itself; cat -v
+        // prints each control byte it receives, and ^J ends the line and flushes it.
+        await writeToTerminal(page, 's-1', 'stty -icanon -iexten -isig -echo; echo T26READY; cat -v\r')
+        await waitForBufferText(page, 's-1', 'T26READY', 15_000)
+        await page.locator('[data-session-id="s-1"] .xterm-helper-textarea').focus()
+        const tabsBefore = await page.locator('[data-session-item]').count()
+
+        for (const key of ['w', 'r', 'k', 'b', 'p', 't', 'BracketLeft', 'BracketRight', 'j']) {
+            await page.keyboard.press(`Control+${key}`)
+        }
+
+        await waitForBufferText(page, 's-1', '^W^R^K^B^P^T^[^]', 10_000)
+        await page.waitForTimeout(1_000) // a Ctrl+T leak would add its tab after the 500ms chord window
+        await expect(page.locator('[data-session-item]')).toHaveCount(tabsBefore)
+        await expect.poll(() => visibleSession(page)).toBe('s-1')
+        await expect(page.locator('[data-session-item] input')).toHaveCount(0)
+        await expect(page.getByPlaceholder('Quick notes...')).toHaveCount(0)
+
+        // The same detectors see Cmd: the shortcut still works, so the checks above can fail.
+        await page.keyboard.press('Meta+j')
+        await expect(page.getByPlaceholder('Quick notes...')).toHaveCount(1)
     })
 })

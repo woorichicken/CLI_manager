@@ -10,6 +10,7 @@ import {
     DEFAULT_SHORTCUTS,
     TerminalTemplate,
 } from '../../../shared/types'
+import { hasPrimaryModifier, hasTerminalOnlyModifier } from '../utils/platform'
 
 interface UseKeyboardShortcutsConfig {
     settings: UserSettings
@@ -65,7 +66,8 @@ function matchShortcut(e: KeyboardEvent, binding: KeyBinding): boolean {
     const needsShift = binding.modifiers.includes('shift')
     const needsAlt = binding.modifiers.includes('alt')
 
-    const hasMod = e.metaKey || e.ctrlKey
+    if (hasTerminalOnlyModifier(e)) return false
+    const hasMod = hasPrimaryModifier(e)
     const hasShift = e.shiftKey
     const hasAlt = e.altKey
 

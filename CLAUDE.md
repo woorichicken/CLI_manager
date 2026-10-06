@@ -122,6 +122,7 @@ pnpm build && pnpm test:term
      - `useWorkspaceBranches.ts`: 워크스페이스별 브랜치 정보 관리
      - `useTemplates.ts`: 커스텀 터미널 템플릿 관리
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
+   - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
    - `constants/`: **상수 및 유틸리티**
      - `icons.tsx`: 템플릿 아이콘 매핑
      - `styles.ts`: 공통 스타일 상수
@@ -341,7 +342,9 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     삭제된 세션으로 가지 않는지, 활성 탭 삭제 시 이웃 탭이 보이는지, 분할 화면에서 Cmd+` 가 커서를 옮기고
     Cmd+W 가 활성 칸을 닫는지, Cmd+Shift+[ ] 가 고정·폴더 순서로 워크스페이스를 도는지, 이름 변경 입력·Cmd+T 직후의
     Cmd+W 가 `preventDefault` 되는지(안 되면 앱 메뉴 Close Window 가 받아 **메인 창이 닫힌다** — 네이티브 메뉴는 헤드리스로 못 눌러서 이 플래그로 대신 본다). 판정은 보이는 터미널
-    (`visibility`)과 `.xterm.focus`. `activeWorkspace` 상태는 선택 시점 스냅샷이라 탭 순서 계산에 쓰지 않는다
+    (`visibility`)과 `.xterm.focus`. `activeWorkspace` 상태는 선택 시점 스냅샷이라 탭 순서 계산에 쓰지 않는다.
+    macOS 에서 Ctrl+W/R/K/B/P/T/[/]/J 가 단축키가 아니라 PTY 로 가는지도 본다 — 셸을 `stty -icanon` + `cat -v`
+    로 두고 `^W^R…` 가 찍히는지로 판정한다(예전엔 `mod` 가 Ctrl 도 받아 Ctrl+W 가 탭을 닫았다)
   - T18 폴더 정렬 — 사이드바 폴더를 드래그 핸들로 옮기면 순서가 config.json 까지 저장되고,
     드래그가 펼침 클릭으로 오인되지 않는지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
