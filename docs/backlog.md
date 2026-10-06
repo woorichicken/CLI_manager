@@ -19,6 +19,15 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### CI `Terminal + agent tests` — 앱을 띄우는 테스트가 CI 에서 전부 3분 타임아웃
+- Discovered: 2026-10-06, simple-git 4 업그레이드 PR CI
+- Why deferred: 로컬에서는 전체 123건이 통과한다(2026-10-06 릴리즈 preflight). CI 러너 환경 문제라 별도 조사가 필요하다.
+- Trigger: CI 를 다시 머지 게이트로 쓰려 할 때. 그 전까지 CI 초록은 typecheck·build·audit 까지만 뜻한다.
+- Evidence: run 37429282637 — 유닛(`loop-counter`) 8건만 통과, 그 뒤 t1·t4·t5·t6·t7 이 각각 3.0m 로 실패하다 job `timeout-minutes: 25` 로 취소.
+  2026-10-03 main(v1.12.2 전후) 두 run 도 같은 단계에서 cancelled — simple-git 변경 이전부터다.
+- Fix direction: 실패 아티팩트(스크린샷·main 로그)를 받아 앱 구동 단계에서 막히는지 본다. node-pty 를 Electron ABI 로 다시 빌드하는 `electron-builder install-app-deps` 단계가 CI 에 있는지부터 확인.
+- Owner: 없음
+
 ### `src/renderer/src/components/TerminalView.tsx` — macOS 에서 Option 이 Meta 로 동작하지 않는다
 - Discovered: 2026-10-06, 단축키·터미널 키 충돌 점검 중
 - Why deferred: Ctrl 충돌 수정과 별개 동작이고, 켜면 Option 으로 특수문자(₩·€ 등)를 치던 사용자의 입력이 바뀐다.
