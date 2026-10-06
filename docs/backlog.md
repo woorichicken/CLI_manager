@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### CI `pnpm audit --audit-level critical` — `simple-git` critical 2건으로 모든 push 가 빨간불
+- Discovered: 2026-10-06, v1.12.3 릴리즈 중 (PR #23 CI)
+- Why deferred: `simple-git` 3 → 4 메이저 업그레이드라 git 연동 전반을 다시 검증해야 한다. 릴리즈는 로컬 preflight(테스트 123건)로 진행했다.
+- Trigger: 다음 기능 작업 전 — CI 가 빨간 채로 두면 진짜 회귀가 같은 빨간불에 묻힌다.
+- Evidence: GHSA-v5rq-49vh-5v5c(`@simple-git/argv-parser` <2.0.1), GHSA-x6jw-m9v5-85vh(`simple-git` >=3.15.0 <4.0.1). 같은 run 에서 ripgrep postinstall 403(GitHub 다운로드 제한)도 간헐적으로 설치를 막았다.
+- Fix direction: `simple-git@^4.0.1` 로 올리고 Git 패널·워크트리 테스트를 돌린다.
+- Owner: 없음
+
 ### `src/renderer/src/components/TerminalView.tsx` — macOS 에서 Option 이 Meta 로 동작하지 않는다
 - Discovered: 2026-10-06, 단축키·터미널 키 충돌 점검 중
 - Why deferred: Ctrl 충돌 수정과 별개 동작이고, 켜면 Option 으로 특수문자(₩·€ 등)를 치던 사용자의 입력이 바뀐다.
