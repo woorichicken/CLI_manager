@@ -155,6 +155,8 @@ test('enabling and disabling the integration through the UI leaves config as fou
     await page.screenshot({ path: '/tmp/ho-4-port.png' })
 
     await app.close()
-    fs.rmSync(home, { recursive: true, force: true })
-    fs.rmSync(repo, { recursive: true, force: true })
+    // The app's shells can still be writing into the fake $HOME (history files) right
+    // after close; under full-suite load that raced rmdir with ENOTEMPTY. Retry instead.
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+    fs.rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
 })
