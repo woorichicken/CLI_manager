@@ -19,7 +19,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
-### `tests/terminal/t26-session-navigation.spec.ts` — "Ctrl keys reach the terminal" 가 부하에서 간헐 실패
+### `tests/terminal/t26-session-navigation.spec.ts` — "Ctrl keys" · "split view 삭제" 가 부하에서 간헐 실패
 - Discovered: 2026-10-09, 사이드바 접기·검색·복사 작업의 회귀 실행(T12·T13·T18·T26)
 - Why deferred: 이번 변경과 무관한 테스트 대기 조건 문제이고, 재실행 2/2 통과했다.
 - Trigger: 릴리즈 preflight(전체 스위트)나 CI 에서 이 테스트가 다시 빨갛게 뜰 때 — 아래
@@ -27,7 +27,26 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: 실패 로그 tail 에 `stty …; echo T26READY; cat -v` 명령줄과 `load: 9.90 cmd: zsh`(^T 의 SIGINFO)가
   찍혔다. `waitForBufferText('T26READY')` 가 **입력한 명령줄의 에코**에 먼저 걸려, `stty` 가 적용되기 전에
   Ctrl 키가 zsh 줄 편집기로 들어갔다(^W·^R·^T 가 셸에 먹힘). 부하 1분값 약 11 에서 1/1 실패, 직후 2/2 통과.
+  **2026-10-09 v1.13.0 릴리즈 preflight**: 전체 127건 중 이 파일 2건만 ✘ — 위 Ctrl 키 테스트와
+  "deleting a session shown in split view removes its pane"(4.5m). 후자는 `Delete session` 클릭이 「performing click
+  action」에서 30초 멈췄고 afterEach 의 앱 종료까지 막혔다. 삭제 경로(`App.tsx` handleRemoveSession)는 셸에 자식
+  프로세스가 있으면 네이티브 확인창(`show-message-box`)을 띄운다 — 부하로 셸 시작이 늦어 그 창이 숨김 창을 막은 것으로
+  본다(확인창 캡처는 없음, 추정). 같은 날 `--build` 의 preflight 재실행에서 127/127 통과.
 - Fix direction: 에코에 없는 문자열을 기다린다 — 예: `echo T26$((1+1))READY` 를 보내고 `T262READY` 를 기다린다.
+  삭제 테스트는 셸 준비(프롬프트 출력)를 기다린 뒤 지우거나, 테스트 모드에서 확인창을 건너뛰는 경로를 쓴다.
+- Owner: 없음
+
+### `scripts/release.cjs` — preflight 가 `node_modules` 가 lockfile 과 맞는지 보지 않는다
+- Discovered: 2026-10-09, v1.13.0 릴리즈 준비
+- Why deferred: 이번엔 손으로 `pnpm install --frozen-lockfile` + `electron-builder install-app-deps` 를 먼저 돌려 막았다.
+- Trigger: 다음 릴리즈 전, 또는 의존성을 바꾸는 PR 이 머지된 직후의 릴리즈.
+- Evidence: 주 체크아웃의 `node_modules/simple-git` 이 **3.36.0** 이었다(`package.json` 은 PR #25 이후 `^4.0.2`).
+  preflight 는 typecheck·테스트만 보므로 그대로 빌드하면 critical 취약점을 고친 버전이 아니라 **옛 버전이 배포본에 실린다**.
+  재설치 뒤에는 2월부터 남은 끊어진 링크 `node_modules/.pnpm/node_modules/node-gyp-build` 때문에
+  `install-app-deps` 가 `ENOENT … stat` 로 실패해, 그 링크를 지우고 다시 돌렸다. 배포본은 app.asar 를 열어
+  simple-git 4.0.2 · 새 사이드바 번들 문자열을 확인한 뒤 게시했다.
+- Fix direction: preflight 에 `pnpm install --frozen-lockfile --offline`(또는 `pnpm list --prod` 와 lockfile 대조)과
+  `install-app-deps` 를 넣거나, 최소한 `package.json` 의존성 범위를 만족하지 않는 설치본을 FAIL 로 잡는다.
 - Owner: 없음
 
 ### CI `Terminal + agent tests` — 앱을 띄우는 테스트가 CI 에서 전부 3분 타임아웃
@@ -226,6 +245,8 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   가설(미확인): 설치 로그에 node-pty 가 Node ABI 로 빌드된다(`SOLINK_MODULE(target) Release/pty.node`) — 로컬 새 워크트리에서
   `electron-builder install-app-deps` 없이 앱 구동 테스트가 전부 죽는 것과 같은 원인일 수 있다. CI 에 그 단계를 넣고 1회 돌려 가른다.
   덧붙여 앱이 안 뜨는 테스트가 3분씩 기다려 25분을 다 쓰므로, 첫 구동 실패에서 빨리 끝내는 장치가 있으면 원인이 로그에 바로 남는다.
+  **2026-10-09 갱신(PR #26)**: 403 이 다시 났다 — run 37801999243 이 `Install dependencies` 에서
+  `@vscode/ripgrep postinstall: Error: Request failed: 403`(재시도 반복)으로 실패, 그 뒤 단계는 전부 skipped.
 - Owner: Maintainer
 
 ### 개선안 — 여러 AI 세션의 상태 변화를 한 번에 기다리는 `watch`
