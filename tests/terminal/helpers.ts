@@ -40,6 +40,8 @@ export interface SeedWorkspace {
     branchName?: string
     /** Marks the workspace as registered by the Control API. */
     aiRegistration?: { client: string; since: number; ephemeral?: boolean }
+    /** Sidebar folder the workspace sits in (see LaunchOptions.folders). */
+    folderId?: string
 }
 
 export interface TermState {
@@ -102,7 +104,8 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
             createdAt: 1700000000000 + index,
             ...(workspace.parentWorkspaceId ? { parentWorkspaceId: workspace.parentWorkspaceId } : {}),
             ...(workspace.branchName ? { branchName: workspace.branchName } : {}),
-            ...(workspace.aiRegistration ? { aiRegistration: workspace.aiRegistration } : {})
+            ...(workspace.aiRegistration ? { aiRegistration: workspace.aiRegistration } : {}),
+            ...(workspace.folderId ? { folderId: workspace.folderId } : {})
         })),
         playgroundPath: userDataDir,
         customTemplates: options.customTemplates ?? [],

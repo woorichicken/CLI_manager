@@ -1550,6 +1550,17 @@ app.whenReady().then(async () => {
         return folder.isExpanded
     })
 
+    // Sidebar "collapse all / expand all": one store write instead of one toggle per folder
+    ipcMain.handle('set-folders-expanded', (_, folderIds: string[], expanded: boolean) => {
+        const folders = (store.get('folders') || []) as WorkspaceFolder[]
+        const targets = new Set(folderIds)
+        folders.forEach(f => {
+            if (targets.has(f.id)) f.isExpanded = expanded
+        })
+        store.set('folders', folders)
+        return true
+    })
+
     ipcMain.handle('move-workspace-to-folder', (_, workspaceId: string, folderId: string | null) => {
         const workspaces = store.get('workspaces') as Workspace[]
         const workspace = workspaces.find(w => w.id === workspaceId)

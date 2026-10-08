@@ -1,6 +1,6 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug } from 'lucide-react'
+import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { getTemplateIcon } from '../../constants/icons'
 import { MENU_Z_INDEX } from '../../constants/styles'
@@ -9,6 +9,7 @@ interface WorkspaceContextMenuProps {
     x: number
     y: number
     workspaceId: string
+    workspaceName: string
     workspacePath: string
     sessions: TerminalSession[]
     templates: TerminalTemplate[]
@@ -22,6 +23,8 @@ interface WorkspaceContextMenuProps {
     onReloadWorktrees: () => void | Promise<void>
     onOpenSettings: () => void
     onClose: () => void
+    /** Writes to the clipboard and shows the sidebar's "Copied" notice. */
+    onCopy: (text: string, label: string) => void
     showWorktrees?: boolean  // Hide worktree entries when the feature is turned off
 }
 
@@ -33,6 +36,7 @@ export function WorkspaceContextMenu({
     x,
     y,
     workspaceId,
+    workspaceName,
     workspacePath,
     sessions,
     templates,
@@ -46,14 +50,11 @@ export function WorkspaceContextMenu({
     onReloadWorktrees,
     onOpenSettings,
     onClose,
+    onCopy,
     showWorktrees = true
 }: WorkspaceContextMenuProps) {
-    const handleCopyPath = async () => {
-        try {
-            await navigator.clipboard.writeText(workspacePath)
-        } catch (err) {
-            console.error('Failed to copy path:', err)
-        }
+    const handleCopy = (text: string, label: string) => {
+        onCopy(text, label)
         onClose()
     }
 
@@ -150,10 +151,18 @@ export function WorkspaceContextMenu({
                 </>
             )}
 
-            {/* Copy Path */}
+            {/* Copy Name / Path - for pasting into an agent prompt */}
             <button
                 className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
-                onClick={handleCopyPath}
+                onClick={() => handleCopy(workspaceName, 'name')}
+                title={workspaceName}
+            >
+                <Type size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Copy Name</span>
+            </button>
+            <button
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                onClick={() => handleCopy(workspacePath, 'path')}
                 title={workspacePath}
             >
                 <Copy size={12} className="text-gray-400 shrink-0" />
@@ -300,6 +309,8 @@ interface WorktreeContextMenuProps {
     onReloadWorktrees: () => void | Promise<void>
     onAddSession: (workspaceId: string, template?: TerminalTemplate) => void
     onClose: () => void
+    /** Writes to the clipboard and shows the sidebar's "Copied" notice. */
+    onCopy: (text: string, label: string) => void
 }
 
 /**
@@ -315,16 +326,13 @@ export function WorktreeContextMenu({
     onPullFromMain,
     onReloadWorktrees,
     onAddSession,
-    onClose
+    onClose,
+    onCopy
 }: WorktreeContextMenuProps) {
-    const handleCopyPath = async (e: React.MouseEvent) => {
+    const handleCopy = (e: React.MouseEvent, text: string, label: string) => {
         e.preventDefault()
         e.stopPropagation()
-        try {
-            await navigator.clipboard.writeText(workspace.path)
-        } catch (err) {
-            console.error('Failed to copy path:', err)
-        }
+        onCopy(text, label)
         onClose()
     }
 
@@ -388,10 +396,22 @@ export function WorktreeContextMenu({
             }}
             onClick={e => e.stopPropagation()}
         >
-            {/* Copy Path */}
+            {/* Copy Branch / Path */}
+            {workspace.branchName && (
+                <button
+                    className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-all duration-150 flex items-center gap-2 cursor-pointer"
+                    onClick={(e) => handleCopy(e, workspace.branchName!, 'branch')}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    title={workspace.branchName}
+                    type="button"
+                >
+                    <GitBranch size={13} className="text-gray-400 shrink-0" />
+                    <span className="truncate">Copy Branch</span>
+                </button>
+            )}
             <button
                 className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-all duration-150 flex items-center gap-2 cursor-pointer"
-                onClick={handleCopyPath}
+                onClick={(e) => handleCopy(e, workspace.path, 'path')}
                 onMouseDown={(e) => e.stopPropagation()}
                 title={workspace.path}
                 type="button"
@@ -583,6 +603,11 @@ interface SessionContextMenuProps {
     x: number
     y: number
     sessionId: string
+    sessionName: string
+    /** Directory the session's shell started in. */
+    sessionPath: string
+    /** Writes to the clipboard and shows the sidebar's "Copied" notice. */
+    onCopy: (text: string, label: string) => void
     onRename: () => void
     onDelete: () => void
     onClear: () => void
@@ -599,15 +624,23 @@ export function SessionContextMenu({
     x,
     y,
     sessionId,
+    sessionName,
+    sessionPath,
+    onCopy,
     onRename,
     onDelete,
     onClear,
     onDisconnectAi,
     onClose
 }: SessionContextMenuProps) {
+    const handleCopy = (text: string, label: string) => {
+        onCopy(text, label)
+        onClose()
+    }
+
     return createPortal(
         <div
-            className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-36 backdrop-blur-md`}
+            className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-40 backdrop-blur-md`}
             style={{ top: y, left: x }}
             onClick={e => e.stopPropagation()}
         >
@@ -635,6 +668,32 @@ export function SessionContextMenu({
                     <span className="truncate">Disconnect AI</span>
                 </button>
             )}
+            <div className="border-t border-white/10 my-0.5"></div>
+            {/* Copy - for handing a session to an agent (the ID is what the Control API takes) */}
+            <button
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                onClick={() => handleCopy(sessionName, 'name')}
+                title={sessionName}
+            >
+                <Type size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Copy Name</span>
+            </button>
+            <button
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                onClick={() => handleCopy(sessionPath, 'path')}
+                title={sessionPath}
+            >
+                <Copy size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Copy Path</span>
+            </button>
+            <button
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                onClick={() => handleCopy(sessionId, 'session ID')}
+                title={`${sessionId} — the ID the AI Control API uses for this session`}
+            >
+                <Hash size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Copy Session ID</span>
+            </button>
             <div className="border-t border-white/10 my-0.5"></div>
             <button
                 className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"

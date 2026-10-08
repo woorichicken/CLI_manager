@@ -23,6 +23,20 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 `Settings.tsx` — Theme 을 Light 로 바꿔도 화면이 그대로 어둡다
+- Date: 2026-10-09
+- Where: `src/renderer/src/components/Settings.tsx` 의 Theme 선택(`settings.theme`) ↔
+  `src/renderer/src/assets/index.css` 의 `:root.light` / `.light …` 규칙
+- What: `light` 클래스를 `<html>` 에 붙이는 코드가 renderer 어디에도 없다(`classList` grep 0건). 설정값은 저장되지만
+  CSS 의 라이트 규칙은 한 번도 적용되지 않는다. `theme: 'light'` 로 띄운 캡처가 다크와 눈으로 구분되지 않았다.
+- Surfaced by: 사이드바 검색·복사 알림의 라이트 테마 캡처를 찍다가.
+- Impact: 사용자 — 설정 화면에 고를 수 있는 옵션이 있는데 아무 일도 안 한다.
+- Workaround: 없음(다크만 쓴다).
+- Fix direction: 연결하기 전에 라이트 규칙이 지금 화면을 감당하는지부터 본다 — 새 컴포넌트들이 쓰는 `text-gray-200`·
+  `bg-white/5` 등은 `.light` 오버라이드가 없다. 지원할 게 아니면 옵션을 지우는 쪽이 정직하다.
+
+---
+
 ### 🐛 `App.tsx` — Control API 로 세션을 닫으면 그 탭이 보이던 화면이 빈 화면이 된다
 - Date: 2026-10-03
 - Where: `src/renderer/src/App.tsx` 의 `onSessionEvent` `case 'closed'` —
