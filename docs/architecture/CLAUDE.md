@@ -19,6 +19,10 @@ rules stay in the root; this file is the inventory.
 - 폴더를 워크스페이스로 추가하고 여러 터미널 세션 관리
 - 각 워크스페이스는 독립적인 세션 목록 보유
 - 워크스페이스별 Git 브랜치 정보 표시
+- 사이드바 헤더: 프로젝트 검색(이름·경로·사이드바 폴더명·워크트리 브랜치, Enter = 첫 결과의 첫 세션 열기, Esc = 닫기),
+  전체 접기/복원(폴더 + 세션 목록. 세션은 종료하지 않는다)
+- 우클릭 복사: 세션 — Copy Name / Copy Path(세션 시작 디렉토리) / Copy Session ID(Control API 가 쓰는 id),
+  워크스페이스 — Copy Name / Copy Path, 워크트리 — Copy Branch / Copy Path
 
 #### 2. Playground
 - 임시 작업용 디렉토리 자동 생성 (Downloads 폴더에 timestamp 기반)
@@ -159,6 +163,8 @@ User Action (Renderer)
 - `remove-workspace`: 워크스페이스 삭제 (Worktree인 경우 git worktree remove 실행)
 - `add-session`: 터미널 세션 추가
 - `remove-session`: 터미널 세션 삭제
+- `toggle-folder-expanded`: 사이드바 폴더 하나 펼침/접힘 전환(저장됨)
+- `set-folders-expanded`: 여러 폴더의 펼침 상태를 한 번에 저장 — 전체 접기/복원용
 - `update-session-memo`: 세션 메모 저장
 
 #### Git Operations

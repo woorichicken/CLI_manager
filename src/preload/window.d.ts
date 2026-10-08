@@ -23,6 +23,7 @@ declare global {
             renameFolder: (folderId: string, newName: string) => Promise<boolean>
             removeFolder: (folderId: string) => Promise<boolean>
             toggleFolderExpanded: (folderId: string) => Promise<boolean>
+            setFoldersExpanded: (folderIds: string[], expanded: boolean) => Promise<boolean>
             moveWorkspaceToFolder: (workspaceId: string, folderId: string | null) => Promise<boolean>
             reorderFolders: (folderIds: string[]) => Promise<boolean>
             createPlayground: () => Promise<Workspace | null>

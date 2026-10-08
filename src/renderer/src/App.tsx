@@ -940,6 +940,14 @@ function App() {
         ))
     }
 
+    const handleSetFoldersExpanded = async (folderIds: string[], expanded: boolean) => {
+        if (folderIds.length === 0) return
+        const targets = new Set(folderIds)
+        // Optimistic: the sidebar flips at once instead of waiting for the store write
+        setFolders(prev => prev.map(f => targets.has(f.id) ? { ...f, isExpanded: expanded } : f))
+        await window.api.setFoldersExpanded(folderIds, expanded)
+    }
+
     const handleMoveWorkspaceToFolder = async (workspaceId: string, folderId: string | null) => {
         await window.api.moveWorkspaceToFolder(workspaceId, folderId)
         setWorkspaces(prev => prev.map(w =>
@@ -1320,6 +1328,7 @@ function App() {
                     onRenameFolder={handleRenameFolder}
                     onRemoveFolder={handleRemoveFolder}
                     onToggleFolderExpanded={handleToggleFolderExpanded}
+                    onSetFoldersExpanded={handleSetFoldersExpanded}
                     onMoveWorkspaceToFolder={handleMoveWorkspaceToFolder}
                     onReorderFolders={handleReorderFolders}
                     width={sidebarWidth}

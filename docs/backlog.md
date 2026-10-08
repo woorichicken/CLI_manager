@@ -19,6 +19,17 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `tests/terminal/t26-session-navigation.spec.ts` — "Ctrl keys reach the terminal" 가 부하에서 간헐 실패
+- Discovered: 2026-10-09, 사이드바 접기·검색·복사 작업의 회귀 실행(T12·T13·T18·T26)
+- Why deferred: 이번 변경과 무관한 테스트 대기 조건 문제이고, 재실행 2/2 통과했다.
+- Trigger: 릴리즈 preflight(전체 스위트)나 CI 에서 이 테스트가 다시 빨갛게 뜰 때 — 아래
+  「프리플라이트 테스트가 간헐적으로 실패하는데 원인을 못 잡았다」의 후보 하나다.
+- Evidence: 실패 로그 tail 에 `stty …; echo T26READY; cat -v` 명령줄과 `load: 9.90 cmd: zsh`(^T 의 SIGINFO)가
+  찍혔다. `waitForBufferText('T26READY')` 가 **입력한 명령줄의 에코**에 먼저 걸려, `stty` 가 적용되기 전에
+  Ctrl 키가 zsh 줄 편집기로 들어갔다(^W·^R·^T 가 셸에 먹힘). 부하 1분값 약 11 에서 1/1 실패, 직후 2/2 통과.
+- Fix direction: 에코에 없는 문자열을 기다린다 — 예: `echo T26$((1+1))READY` 를 보내고 `T262READY` 를 기다린다.
+- Owner: 없음
+
 ### CI `Terminal + agent tests` — 앱을 띄우는 테스트가 CI 에서 전부 3분 타임아웃
 - Discovered: 2026-10-06, simple-git 4 업그레이드 PR CI
 - Why deferred: 로컬에서는 전체 123건이 통과한다(2026-10-06 릴리즈 preflight). CI 러너 환경 문제라 별도 조사가 필요하다.

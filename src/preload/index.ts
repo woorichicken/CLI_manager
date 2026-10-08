@@ -22,6 +22,7 @@ const api = {
     renameFolder: (folderId: string, newName: string): Promise<boolean> => ipcRenderer.invoke('rename-folder', folderId, newName),
     removeFolder: (folderId: string): Promise<boolean> => ipcRenderer.invoke('remove-folder', folderId),
     toggleFolderExpanded: (folderId: string): Promise<boolean> => ipcRenderer.invoke('toggle-folder-expanded', folderId),
+    setFoldersExpanded: (folderIds: string[], expanded: boolean): Promise<boolean> => ipcRenderer.invoke('set-folders-expanded', folderIds, expanded),
     moveWorkspaceToFolder: (workspaceId: string, folderId: string | null): Promise<boolean> => ipcRenderer.invoke('move-workspace-to-folder', workspaceId, folderId),
     reorderFolders: (folderIds: string[]): Promise<boolean> => ipcRenderer.invoke('reorder-folders', folderIds),
     createPlayground: (): Promise<Workspace | null> => ipcRenderer.invoke('create-playground'),

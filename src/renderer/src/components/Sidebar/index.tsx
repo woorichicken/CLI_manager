@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, PanelLeftClose, GripVertical, FolderPlus, Folder, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, PanelLeftClose, GripVertical, FolderPlus, Folder, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Search } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
 import { Workspace, WorkspaceFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import { useWorkspaceBranches } from '../../hooks/useWorkspaceBranches'
 import { useTemplates } from '../../hooks/useTemplates'
+import { useSidebarCollapseAll } from '../../hooks/useSidebarCollapseAll'
 import { WorkspaceItem } from './WorkspaceItem'
 import { WorkspaceContextMenu, WorktreeContextMenu, BranchMenu, SessionContextMenu, FolderContextMenu } from './ContextMenus'
 import { BranchPromptModal } from './Modals'
+import { SidebarSearchInput, SidebarSearchStatus, findMatchingProjects } from './SidebarSearch'
+import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 
 /**
  * ReorderableRow - 워크스페이스·폴더 드래그 앤 드롭을 위한 래퍼 컴포넌트
@@ -79,6 +82,7 @@ interface SidebarProps {
     onRenameFolder: (folderId: string, newName: string) => void
     onRemoveFolder: (folderId: string) => void
     onToggleFolderExpanded: (folderId: string) => void
+    onSetFoldersExpanded: (folderIds: string[], expanded: boolean) => void
     onMoveWorkspaceToFolder: (workspaceId: string, folderId: string | null) => void
     onReorderFolders: (folders: WorkspaceFolder[]) => void
     width: number
@@ -128,6 +132,7 @@ export function Sidebar({
     onRenameFolder,
     onRemoveFolder,
     onToggleFolderExpanded,
+    onSetFoldersExpanded,
     onMoveWorkspaceToFolder,
     onReorderFolders,
     width,
@@ -156,6 +161,18 @@ export function Sidebar({
     const [folderMenuOpen, setFolderMenuOpen] = useState<{ x: number, y: number, folderId: string } | null>(null)
     const [showFolderPrompt, setShowFolderPrompt] = useState(false)
     const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null)
+    const [searchOpen, setSearchOpen] = useState(false)
+    const [searchQuery, setSearchQuery] = useState('')
+
+    const { anyExpanded, toggleCollapseAll } = useSidebarCollapseAll({
+        workspaces,
+        folders,
+        expanded,
+        setExpanded,
+        onSetFoldersExpanded,
+        showWorktrees
+    })
+    const { notice: copyNotice, copy } = useCopyWithNotice()
 
     // Resizing logic (horizontal - sidebar width)
     const isResizing = useRef(false)
@@ -576,6 +593,29 @@ export function Sidebar({
     const regularWorkspaces = workspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned && !w.folderId)
     const playgroundWorkspaces = workspaces.filter(w => w.isPlayground)
 
+    // While searching, the grouped list (pinned / folders / drag-reorderable rows) is
+    // replaced by a flat result list. Reorder groups must see the whole list: the
+    // reorder handlers save the order they are given, so a filtered one would drop rows.
+    const isSearching = searchOpen && searchQuery.trim().length > 0
+    const searchResults = isSearching
+        ? findMatchingProjects(workspaces, folders, searchQuery, showWorktrees)
+        : []
+
+    const closeSearch = () => {
+        setSearchOpen(false)
+        setSearchQuery('')
+    }
+
+    const openTopSearchResult = () => {
+        const top = searchResults[0]
+        if (!top) return
+        if (top.sessions.length > 0) {
+            onSelect(top, top.sessions[0])
+        } else if (!expanded.has(top.id)) {
+            toggleExpand(top.id)
+        }
+    }
+
     return (
         <>
             {/* Context Menus */}
@@ -587,6 +627,7 @@ export function Sidebar({
                         x={menuOpen.x}
                         y={menuOpen.y}
                         workspaceId={menuOpen.workspaceId}
+                        workspaceName={workspace?.name ?? ''}
                         workspacePath={menuOpen.workspacePath}
                         sessions={workspace?.sessions || []}
                         templates={customTemplates}
@@ -646,6 +687,7 @@ export function Sidebar({
                             setMenuOpen(null)
                         }}
                         onClose={() => setMenuOpen(null)}
+                        onCopy={copy}
                     />
                 )
             })()}
@@ -670,6 +712,7 @@ export function Sidebar({
                         onAddSession(workspaceId, 'regular', undefined, template?.command, template?.name)
                     }}
                     onClose={() => setWorktreeMenuOpen(null)}
+                    onCopy={copy}
                 />
             )}
 
@@ -687,33 +730,38 @@ export function Sidebar({
                 />
             )}
 
-            {sessionMenuOpen && (
-                <SessionContextMenu
-                    x={sessionMenuOpen.x}
-                    y={sessionMenuOpen.y}
-                    sessionId={sessionMenuOpen.sessionId}
-                    onRename={() => {
-                        setRenamingSessionId(sessionMenuOpen.sessionId)
-                        setSessionMenuOpen(null)
-                    }}
-                    onDelete={() => {
-                        onRemoveSession(sessionMenuOpen.workspaceId, sessionMenuOpen.sessionId)
-                        setSessionMenuOpen(null)
-                    }}
-                    onClear={() => {
-                        window.api.clearTerminal(sessionMenuOpen.sessionId)
-                        setSessionMenuOpen(null)
-                    }}
-                    onDisconnectAi={
-                        workspaces
-                            .find(w => w.id === sessionMenuOpen.workspaceId)
-                            ?.sessions.find(s => s.id === sessionMenuOpen.sessionId)?.aiControl
-                            ? () => { void window.api.releaseAiSession(sessionMenuOpen.sessionId) }
-                            : undefined
-                    }
-                    onClose={() => setSessionMenuOpen(null)}
-                />
-            )}
+            {sessionMenuOpen && (() => {
+                const menuWorkspace = workspaces.find(w => w.id === sessionMenuOpen.workspaceId)
+                const menuSession = menuWorkspace?.sessions.find(s => s.id === sessionMenuOpen.sessionId)
+                return (
+                    <SessionContextMenu
+                        x={sessionMenuOpen.x}
+                        y={sessionMenuOpen.y}
+                        sessionId={sessionMenuOpen.sessionId}
+                        sessionName={menuSession?.name ?? ''}
+                        sessionPath={menuSession?.cwd || menuWorkspace?.path || ''}
+                        onCopy={copy}
+                        onRename={() => {
+                            setRenamingSessionId(sessionMenuOpen.sessionId)
+                            setSessionMenuOpen(null)
+                        }}
+                        onDelete={() => {
+                            onRemoveSession(sessionMenuOpen.workspaceId, sessionMenuOpen.sessionId)
+                            setSessionMenuOpen(null)
+                        }}
+                        onClear={() => {
+                            window.api.clearTerminal(sessionMenuOpen.sessionId)
+                            setSessionMenuOpen(null)
+                        }}
+                        onDisconnectAi={
+                            menuSession?.aiControl
+                                ? () => { void window.api.releaseAiSession(sessionMenuOpen.sessionId) }
+                                : undefined
+                        }
+                        onClose={() => setSessionMenuOpen(null)}
+                    />
+                )
+            })()}
 
             {folderMenuOpen && (
                 <FolderContextMenu
@@ -778,8 +826,28 @@ export function Sidebar({
                 style={{ width: width, minWidth: 50, maxWidth: 480 }}
             >
                 <div className="py-1.5 px-2 border-b border-white/10 flex items-center justify-between draggable">
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Workspaces</span>
-                    <div className="flex items-center gap-1 no-drag">
+                    {/* The label gives way first, so a narrow sidebar never clips the buttons */}
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">Workspaces</span>
+                    <div className="flex items-center gap-1 no-drag shrink-0">
+                        <button
+                            data-testid="sidebar-search-toggle"
+                            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+                            className={`p-1 hover:bg-white/10 rounded transition-colors ${searchOpen ? 'bg-white/10' : ''}`}
+                            title="Search Projects"
+                        >
+                            <Search size={14} className={searchOpen ? 'text-blue-400' : 'text-gray-400'} />
+                        </button>
+                        <button
+                            data-testid="sidebar-collapse-all"
+                            data-state={anyExpanded ? 'expanded' : 'collapsed'}
+                            onClick={toggleCollapseAll}
+                            className="p-1 hover:bg-white/10 rounded transition-colors"
+                            title={anyExpanded ? 'Collapse All' : 'Expand All'}
+                        >
+                            {anyExpanded
+                                ? <ChevronsDownUp size={14} className="text-gray-400" />
+                                : <ChevronsUpDown size={14} className="text-gray-400" />}
+                        </button>
                         <button
                             onClick={() => setShowFolderPrompt(true)}
                             className="p-1 hover:bg-white/10 rounded transition-colors"
@@ -804,6 +872,54 @@ export function Sidebar({
                     </div>
                 </div>
 
+                {searchOpen && (
+                    <SidebarSearchInput
+                        query={searchQuery}
+                        onQueryChange={setSearchQuery}
+                        onSubmit={openTopSearchResult}
+                        onClose={closeSearch}
+                    />
+                )}
+
+                {isSearching ? (
+                    <div data-testid="sidebar-search-results" className="flex-1 overflow-y-auto p-2 space-y-0.5">
+                        <SidebarSearchStatus query={searchQuery} resultCount={searchResults.length} />
+                        {searchResults.map(workspace => (
+                            <WorkspaceItem
+                                key={workspace.id}
+                                workspace={workspace}
+                                childWorktrees={showWorktrees && !workspace.isHome
+                                    ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                    : []}
+                                expanded={expanded.has(workspace.id)}
+                                expandedSet={expanded}
+                                branchInfo={workspaceBranches.get(workspace.id)}
+                                activeSessionId={activeSessionId}
+                                sessionStatuses={sessionStatuses}
+                                hooksSettings={hooksSettings}
+                                terminalPreview={terminalPreview}
+                                renamingSessionId={renamingSessionId}
+                                fontSize={fontSize}
+                                showSessionCount={showSessionCount}
+                                isPinned={workspace.isPinned}
+                                onToggleExpand={toggleExpand}
+                                onContextMenu={handleContextMenu}
+                                onSessionContextMenu={handleSessionContextMenu}
+                                onBranchClick={handleBranchClick}
+                                onSelect={onSelect}
+                                onRemoveSession={onRemoveSession}
+                                onRemoveWorkspace={onRemoveWorkspace}
+                                onOpenInEditor={onOpenInEditor}
+                                onRenameSession={handleRenameSubmit}
+                                onRenameCancel={() => setRenamingSessionId(null)}
+                                onReorderSessions={onReorderSessions}
+                                splitLayout={splitLayout}
+                                onDragStartSession={onDragStartSession}
+                                onDragEndSession={onDragEndSession}
+                            />
+                        ))}
+                    </div>
+                ) : (
                 <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
                     {/* Home workspace first */}
                     {homeWorkspace && (
@@ -1075,6 +1191,7 @@ export function Sidebar({
                         })}
                     </Reorder.Group>
                 </div>
+                )}
 
                 {/* Playground Section with Resizable Height */}
                 <div
@@ -1134,6 +1251,8 @@ export function Sidebar({
                         </button>
                     </div>
                 </div>
+
+                <CopyNotice notice={copyNotice} />
 
                 {/* Resize Handle */}
                 <div

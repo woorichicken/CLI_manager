@@ -111,6 +111,8 @@ pnpm build && pnpm test:term
      - `SessionItem.tsx`: 터미널 세션 항목 컴포넌트
      - `ContextMenus.tsx`: 컨텍스트 메뉴 컴포넌트들
      - `Modals.tsx`: 모달 컴포넌트들
+     - `SidebarSearch.tsx`: 프로젝트 검색 입력 + 매칭(`findMatchingProjects`). 검색 중엔 드래그 목록 대신 평평한 결과 목록을 쓴다 — 재정렬 핸들러는 받은 목록 순서를 그대로 저장해서, 걸러진 목록을 주면 행이 빠진다
+     - `CopyNotice.tsx`: 메뉴의 Copy 항목이 쓰는 클립보드 복사 + "Copied …" 알림
    - `components/TerminalView.tsx`: xterm.js 터미널 인스턴스
    - `components/StatusBar.tsx`: 포트 모니터링 정보 표시
    - `components/GitPanel.tsx`: Git 상태 관리 패널
@@ -121,6 +123,7 @@ pnpm build && pnpm test:term
    - `hooks/`: **커스텀 훅**
      - `useWorkspaceBranches.ts`: 워크스페이스별 브랜치 정보 관리
      - `useTemplates.ts`: 커스텀 터미널 템플릿 관리
+     - `useSidebarCollapseAll.ts`: 사이드바 전체 접기 — 접기 직전 펼침 상태를 기억했다가 다음 누름에 그대로 복원
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
    - `constants/`: **상수 및 유틸리티**
@@ -305,7 +308,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 122건
+- **위치**: `tests/terminal/` — 127건
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -350,6 +353,10 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     simple-git 메이저 업그레이드 때 돌린다(v4 는 import·옵션 파싱·git 에 넘기는 환경변수가 바뀌었다)
   - T18 폴더 정렬 — 사이드바 폴더를 드래그 핸들로 옮기면 순서가 config.json 까지 저장되고,
     드래그가 펼침 클릭으로 오인되지 않는지
+  - T28 사이드바 전체 접기·검색·복사 — 전체 접기가 폴더(config.json)와 세션 목록(DOM)을 모두 접고 세션은 죽이지
+    않는지, 다음 누름이 접기 전 상태를 그대로 복원하는지(닫혀 있던 폴더는 닫힌 채), 프로젝트 검색이 이름·폴더명·경로로
+    찾고 Enter 가 첫 결과의 세션을 여는지, Copy Name/Path/Session ID 가 실제 시스템 클립보드에 들어가는지(main 의
+    `clipboard` 로 읽고, 테스트 전 내용을 되돌려 놓는다)
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이
