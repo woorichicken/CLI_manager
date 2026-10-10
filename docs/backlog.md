@@ -19,6 +19,16 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `src/main` 세션 복원 — 앱 재시작 때 세션을 전부 한꺼번에 띄워 머신이 멈추고 MCP 가 빠진다
+- Discovered: 2026-10-10 10:09 앱 재시작. 복원된 Claude 세션 35개의 시작 시각이 전부 1분 안(`ps -axo etime,comm | awk '$2=="claude"'` → 3:22 26개 · 3:23 9개).
+- Evidence: 1분 부하 **362**(10코어, `uptime`) → 4분 뒤 160. 복원된 세션 하나에서 MCP 6개(context7·hyperbrowser·slack·sentry·chrome-devtools·unsplash)가
+  `connection timed out after 30000ms` 로 빠졌다. MCP 프로세스 139개 — 세션 31개 기준 예상치(약 380)의 1/3 → 다른 세션들도 MCP 없이 떠 있었을 가능성이 크다(세션별 확인은 안 함).
+  함께 확인된 것: kill 로 닫은 세션 4개가 이 재시작 때 그대로 되살아났다 — 탭이 남아 있으면 복원 대상이다(`clim close` 로 닫으면 안 돌아온다).
+- Why deferred: 리소스 점검 세션(workspace-sweep) 중 발견. 앱 코드 변경은 범위 밖.
+- Trigger: 다음에 세션 복원 코드를 만지거나, 재시작 직후 부하·MCP 누락 제보가 다시 나올 때.
+- Fix direction: 복원을 몇 개씩 나눠 띄운다(예: 4개씩, 앞 묶음의 에이전트가 프롬프트를 띄운 뒤 다음). 오래 쉰 세션은 탭만 복원하고 프로세스는 첫 포커스 때 띄우는 선택지.
+- Owner: 없음
+
 ### `tests/terminal/t26-session-navigation.spec.ts` — "Ctrl keys" · "split view 삭제" 가 부하에서 간헐 실패
 - Discovered: 2026-10-09, 사이드바 접기·검색·복사 작업의 회귀 실행(T12·T13·T18·T26)
 - Why deferred: 이번 변경과 무관한 테스트 대기 조건 문제이고, 재실행 2/2 통과했다.
