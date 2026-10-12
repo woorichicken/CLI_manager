@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `scripts/post-release.cjs` — README 의 다운로드 링크는 릴리즈 때 갱신하지 않는다
+- Discovered: 2026-10-12, 레딧·쓰레드 공유 준비 중. README 「Download」 표가 R2 의 `cli-manager-1.5.0-*.dmg` 를 직접 가리키고 있었다(최신 v1.13.0).
+- Evidence: `post-release.cjs` 의 `SITE_LINK_FILES` 는 웹사이트 파일 3개뿐이다 — 사이트는 1.13.0 으로 맞는데 README 는 4월 이후 그대로였다.
+  이번엔 표를 `releases/latest` + 파일 이름 안내로 바꿔서 버전이 박히지 않게 했다(문서만).
+- Why deferred: 직접 다운로드 링크를 README 에 다시 두려면 릴리즈 스크립트 코드 변경이 필요하다.
+- Trigger: README 에 버전별 직접 링크를 다시 넣고 싶을 때 — 그때 `post-release.cjs` 가 README 도 갱신·검증하게 한다.
+- Owner: 없음
+
 ### `src/main` 세션 복원 — 앱 재시작 때 세션을 전부 한꺼번에 띄워 머신이 멈추고 MCP 가 빠진다
 - Discovered: 2026-10-10 10:09 앱 재시작. 복원된 Claude 세션 35개의 시작 시각이 전부 1분 안(`ps -axo etime,comm | awk '$2=="claude"'` → 3:22 26개 · 3:23 9개).
 - Evidence: 1분 부하 **362**(10코어, `uptime`) → 4분 뒤 160. 복원된 세션 하나에서 MCP 6개(context7·hyperbrowser·slack·sentry·chrome-devtools·unsplash)가
