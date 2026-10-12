@@ -105,12 +105,14 @@ Every action is bindable. Open the keyboard shortcut editor and make CLI Manager
 
 ## Download
 
-| Platform | Link |
-|----------|------|
-| macOS Apple Silicon (arm64) | [cli-manager-1.5.0-arm64.dmg](https://pub-dc249db286af4c1991fedf690157891d.r2.dev/cli-manager-1.5.0-arm64.dmg) |
-| macOS Intel (x64) | [cli-manager-1.5.0-x64.dmg](https://pub-dc249db286af4c1991fedf690157891d.r2.dev/cli-manager-1.5.0-x64.dmg) |
+Get the latest version from [GitHub Releases](https://github.com/woorichicken/CLI_manager/releases/latest) and pick the file for your Mac:
 
-Or download from [GitHub Releases](https://github.com/woorichicken/CLI_manager/releases/latest).
+| Platform | File |
+|----------|------|
+| macOS Apple Silicon (arm64) | `cli-manager-<version>-arm64.dmg` |
+| macOS Intel (x64) | `cli-manager-<version>-x64.dmg` |
+
+The app checks for updates on its own after that.
 
 ---
 
