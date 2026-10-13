@@ -62,6 +62,18 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: README 에 버전별 직접 링크를 다시 넣고 싶을 때 — 그때 `post-release.cjs` 가 README 도 갱신·검증하게 한다.
 - Owner: 없음
 
+### `src/renderer/src/App.tsx` `resumeCommand` — 재개 명령이 이미 돌고 있는 Claude 입력창에 들어간다
+- Discovered: 2026-10-12, 피드백 배치 fb-1011b(라쏘런 4개 프로젝트 세션을 한 매니저가 관리).
+- Evidence: 세션 2곳(symphony-typescript · content-ops-platform)의 Claude 입력창에 사람이 치지 않은 `cldy --resume <id>` 가 들어 있었고,
+  매니저가 `clim send` 로 보낸 지시문이 그 뒤에 붙어 한 덩어리로 제출됐다(화면: `❯ cldy --resume c9e36ed8-… 3회차 지시입니다 …`).
+  두 곳 다 바로 위가 `Compacted while idle` — Claude 는 떠 있었고 셸 프롬프트가 아니었다. 그날은 Claude 가 지시문으로 읽어 피해는 없었다.
+  재개 명령은 `resumeCommandFor()`(`src/renderer/src/utils/resumeCommand.ts`)가 만들어 `App.tsx` 1692행에서 터미널에 넘긴다 —
+  「이미 에이전트가 떠 있으면 치지 않는다」 확인이 있는지는 보지 않았다(가설: 터미널 뷰가 다시 붙을 때 한 번 더 친다).
+- Why deferred: 배치 매니저 세션이었다. 앱 코드는 범위 밖.
+- Trigger: 세션 복원·재개 코드를 만질 때, 또는 입력창에 `--resume` 이 또 보일 때.
+- Fix direction: 재개 명령은 pty 의 전경 프로세스가 셸일 때만 친다. 재현은 Control API 로 연 세션을 두고 렌더러만 새로고침하는 것부터.
+- Owner: 없음
+
 ### `src/main` 세션 복원 — 앱 재시작 때 세션을 전부 한꺼번에 띄워 머신이 멈추고 MCP 가 빠진다
 - Discovered: 2026-10-10 10:09 앱 재시작. 복원된 Claude 세션 35개의 시작 시각이 전부 1분 안(`ps -axo etime,comm | awk '$2=="claude"'` → 3:22 26개 · 3:23 9개).
 - Evidence: 1분 부하 **362**(10코어, `uptime`) → 4분 뒤 160. 복원된 세션 하나에서 MCP 6개(context7·hyperbrowser·slack·sentry·chrome-devtools·unsplash)가
