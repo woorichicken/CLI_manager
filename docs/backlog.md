@@ -19,6 +19,21 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `electron-vite.config.ts` — 이 설정 파일은 읽히지 않는다
+- Discovered: 2026-10-13, StrictMode 확인용 개발 번들을 만들다가.
+- Evidence: electron-vite 는 `electron.vite.config.*` 를 찾는다. 같은 내용으로 `--config` 를 주면 `Cannot find package '@vitejs/plugin-react'` 로
+  죽는다 — 그 플러그인은 설치돼 있지 않다(`ls node_modules/@vitejs` 없음). 지금 빌드는 기본 설정(esbuild JSX)으로 돌고 `@renderer` alias 도 없다.
+- Why deferred: 빌드는 정상이고, 이름을 바꾸면 플러그인 설치·alias 사용처 확인까지 따라오는 별개 변경이다.
+- Trigger: 빌드 설정(alias·React 플러그인·Fast Refresh)을 실제로 바꾸려 할 때 — 그 전에 이 파일이 읽히는지부터 고친다.
+- Owner: 없음
+
+### `src/renderer/src/App.tsx` — 렌더러가 새로 뜨면 보고 있던 세션이 선택돼 있지 않다
+- Discovered: 2026-10-13, 크래시 자동 복구(0008)를 캡처하다가. 새로고침 뒤 화면이 「please select a terminal」로 시작했다.
+- Evidence: 기록은 미러에서 복원되지만 활성 세션은 렌더러 상태라 사라진다. 사용자는 사이드바를 한 번 눌러야 한다.
+- Why deferred: 히스토리 유실 수정과 별개 UX 이고, 앱 첫 실행 때도 같은 동작이다(어디로 복귀할지 정해야 함).
+- Trigger: 크래시 복구·창 재오픈에서 「마지막으로 보던 세션으로」 요청이 나올 때.
+- Owner: 없음
+
 ### `src/renderer/src/components/TerminalView.tsx` — 렌더러 xterm 스크롤백 10,000줄이 세션 수만큼 메모리를 잡는다
 - Discovered: 2026-10-13, 「용량 때문에 화면이 하얘진다」 제보로 히스토리 유실을 고치다가(0008).
 - Evidence: xterm 줄 버퍼는 폭에 비례한다 — headless 실측 200열 2,000줄 = arrayBuffers 4.7MB, 그러니 렌더러의 `scrollback: 10000` 은
