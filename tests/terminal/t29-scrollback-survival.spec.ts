@@ -193,6 +193,28 @@ test.describe('T29 scrollback survival', () => {
         expect(text, 'a marker between restored history and the new run').toContain(RESTORED_MARKER)
         expect(text.indexOf(`T29-LINE-${MARKER_LINES}`)).toBeLessThan(text.indexOf(RESTORED_MARKER))
 
+        // The tab was just opened; its fit-to-window resize must be done first,
+        // as it is by the time an agent repaints in real use. A taller resize with
+        // the cursor at the bottom pulls scrollback onto screen — xterm behaviour
+        // that predates this change and is not what is tested here.
+        let lastRows = -1
+        await expect.poll(async () => {
+            const rows = (await page.evaluate(() => (window as unknown as { __termDebug: { state: (id: string) => { rows: number } } }).__termDebug.state('s-shell'))).rows
+            const settled = rows === lastRows
+            lastRows = rows
+            return settled
+        }, { timeout: 10_000, intervals: [500] }).toBe(true)
+
+        // What Claude Code does on every full repaint (2.1.296): cursor home, then
+        // erase each row on screen. Restored history left on screen was wiped by
+        // it with a real `claude --resume`, marker included — it must sit in scrollback.
+        await writeToTerminal(page, 's-shell', `printf '\\033[H'; for i in $(seq 1 80); do printf '\\033[2K\\033[1B'; done; echo T29-REPAINTED-$((1+1))\r`)
+        // Wait for the output, not the typed command line, which contains the text too.
+        await expect.poll(() => termText(page, 's-shell'), { timeout: 10_000 }).toContain('T29-REPAINTED-2')
+        const repainted = await termText(page, 's-shell')
+        expect(repainted, 'the marker survives an agent repaint').toContain(RESTORED_MARKER)
+        expect(repainted, 'restored history survives an agent repaint').toContain(`T29-LINE-${MARKER_LINES}`)
+
         await page.locator('[data-session-item="s-tpl"]').click()
         await expect.poll(() => countLines(`${dir}/resume-count`), { timeout: 20_000 }).toBe(2)
         expect(countLines(`${dir}/init-count`), 'a tracked session resumes instead of starting over').toBe(0)

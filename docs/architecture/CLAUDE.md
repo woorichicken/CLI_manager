@@ -122,8 +122,9 @@ User Action (Renderer)
 2. Main process에서 UUID 생성 및 세션 정보 저장
 3. Renderer에서 TerminalView 컴포넌트 생성
 4. TerminalView가 mount 시 `terminal-create` IPC 호출
-5. TerminalManager가 node-pty 프로세스 생성 — 이미 살아 있으면 건너뛴다. 새로 띄울 때 디스크 히스토리가 있으면 미러에 먼저 깐다
-6. 응답 `{ existed, snapshot, attachToken }` — 그 사이 출력은 보류된다. TerminalView 가 snapshot 을 쓰고 리스너를 단 뒤
+5. TerminalManager가 node-pty 프로세스 생성 — 이미 살아 있으면 건너뛴다. 새로 띄울 때 디스크 히스토리가 있으면 미러에 먼저 깔고
+   구분선까지 스크롤백으로 올려 빈 화면에서 시작한다(Claude 리페인트가 화면 줄을 지우므로)
+6. 응답 `{ existed, snapshot, snapshotSize, attachToken }` — 그 사이 출력은 보류된다. 뷰는 `snapshotSize` 로 xterm 을 맞춘 뒤 쓴다. TerminalView 가 snapshot 을 쓰고 리스너를 단 뒤
    `terminal-attached(id, token)` 를 보내면 보류분이 나간다. `existed` 면 시작·resume 명령을 입력하지 않는다
 7. pty 데이터를 `terminal-output-{id}` 채널로 브로드캐스트(4ms 배칭)
 8. 해당 TerminalView가 xterm.js에 데이터 렌더링

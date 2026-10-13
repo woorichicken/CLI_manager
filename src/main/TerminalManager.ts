@@ -40,8 +40,8 @@ const ATTACH_HOLD_TIMEOUT_MS = 3000
 export interface TerminalHistoryProvider {
     /** Before a new pty spawns: lay down history kept from a previous run. */
     prepare(id: string, cols: number, rows: number): Promise<void>
-    /** Everything printed so far, as escape sequences that redraw it. */
-    snapshot(id: string): Promise<string | null>
+    /** Everything printed so far, as escape sequences that redraw it, with the size to replay them at. */
+    snapshot(id: string): Promise<{ data: string; cols: number; rows: number } | null>
     /** The user cleared the terminal (Cmd+K). */
     clear(id: string): void
 }
@@ -413,13 +413,18 @@ export class TerminalManager {
         // in the history too, so the new view gets it from the snapshot.
         this.flushOutput(id)
         const attachToken = this.holdOutput(id)
-        let snapshot: string | null = null
+        let snapshot: { data: string; cols: number; rows: number } | null = null
         try {
             snapshot = (await this.history?.snapshot(id)) ?? null
         } catch (e) {
             console.warn(`[TerminalManager] snapshot(${id}) failed:`, e)
         }
-        return { existed, snapshot, attachToken }
+        return {
+            existed,
+            snapshot: snapshot?.data ?? null,
+            snapshotSize: snapshot ? { cols: snapshot.cols, rows: snapshot.rows } : null,
+            attachToken
+        }
     }
 
     private async spawnWithHistory(id: string, cwd: string, cols: number, rows: number, shell?: string): Promise<void> {

@@ -247,6 +247,10 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
    - `existed: true` 인 뷰는 시작·resume 명령을 **절대 다시 입력하지 않는다**. 렌더러가 죽거나 창을 다시 열면 PTY 는 살아 있는데,
      2026-10-12 에 다시 열린 창이 살아 있는 Claude 4개에 `cldy --resume <id>` 를 입력해 다음 프롬프트와 함께 전송됐다
    - 렌더러가 죽으면(`render-process-gone`) 1분 3회까지 자동 새로고침한다. 회귀는 `t29-scrollback-survival.spec.ts`
+   - 복원한 히스토리는 새 프로그램이 뜨기 **전에 스크롤백으로 올린다**(구분선까지). Claude 는 다시 그릴 때 화면의 모든 줄을
+     지운다 — 실제 `claude --resume` 에서 화면에 남아 있던 복원 줄과 구분선이 첫 리페인트에 지워졌다. 미러도 렌더러처럼
+     `scrollOnEraseInDisplay: true` 여야 이 이동과 CLI 의 전체 클리어가 두 쪽에서 같게 처리된다. 스냅샷은 찍힌 크기와 함께
+     가고 뷰는 그 크기로 맞춘 뒤 쓴다 — 줄 수가 다르면 스크롤백 줄이 화면으로 내려와 같은 식으로 지워진다
 
 ### Agent Hook Invariants (회귀 주의)
 

@@ -118,8 +118,9 @@ export class ScrollbackStore {
         for (const id of ids) {
             const file = this.fileFor(id)
             if (!file || !kept.has(id)) continue
-            const data = await this.mirror.snapshot(id, { forDisk: true })
-            if (data === null) continue
+            const snapshot = await this.mirror.snapshot(id, { forDisk: true })
+            if (snapshot === null) continue
+            const data = snapshot.data
             try {
                 // Write-then-rename: a force-quit mid-write leaves the previous file intact.
                 writeFileSync(file + '.tmp', data)

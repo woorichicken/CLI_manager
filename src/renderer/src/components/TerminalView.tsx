@@ -551,6 +551,11 @@ export function TerminalView({
             // a previous run). Live output is held back until we confirm below.
             if (attach.snapshot) {
                 try {
+                    // Replay at the size it was taken at; the usual fit resizes afterwards.
+                    const size = attach.snapshotSize
+                    if (size && (term.cols !== size.cols || term.rows !== size.rows)) {
+                        term.resize(size.cols, size.rows)
+                    }
                     term.write(attach.snapshot)
                 } catch (e) {
                     console.error(`[Terminal ${id.slice(0, 8)}] history restore failed:`, e)

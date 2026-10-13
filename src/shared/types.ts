@@ -751,5 +751,10 @@ export interface TerminalAttachResult {
     existed: boolean
     /** Escape sequences that redraw the terminal's history and screen, or null when there is none. */
     snapshot: string | null
+    /**
+     * The size the snapshot was taken at. Resize the view to it before writing:
+     * at another row count, history lands on screen where the next agent repaint erases it.
+     */
+    snapshotSize: { cols: number; rows: number } | null
     attachToken: number
 }

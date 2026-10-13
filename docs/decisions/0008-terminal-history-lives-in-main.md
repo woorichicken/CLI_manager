@@ -40,6 +40,13 @@ Claude sessions, which sent it as part of the next prompt (found in their transc
   and on the quit/update paths. A new pty starts with the saved history laid into its mirror,
   followed by a "Restored from previous session" marker. Files follow sidebar sessions: deleting a
   session deletes its file, and startup removes orphans.
+- **Restored history goes into scrollback before the new program starts.** Claude Code repaints by
+  erasing every row on screen; with a real `claude --resume` (2026-10-13) the restored lines still on
+  screen and the marker were wiped on its first repaint. The seed ends with a full clear, which —
+  with `scrollOnEraseInDisplay` on the mirror too, as on the renderer — moves everything up.
+- **A snapshot carries its size, and the view replays it at that size.** At another row count,
+  lines that were in scrollback land on screen (measured: mirror 30 rows → view 37 rows put the
+  marker back on screen), where the next repaint erases them.
 
 Rejected:
 

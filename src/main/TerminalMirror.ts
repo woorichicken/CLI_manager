@@ -110,6 +110,18 @@ export interface SnapshotOptions {
     forDisk?: boolean
 }
 
+/**
+ * Escape sequences that redraw a terminal, and the size they were taken at.
+ * Replay them at that size: on a terminal with more or fewer rows, lines that
+ * were in scrollback land on screen (or the reverse), and the next agent
+ * repaint erases whatever is on screen.
+ */
+export interface TerminalSnapshot {
+    data: string
+    cols: number
+    rows: number
+}
+
 export class TerminalMirror {
     private readonly mirrors = new Map<string, Mirror>()
 
@@ -148,6 +160,10 @@ export class TerminalMirror {
             cols: initial.cols,
             rows: initial.rows,
             scrollback: MIRROR_SCROLLBACK,
+            // Same as the renderer's xterm (TerminalView): a full clear pushes the
+            // screen into scrollback instead of erasing it. Without it the two
+            // copies of history drift apart on every CLI repaint.
+            scrollOnEraseInDisplay: true,
             allowProposedApi: true
         })
         const serializer = new SerializeAddon()
@@ -160,6 +176,11 @@ export class TerminalMirror {
      * marker line, before the new pty prints anything. Resolves once both are
      * parsed — the caller must not start the pty earlier, or its first output
      * would land above the marker.
+     *
+     * The restored lines and the marker end up in scrollback, with the screen
+     * left empty. Agent TUIs (Claude Code) repaint by erasing every row on
+     * screen — measured with a real `claude --resume`: restored lines still
+     * on screen and the marker were wiped on the first repaint.
      */
     seed(id: string, size: { cols: number; rows: number }, history: string, marker: string): Promise<void> {
         this.attach(id, size)
@@ -169,7 +190,8 @@ export class TerminalMirror {
             mirror.term.write(history, () => {
                 // The saved cursor may sit inside the old screen (an agent's
                 // input box); writing the marker there would overwrite it.
-                mirror.term.write(cursorBelowContent(mirror.term) + marker, () => resolve())
+                // A full clear (with scrollOnEraseInDisplay) moves everything into scrollback.
+                mirror.term.write(cursorBelowContent(mirror.term) + marker + '\x1b[2J\x1b[H', () => resolve())
             })
         })
     }
@@ -180,13 +202,17 @@ export class TerminalMirror {
      * output written before this call — the caller can hold back later output
      * and send it after the snapshot without gaps or repeats.
      */
-    snapshot(id: string, options: SnapshotOptions = {}): Promise<string | null> {
+    snapshot(id: string, options: SnapshotOptions = {}): Promise<TerminalSnapshot | null> {
         const mirror = this.mirrors.get(id)
         if (!mirror) return Promise.resolve(null)
-        const serialize = (): string => mirror.serializer.serialize({
-            scrollback: MIRROR_SCROLLBACK,
-            excludeModes: options.forDisk,
-            excludeAltBuffer: options.forDisk
+        const serialize = (): TerminalSnapshot => ({
+            data: mirror.serializer.serialize({
+                scrollback: MIRROR_SCROLLBACK,
+                excludeModes: options.forDisk,
+                excludeAltBuffer: options.forDisk
+            }),
+            cols: mirror.term.cols,
+            rows: mirror.term.rows
         })
         return new Promise((resolve) => {
             // A mirror disposed mid-flush never calls back; serialize what it has.

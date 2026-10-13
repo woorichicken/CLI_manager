@@ -19,6 +19,16 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### xterm 리사이즈 — 창이 커질 때 커서가 맨 아래면 스크롤백 줄이 화면으로 내려와 Claude 리페인트에 지워진다
+- Discovered: 2026-10-13, T29 에 「에이전트 리페인트 뒤에도 구분선이 남는가」 검사를 넣다가.
+- Evidence: 30줄 → 43줄 맞춤 리사이즈가 지우기와 겹치자, 스크롤백 맨 아래였던 구분선(305행, 화면 시작 306)이 화면으로 내려와
+  지워졌다. xterm 은 행이 늘 때 커서가 맨 아래면 스크롤백에서 줄을 끌어내리고, Claude 는 다시 그릴 때 화면 줄을 전부 지운다.
+  이번 변경 전에도 있던 동작이다 — 그때는 Claude 자신의 이전 출력이 같은 식으로 사라졌다. 미러도 같은 리사이즈를 거치므로 두 사본은 같이 잃는다.
+- Why deferred: 히스토리 복원과 별개인 xterm·Claude 상호작용이고, 실제 복원 흐름(리사이즈가 리페인트보다 먼저 끝남)에서는 재현되지 않았다.
+- Trigger: 창 크기를 키운 뒤 대화 몇 줄이 사라졌다는 제보가 나올 때.
+- Fix direction: 행이 늘 때 스크롤백을 끌어내리지 않게 xterm 리사이즈 전에 빈 줄로 커서를 올려 두는 식의 보정 — 먼저 실제 Claude 로 재현을 잰다.
+- Owner: 없음
+
 ### `electron-vite.config.ts` — 이 설정 파일은 읽히지 않는다
 - Discovered: 2026-10-13, StrictMode 확인용 개발 번들을 만들다가.
 - Evidence: electron-vite 는 `electron.vite.config.*` 를 찾는다. 같은 내용으로 `--config` 를 주면 `Cannot find package '@vitejs/plugin-react'` 로
