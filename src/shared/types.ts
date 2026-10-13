@@ -740,3 +740,16 @@ export interface ControlApiMasters {
 export const SESSION_ID_ENV = 'CLIMANAGER_SESSION_ID'
 /** Request header an orchestrator sets to the value of SESSION_ID_ENV. */
 export const CALLER_SESSION_HEADER = 'x-caller-session'
+
+/**
+ * Main -> renderer: answer to `terminal-create`. A terminal view draws
+ * `snapshot` before any live output, then sends `terminal-attached` with
+ * `attachToken`; output printed in between is held back until then.
+ */
+export interface TerminalAttachResult {
+    /** The pty was already running: a new window on a live session. Never type its start command again. */
+    existed: boolean
+    /** Escape sequences that redraw the terminal's history and screen, or null when there is none. */
+    snapshot: string | null
+    attachToken: number
+}

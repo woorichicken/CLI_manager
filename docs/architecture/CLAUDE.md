@@ -49,6 +49,9 @@ rules stay in the root; this file is the inventory.
 #### 6. Session Persistence
 - 모든 터미널 세션을 DOM에 유지하여 탭 전환 시에도 상태 보존
 - `display: none` 방식으로 비활성 세션 숨김
+- **히스토리는 main 프로세스에 있다** — 렌더러가 죽거나(자동 새로고침) 창을 다시 열어도 미러(`TerminalMirror`, 2000줄)에서
+  다시 그리고, `ScrollbackStore` 가 30초마다 디스크에 저장해 강제종료 뒤에도 "Restored from previous session" 줄과 함께
+  되살린다 ([`docs/decisions/0008`](../decisions/0008-terminal-history-lives-in-main.md)). 회귀는 `t29-scrollback-survival.spec.ts`
 
 #### 7. Custom Terminal Templates
 - 자주 사용하는 명령어를 템플릿으로 저장
@@ -97,6 +100,10 @@ rules stay in the root; this file is the inventory.
 - `glm-on && cldy`처럼 앞에 준비 명령이 붙어도 마지막 명령으로 판정한다
 - 시작 시 `validateCliSessionIds()`가 Claude 대화 파일이 없는 id를 지운다 — 그래서 대화 기록 저장이
   꺼진 세션은 재개되지 않는다. 회귀는 `t17-session-resume.spec.ts`
+- **id 는 Claude 가 실제로 쓰는 대화를 따라간다** — Claude 안에서 `/resume` 하면 새 id 로 옮겨 가고 주입한 id 에는 대화 파일이
+  생기지 않는다(2.1.296 실측). 그대로 두면 재시작 때 id 가 지워져 템플릿이 새 대화로 시작한다. `ClaudeSessionSync` 가 10초마다
+  `<CLAUDE_CONFIG_DIR|~/.claude>/sessions/<pid>.json` 을 읽어, 셸에 가장 가까운 Claude 프로세스의 `sessionId` 로 저장값을 맞춘다
+  (Claude 가 띄운 Claude 는 더 깊어서 무시). 훅 설치와 무관하다. 회귀는 `t30-claude-session-sync.spec.ts`
 
 ## Data Flow
 
@@ -115,9 +122,11 @@ User Action (Renderer)
 2. Main process에서 UUID 생성 및 세션 정보 저장
 3. Renderer에서 TerminalView 컴포넌트 생성
 4. TerminalView가 mount 시 `terminal-create` IPC 호출
-5. TerminalManager가 node-pty 프로세스 생성
-6. pty 데이터를 `terminal-output-{id}` 채널로 브로드캐스트
-7. 해당 TerminalView가 xterm.js에 데이터 렌더링
+5. TerminalManager가 node-pty 프로세스 생성 — 이미 살아 있으면 건너뛴다. 새로 띄울 때 디스크 히스토리가 있으면 미러에 먼저 깐다
+6. 응답 `{ existed, snapshot, attachToken }` — 그 사이 출력은 보류된다. TerminalView 가 snapshot 을 쓰고 리스너를 단 뒤
+   `terminal-attached(id, token)` 를 보내면 보류분이 나간다. `existed` 면 시작·resume 명령을 입력하지 않는다
+7. pty 데이터를 `terminal-output-{id}` 채널로 브로드캐스트(4ms 배칭)
+8. 해당 TerminalView가 xterm.js에 데이터 렌더링
 
 ## Storage Schema (electron-store)
 
@@ -153,6 +162,9 @@ User Action (Renderer)
   controlApiToken?: string          // Kept outside settings so a stale save-settings cannot rotate it
 }
 ```
+
+디스크에 따로 두는 것: `userData/scrollback/<sessionId>.ans` — 터미널 히스토리 스냅샷(이스케이프 시퀀스, 최대 2000줄).
+사이드바 세션이 지워지면 같이 지우고, 시작 때 고아 파일을 정리한다.
 
 ## IPC Communication
 

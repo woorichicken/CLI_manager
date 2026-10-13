@@ -48,9 +48,11 @@ up does not set it. The mark persists across restarts and machine sleep; the sid
 sessions in green with a bot icon, and the header shows "AI connected". `release` and
 **Disconnect AI** clear it — the next call from the API sets it again.
 
-Every terminal is mirrored from the moment its pty starts, so reconnecting to a session returns
-its real screen. The one gap: a terminal already running when the API was switched on reports
-`screenPartial: true`, and output from before that moment is missing.
+Every terminal is mirrored from the moment its pty starts — whether or not the API is on, since the
+mirror is also the terminal's history ([0008](../decisions/0008-terminal-history-lives-in-main.md)) —
+so reconnecting to a session returns its real screen. After an app restart the mirror starts with
+the history saved before the restart, followed by a "Restored from previous session" line.
+`screenPartial` stays in the response for compatibility and is false in practice.
 
 ## Master sessions (orchestrators)
 
@@ -235,7 +237,7 @@ Disconnect AI 를 눌렀다는 뜻이므로 사용자가 다시 시키기 전에
   |  (응답은 pty 가 생긴 뒤)
   |<--------------------
   |                     pty 출력 --+--> 4ms 배칭 -> 렌더러 xterm (사람이 보는 화면)
-  |                                +--> TerminalMirror (headless xterm, API 전용)
+  |                                +--> TerminalMirror (headless xterm, 모든 터미널 — 화면 읽기·히스토리)
   | POST .../input      ControlApiService -> TerminalManager.writeInput
   |-------------------> (CLISessionTracker 를 거치는, 사람 타이핑과 같은 경로)
   | POST .../wait       200ms 간격으로 mirror 를 보고 busy/idle 판정 -> 화면 한 장 반환
@@ -251,16 +253,17 @@ Disconnect AI 를 눌렀다는 뜻이므로 사용자가 다시 시키기 전에
 
 | 언제 | 무엇을 쓰나 |
 |---|---|
-| API **꺼짐** | 터미널당 이벤트 emit 0.2~0.4µs/청크(리스너 없음). 서버·타이머·미러 전부 없음 |
+| API **꺼짐** | 서버·타이머 없음. 미러는 히스토리용으로 항상 있다(아래 줄의 파싱 비용·메모리, 0008) |
 | API 켜짐, AI 세션 없음 | 대기 중인 소켓 하나. 폴링 타이머 없음 |
-| AI 세션 1개 | 화면 미러가 출력을 한 번 더 파싱 — 5~7µs/청크(23~28MB/s). 실제 Claude 세션이 평균 0.5KB/s, 피크 4KB/s 를 내므로 **CPU 0.002%(피크 0.015%)**, 메모리 0.86MB(스크롤백 2000줄을 가득 채웠을 때) |
+| AI 세션 1개 | 화면 미러가 출력을 한 번 더 파싱 — 5~7µs/청크(23~28MB/s). 실제 Claude 세션이 평균 0.5KB/s, 피크 4KB/s 를 내므로 **CPU 0.002%(피크 0.015%)**, 메모리는 스크롤백 2000줄을 가득 채웠을 때 힙 0.86MB + 줄 버퍼(폭에 비례) — RSS 80열 약 2.5MB, 200열 약 8MB(2026-10-13 재측정) |
 | `wait` 가 떠 있는 동안 | 200ms 마다 화면 1장 검사 30~60µs → **0.03%** |
 
 비교용: 같은 머신에서 포트 모니터는 포트 11개일 때 CPU 약 7%다(루트 `CLAUDE.md`).
 
-미러는 **서버가 살아 있는 동안에만** 붙는다(`startMirroring`/`stopMirroring`). API 를 끄면
-이전에 열어 둔 AI 세션이 남아 있어도 파싱 비용은 사라진다. 스크롤백 2000줄은 `read --tail`
-이 돌려줄 수 있는 최대 줄 수와 같다 — 그 너머는 읽을 방법이 없으므로 갖고 있지 않는다.
+미러는 API 와 상관없이 **모든 터미널에 pty 생성 시점부터** 붙는다 — 렌더러가 죽거나 창을 다시 열어도
+화면을 되살리는 히스토리 원본이기 때문이다([0008](../decisions/0008-terminal-history-lives-in-main.md)).
+예전에는 서버가 살아 있는 동안에만 붙였다(`startMirroring`/`stopMirroring`, 삭제됨). 스크롤백 2000줄은
+`read --tail` 이 돌려줄 수 있는 최대 줄 수이자 복원되는 히스토리 길이다.
 
 ## Renderer contract
 

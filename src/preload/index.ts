@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, TerminalAttachResult } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -110,7 +110,8 @@ const api = {
     // Debug instrumentation flag for automated tests (CLIMANGER_TERM_DEBUG=1).
     // Renderer cannot read process.env directly, so preload exposes it once.
     termDebugEnabled: process.env.CLIMANGER_TERM_DEBUG === '1',
-    createTerminal: (id: string, cwd: string, cols: number, rows: number, shell?: string): Promise<boolean> => ipcRenderer.invoke('terminal-create', id, cwd, cols, rows, shell),
+    createTerminal: (id: string, cwd: string, cols: number, rows: number, shell?: string): Promise<TerminalAttachResult> => ipcRenderer.invoke('terminal-create', id, cwd, cols, rows, shell),
+    terminalAttached: (id: string, attachToken: number): void => ipcRenderer.send('terminal-attached', id, attachToken),
     resizeTerminal: (id: string, cols: number, rows: number): Promise<void> => ipcRenderer.invoke('terminal-resize', id, cols, rows),
     killTerminal: (id: string): Promise<void> => ipcRenderer.invoke('terminal-kill', id),
     hasRunningProcess: (id: string): Promise<boolean> => ipcRenderer.invoke('terminal-has-running-process', id),

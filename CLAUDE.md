@@ -21,6 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | When changing how an external AI drives sessions (Control API), or when a local listening port looks like it contradicts decision 0001 | [`docs/decisions/0005-ai-control-api-local-http.md`](docs/decisions/0005-ai-control-api-local-http.md) |
 | When changing which sessions the Control API may touch, what the AI mark means, or when the mirror is attached | [`docs/decisions/0006-control-api-reaches-every-session.md`](docs/decisions/0006-control-api-reaches-every-session.md) |
 | When changing how the Control API registers, files or unregisters workspaces, or when tempted to let it remove one the user added | [`docs/decisions/0007-api-cleans-up-only-its-own-registrations.md`](docs/decisions/0007-api-cleans-up-only-its-own-registrations.md) |
+| When changing where terminal history is kept, how a terminal view attaches to a pty, or when tempted to switch the screen mirror off while the Control API is off | [`docs/decisions/0008-terminal-history-lives-in-main.md`](docs/decisions/0008-terminal-history-lives-in-main.md) |
 | When a design choice looks arbitrary and you are about to change it | [`docs/decisions/CLAUDE.md`](docs/decisions/CLAUDE.md) |
 | When touching an area that misbehaves, or when triaging a report against known-wrong behavior | [`docs/found-defects.md`](docs/found-defects.md) |
 | When adding or debugging an integration with an external AI CLI (hooks, status line, usage data) | [`docs/integrations/CLAUDE.md`](docs/integrations/CLAUDE.md) |
@@ -100,7 +101,9 @@ pnpm build && pnpm test:term
    - `diffParser.ts`: `git diff` plumbing 출력 파서 (numstat/name-status/unified)
    - `ControlApiServer.ts` / `ControlApiService.ts` / `controlApiMcp.ts`: AI Control API — 로컬 HTTP(REST+MCP)로 AI가 세션을 열고 조작 ([`docs/architecture/control-api.md`](docs/architecture/control-api.md))
    - `CodexSessionLocator.ts`: Codex 가 고른 대화 id 를 rollout 파일에서 찾아 재시작 때 `resume` 하게 함
-   - `TerminalMirror.ts`: AI 세션 출력을 headless xterm으로 재생해 "사용자가 보는 화면"을 읽게 함
+   - `TerminalMirror.ts`: 모든 터미널 출력을 headless xterm으로 재생 — Control API 가 "사용자가 보는 화면"을 읽고, 새 창·재시작 때 히스토리를 다시 그리는 원본 ([`docs/decisions/0008`](docs/decisions/0008-terminal-history-lives-in-main.md))
+   - `ScrollbackStore.ts`: 미러 스냅샷을 30초마다(출력이 있던 세션만) `userData/scrollback/<id>.ans` 에 저장 — 강제종료 뒤 복원용
+   - `ClaudeSessionSync.ts`: Claude 의 실행 중 세션 레지스트리(`~/.claude/sessions/<pid>.json`)를 읽어 저장된 대화 id 를 실제 대화로 맞춤 — Claude 안에서 `/resume` 하면 id 가 바뀐다
 
 2. **Renderer Process** (`src/renderer/`)
    - `App.tsx`: 메인 애플리케이션 컴포넌트, 상태 관리
@@ -236,6 +239,14 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
      **index로** 짝을 맞춘다. 워크트리 sync·워크스페이스 삭제로 배열이 줄면 그 뒤 전부가 언마운트
      → 재마운트된다. PTY는 살아남지만(`TerminalManager`가 기존 id를 건너뜀) xterm 버퍼가 통째로
      날아가 "터미널이 리셋됐다"로 보인다. 회귀는 `t12-workspace-list-remount.spec.ts`가 잡는다
+     (지금은 6번 덕에 히스토리를 다시 그리지만, 재마운트는 여전히 터미널마다 스냅샷 왕복이다)
+6. **뷰는 붙을 때 히스토리를 받고, 확인한 뒤에야 실시간 출력을 받는다** (TerminalManager.attachView)
+   - `terminal-create` → `{ existed, snapshot, attachToken }`. main 은 그 터미널 출력을 보류하고, 미러를 write 콜백 안에서
+     직렬화한다(보류 직전까지의 출력만 정확히 담김). 뷰가 스냅샷을 쓰고 리스너를 단 뒤 `terminal-attached` 를 보내면 보류분을 보낸다.
+     터미널당 한 번에 하나만 붙고, 확인이 안 오면 3초 뒤 푼다. 순서를 바꾸면 출력이 빠지거나 두 번 찍힌다
+   - `existed: true` 인 뷰는 시작·resume 명령을 **절대 다시 입력하지 않는다**. 렌더러가 죽거나 창을 다시 열면 PTY 는 살아 있는데,
+     2026-10-12 에 다시 열린 창이 살아 있는 Claude 4개에 `cldy --resume <id>` 를 입력해 다음 프롬프트와 함께 전송됐다
+   - 렌더러가 죽으면(`render-process-gone`) 1분 3회까지 자동 새로고침한다. 회귀는 `t29-scrollback-survival.spec.ts`
 
 ### Agent Hook Invariants (회귀 주의)
 
@@ -261,7 +272,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 근거는 [`docs/decisions/0005-ai-control-api-local-http.md`](docs/decisions/0005-ai-control-api-local-http.md).
 
 1. **기본 꺼짐 + 127.0.0.1 + 토큰 + Host/Origin 검사** — 하나라도 빼면 웹페이지·다른 머신이 셸을 조작할 수 있다
-2. **API가 켜져 있으면 모든 세션에 닿는다. `aiControl`은 권한이 아니라 표시다** — 처음 읽기·입력·대기·포커스 때 붙고, "Disconnect AI"는 표시를 떼고 걸려 있던 `wait`를 409로 끊는다. 접근을 끝내는 수단은 API를 끄는 것. 미러는 API가 켜진 동안 **모든 터미널에 pty 생성 시점부터** 붙는다 — 첫 접근 때 붙이면 빈 화면이 되고, 리페인트로 채우면 렌더링 불변식 2번을 깬다 ([`docs/decisions/0006`](docs/decisions/0006-control-api-reaches-every-session.md))
+2. **API가 켜져 있으면 모든 세션에 닿는다. `aiControl`은 권한이 아니라 표시다** — 처음 읽기·입력·대기·포커스 때 붙고, "Disconnect AI"는 표시를 떼고 걸려 있던 `wait`를 409로 끊는다. 접근을 끝내는 수단은 API를 끄는 것. 미러는 API 와 상관없이 **모든 터미널에 pty 생성 시점부터** 붙는다 — 첫 접근 때 붙이면 빈 화면이 되고, 리페인트로 채우면 렌더링 불변식 2번을 깬다. API 를 꺼도 미러를 떼지 않는다: 히스토리 원본이다 ([`docs/decisions/0006`](docs/decisions/0006-control-api-reaches-every-session.md), [`0008`](docs/decisions/0008-terminal-history-lives-in-main.md))
 3. **화면에 질문이 떠 있으면 텍스트 입력 거부(409)** — Enter가 강조된 선택지를 고른다. 실측: Claude Code 폴더 신뢰 대화상자에서 "No, exit"가 선택돼 종료됐다
 4. **첫 프롬프트는 "명령이 자식 프로세스로 떴고, 그 뒤 2초 조용"일 때만** — 무음만 보면 느린 셸 프로필에서 프롬프트가 셸로 선입력된다
 5. **`@xterm/headless`는 파일 경로로 import해 번들에 넣는다** — `electron-builder.yml`은 node_modules를 allowlist로만 싣기 때문에 런타임 require는 배포 앱을 시작 시 죽인다
@@ -290,8 +301,10 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 | heuristic 폴링 (`pollStatus`) | 4.5µs/회 · 터미널 24개에서 **CPU 0.02%** | 꺼도 체감 없음 |
 | 출력 처리 (`processWithStatus`) | 5.7µs/청크 · 60청크/초에서 **CPU 0.03%** | |
 | **포트 모니터** | 5초마다 `lsof` 1회(50ms) **+ 리스닝 포트마다 1회**(30ms) | 포트 11개면 **CPU 약 7%** |
-| 터미널 이벤트 emit (Control API **꺼짐**) | 0.2~0.4µs/청크 · 리스너 0 | 꺼져 있으면 이게 비용의 전부 |
-| 화면 미러 — 켜져 있으면 **모든 터미널** (Control API 켜짐) | 5~7µs/청크 · 23~28MB/s · 실제 Claude 세션(평균 0.5KB/s)에서 **CPU 0.002%**, 피크(4KB/s) 0.015% | 세션당 메모리 **0.86MB**(스크롤백 2000줄 가득) |
+| 화면 미러 — **항상 모든 터미널** (히스토리 원본, 0008) | 5~7µs/청크 · 23~28MB/s · 실제 Claude 세션(평균 0.5KB/s)에서 **CPU 0.002%**, 피크(4KB/s) 0.015% | 2000줄 가득일 때 힙 0.86MB + 줄 버퍼 — **RSS 80열 약 2.5MB · 200열 약 8MB**(2026-10-13 재측정. 예전 0.86MB 는 힙만 센 값) |
+| 히스토리 디스크 저장 (`ScrollbackStore`) | 가득 찬 200열 미러 직렬화 **약 14ms · 370KB**, 쓰기 0.4ms | 출력이 있던 세션만 30초마다 → 바쁜 세션당 CPU 약 0.05%, 쓰기 약 44MB/h |
+| 재시작 때 히스토리 복원 | 세션 40개 × 2000줄: 터미널 등록 **+0.6초**, 메인 RSS **+221MB**(세션당 약 5.5MB, 80열) | 미러가 2000줄을 채웠을 때의 정상 비용을 앞당긴 것. 줄이려면 `MIRROR_SCROLLBACK` |
+| 대화 id 동기화 (`ClaudeSessionSync`) | 10초마다 레지스트리 목록+stat 약 1ms. `ps` 37ms 는 **새 Claude 프로세스가 보일 때만** | |
 | `wait` 폴링 | 30~60µs/회 · 200ms 간격 → 대기 중인 세션당 **0.03%** | 대기 요청이 떠 있는 동안만 |
 
 포트 모니터가 터미널 검사보다 **수백 배** 비싸다. 그래서 끄는 스위치는 그쪽에 있고
@@ -308,7 +321,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 127건
+- **위치**: `tests/terminal/` — 133건
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -357,6 +370,12 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     않는지, 다음 누름이 접기 전 상태를 그대로 복원하는지(닫혀 있던 폴더는 닫힌 채), 프로젝트 검색이 이름·폴더명·경로로
     찾고 Enter 가 첫 결과의 세션을 여는지, Copy Name/Path/Session ID 가 실제 시스템 클립보드에 들어가는지(main 의
     `clipboard` 로 읽고, 테스트 전 내용을 되돌려 놓는다)
+  - T29 히스토리 생존 — 렌더러 크래시(자동 새로고침)·창 재오픈·강제종료(SIGKILL 후 재실행) 각각에서 마커 300줄이 그대로인지,
+    살아 있는 PTY 에 resume 명령을 다시 입력하지 않는지(`resume-count` 파일), 재시작 때 "Restored from previous session" 줄이
+    복원본과 새 출력 사이에 오는지, Cmd+K 가 히스토리도 지우는지, 세션 삭제가 히스토리 파일을 지우는지. 크래시 뒤 Playwright 는
+    그 페이지를 계속 죽은 것으로 취급해서 새로고침된 렌더러는 main 의 `executeJavaScript` 로 확인한다
+  - T30 대화 id 동기화 — 셸의 자식 `sleep` 을 Claude 대역으로 두고 레지스트리 파일을 써서, 저장된 id 가 셸에 가장 가까운
+    Claude 의 대화로 바뀌는지(한 단계 깊은 프로세스는 짐), 시작 명령(`cldy` 같은 alias)은 유지되는지, 앱 터미널 밖 프로세스는 무시하는지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

@@ -277,6 +277,8 @@ export interface ControlApiDeps {
     mirror: TerminalMirror
     broadcast: (channel: string, payload: unknown) => void
     hookStatus: (terminalId: string) => AgentStatusUpdate | null
+    /** A session is gone for good (closed or deleted): drop what was kept for it elsewhere. */
+    onSessionForgotten?: (sessionId: string) => void
 }
 
 export const CONTROL_API_SESSION_CHANNEL = 'control-api-session'
@@ -311,21 +313,6 @@ export class ControlApiService {
     constructor(private readonly deps: ControlApiDeps) {
         // The orchestrator's shell exited: whatever drove it is gone.
         deps.terminals.events.on('exited', (id: string) => this.dropOrchestrator(id))
-    }
-
-    /**
-     * Starts mirroring every terminal. Called when the server starts, never
-     * before: a mirror parses every byte its terminal prints, and that cost
-     * must not exist while the API is switched off.
-     */
-    startMirroring(): void {
-        this.deps.mirror.setMirrorAll(true)
-    }
-
-    /** Stops all mirroring. The sessions keep their mark, so enabling resumes them. */
-    stopMirroring(): void {
-        this.deps.mirror.setMirrorAll(false)
-        this.deps.mirror.disposeAll()
     }
 
     // ------------------------------------------------------------------
@@ -681,6 +668,7 @@ export class ControlApiService {
         const { workspace } = this.requireSession(sessionId)
         this.deps.terminals.killTerminal(sessionId)
         this.deps.mirror.detach(sessionId)
+        this.deps.onSessionForgotten?.(sessionId)
         this.lastEscapeAt.delete(sessionId)
         this.forgetOrchestration(sessionId)
 
@@ -744,6 +732,7 @@ export class ControlApiService {
     /** The user deleted a session or workspace; drop what we held for it. */
     forgetSession(sessionId: string): void {
         this.deps.mirror.detach(sessionId)
+        this.deps.onSessionForgotten?.(sessionId)
         this.lastEscapeAt.delete(sessionId)
         this.forgetOrchestration(sessionId)
     }

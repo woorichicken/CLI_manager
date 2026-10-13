@@ -139,7 +139,6 @@ export class ControlApiServer {
         try {
             await this.listen(next.port)
             this.writeDiscovery()
-            this.options.service.startMirroring()
         } catch (error) {
             const code = (error as NodeJS.ErrnoException)?.code
             this.lastError = code === 'EADDRINUSE'
@@ -151,7 +150,6 @@ export class ControlApiServer {
     }
 
     async stop(): Promise<void> {
-        this.options.service.stopMirroring()
         this.options.service.clearOrchestrators()
         this.removeDiscovery()
         const server = this.server

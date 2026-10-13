@@ -5,22 +5,29 @@ import type { Terminal as HeadlessTerminal } from '@xterm/headless'
 // build and gets bundled — it must be, because electron-builder.yml ships only
 // an allowlist of node_modules, so a runtime require would crash the packaged app.
 import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.js'
+// Same reason as above: bundled by file so the packaged app does not need it in node_modules.
+import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.js'
 import { TerminalManager } from './TerminalManager'
 
 /**
- * Keeps a headless xterm copy of the terminals the Control API drives, so an
- * AI can read the screen the way the user sees it.
+ * Keeps a headless xterm copy of every terminal in the main process.
+ *
+ * Two readers depend on it:
+ *  - the Control API, so an AI can read the screen the way the user sees it;
+ *  - terminal history. The renderer's xterm dies with the renderer (a crash
+ *    under memory pressure, a closed window) while the ptys live on, so a new
+ *    window redraws from here instead of starting blank. Snapshots written to
+ *    disk from here also bring history back after a force-quit.
  *
  * Why a terminal emulator instead of the raw output: agent CLIs are TUIs that
  * redraw in place with cursor movement. Stripping escape codes from the byte
  * stream yields every intermediate frame glued together; replaying it through
  * an emulator yields the final screen.
  *
- * While the Control API is on, every terminal gets a mirror from the moment
- * its pty starts, because the API may read any session and a mirror only knows
- * what was printed after it was attached. Asking the program to repaint instead
- * would send SIGWINCH, which leaves repaint debris in the user's scrollback.
- * While the API is off there are no mirrors, so the cost is zero.
+ * Every terminal gets a mirror from the moment its pty starts, because a mirror
+ * only knows what was printed after it was attached. Asking the program to
+ * repaint instead would send SIGWINCH, which leaves repaint debris in the
+ * user's scrollback.
  */
 
 /** Pty size before the renderer reports the real one. Matches TerminalView's fallback. */
@@ -28,9 +35,10 @@ const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 30
 
 /**
- * Matches the most `read_output --tail` can return (2000 lines): history beyond
- * that is unreachable, so keeping it would be memory nobody can read.
- * Measured 2026-09-23: ~0.8MB per fully-filled mirror.
+ * How much history a mirror keeps — and so what a new window or a restart can
+ * bring back. Also the most `read_output --tail` can return.
+ * Measured 2026-10-13 (fully-filled mirror): heap 0.86MB plus the line buffers,
+ * which scale with width — RSS ~2.5MB at 80 columns, ~8MB at 200.
  */
 const MIRROR_SCROLLBACK = 2000
 
@@ -87,21 +95,29 @@ export interface InputBox {
 
 interface Mirror {
     term: HeadlessTerminal
+    serializer: SerializeAddon
     lastOutputAt: number
     exited: boolean
     /** Attached to a pty that was already running, so earlier output is missing. */
     partial: boolean
 }
 
+export interface SnapshotOptions {
+    /**
+     * For a pty that no longer exists: drop terminal modes and the alternate
+     * screen, which describe a program that will not be there to use them.
+     */
+    forDisk?: boolean
+}
+
 export class TerminalMirror {
     private readonly mirrors = new Map<string, Mirror>()
-    private mirrorAll = false
 
     constructor(private readonly terminals: TerminalManager) {
         terminals.events.on('created', (id, cols, rows) => {
             // Runs before the new pty's first output is delivered, so a mirror
             // attached here sees everything.
-            if (this.mirrorAll) this.attach(id)
+            this.attach(id)
             const mirror = this.mirrors.get(id)
             if (!mirror) return
             mirror.exited = false
@@ -125,25 +141,66 @@ export class TerminalMirror {
     }
 
     /** Start mirroring. Call before the pty exists to capture everything it prints. */
-    attach(id: string): void {
+    attach(id: string, size?: { cols: number; rows: number }): void {
         if (this.mirrors.has(id)) return
-        const size = this.terminals.getSize(id) ?? { cols: DEFAULT_COLS, rows: DEFAULT_ROWS }
+        const initial = size ?? this.terminals.getSize(id) ?? { cols: DEFAULT_COLS, rows: DEFAULT_ROWS }
         const term = new Terminal({
-            cols: size.cols,
-            rows: size.rows,
+            cols: initial.cols,
+            rows: initial.rows,
             scrollback: MIRROR_SCROLLBACK,
             allowProposedApi: true
         })
-        this.mirrors.set(id, { term, lastOutputAt: 0, exited: false, partial: this.terminals.hasTerminal(id) })
+        const serializer = new SerializeAddon()
+        term.loadAddon(serializer)
+        this.mirrors.set(id, { term, serializer, lastOutputAt: 0, exited: false, partial: this.terminals.hasTerminal(id) })
     }
 
     /**
-     * Mirror every terminal, present and future. Terminals that are already
-     * running start with an empty mirror and are reported as partial.
+     * Lays history from a previous run into a fresh mirror, followed by a
+     * marker line, before the new pty prints anything. Resolves once both are
+     * parsed — the caller must not start the pty earlier, or its first output
+     * would land above the marker.
      */
-    setMirrorAll(enabled: boolean): void {
-        this.mirrorAll = enabled
-        if (enabled) for (const id of this.terminals.listTerminalIds()) this.attach(id)
+    seed(id: string, size: { cols: number; rows: number }, history: string, marker: string): Promise<void> {
+        this.attach(id, size)
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return Promise.resolve()
+        return new Promise((resolve) => {
+            mirror.term.write(history, () => {
+                // The saved cursor may sit inside the old screen (an agent's
+                // input box); writing the marker there would overwrite it.
+                mirror.term.write(cursorBelowContent(mirror.term) + marker, () => resolve())
+            })
+        })
+    }
+
+    /**
+     * The terminal's history and screen as escape sequences that redraw it.
+     * Serialized inside a write callback, so the result holds exactly the
+     * output written before this call — the caller can hold back later output
+     * and send it after the snapshot without gaps or repeats.
+     */
+    snapshot(id: string, options: SnapshotOptions = {}): Promise<string | null> {
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return Promise.resolve(null)
+        const serialize = (): string => mirror.serializer.serialize({
+            scrollback: MIRROR_SCROLLBACK,
+            excludeModes: options.forDisk,
+            excludeAltBuffer: options.forDisk
+        })
+        return new Promise((resolve) => {
+            // A mirror disposed mid-flush never calls back; serialize what it has.
+            const timer = setTimeout(() => resolve(this.mirrors.has(id) ? serialize() : null), FLUSH_TIMEOUT_MS)
+            mirror.term.write('', () => {
+                clearTimeout(timer)
+                resolve(serialize())
+            })
+        })
+    }
+
+    /** Cmd+K cleared the terminal on screen; history must not bring it back. */
+    clear(id: string): void {
+        this.mirrors.get(id)?.term.clear()
     }
 
     /** True when output printed before the mirror was attached is missing from it. */
@@ -301,6 +358,23 @@ export class TerminalMirror {
             mirror.term.resize(cols, rows)
         }
     }
+}
+
+/**
+ * Moves the cursor to the start of the line after the last non-blank row on
+ * screen (the top row when the screen is blank).
+ */
+function cursorBelowContent(term: HeadlessTerminal): string {
+    const buffer = term.buffer.active
+    let lastRow = -1
+    for (let row = term.rows - 1; row >= 0; row--) {
+        if ((buffer.getLine(buffer.baseY + row)?.translateToString(true) ?? '').trim() !== '') {
+            lastRow = row
+            break
+        }
+    }
+    // CSI row;col H is 1-based; \r\n from the last row scrolls instead of overwriting.
+    return lastRow < 0 ? '\x1b[0m\x1b[1;1H' : `\x1b[0m\x1b[${lastRow + 1};1H\r\n`
 }
 
 function collapseSpaces(text: string): string {

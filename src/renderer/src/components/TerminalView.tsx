@@ -127,6 +127,10 @@ export function TerminalView({
     const pendingViewportRefreshWritesRef = useRef<number>(0)
     // initialCommand가 이미 실행되었는지 추적 (StrictMode에서 2번 실행 방지)
     const initialCommandExecutedRef = useRef<boolean>(false)
+    // This component asked for the pty that main spawned — possibly from a mount
+    // React already discarded (StrictMode runs effects twice in development).
+    // The start command is still ours to type; a pty found running is not.
+    const spawnedHereRef = useRef<boolean>(false)
     // keyboardSettings를 ref로 저장하여 실시간 적용 지원
     const keyboardSettingsRef = useRef(keyboardSettings)
 
@@ -518,6 +522,8 @@ export function TerminalView({
         // otherwise removed sessions leak IPC listeners that keep writing
         // into disposed xterm instances.
         let dataCleanup: (() => void) | null = null
+        // Set by the effect cleanup; createTerminal can resolve after it.
+        let disposed = false
 
         if (visible) {
             try {
@@ -532,7 +538,25 @@ export function TerminalView({
             }
         }
 
-        window.api.createTerminal(id, cwd, initialCols, initialRows, shell).then(() => {
+        window.api.createTerminal(id, cwd, initialCols, initialRows, shell).then((attach) => {
+            if (!attach.existed) spawnedHereRef.current = true
+            if (disposed) {
+                // Unmounted while waiting: release the output main is holding for us.
+                window.api.terminalAttached(id, attach.attachToken)
+                return
+            }
+
+            // History kept by the main process: what this terminal printed
+            // before this view existed (a reopened window, a reloaded renderer,
+            // a previous run). Live output is held back until we confirm below.
+            if (attach.snapshot) {
+                try {
+                    term.write(attach.snapshot)
+                } catch (e) {
+                    console.error(`[Terminal ${id.slice(0, 8)}] history restore failed:`, e)
+                }
+            }
+
             // Handle scroll shortcuts (⌘↑/⌘↓)
             term.attachCustomKeyEventHandler((event) => {
                 const scrollShortcutsEnabled = keyboardSettingsRef.current?.scrollShortcuts ?? true
@@ -599,10 +623,16 @@ export function TerminalView({
                     console.error('Failed to detect terminal notification', e)
                 }
             })
+            window.api.terminalAttached(id, attach.attachToken)
 
             // Execute initial/resume command if provided (only once)
             if (!initialCommandExecutedRef.current) {
-                if (resumeCommand) {
+                if (!spawnedHereRef.current) {
+                    // The session was already running (this window was reopened or
+                    // the renderer reloaded). Whatever runs there would take the
+                    // command as input — a live agent submits it as a prompt.
+                    initialCommandExecutedRef.current = true
+                } else if (resumeCommand) {
                     // Resume a previous CLI session (takes priority over initialCommand)
                     initialCommandExecutedRef.current = true
                     setTimeout(() => {
@@ -691,6 +721,7 @@ export function TerminalView({
             terminalElement?.removeEventListener('contextmenu', contextMenuHandler, { capture: true })
             resizeManagerRef.current?.dispose()
             resizeManagerRef.current = null
+            disposed = true
             dataCleanup?.()
             dataCleanup = null
             debugUnregisterTerminal(id)

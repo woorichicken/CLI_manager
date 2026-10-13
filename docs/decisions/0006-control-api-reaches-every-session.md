@@ -32,7 +32,9 @@ The maintainer decided (2026-09-30): if the API is switched on, all sessions are
 - **"Disconnect AI" interrupts, it does not lock.** It clears the mark and makes a wait in flight
   fail with `409 disconnected`. The next call from the API marks the session again. Ending access
   means switching the API off.
-- **Every terminal is mirrored while the API is on**, from the moment its pty starts. A mirror only
+- **Every terminal is mirrored while the API is on**, from the moment its pty starts. *(Since
+  [0008](0008-terminal-history-lives-in-main.md) every terminal is mirrored always — the mirror is
+  also the terminal's history.)* A mirror only
   knows what was printed after it was attached, so attaching on first access would hand the AI an
   empty screen — and question detection would be blind until the program printed again. The
   alternatives were rejected:
@@ -54,9 +56,11 @@ The maintainer decided (2026-09-30): if the API is switched on, all sessions are
   than 0005's, and the Settings text says so.
 - Mirror cost now scales with open terminals, not AI sessions: 0.86MB each when full, and about
   0.001% CPU per terminal at a real agent's output rate (`scripts/bench-control-api.mjs`,
-  2026-09-30). Still zero while the API is off.
+  2026-09-30). Still zero while the API is off. *(0.86MB was heap only; with line buffers it is
+  ~2.5–8MB by width, and since 0008 it is paid with the API off too.)*
 - A terminal that was already running when the API was switched on has an incomplete mirror. It is
-  reported as `screenPartial: true` rather than guessed at.
+  reported as `screenPartial: true` rather than guessed at. *(Cannot happen since 0008: mirrors are
+  attached at pty start whether or not the API is on.)*
 - The user and an AI can type into the same session at once; nothing arbitrates. See `backlog.md`.
 - After an app restart the pty is new. The mark persists, the screen and the running work do not.
 

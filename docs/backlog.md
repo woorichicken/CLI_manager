@@ -19,6 +19,16 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `src/renderer/src/components/TerminalView.tsx` — 렌더러 xterm 스크롤백 10,000줄이 세션 수만큼 메모리를 잡는다
+- Discovered: 2026-10-13, 「용량 때문에 화면이 하얘진다」 제보로 히스토리 유실을 고치다가(0008).
+- Evidence: xterm 줄 버퍼는 폭에 비례한다 — headless 실측 200열 2,000줄 = arrayBuffers 4.7MB, 그러니 렌더러의 `scrollback: 10000` 은
+  가득 차면 터미널당 약 24MB(200열). 실사용 세션 44개가 다 차면 1GB 근처다. 실행 중 앱의 렌더러는 새로 뜬 지 40분에 RSS 321MB
+  (`ps -axo rss,etime,command`). 하얀 화면의 원인이 OOM 인지는 **확인 못 했다** — 그때는 크래시 사유를 남기는 코드가 없었다.
+- Why deferred: 히스토리 유실 수정과 별개 결정이다(보관 줄 수를 줄이면 사용자가 위로 스크롤할 수 있는 양이 준다).
+- Trigger: 하얀 화면이 다시 나올 때 — 이제 main 로그에 `[renderer] gone: <reason>` 이 남으니 `oom` 인지부터 본다.
+- Fix direction: main 미러가 2,000줄을 들고 있으니 렌더러 스크롤백을 줄여도 새 창·재시작 복원은 그대로다. 줄이기 전에 세션 수별 렌더러 RSS 를 잰다.
+- Owner: 없음
+
 ### `scripts/post-release.cjs` — README 의 다운로드 링크는 릴리즈 때 갱신하지 않는다
 - Discovered: 2026-10-12, 레딧·쓰레드 공유 준비 중. README 「Download」 표가 R2 의 `cli-manager-1.5.0-*.dmg` 를 직접 가리키고 있었다(최신 v1.13.0).
 - Evidence: `post-release.cjs` 의 `SITE_LINK_FILES` 는 웹사이트 파일 3개뿐이다 — 사이트는 1.13.0 으로 맞는데 README 는 4월 이후 그대로였다.
@@ -301,6 +311,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: 재시작 후 `aiControl` 과 세션 id 는 남지만 pty 는 새로 뜨고 미러는 비어 있다. AI 는 빈 화면을 idle 로 읽을 수
   있다. 제안: 세션 응답에 "재시작됨" 표시, AI 세션은 `--resume` 으로 다시 띄우기. `clearAllCliSessionIds()`
   (`src/main/index.ts` 849행 부근)는 정의만 있고 호출처가 없어 대화 id 는 종료 때 지워지지 않는다.
+- Update 2026-10-13: 화면은 이제 돌아온다 — 미러가 디스크 히스토리로 시작해서 AI 가 빈 화면 대신 복원본과 "Restored from previous session" 줄을 읽는다(0008). 돌던 작업이 멈추는 건 그대로다.
 - Owner: 없음
 
 ### 개선안 — Control API 로 세션 메모 쓰기
