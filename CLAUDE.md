@@ -241,7 +241,7 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
      날아가 "터미널이 리셋됐다"로 보인다. 회귀는 `t12-workspace-list-remount.spec.ts`가 잡는다
      (지금은 6번 덕에 히스토리를 다시 그리지만, 재마운트는 여전히 터미널마다 스냅샷 왕복이다)
 6. **뷰는 붙을 때 히스토리를 받고, 확인한 뒤에야 실시간 출력을 받는다** (TerminalManager.attachView)
-   - `terminal-create` → `{ existed, snapshot, attachToken }`. main 은 그 터미널 출력을 보류하고, 미러를 write 콜백 안에서
+   - `terminal-create` → `{ existed, snapshot, snapshotSize, attachToken }`. main 은 그 터미널 출력을 보류하고, 미러를 write 콜백 안에서
      직렬화한다(보류 직전까지의 출력만 정확히 담김). 뷰가 스냅샷을 쓰고 리스너를 단 뒤 `terminal-attached` 를 보내면 보류분을 보낸다.
      터미널당 한 번에 하나만 붙고, 확인이 안 오면 3초 뒤 푼다. 순서를 바꾸면 출력이 빠지거나 두 번 찍힌다
    - `existed: true` 인 뷰는 시작·resume 명령을 **절대 다시 입력하지 않는다**. 렌더러가 죽거나 창을 다시 열면 PTY 는 살아 있는데,

@@ -19,6 +19,16 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `scripts/release.cjs` — 사전 점검이 빌드 없이 남아 있는 `out/` 으로 테스트를 돌린다
+- Discovered: 2026-10-13 v1.13.1 릴리즈. 첫 `--check` 에서 6건 실패 — T29·T30 5건이 주 체크아웃의 10-09 빌드(`out/main/index.js` 에
+  `attachToken` 0건)를 상대로 돌았다. `pnpm build` 뒤 같은 점검은 133건 통과.
+- Evidence: 사전 점검은 typecheck 다음 바로 `pnpm test:term` 이고, 테스트는 빌드된 `out/` 을 띄운다. 빌드는 그 뒤 `pnpm build:mac` 에서야 한다.
+  그래서 **새 코드의 회귀가 옛 빌드로 통과**할 수 있다 — 이번엔 새 테스트가 옛 앱에서 실패해서 드러났다.
+- Why deferred: 릴리즈 도중 발견. 스크립트 변경은 릴리즈와 별개로 검증해야 한다.
+- Trigger: 다음 릴리즈 전.
+- Fix direction: 테스트 단계 앞에 `pnpm build` 를 넣거나, `out/` 이 HEAD 보다 오래됐으면 실패로 끊는다.
+- Owner: 없음
+
 ### xterm 리사이즈 — 창이 커질 때 커서가 맨 아래면 스크롤백 줄이 화면으로 내려와 Claude 리페인트에 지워진다
 - Discovered: 2026-10-13, T29 에 「에이전트 리페인트 뒤에도 구분선이 남는가」 검사를 넣다가.
 - Evidence: 30줄 → 43줄 맞춤 리사이즈가 지우기와 겹치자, 스크롤백 맨 아래였던 구분선(305행, 화면 시작 306)이 화면으로 내려와
