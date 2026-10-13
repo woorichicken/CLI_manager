@@ -19,24 +19,47 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### xterm 리사이즈 — 창이 커질 때 커서가 맨 아래면 스크롤백 줄이 화면으로 내려와 Claude 리페인트에 지워진다
+- Discovered: 2026-10-13, T29 에 「에이전트 리페인트 뒤에도 구분선이 남는가」 검사를 넣다가.
+- Evidence: 30줄 → 43줄 맞춤 리사이즈가 지우기와 겹치자, 스크롤백 맨 아래였던 구분선(305행, 화면 시작 306)이 화면으로 내려와
+  지워졌다. xterm 은 행이 늘 때 커서가 맨 아래면 스크롤백에서 줄을 끌어내리고, Claude 는 다시 그릴 때 화면 줄을 전부 지운다.
+  이번 변경 전에도 있던 동작이다 — 그때는 Claude 자신의 이전 출력이 같은 식으로 사라졌다. 미러도 같은 리사이즈를 거치므로 두 사본은 같이 잃는다.
+- Why deferred: 히스토리 복원과 별개인 xterm·Claude 상호작용이고, 실제 복원 흐름(리사이즈가 리페인트보다 먼저 끝남)에서는 재현되지 않았다.
+- Trigger: 창 크기를 키운 뒤 대화 몇 줄이 사라졌다는 제보가 나올 때.
+- Fix direction: 행이 늘 때 스크롤백을 끌어내리지 않게 xterm 리사이즈 전에 빈 줄로 커서를 올려 두는 식의 보정 — 먼저 실제 Claude 로 재현을 잰다.
+- Owner: 없음
+
+### `electron-vite.config.ts` — 이 설정 파일은 읽히지 않는다
+- Discovered: 2026-10-13, StrictMode 확인용 개발 번들을 만들다가.
+- Evidence: electron-vite 는 `electron.vite.config.*` 를 찾는다. 같은 내용으로 `--config` 를 주면 `Cannot find package '@vitejs/plugin-react'` 로
+  죽는다 — 그 플러그인은 설치돼 있지 않다(`ls node_modules/@vitejs` 없음). 지금 빌드는 기본 설정(esbuild JSX)으로 돌고 `@renderer` alias 도 없다.
+- Why deferred: 빌드는 정상이고, 이름을 바꾸면 플러그인 설치·alias 사용처 확인까지 따라오는 별개 변경이다.
+- Trigger: 빌드 설정(alias·React 플러그인·Fast Refresh)을 실제로 바꾸려 할 때 — 그 전에 이 파일이 읽히는지부터 고친다.
+- Owner: 없음
+
+### `src/renderer/src/App.tsx` — 렌더러가 새로 뜨면 보고 있던 세션이 선택돼 있지 않다
+- Discovered: 2026-10-13, 크래시 자동 복구(0008)를 캡처하다가. 새로고침 뒤 화면이 「please select a terminal」로 시작했다.
+- Evidence: 기록은 미러에서 복원되지만 활성 세션은 렌더러 상태라 사라진다. 사용자는 사이드바를 한 번 눌러야 한다.
+- Why deferred: 히스토리 유실 수정과 별개 UX 이고, 앱 첫 실행 때도 같은 동작이다(어디로 복귀할지 정해야 함).
+- Trigger: 크래시 복구·창 재오픈에서 「마지막으로 보던 세션으로」 요청이 나올 때.
+- Owner: 없음
+
+### `src/renderer/src/components/TerminalView.tsx` — 렌더러 xterm 스크롤백 10,000줄이 세션 수만큼 메모리를 잡는다
+- Discovered: 2026-10-13, 「용량 때문에 화면이 하얘진다」 제보로 히스토리 유실을 고치다가(0008).
+- Evidence: xterm 줄 버퍼는 폭에 비례한다 — headless 실측 200열 2,000줄 = arrayBuffers 4.7MB, 그러니 렌더러의 `scrollback: 10000` 은
+  가득 차면 터미널당 약 24MB(200열). 실사용 세션 44개가 다 차면 1GB 근처다. 실행 중 앱의 렌더러는 새로 뜬 지 40분에 RSS 321MB
+  (`ps -axo rss,etime,command`). 하얀 화면의 원인이 OOM 인지는 **확인 못 했다** — 그때는 크래시 사유를 남기는 코드가 없었다.
+- Why deferred: 히스토리 유실 수정과 별개 결정이다(보관 줄 수를 줄이면 사용자가 위로 스크롤할 수 있는 양이 준다).
+- Trigger: 하얀 화면이 다시 나올 때 — 이제 main 로그에 `[renderer] gone: <reason>` 이 남으니 `oom` 인지부터 본다.
+- Fix direction: main 미러가 2,000줄을 들고 있으니 렌더러 스크롤백을 줄여도 새 창·재시작 복원은 그대로다. 줄이기 전에 세션 수별 렌더러 RSS 를 잰다.
+- Owner: 없음
+
 ### `scripts/post-release.cjs` — README 의 다운로드 링크는 릴리즈 때 갱신하지 않는다
 - Discovered: 2026-10-12, 레딧·쓰레드 공유 준비 중. README 「Download」 표가 R2 의 `cli-manager-1.5.0-*.dmg` 를 직접 가리키고 있었다(최신 v1.13.0).
 - Evidence: `post-release.cjs` 의 `SITE_LINK_FILES` 는 웹사이트 파일 3개뿐이다 — 사이트는 1.13.0 으로 맞는데 README 는 4월 이후 그대로였다.
   이번엔 표를 `releases/latest` + 파일 이름 안내로 바꿔서 버전이 박히지 않게 했다(문서만).
 - Why deferred: 직접 다운로드 링크를 README 에 다시 두려면 릴리즈 스크립트 코드 변경이 필요하다.
 - Trigger: README 에 버전별 직접 링크를 다시 넣고 싶을 때 — 그때 `post-release.cjs` 가 README 도 갱신·검증하게 한다.
-- Owner: 없음
-
-### `src/renderer/src/App.tsx` `resumeCommand` — 재개 명령이 이미 돌고 있는 Claude 입력창에 들어간다
-- Discovered: 2026-10-12, 피드백 배치 fb-1011b(라쏘런 4개 프로젝트 세션을 한 매니저가 관리).
-- Evidence: 세션 2곳(symphony-typescript · content-ops-platform)의 Claude 입력창에 사람이 치지 않은 `cldy --resume <id>` 가 들어 있었고,
-  매니저가 `clim send` 로 보낸 지시문이 그 뒤에 붙어 한 덩어리로 제출됐다(화면: `❯ cldy --resume c9e36ed8-… 3회차 지시입니다 …`).
-  두 곳 다 바로 위가 `Compacted while idle` — Claude 는 떠 있었고 셸 프롬프트가 아니었다. 그날은 Claude 가 지시문으로 읽어 피해는 없었다.
-  재개 명령은 `resumeCommandFor()`(`src/renderer/src/utils/resumeCommand.ts`)가 만들어 `App.tsx` 1692행에서 터미널에 넘긴다 —
-  「이미 에이전트가 떠 있으면 치지 않는다」 확인이 있는지는 보지 않았다(가설: 터미널 뷰가 다시 붙을 때 한 번 더 친다).
-- Why deferred: 배치 매니저 세션이었다. 앱 코드는 범위 밖.
-- Trigger: 세션 복원·재개 코드를 만질 때, 또는 입력창에 `--resume` 이 또 보일 때.
-- Fix direction: 재개 명령은 pty 의 전경 프로세스가 셸일 때만 친다. 재현은 Control API 로 연 세션을 두고 렌더러만 새로고침하는 것부터.
 - Owner: 없음
 
 ### `src/main` 세션 복원 — 앱 재시작 때 세션을 전부 한꺼번에 띄워 머신이 멈추고 MCP 가 빠진다
@@ -313,6 +336,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: 재시작 후 `aiControl` 과 세션 id 는 남지만 pty 는 새로 뜨고 미러는 비어 있다. AI 는 빈 화면을 idle 로 읽을 수
   있다. 제안: 세션 응답에 "재시작됨" 표시, AI 세션은 `--resume` 으로 다시 띄우기. `clearAllCliSessionIds()`
   (`src/main/index.ts` 849행 부근)는 정의만 있고 호출처가 없어 대화 id 는 종료 때 지워지지 않는다.
+- Update 2026-10-13: 화면은 이제 돌아온다 — 미러가 디스크 히스토리로 시작해서 AI 가 빈 화면 대신 복원본과 "Restored from previous session" 줄을 읽는다(0008). 돌던 작업이 멈추는 건 그대로다.
 - Owner: 없음
 
 ### 개선안 — Control API 로 세션 메모 쓰기

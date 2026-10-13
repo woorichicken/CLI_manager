@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, TerminalAttachResult } from '../shared/types'
 
 declare global {
     interface Window {
@@ -83,7 +83,10 @@ declare global {
             openFileInEditor: (filePath: string, baseCwd: string, line?: number, column?: number) => Promise<{ success: boolean; error?: string }>
 
             // Terminal
-            createTerminal: (id: string, cwd: string, cols: number, rows: number, shell?: string) => Promise<boolean>
+            /** Opens a view on a terminal, spawning it if needed. Draw `snapshot`, then call terminalAttached. */
+            createTerminal: (id: string, cwd: string, cols: number, rows: number, shell?: string) => Promise<TerminalAttachResult>
+            /** The view drew the snapshot and listens for output; held output follows. */
+            terminalAttached: (id: string, attachToken: number) => void
             resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>
             killTerminal: (id: string) => Promise<void>
             hasRunningProcess: (id: string) => Promise<boolean>

@@ -26,6 +26,8 @@ import { AgentStatusResolver, TerminalLookupEntry } from './AgentStatusResolver'
 import { UsageTracker, UsageThresholdAlert } from './UsageTracker'
 import { parseDiffSummary, parseFileDiff } from './diffParser'
 import { TerminalMirror } from './TerminalMirror'
+import { ScrollbackStore } from './ScrollbackStore'
+import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { net } from 'electron'
@@ -240,12 +242,70 @@ const broadcast = (channel: string, payload: unknown): void => {
 // ---------------------------------------------------------------------------
 
 const terminalMirror = new TerminalMirror(terminalManager)
+
+// ---------------------------------------------------------------------------
+// Terminal history
+//
+// The mirror above holds every terminal's history in this process, so a
+// renderer that crashed or a window that was reopened redraws it instead of
+// starting blank, and ScrollbackStore keeps it on disk for a force-quit.
+// ---------------------------------------------------------------------------
+
+/** Ids of the sessions in the sidebar — the terminals whose history is kept. */
+function sidebarSessionIds(): Set<string> {
+    const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
+    return new Set(workspaces.flatMap((w) => (w.sessions ?? []).map((s) => s.id)))
+}
+
+const scrollbackStore = new ScrollbackStore(
+    path.join(app.getPath('userData'), 'scrollback'),
+    terminalManager,
+    terminalMirror,
+    sidebarSessionIds,
+    // Tests shorten the interval instead of waiting it out.
+    Number(process.env.CLIMANAGER_SCROLLBACK_SAVE_MS) || undefined
+)
+
+/** Marks where restored history ends and the new run begins. */
+function restoredHistoryMarker(savedAt: number): string {
+    const saved = new Date(savedAt)
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const stamp = `${saved.getFullYear()}-${pad(saved.getMonth() + 1)}-${pad(saved.getDate())} ${pad(saved.getHours())}:${pad(saved.getMinutes())}`
+    return `\x1b[2m── Restored from previous session · saved ${stamp} ──\x1b[0m\r\n`
+}
+
+terminalManager.setHistoryProvider({
+    prepare: async (id, cols, rows) => {
+        // A mirror that is still here (the pty was restarted in this run) already holds the history.
+        if (terminalMirror.has(id)) return
+        const saved = scrollbackStore.load(id)
+        if (!saved) return
+        await terminalMirror.seed(id, { cols, rows }, saved.data, restoredHistoryMarker(saved.savedAt))
+    },
+    snapshot: (id) => terminalMirror.snapshot(id),
+    clear: (id) => {
+        terminalMirror.clear(id)
+        scrollbackStore.markDirty(id)
+    }
+})
+
+/** Bounded: quitting must not wait on a mirror that never answers. */
+const HISTORY_SAVE_ON_QUIT_TIMEOUT_MS = 2000
+
+async function saveHistoryBeforeQuit(): Promise<void> {
+    await Promise.race([
+        scrollbackStore.saveDirty(),
+        new Promise((resolve) => setTimeout(resolve, HISTORY_SAVE_ON_QUIT_TIMEOUT_MS))
+    ])
+}
+
 const controlApiService = new ControlApiService({
     store,
     terminals: terminalManager,
     mirror: terminalMirror,
     broadcast,
-    hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId)
+    hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId),
+    onSessionForgotten: (sessionId) => scrollbackStore.forget(sessionId)
 })
 const controlApiServer = new ControlApiServer({
     service: controlApiService,
@@ -595,6 +655,10 @@ function isPrimaryModifier(input: Electron.Input): boolean {
     return process.platform === 'darwin' ? input.meta : input.control
 }
 
+/** At most this many automatic reloads after a renderer crash within the window below. */
+const RENDERER_RELOAD_LIMIT = 3
+const RENDERER_RELOAD_WINDOW_MS = 60_000
+
 function createWindow(): void {
     // Create the browser window.
     mainWindow = new BrowserWindow({
@@ -621,6 +685,25 @@ function createWindow(): void {
         if (!isTestHeadless) {
             mainWindow?.show()
         }
+    })
+
+    // A renderer that dies (memory pressure, a GPU fault) leaves a white
+    // window while every pty keeps running. Reloading brings the UI back, and
+    // terminal history comes back from the main-process mirror.
+    const window = mainWindow
+    const reloads: number[] = []
+    window.webContents.on('render-process-gone', (_event, details) => {
+        console.error(`[renderer] gone: ${details.reason} (exit code ${details.exitCode})`)
+        if (details.reason === 'clean-exit' || window.isDestroyed()) return
+        const now = Date.now()
+        while (reloads.length > 0 && now - reloads[0] > RENDERER_RELOAD_WINDOW_MS) reloads.shift()
+        if (reloads.length >= RENDERER_RELOAD_LIMIT) {
+            // Crashing on every load: reloading again would only loop.
+            console.error('[renderer] crashed repeatedly; not reloading again')
+            return
+        }
+        reloads.push(now)
+        window.webContents.reload()
     })
 
     // Cmd+/- 기본 줌 완전 비활성화 (터미널 폰트만 조정)
@@ -891,6 +974,10 @@ app.whenReady().then(async () => {
     // Validate persisted cliSessionIds against Claude's session storage
     validateCliSessionIds()
 
+    // Histories of sessions deleted since the last run; then keep saving.
+    scrollbackStore.prune()
+    scrollbackStore.start()
+
     // Set app user model id for windows
     electronApp.setAppUserModelId('com.climanager.app')
 
@@ -1128,6 +1215,28 @@ app.whenReady().then(async () => {
             }
         }
     }
+
+    // Follow the conversation Claude is actually on (it changes on /resume),
+    // so a restart resumes that one rather than the id injected at start.
+    const claudeSessionSync = new ClaudeSessionSync({
+        configDir: () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
+        ptyPids: () => terminalManager.listPtyPids(),
+        intervalMs: Number(process.env.CLIMANAGER_CLAUDE_SYNC_MS) || undefined,
+        onConversation: (terminalId, cliSessionId) => {
+            const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
+            const session = workspaces.flatMap((w) => w.sessions ?? []).find((s) => s.id === terminalId)
+            if (!session || session.cliSessionId === cliSessionId) return
+            console.log(`[claude-session] ${terminalId} → ${cliSessionId} (was ${session.cliSessionId ?? 'none'})`)
+            persistDetectedSession({
+                terminalId,
+                cliSessionId,
+                cliToolName: 'claude',
+                // Keep the alias that started it (`cldy`); a terminal that ran something else falls back to plain claude.
+                baseCommand: session.cliToolName === 'claude' && session.cliCommand ? session.cliCommand : 'claude'
+            })
+        }
+    })
+    claudeSessionSync.start()
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)
     ipcMain.handle('update-session-cli-info', (_, workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string): boolean => {
@@ -3146,6 +3255,7 @@ app.on('before-quit', async (event) => {
     } else if (response === 1) {
         // Session IDs preserved — validateCliSessionIds() cleans up on next startup
         isQuitting = true
+        await saveHistoryBeforeQuit()
         terminalManager.killAll()
         // Quit after a short delay to ensure cleanup (use quit() not exit() for proper cleanup)
         setTimeout(() => {
@@ -3184,8 +3294,9 @@ function createTray(): void {
         { type: 'separator' },
         {
             label: 'Quit',
-            click: () => {
+            click: async () => {
                 isQuitting = true
+                await saveHistoryBeforeQuit()
                 terminalManager.killAll()
                 app.quit()
             }
@@ -3346,9 +3457,11 @@ ipcMain.handle('install-update', () => {
     // for seconds; tell the windows first so they show why instead of freezing.
     sendUpdateStatus('installing')
     setTimeout(() => {
-        // Clean up all terminals before installing update
-        terminalManager.killAll()
-        // Install and restart with update
-        autoUpdater.quitAndInstall()
+        void saveHistoryBeforeQuit().then(() => {
+            // Clean up all terminals before installing update
+            terminalManager.killAll()
+            // Install and restart with update
+            autoUpdater.quitAndInstall()
+        })
     }, INSTALL_PAINT_DELAY_MS)
 })

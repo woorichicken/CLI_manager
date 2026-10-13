@@ -4,7 +4,7 @@ import os from 'os'
 import { execFile, execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { CLISessionTracker } from './CLISessionTracker'
-import { SESSION_ID_ENV } from '../shared/types'
+import { SESSION_ID_ENV, TerminalAttachResult } from '../shared/types'
 const pty = require('node-pty')
 
 // Default shell based on platform
@@ -26,6 +26,25 @@ const ANSI_REGEX = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[PX^_].*?\x1b\
 // for interactive echo but merges a whole TUI frame into one message.
 const OUTPUT_FLUSH_MS = 4
 const OUTPUT_FLUSH_BYTES = 256 * 1024
+
+/**
+ * How long output is held for a view that is drawing its snapshot. A view that
+ * dies before confirming must not freeze the terminal for every other window.
+ */
+const ATTACH_HOLD_TIMEOUT_MS = 3000
+
+/**
+ * Terminal history kept outside the renderer, so a view that attaches late —
+ * a reopened window, a reloaded renderer, the grid window — can redraw it.
+ */
+export interface TerminalHistoryProvider {
+    /** Before a new pty spawns: lay down history kept from a previous run. */
+    prepare(id: string, cols: number, rows: number): Promise<void>
+    /** Everything printed so far, as escape sequences that redraw it, with the size to replay them at. */
+    snapshot(id: string): Promise<{ data: string; cols: number; rows: number } | null>
+    /** The user cleared the terminal (Cmd+K). */
+    clear(id: string): void
+}
 
 /**
  * Lifecycle events for observers that need a pty without owning it (the
@@ -61,6 +80,13 @@ export class TerminalManager {
     private cliTracker: CLISessionTracker | null = null
     private pendingOutput: Map<string, PendingOutput> = new Map()
     private sizes: Map<string, { cols: number; rows: number }> = new Map()
+    private history: TerminalHistoryProvider | null = null
+    /** Ptys being spawned, so a second view asking at the same time waits instead of spawning again. */
+    private spawning: Map<string, Promise<void>> = new Map()
+    /** Views still drawing a snapshot, per terminal. Output waits while any are open. */
+    private holds: Map<string, Map<number, NodeJS.Timeout>> = new Map()
+    private releaseWaiters: Map<string, Array<() => void>> = new Map()
+    private nextAttachToken = 1
 
     readonly events = new TerminalEventBus()
 
@@ -252,10 +278,18 @@ export class TerminalManager {
         return DEFAULT_SHELL
     }
 
+    setHistoryProvider(history: TerminalHistoryProvider): void {
+        this.history = history
+    }
+
     private setupIpc() {
-        ipcMain.handle('terminal-create', (_, id: string, cwd: string, cols: number, rows: number, shell?: string) => {
-            this.createTerminal(id, cwd, cols, rows, shell)
-            return true
+        ipcMain.handle('terminal-create', (_, id: string, cwd: string, cols: number, rows: number, shell?: string) =>
+            this.attachView(id, cwd, cols, rows, shell)
+        )
+
+        // The view drew its snapshot and listens for output now.
+        ipcMain.on('terminal-attached', (_, id: string, token: number) => {
+            this.releaseHold(id, token)
         })
 
         ipcMain.on('terminal-input', (_, id: string, data: string) => {
@@ -287,6 +321,7 @@ export class TerminalManager {
 
         // Clear terminal buffer (Cmd+K) - broadcasts clear event to all windows
         ipcMain.on('terminal-clear', (_, id: string) => {
+            this.history?.clear(id)
             // Broadcast clear event to all windows (renderer will call xterm.clear())
             const channel = `terminal-clear-${id}`
             BrowserWindow.getAllWindows().forEach(win => {
@@ -325,6 +360,7 @@ export class TerminalManager {
         this.terminals.delete(id)
         this.sizes.delete(id)
         this.clearBuffer(id)
+        this.clearHolds(id)
         this.clearPendingOutput(id)
         this.cliTracker?.cleanup(id)
         this.events.emit('exited', id)
@@ -341,6 +377,108 @@ export class TerminalManager {
 
     getSize(id: string): { cols: number; rows: number } | null {
         return this.sizes.get(id) ?? null
+    }
+
+    /** Pid of each terminal's shell → terminal id. */
+    listPtyPids(): Map<number, string> {
+        const pids = new Map<number, string>()
+        for (const [id, ptyProcess] of this.terminals) pids.set(ptyProcess.pid, id)
+        return pids
+    }
+
+    /**
+     * A terminal view opens on `id`: spawn the pty if nothing runs there yet,
+     * then hand back the history to draw first.
+     *
+     * Views come and go while ptys live on — the renderer can crash or the
+     * window be closed and reopened — so a view must learn whether it found a
+     * running session. Typing the start command again into one sends it to
+     * whatever runs there (a live agent takes it as a prompt).
+     */
+    private async attachView(id: string, cwd: string, cols: number, rows: number, shell?: string): Promise<TerminalAttachResult> {
+        let existed = true
+        let spawn = this.spawning.get(id)
+        if (!spawn && !this.terminals.has(id)) {
+            existed = false
+            spawn = this.spawnWithHistory(id, cwd, cols, rows, shell).finally(() => this.spawning.delete(id))
+            this.spawning.set(id, spawn)
+        }
+        if (spawn) await spawn
+
+        // One attach at a time per terminal: output held for an earlier view
+        // is in this view's snapshot too, and releasing it later would repeat it here.
+        while (this.holds.has(id)) await this.waitForRelease(id)
+
+        // Output already queued belongs to the views that are listening; it is
+        // in the history too, so the new view gets it from the snapshot.
+        this.flushOutput(id)
+        const attachToken = this.holdOutput(id)
+        let snapshot: { data: string; cols: number; rows: number } | null = null
+        try {
+            snapshot = (await this.history?.snapshot(id)) ?? null
+        } catch (e) {
+            console.warn(`[TerminalManager] snapshot(${id}) failed:`, e)
+        }
+        return {
+            existed,
+            snapshot: snapshot?.data ?? null,
+            snapshotSize: snapshot ? { cols: snapshot.cols, rows: snapshot.rows } : null,
+            attachToken
+        }
+    }
+
+    private async spawnWithHistory(id: string, cwd: string, cols: number, rows: number, shell?: string): Promise<void> {
+        try {
+            await this.history?.prepare(id, cols, rows)
+        } catch (e) {
+            // History is a convenience; a session must start without it.
+            console.warn(`[TerminalManager] history prepare(${id}) failed:`, e)
+        }
+        this.createTerminal(id, cwd, cols, rows, shell)
+    }
+
+    private holdOutput(id: string): number {
+        const token = this.nextAttachToken++
+        let tokens = this.holds.get(id)
+        if (!tokens) {
+            tokens = new Map()
+            this.holds.set(id, tokens)
+        }
+        tokens.set(token, setTimeout(() => this.releaseHold(id, token), ATTACH_HOLD_TIMEOUT_MS))
+        return token
+    }
+
+    private releaseHold(id: string, token: number): void {
+        const tokens = this.holds.get(id)
+        const timer = tokens?.get(token)
+        if (!tokens || !timer) return
+        clearTimeout(timer)
+        tokens.delete(token)
+        if (tokens.size === 0) {
+            this.holds.delete(id)
+            this.flushOutput(id)
+            this.notifyReleased(id)
+        }
+    }
+
+    private clearHolds(id: string): void {
+        for (const timer of this.holds.get(id)?.values() ?? []) clearTimeout(timer)
+        this.holds.delete(id)
+        this.notifyReleased(id)
+    }
+
+    private waitForRelease(id: string): Promise<void> {
+        return new Promise((resolve) => {
+            const waiters = this.releaseWaiters.get(id) ?? []
+            waiters.push(resolve)
+            this.releaseWaiters.set(id, waiters)
+        })
+    }
+
+    private notifyReleased(id: string): void {
+        const waiters = this.releaseWaiters.get(id)
+        this.releaseWaiters.delete(id)
+        waiters?.forEach((resolve) => resolve())
     }
 
     /**
@@ -441,6 +579,9 @@ export class TerminalManager {
                 console.error(`Failed to kill terminal ${id}:`, e)
             }
         }
+        for (const id of [...this.holds.keys()]) {
+            this.clearHolds(id)
+        }
         for (const id of [...this.pendingOutput.keys()]) {
             this.clearPendingOutput(id)
         }
@@ -522,6 +663,9 @@ export class TerminalManager {
         pending.chunks.push(data)
         pending.bytes += data.length
 
+        // A view is drawing its snapshot; releaseHold sends all of this at once.
+        if (this.holds.has(id)) return
+
         if (pending.bytes >= OUTPUT_FLUSH_BYTES) {
             this.flushOutput(id)
             return
@@ -538,7 +682,7 @@ export class TerminalManager {
             clearTimeout(pending.timer)
             pending.timer = null
         }
-        if (pending.chunks.length === 0) return
+        if (pending.chunks.length === 0 || this.holds.has(id)) return
 
         const data = pending.chunks.join('')
         pending.chunks = []
