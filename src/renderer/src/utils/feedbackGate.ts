@@ -13,8 +13,9 @@
 //     --gate src/renderer/src/utils/feedbackGate.ts
 import { FEEDBACK_RELAY_ORIGIN } from '../../../shared/types'
 
-export const FEEDBACK_PASSWORD_SALT = 'climanager-app/feedback/v1'
-export const FEEDBACK_PASSWORD_HASH = 'c4436541b855f325081ca21af0f26059b680316bbdba282f874e2d779c6785cf'
+// The names are what url-gate.mjs reads; the markers tell scripts/prepublish-check.cjs they are not credentials.
+export const FEEDBACK_PASSWORD_SALT = 'climanager-app/feedback/v1' // public-value: salt
+export const FEEDBACK_PASSWORD_HASH = 'c4436541b855f325081ca21af0f26059b680316bbdba282f874e2d779c6785cf' // public-value: ships in the bundle (see above)
 export const UNLOCK_STORAGE_KEY = 'climanager-app:feedback-unlocked'
 
 /** Dispatched on `document` to open the password prompt, or to turn feedback mode off when on. */

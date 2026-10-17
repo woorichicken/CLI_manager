@@ -73,10 +73,25 @@ const SECRET_PATTERNS = [
     // Vendor-prefix patterns miss keys that are just long random strings, which
     // is what most S3-compatible services issue. Anchor on the variable name.
     [
-        /(?:SECRET|ACCESS_KEY|PRIVATE_KEY|API_KEY|AUTH_TOKEN|PASSWORD)[A-Z_]*\s*[:=]\s*['"`][A-Za-z0-9+/_-]{24,}['"`]/i,
-        'credential assigned to a secret-named variable'
+        /(?:SECRET|ACCESS_KEY|PRIVATE_KEY|API_KEY|AUTH_TOKEN|PASSWORD)[A-Z_]*\s*[:=]\s*['"`][A-Za-z0-9+/_-]{24,}['"`]/gi,
+        'credential assigned to a secret-named variable',
+        { nameOnly: true }
     ]
 ]
+
+// The name heuristic cannot tell a credential from a value that is public by design under a
+// name another tool requires (the feedback gate's salt and password hash, which ship in the
+// bundle). This marker, with a reason, on the line holding the value excuses that heuristic
+// only — a vendor-prefixed key is never excused.
+const PUBLIC_VALUE_MARKER = /\/\/ public-value: \S/
+
+/** The full line on which `match` ends — where the value literal and any marker sit. */
+function lineEndingMatch(content, match) {
+    const end = match.index + match[0].length
+    const start = content.lastIndexOf('\n', end - 1) + 1
+    const stop = content.indexOf('\n', end)
+    return content.slice(start, stop === -1 ? content.length : stop)
+}
 
 function checkSecrets(files) {
     for (const file of files) {
@@ -86,11 +101,14 @@ function checkSecrets(files) {
         const content = readTextFile(file)
         if (content === null) continue
 
-        for (const [pattern, label] of SECRET_PATTERNS) {
-            const match = pattern.exec(content)
-            if (!match) continue
-            const line = content.slice(0, match.index).split('\n').length
-            fail('secrets', `${label} committed`, `${file}:${line}`)
+        for (const [pattern, label, options] of SECRET_PATTERNS) {
+            const matches = pattern.global ? content.matchAll(pattern) : [pattern.exec(content)].filter(Boolean)
+            for (const match of matches) {
+                if (options?.nameOnly && PUBLIC_VALUE_MARKER.test(lineEndingMatch(content, match))) continue
+                const line = content.slice(0, match.index).split('\n').length
+                fail('secrets', `${label} committed`, `${file}:${line}`)
+                break
+            }
         }
     }
 }

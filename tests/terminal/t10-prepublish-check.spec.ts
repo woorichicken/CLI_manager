@@ -124,6 +124,33 @@ test.describe('T10 prepublish-check', () => {
         }
     })
 
+    test('a public-value marker excuses only the name heuristic, and only on its own line', () => {
+        const marker = `// ${'public'}-value: salt`
+        const excused = makeRepo({
+            'src/gate.ts': `export const FEEDBACK_PASSWORD${'_SALT'} = '${'s'.repeat(26)}' ${marker}\n`
+        })
+        // Same name, marker on the next line: the value line itself carries no reason.
+        const misplaced = makeRepo({
+            'src/gate.ts': `export const FEEDBACK_PASSWORD${'_SALT'} = '${'s'.repeat(26)}'\n${marker}\n`
+        })
+        // A second, unmarked credential in the same file must still be reported.
+        const mixed = makeRepo({
+            'src/gate.ts':
+                `export const FEEDBACK_PASSWORD${'_SALT'} = '${'s'.repeat(26)}' ${marker}\n` +
+                `const R2_SECRET${'_ACCESS_KEY'} = '${'b'.repeat(64)}';\n`
+        })
+        // A vendor-prefixed key is never excused.
+        const vendor = makeRepo({ 'src/leak.ts': `const k = '${'ghp' + '_'}abcdefghij0123456789ABCDEFghijklmnop' ${marker}\n` })
+        try {
+            expect(runChecker(excused, ['--only=secrets']).code).toBe(0)
+            expect(runChecker(misplaced, ['--only=secrets']).code).toBe(1)
+            expect(runChecker(mixed, ['--only=secrets']).output).toContain('src/gate.ts:2')
+            expect(runChecker(vendor, ['--only=secrets']).code).toBe(1)
+        } finally {
+            for (const dir of [excused, misplaced, mixed, vendor]) fs.rmSync(dir, { recursive: true, force: true })
+        }
+    })
+
     test('an env-var reference is not mistaken for a credential', () => {
         const dir = makeRepo({
             'scripts/upload.js':
