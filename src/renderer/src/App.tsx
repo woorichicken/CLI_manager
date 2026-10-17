@@ -17,6 +17,7 @@ import { SystemMonitorPopover } from './components/SystemMonitorPopover'
 import { Onboarding } from './components/Onboarding'
 import { UpdateNotification, UpdateStatus } from './components/UpdateNotification'
 import { BusyOverlay } from './components/BusyOverlay'
+import { FeedbackGate } from './components/Feedback/FeedbackGate'
 import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { neighborSession, sidebarWorkspaceOrder } from './utils/sessionNavigation'
@@ -1844,6 +1845,9 @@ function App() {
                 onFileSelect={handleFileSelect}
                 initialMode={fileSearchMode}
             />
+
+            {/* Feedback widget — dev builds, or a machine unlocked in Settings > Feedback */}
+            <FeedbackGate />
         </div>
     )
 }

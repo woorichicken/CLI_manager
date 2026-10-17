@@ -758,3 +758,27 @@ export interface TerminalAttachResult {
     snapshotSize: { cols: number; rows: number } | null
     attachToken: number
 }
+
+/**
+ * Origin the feedback relay presents to the Lasso Run ingest, and the host of the page URL a
+ * report carries. The packaged renderer runs on file:// (Origin "null"), which the ingest rejects,
+ * so reports leave through main with this fixed origin. It must equal the source's host_patterns —
+ * it is a label for this app, not a site that resolves.
+ */
+export const FEEDBACK_RELAY_ORIGIN = 'https://desktop.climanager.solhun.com'
+
+/** Renderer -> main: one HTTP request of the feedback widget, sent on its behalf (see FeedbackRelay). */
+export interface FeedbackRelayRequest {
+    url: string
+    method: string
+    headers: Record<string, string>
+    body?: string
+}
+
+/** Main -> renderer: the ingest's answer, or `error` when the request never reached it. */
+export interface FeedbackRelayResponse {
+    status: number
+    headers: Record<string, string>
+    body: string
+    error?: string
+}

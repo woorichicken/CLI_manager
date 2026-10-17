@@ -259,6 +259,51 @@ function checkDmgPython() {
     )
 }
 
+// The renderer reads these at build time. A build without them ships with no feedback widget and
+// nothing else changes — Settings just says "Not available in this build". Vite reads the same files.
+const FEEDBACK_ENV_NAMES = ['VITE_DP_FEEDBACK_URL', 'VITE_DP_FEEDBACK_KEY']
+const PRODUCTION_ENV_FILES = ['.env', '.env.local', '.env.production', '.env.production.local']
+// Only the widget's lazily loaded chunk and the gate refer to the ingest; its path is unique enough.
+const FEEDBACK_BUNDLE_MARKER = 'dp-agentation-ingest/'
+
+function readBuildEnv(name) {
+    if (process.env[name]) return process.env[name]
+    let value = ''
+    for (const file of PRODUCTION_ENV_FILES) {
+        const path = join(ROOT, file)
+        if (!existsSync(path)) continue
+        for (const line of readFileSync(path, 'utf-8').split('\n')) {
+            const match = new RegExp(`^\\s*${name}\\s*=\\s*(.*)$`).exec(line)
+            // Later files win, as they do in Vite.
+            if (match) value = match[1].trim().replace(/^['"]|['"]$/g, '')
+        }
+    }
+    return value
+}
+
+function checkFeedbackEnv() {
+    section('Feedback widget')
+    for (const name of FEEDBACK_ENV_NAMES) {
+        // Never print the value: the key is publishable but still stays out of logs.
+        if (readBuildEnv(name)) pass(name)
+        else fail(`${name} is not set`, '', 'add it to .env.local — see docs/operations/CLAUDE.md "Feedback widget"')
+    }
+}
+
+/** Counts the ingest path in the built renderer: zero means the values never reached the bundle. */
+function verifyFeedbackBundle() {
+    const assets = join(ROOT, 'out', 'renderer', 'assets')
+    if (!existsSync(assets)) {
+        fail('out/renderer/assets missing', '', 'the renderer build did not run')
+        return
+    }
+    const hits = readdirSync(assets)
+        .filter((name) => name.endsWith('.js'))
+        .filter((name) => readFileSync(join(assets, name), 'utf-8').includes(FEEDBACK_BUNDLE_MARKER)).length
+    if (hits > 0) pass('feedback widget in bundle', `${hits} chunk(s)`)
+    else fail('feedback widget missing from the bundle', '', 'VITE_DP_FEEDBACK_URL was empty at build time')
+}
+
 function checkBuildHealth({ skipTests }) {
     section('Build health')
 
@@ -355,6 +400,8 @@ function buildMac() {
  */
 function verifyArtifacts(version) {
     section('Artifact verification')
+
+    verifyFeedbackBundle()
 
     if (!existsSync(RELEASE_DIR)) {
         fail('no release directory')
@@ -506,6 +553,7 @@ function main() {
     checkNotarizationAccess()
     checkDmgPython()
     checkRepoHygiene()
+    checkFeedbackEnv()
     checkBuildHealth({ skipTests })
 
     if (failed) {

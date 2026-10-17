@@ -7,6 +7,7 @@ import { KeyboardSettings } from './KeyboardSettings'
 import { AgentIntegrationSettings } from './AgentIntegrationSettings'
 import { ControlApiSettings } from './ControlApiSettings'
 import { CHANGELOG_URL } from '../constants/links'
+import { FeedbackModeSetting } from './Feedback/FeedbackModeSetting'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
@@ -534,6 +535,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600"
                                             />
                                         </div>
+                                        <FeedbackModeSetting />
                                     </div>
 
                                     <div className="mt-6 pt-6 border-t border-white/10">

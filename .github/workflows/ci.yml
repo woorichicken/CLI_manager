@@ -38,8 +38,13 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Placeholder feedback values so the build has the widget and T31 can test its gate.
+      # They point nowhere: no test sends a report without FEEDBACK_LIVE=1.
       - name: Build
         run: pnpm build
+        env:
+          VITE_DP_FEEDBACK_URL: https://ci-placeholder.supabase.co/functions/v1/dp-agentation-ingest/00000000-0000-0000-0000-000000000000
+          VITE_DP_FEEDBACK_KEY: ci-placeholder
 
       # Fails the job when a credential-shaped string is committed. Runs against
       # tracked content only, so local scratch files are irrelevant.
@@ -72,6 +77,7 @@ jobs:
           tests/terminal/t7-agent-integration.spec.ts
           tests/terminal/t8-hook-install.spec.ts
           tests/terminal/t9-agent-modules.spec.ts
+          tests/terminal/t31-feedback-gate.spec.ts
 
       - name: Upload failure artifacts
         if: failure()
