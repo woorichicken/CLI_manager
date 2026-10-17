@@ -96,6 +96,28 @@ no version and reads like a failed deploy.
 Test failures inside the gate now leave their full output at `/tmp/release-tests-<ts>.log`, named in
 the failure message.
 
+## Feedback widget
+
+The packaged app shows the feedback-kit widget only on a Mac where someone entered the password
+in Settings > Feedback (attach type `dev+url`; development builds always show it). Reports go to
+Lasso Run through main — see the root [`CLAUDE.md`](../../CLAUDE.md) "Feedback Widget".
+
+| What | Where / how |
+|---|---|
+| Lasso Run source | project `3fa1c5e0-971e-45df-a514-675b18af0085`, source `climanager-app` (`2103be24-4fc0-44f6-9ef8-b47a9f167f8a`), host pattern `desktop.climanager.solhun.com` |
+| URL and key | `.env.local` in the checkout you release from: `VITE_DP_FEEDBACK_URL`, `VITE_DP_FEEDBACK_KEY`. Inlined at build time |
+| Password | `~/.config/climanager-app-feedback-password` (0600) on the maintainer's Mac only. Hand it over through 1Password, never chat or commit |
+| Hash matches password | `url-gate.mjs check . --app climanager-app --gate src/renderer/src/utils/feedbackGate.ts` (feedback-ui-bootstrap skill) |
+| New password | `url-gate.mjs rotate` with the same arguments, then release. Every unlocked Mac locks again |
+| End-to-end check | `pnpm build && FEEDBACK_LIVE=1 pnpm test:term tests/terminal/t31-feedback-gate.spec.ts -g live` sends one `[bootstrap-qa:…]` report |
+
+A build without the URL and key looks healthy and simply has no widget — Settings says "Not
+available in this build". That is why `release.cjs` fails its preflight when either value is
+missing, and its artifact verification counts the ingest path in `out/renderer/assets`.
+
+Do not rotate the ingest key to check it: rotation kills the key inside every shipped build until
+users update. The key is publishable; checking it is a `POST <url>/verify` with the key.
+
 ## Cloudflare R2
 
 DMG distribution runs inside `post-release.cjs`, which wraps the

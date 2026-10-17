@@ -69,6 +69,12 @@ importers:
       '@playwright/test':
         specifier: ^1.60.0
         version: 1.60.0
+      '@solhun/feedback-kit-core':
+        specifier: ^0.14.1
+        version: 0.14.1
+      '@solhun/feedback-kit-web':
+        specifier: ^0.14.1
+        version: 0.14.1(@solhun/feedback-kit-core@0.14.1)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@types/react':
         specifier: ^19.2.6
         version: 19.2.6
@@ -630,6 +636,16 @@ packages:
   '@sindresorhus/is@4.6.0':
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
     engines: {node: '>=10'}
+
+  '@solhun/feedback-kit-core@0.14.1':
+    resolution: {integrity: sha512-f9zol9xzPS/DPzci4/1GwFb4uzbNMnDJ6tsegIGocRb54gc1leavygKxXwjAKNltm5GKyNH5muXjPMgmj91AJA==}
+
+  '@solhun/feedback-kit-web@0.14.1':
+    resolution: {integrity: sha512-CxfdytYTEfiKSYD4gwf4auvGBmOr0Yq6ODx2ZGtkomMKYn+LpJx6Ag+B7g3CxN2HR8QVZRSvElZSyFKOPGdV9w==}
+    peerDependencies:
+      '@solhun/feedback-kit-core': 0.14.1
+      react: '>=18.0.0'
+      react-dom: '>=18.0.0'
 
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
@@ -1455,6 +1471,10 @@ packages:
   hosted-git-info@4.1.0:
     resolution: {integrity: sha512-kyCuEOWjJqZuDbRHzL8V93NzQhwIB71oFWSyzVo+KPZI+pnQPPxucdkrOZvkLRnrf5URsQM+IJ09Dw29cRALIA==}
     engines: {node: '>=10'}
+
+  html2canvas-pro@2.5.2:
+    resolution: {integrity: sha512-uka+0oVG/yB4B7U9M/+aJFF0aKZVmMWZKi4unemkQh537cLu3jXPvZtXakTuPl3taOI+O43RhuV6kn2igk1Z6g==}
+    engines: {node: '>=24.0.0'}
 
   http-cache-semantics@4.2.0:
     resolution: {integrity: sha512-dTxcvPXqPvXBQpq5dUr6mEMJX4oIEFv6bwom3FDwKRDsuIjjJGANqhBuoAn9c1RQJIdAKav33ED65E2ys+87QQ==}
@@ -3083,6 +3103,15 @@ snapshots:
 
   '@sindresorhus/is@4.6.0': {}
 
+  '@solhun/feedback-kit-core@0.14.1': {}
+
+  '@solhun/feedback-kit-web@0.14.1(@solhun/feedback-kit-core@0.14.1)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
+    dependencies:
+      '@solhun/feedback-kit-core': 0.14.1
+      html2canvas-pro: 2.5.2
+      react: 19.2.0
+      react-dom: 19.2.0(react@19.2.0)
+
   '@szmarczak/http-timer@4.0.6':
     dependencies:
       defer-to-connect: 2.0.1
@@ -4110,6 +4139,8 @@ snapshots:
   hosted-git-info@4.1.0:
     dependencies:
       lru-cache: 6.0.0
+
+  html2canvas-pro@2.5.2: {}
 
   http-cache-semantics@4.2.0: {}
 

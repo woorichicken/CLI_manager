@@ -193,6 +193,9 @@ User Action (Renderer)
 - `gh-list-prs`: PR 목록 조회
 - `gh-workflow-status`: GitHub Actions 상태 조회
 
+#### Feedback Widget
+- `feedback-relay`: 피드백 위젯의 요청을 main 이 `Origin: https://desktop.climanager.solhun.com` 으로 보낸다. `https://*.supabase.co/functions/v1/dp-agentation-ingest/…` 의 GET·POST 만 허용하고, 실패는 던지지 않고 `{ error }` 로 돌려준다(렌더러 쪽이 던져서 위젯 큐가 재시도하게 한다)
+
 #### Agent Integration (NEW)
 - `get-hook-state`: 디스크 실측 기반 설치 상태 조회 (의도가 아니라 **실제 상태**)
 - `set-hook-integration`: 훅 설치/제거 (끄면 원래 커맨드로 복구)

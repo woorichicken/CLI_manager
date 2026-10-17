@@ -30,6 +30,8 @@ import { ScrollbackStore } from './ScrollbackStore'
 import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
+import { relayFeedbackRequest } from './FeedbackRelay'
+import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
 
 // Set app name for development mode
@@ -1790,6 +1792,9 @@ app.whenReady().then(async () => {
     ipcMain.handle('get-app-version', () => {
         return app.getVersion()
     })
+
+    // Feedback widget transport — see FeedbackRelay for why it leaves through main
+    ipcMain.handle('feedback-relay', (_, request: FeedbackRelayRequest) => relayFeedbackRequest(request))
 
     // Template handlers
     ipcMain.handle('get-templates', () => {

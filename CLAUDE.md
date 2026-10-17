@@ -104,6 +104,7 @@ pnpm build && pnpm test:term
    - `TerminalMirror.ts`: 모든 터미널 출력을 headless xterm으로 재생 — Control API 가 "사용자가 보는 화면"을 읽고, 새 창·재시작 때 히스토리를 다시 그리는 원본 ([`docs/decisions/0008`](docs/decisions/0008-terminal-history-lives-in-main.md))
    - `ScrollbackStore.ts`: 미러 스냅샷을 30초마다(출력이 있던 세션만) `userData/scrollback/<id>.ans` 에 저장 — 강제종료 뒤 복원용
    - `ClaudeSessionSync.ts`: Claude 의 실행 중 세션 레지스트리(`~/.claude/sessions/<pid>.json`)를 읽어 저장된 대화 id 를 실제 대화로 맞춤 — Claude 안에서 `/resume` 하면 id 가 바뀐다
+   - `FeedbackRelay.ts`: 피드백 위젯의 HTTP 요청을 main 에서 대신 보낸다 — 배포 렌더러는 `file://` 라 `Origin: null` 이 되고 라쏘런이 403 으로 거부한다. 수집 함수 경로만 허용
 
 2. **Renderer Process** (`src/renderer/`)
    - `App.tsx`: 메인 애플리케이션 컴포넌트, 상태 관리
@@ -116,6 +117,7 @@ pnpm build && pnpm test:term
      - `Modals.tsx`: 모달 컴포넌트들
      - `SidebarSearch.tsx`: 프로젝트 검색 입력 + 매칭(`findMatchingProjects`). 검색 중엔 드래그 목록 대신 평평한 결과 목록을 쓴다 — 재정렬 핸들러는 받은 목록 순서를 그대로 저장해서, 걸러진 목록을 주면 행이 빠진다
      - `CopyNotice.tsx`: 메뉴의 Copy 항목이 쓰는 클립보드 복사 + "Copied …" 알림
+   - `components/Feedback/`: feedback-kit 위젯 — `FeedbackGate`(비밀번호 관문·마운트), `FeedbackWidget`(배선, 통과한 뒤에만 lazy import), `FeedbackModeSetting`(Settings > Feedback 토글). 판정·상수는 `utils/feedbackGate.ts`
    - `components/TerminalView.tsx`: xterm.js 터미널 인스턴스
    - `components/StatusBar.tsx`: 포트 모니터링 정보 표시
    - `components/GitPanel.tsx`: Git 상태 관리 패널
@@ -205,6 +207,12 @@ exec('/bin/zsh -l -c "code ."')
 - **자동 정리**: Worktree workspace 삭제 시 `git worktree remove --force` 실행
 - **다중 세션**: 각 worktree workspace는 여러 터미널 세션을 가질 수 있음
 - **브랜치 제한**: 브랜치가 이미 존재하면 worktree 생성 실패
+
+### Feedback Widget
+
+- **피드백 위젯 — 부착 타입 `dev+url`**: `pnpm dev`(localhost)에선 항상, 배포 앱은 Settings > Feedback 에서 비밀번호를 넣은 Mac 에서만 뜬다. 판정 `src/renderer/src/utils/feedbackGate.ts`. 수집처: 라쏘런 프로젝트 `3fa1c5e0-971e-45df-a514-675b18af0085`(CLI Manager 사이트), 소스 `climanager-app`(허용 호스트 `desktop.climanager.solhun.com` — 실제 사이트가 아니라 main 릴레이가 붙이는 Origin). URL·KEY 는 빌드 변수 `VITE_DP_FEEDBACK_URL`/`VITE_DP_FEEDBACK_KEY`(`.env.local`, 커밋 금지)
+- 전송은 렌더러가 아니라 main(`FeedbackRelay.ts`)이 한다. 제보의 `url` 도 `https://desktop.climanager.solhun.com/` 로 바꿔 싣는다 — 실제 주소는 `file://…/app.asar/…` 라 서버가 400 으로 거부하고 설치 경로까지 샌다
+- 비밀번호·릴리즈 빌드·검증 절차는 [`docs/operations/CLAUDE.md`](docs/operations/CLAUDE.md) 「Feedback widget」
 
 ### GitHub Integration
 
@@ -380,6 +388,9 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     그 페이지를 계속 죽은 것으로 취급해서 새로고침된 렌더러는 main 의 `executeJavaScript` 로 확인한다
   - T30 대화 id 동기화 — 셸의 자식 `sleep` 을 Claude 대역으로 두고 레지스트리 파일을 써서, 저장된 id 가 셸에 가장 가까운
     Claude 의 대화로 바뀌는지(한 단계 깊은 프로세스는 짐), 시작 명령(`cldy` 같은 alias)은 유지되는지, 앱 터미널 밖 프로세스는 무시하는지
+  - T31 피드백 관문 — 배포와 같은 `file://` 렌더러에서 기본 잠김(버튼·위젯 청크 요청 0), 틀린 비밀번호, 기억된 해제 → 위젯 마운트 → Turn Off,
+    진짜 비밀번호(`~/.config/climanager-app-feedback-password` 있을 때만), 릴레이가 수집 함수 밖 URL·메서드를 거부하는지. 청크는 Playwright
+    request 이벤트로 본다 — `file://` 에선 Resource Timing 이 아무것도 기록하지 않아 「안 불렀다」가 늘 참이 된다. `FEEDBACK_LIVE=1` 이면 실제 UI 로 라쏘런에 1건 보낸다
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

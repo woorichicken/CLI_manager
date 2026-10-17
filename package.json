@@ -38,6 +38,8 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
     "@playwright/test": "^1.60.0",
+    "@solhun/feedback-kit-core": "^0.14.1",
+    "@solhun/feedback-kit-web": "^0.14.1",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
