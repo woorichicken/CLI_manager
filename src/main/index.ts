@@ -27,6 +27,8 @@ import { UsageTracker, UsageThresholdAlert } from './UsageTracker'
 import { parseDiffSummary, parseFileDiff } from './diffParser'
 import { TerminalMirror } from './TerminalMirror'
 import { ScrollbackStore } from './ScrollbackStore'
+import { TerminalEventLog } from './TerminalEventLog'
+import { buildFeedbackTerminalContext } from './feedbackTerminalContext'
 import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
@@ -245,6 +247,11 @@ const broadcast = (channel: string, payload: unknown): void => {
 
 const terminalMirror = new TerminalMirror(terminalManager)
 
+// What happened to each terminal lately (crashes, erased scrollback, exits),
+// so a feedback report can say what led up to it. Memory only.
+const terminalEventLog = new TerminalEventLog(terminalManager)
+terminalMirror.onScrollbackErased = (id) => terminalEventLog.record(id, 'scrollback-erased')
+
 // ---------------------------------------------------------------------------
 // Terminal history
 //
@@ -283,6 +290,7 @@ terminalManager.setHistoryProvider({
         const saved = scrollbackStore.load(id)
         if (!saved) return
         await terminalMirror.seed(id, { cols, rows }, saved.data, restoredHistoryMarker(saved.savedAt))
+        terminalEventLog.record(id, 'restored', `saved ${new Date(saved.savedAt).toISOString()}`)
     },
     snapshot: (id) => terminalMirror.snapshot(id),
     clear: (id) => {
@@ -290,6 +298,15 @@ terminalManager.setHistoryProvider({
         scrollbackStore.markDirty(id)
     }
 })
+
+/** os.userInfo() throws when the account has no passwd entry; a report must still go out. */
+function currentUsername(): string | undefined {
+    try {
+        return os.userInfo().username
+    } catch {
+        return undefined
+    }
+}
 
 /** Bounded: quitting must not wait on a mirror that never answers. */
 const HISTORY_SAVE_ON_QUIT_TIMEOUT_MS = 2000
@@ -307,7 +324,10 @@ const controlApiService = new ControlApiService({
     mirror: terminalMirror,
     broadcast,
     hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId),
-    onSessionForgotten: (sessionId) => scrollbackStore.forget(sessionId)
+    onSessionForgotten: (sessionId) => {
+        scrollbackStore.forget(sessionId)
+        terminalEventLog.forget(sessionId)
+    }
 })
 const controlApiServer = new ControlApiServer({
     service: controlApiService,
@@ -697,15 +717,18 @@ function createWindow(): void {
     window.webContents.on('render-process-gone', (_event, details) => {
         console.error(`[renderer] gone: ${details.reason} (exit code ${details.exitCode})`)
         if (details.reason === 'clean-exit' || window.isDestroyed()) return
+        terminalEventLog.recordApp('renderer-gone', `${details.reason} (exit code ${details.exitCode})`)
         const now = Date.now()
         while (reloads.length > 0 && now - reloads[0] > RENDERER_RELOAD_WINDOW_MS) reloads.shift()
         if (reloads.length >= RENDERER_RELOAD_LIMIT) {
             // Crashing on every load: reloading again would only loop.
             console.error('[renderer] crashed repeatedly; not reloading again')
+            terminalEventLog.recordApp('renderer-reload-stopped', `${RENDERER_RELOAD_LIMIT} reloads within ${RENDERER_RELOAD_WINDOW_MS / 1000}s`)
             return
         }
         reloads.push(now)
         window.webContents.reload()
+        terminalEventLog.recordApp('renderer-reloaded')
     })
 
     // Cmd+/- 기본 줌 완전 비활성화 (터미널 폰트만 조정)
@@ -1795,6 +1818,14 @@ app.whenReady().then(async () => {
 
     // Feedback widget transport — see FeedbackRelay for why it leaves through main
     ipcMain.handle('feedback-relay', (_, request: FeedbackRelayRequest) => relayFeedbackRequest(request))
+    // What a feedback report carries about the terminal it is about (see feedbackTerminalContext)
+    ipcMain.handle('feedback-terminal-context', (_, sessionId: unknown) => buildFeedbackTerminalContext(sessionId, {
+        terminals: terminalManager,
+        mirror: terminalMirror,
+        log: terminalEventLog,
+        agentStatus: (id) => agentStatusResolver.getStatus(id)?.status ?? null,
+        mask: { homeDir: os.homedir(), username: currentUsername() }
+    }))
 
     // Template handlers
     ipcMain.handle('get-templates', () => {

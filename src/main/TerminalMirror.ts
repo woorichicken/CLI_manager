@@ -76,6 +76,9 @@ const AWAITING_INPUT_PATTERNS = [
 /** Parsing normally finishes in milliseconds; this only guards against a disposed mirror. */
 const FLUSH_TIMEOUT_MS = 1000
 
+/** Erase in Display (CSI Ps J) with Ps = 3 deletes the scrollback, not just the screen. */
+const ERASE_SCROLLBACK_PARAM = 3
+
 /** Agent dialogs put the question a few lines above the options at the bottom. */
 const QUESTION_REGION_LINES = 15
 
@@ -125,6 +128,13 @@ export interface TerminalSnapshot {
 export class TerminalMirror {
     private readonly mirrors = new Map<string, Mirror>()
 
+    /**
+     * The program in a terminal deleted its scrollback (CSI 3 J). Read from the
+     * mirror's parser rather than the raw stream, so a sequence split across
+     * two pty chunks is still seen. The default handler still runs.
+     */
+    public onScrollbackErased?: (id: string) => void
+
     constructor(private readonly terminals: TerminalManager) {
         terminals.events.on('created', (id, cols, rows) => {
             // Runs before the new pty's first output is delivered, so a mirror
@@ -168,6 +178,10 @@ export class TerminalMirror {
         })
         const serializer = new SerializeAddon()
         term.loadAddon(serializer)
+        term.parser.registerCsiHandler({ final: 'J' }, (params) => {
+            if (params[0] === ERASE_SCROLLBACK_PARAM) this.onScrollbackErased?.(id)
+            return false
+        })
         this.mirrors.set(id, { term, serializer, lastOutputAt: 0, exited: false, partial: this.terminals.hasTerminal(id) })
     }
 
@@ -280,6 +294,32 @@ export class TerminalMirror {
             lines.push(buffer.getLine(i)?.translateToString(true) ?? '')
         }
         return trimTrailingBlank(lines).slice(-count)
+    }
+
+    /**
+     * Like `tail`, but a line the terminal wrapped is joined back into one, so
+     * text split by the wrap stays whole. A program that breaks rows itself
+     * (zsh's line editor does for a long typed command) leaves no wrap flag;
+     * the feedback masker deals with those cuts (maskSecrets).
+     */
+    logicalTail(id: string, count: number): string[] {
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return []
+        const buffer = mirror.term.buffer.active
+        const lines: string[] = []
+        for (let i = 0; i < buffer.length; i++) {
+            const line = buffer.getLine(i)
+            // Untrimmed: a row that wraps is full, and trimming it would drop a space at the wrap.
+            const text = line?.translateToString(false) ?? ''
+            if (line?.isWrapped && lines.length > 0) lines[lines.length - 1] += text
+            else lines.push(text)
+        }
+        return trimTrailingBlank(lines.map((text) => text.trimEnd())).slice(-count)
+    }
+
+    /** Lines in history plus screen. */
+    lineCount(id: string): number {
+        return this.mirrors.get(id)?.term.buffer.active.length ?? 0
     }
 
     size(id: string): { cols: number; rows: number } | null {

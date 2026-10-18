@@ -195,6 +195,7 @@ User Action (Renderer)
 
 #### Feedback Widget
 - `feedback-relay`: 피드백 위젯의 요청을 main 이 `Origin: https://desktop.climanager.solhun.com` 으로 보낸다. `https://*.supabase.co/functions/v1/dp-agentation-ingest/…` 의 GET·POST 만 허용하고, 실패는 던지지 않고 `{ error }` 로 돌려준다(렌더러 쪽이 던져서 위젯 큐가 재시도하게 한다)
+- `feedback-terminal-context(sessionId | null)` → `FeedbackTerminalContext`: 창 사건(`appEvents`)과 그 터미널의 상태·사건·최근 200줄(비밀값 가림). 모르는 id·문자열이 아닌 값이면 `terminal: null`. 제보를 보낼 때 위젯이 부르고, 2초 안에 답이 없으면 그 정보 없이 보낸다
 
 #### Agent Integration (NEW)
 - `get-hook-state`: 디스크 실측 기반 설치 상태 조회 (의도가 아니라 **실제 상태**)

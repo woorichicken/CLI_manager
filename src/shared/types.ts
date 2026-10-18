@@ -782,3 +782,68 @@ export interface FeedbackRelayResponse {
     body: string
     error?: string
 }
+
+/**
+ * Something that happened to a terminal, or to the window that shows terminals, kept so a
+ * feedback report can say what led up to it ("the conversation vanished" after a renderer
+ * crash, a program erasing the scrollback, a shell that exited with an error…).
+ */
+export type TerminalEventKind =
+    /** A pty started. */
+    | 'started'
+    /** History saved by a previous run was laid down before the pty started. */
+    | 'restored'
+    /** A view attached to a pty that was already running: a renderer reload, a reopened window, a remount. */
+    | 'reattached'
+    /** A view never confirmed it had drawn its snapshot; output was released without it. */
+    | 'attach-timeout'
+    /** The user cleared the terminal (Cmd+K). */
+    | 'cleared'
+    /** The program sent CSI 3 J, which deletes the scrollback — earlier conversation is gone. */
+    | 'scrollback-erased'
+    /** The program in the pty exited by itself. */
+    | 'exited'
+    /** The app closed the pty (session deleted or restarted). */
+    | 'closed'
+    /** The renderer process died. Window-wide, not per terminal. */
+    | 'renderer-gone'
+    /** The renderer was reloaded after dying. */
+    | 'renderer-reloaded'
+    /** The renderer kept dying, so it was left down. */
+    | 'renderer-reload-stopped'
+
+export interface TerminalEventRecord {
+    kind: TerminalEventKind
+    /** ISO 8601. For a collapsed run, when it last happened. */
+    at: string
+    detail?: string
+    /** The same event repeated within a few seconds, collapsed into one record. */
+    count?: number
+}
+
+/** One terminal as the feedback widget reports it. */
+export interface FeedbackTerminalState {
+    sessionId: string
+    /** A pty is running for it right now. */
+    running: boolean
+    size: { cols: number; rows: number } | null
+    /** Lines in history plus screen. */
+    historyLines: number
+    lastOutputAt: string | null
+    /** Read from the screen, so it works for sessions without agent hooks. */
+    screen: 'busy' | 'awaiting-input' | 'idle'
+    /** From agent hooks / heuristics, when the session runs an agent. */
+    agentStatus: SessionStatus | null
+    events: TerminalEventRecord[]
+    /** The last lines of history and screen, with secrets and the home folder masked. */
+    recentLines: string[]
+    /** How many secrets were masked in `recentLines`. */
+    maskedCount: number
+}
+
+/** Main -> renderer: what a feedback report carries about terminals. */
+export interface FeedbackTerminalContext {
+    appEvents: TerminalEventRecord[]
+    /** Null when no terminal was identified, or its id is unknown to main. */
+    terminal: FeedbackTerminalState | null
+}

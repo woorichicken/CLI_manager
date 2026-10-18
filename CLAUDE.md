@@ -105,6 +105,8 @@ pnpm build && pnpm test:term
    - `ScrollbackStore.ts`: 미러 스냅샷을 30초마다(출력이 있던 세션만) `userData/scrollback/<id>.ans` 에 저장 — 강제종료 뒤 복원용
    - `ClaudeSessionSync.ts`: Claude 의 실행 중 세션 레지스트리(`~/.claude/sessions/<pid>.json`)를 읽어 저장된 대화 id 를 실제 대화로 맞춤 — Claude 안에서 `/resume` 하면 id 가 바뀐다
    - `FeedbackRelay.ts`: 피드백 위젯의 HTTP 요청을 main 에서 대신 보낸다 — 배포 렌더러는 `file://` 라 `Origin: null` 이 되고 라쏘런이 403 으로 거부한다. 수집 함수 경로만 허용
+   - `TerminalEventLog.ts`: 터미널마다 최근 사건(시작·복원·다시 붙음·붙기 시간 초과·Cmd+K·프로그램의 스크롤백 삭제 CSI 3 J·종료 코드·닫힘)과 창 사건(렌더러 크래시·새로고침)을 메모리에만 둔다 — 제보가 「무엇이 먼저 있었나」를 싣는 원본
+   - `feedbackTerminalContext.ts` / `maskSecrets.ts`: 제보에 실을 터미널 상태와 최근 200줄을 만든다. 줄은 비밀값·홈 폴더·계정 이름을 가린 뒤 나간다. 오른쪽 끝에서 끊긴 키도 가린다 — zsh 는 긴 입력 줄을 스스로 끊어 wrap 표시가 없다
 
 2. **Renderer Process** (`src/renderer/`)
    - `App.tsx`: 메인 애플리케이션 컴포넌트, 상태 관리
@@ -117,7 +119,7 @@ pnpm build && pnpm test:term
      - `Modals.tsx`: 모달 컴포넌트들
      - `SidebarSearch.tsx`: 프로젝트 검색 입력 + 매칭(`findMatchingProjects`). 검색 중엔 드래그 목록 대신 평평한 결과 목록을 쓴다 — 재정렬 핸들러는 받은 목록 순서를 그대로 저장해서, 걸러진 목록을 주면 행이 빠진다
      - `CopyNotice.tsx`: 메뉴의 Copy 항목이 쓰는 클립보드 복사 + "Copied …" 알림
-   - `components/Feedback/`: feedback-kit 위젯 — `FeedbackGate`(비밀번호 관문·마운트), `FeedbackWidget`(배선, 통과한 뒤에만 lazy import), `FeedbackModeSetting`(Settings > Feedback 토글). 판정·상수는 `utils/feedbackGate.ts`
+   - `components/Feedback/`: feedback-kit 위젯 — `FeedbackGate`(비밀번호 관문·마운트), `FeedbackWidget`(배선, 통과한 뒤에만 lazy import), `FeedbackModeSetting`(Settings > Feedback 토글), `terminalContext`(제보가 어느 터미널 얘기인지 정하고 main 의 터미널 정보를 싣는다). 판정·상수는 `utils/feedbackGate.ts`
    - `components/TerminalView.tsx`: xterm.js 터미널 인스턴스
    - `components/StatusBar.tsx`: 포트 모니터링 정보 표시
    - `components/GitPanel.tsx`: Git 상태 관리 패널
@@ -212,6 +214,9 @@ exec('/bin/zsh -l -c "code ."')
 
 - **피드백 위젯 — 부착 타입 `dev+url`**: `pnpm dev`(localhost)에선 항상, 배포 앱은 Settings > Feedback 에서 비밀번호를 넣은 Mac 에서만 뜬다. 판정 `src/renderer/src/utils/feedbackGate.ts`. 수집처: 라쏘런 프로젝트 `3fa1c5e0-971e-45df-a514-675b18af0085`(CLI Manager 사이트), 소스 `climanager-app`(허용 호스트 `desktop.climanager.solhun.com` — 실제 사이트가 아니라 main 릴레이가 붙이는 Origin). URL·KEY 는 빌드 변수 `VITE_DP_FEEDBACK_URL`/`VITE_DP_FEEDBACK_KEY`(`.env.local`, 커밋 금지)
 - 전송은 렌더러가 아니라 main(`FeedbackRelay.ts`)이 한다. 제보의 `url` 도 `https://desktop.climanager.solhun.com/` 로 바꿔 싣는다 — 실제 주소는 `file://…/app.asar/…` 라 서버가 400 으로 거부하고 설치 경로까지 샌다
+- **모든 제보에 터미널 정보가 기본으로 실린다**(체크박스 없음 — 2026-10-18 사용자 결정). 대상 터미널은 지목한 요소가 든 터미널(또는 사이드바 세션 행) → 마지막으로 포커스된 보이는 터미널 → 하나뿐인 보이는 터미널 순이고, 여럿 보이는데 고른 게 없으면 싣지 않는다(추측하지 않는다). 숨긴 터미널은 `visibility: hidden` 이라 크기로는 못 가른다
+  - 사건은 제보의 `logs` 로 가서 라쏘런 「앱 로그」에 뜬다(`[terminal] scrollback-erased` 등). 상태·최근 줄은 `context.extra.terminal` → 서버 `meta.extra.extra.terminal`(「기타」 카드에 JSON 으로 보인다)
+  - 최근 줄은 비밀값을 가리지만 **스크린샷은 가리지 않는다** — 화면에 보이는 그대로 간다
 - 비밀번호·릴리즈 빌드·검증 절차는 [`docs/operations/CLAUDE.md`](docs/operations/CLAUDE.md) 「Feedback widget」
 
 ### GitHub Integration
@@ -333,7 +338,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 133건
+- **위치**: `tests/terminal/` — 150건
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -391,6 +396,10 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T31 피드백 관문 — 배포와 같은 `file://` 렌더러에서 기본 잠김(버튼·위젯 청크 요청 0), 틀린 비밀번호, 기억된 해제 → 위젯 마운트 → Turn Off,
     진짜 비밀번호(`~/.config/climanager-app-feedback-password` 있을 때만), 릴레이가 수집 함수 밖 URL·메서드를 거부하는지. 청크는 Playwright
     request 이벤트로 본다 — `file://` 에선 Resource Timing 이 아무것도 기록하지 않아 「안 불렀다」가 늘 참이 된다. `FEEDBACK_LIVE=1` 이면 실제 UI 로 라쏘런에 1건 보낸다
+  - T32 제보의 터미널 정보 — 실제 pty 에서 Cmd+K → `printf '\033[3J'` → 가짜 키 출력(한 벌은 `$COLUMNS-5` 칸 뒤라 줄 경계에 걸린다) 후 main IPC 답이 키 앞뒤 조각·계정 이름·홈 경로 없이 오고 사건이
+    순서대로인지, `exit 3` 의 종료 코드, 렌더러 크래시 → `renderer-gone`·`reattached`, 그리고 실제 위젯에서 터미널을 지목해 보낸 **페이로드**(main 의 `fetch` 를 바꿔 밖으로 안 나간다)가
+    `source: picked`·사건 로그를 싣는지. 지목은 `page.mouse` 로 한다 — 지목 오버레이가 덮여 locator 클릭은 거부된다. 지목 메모의 완료 표시는 「보냈습니다」가 아니라
+    `status` 「주석 1: …」의 「완료」다. 가짜 키는 실행 중에 조각을 이어 만든다 — 시크릿 스캔이 테스트 파일도 본다. `FEEDBACK_LIVE=1` 이면 라쏘런에 1건 보낸다
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이
