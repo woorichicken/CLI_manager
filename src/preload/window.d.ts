@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
 
 declare global {
     interface Window {
@@ -132,6 +132,7 @@ declare global {
             onUpdateStatus: (callback: (status: { status: string; version?: string; percent?: number; message?: string }) => void) => () => void
             getAppVersion: () => Promise<string>
             feedbackRelay: (request: FeedbackRelayRequest) => Promise<FeedbackRelayResponse>
+            feedbackTerminalContext: (sessionId: string | null) => Promise<FeedbackTerminalContext>
             checkTools: () => Promise<{ git: boolean; gh: boolean; brew: boolean }>
 
             // File utilities (for drag & drop)

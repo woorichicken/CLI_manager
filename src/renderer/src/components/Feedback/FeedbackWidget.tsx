@@ -9,6 +9,7 @@ import {
     webContextProviders, webDiagnosticsOptions
 } from '@solhun/feedback-kit-web'
 import { feedbackPageUrl } from '../../utils/feedbackGate'
+import { loadTerminalContext, resolveTerminalTarget, sessionOfNode, terminalExtra, withTerminalEvents } from './terminalContext'
 
 const ENDPOINT = import.meta.env.VITE_DP_FEEDBACK_URL ?? ''
 const TOKEN = import.meta.env.VITE_DP_FEEDBACK_KEY ?? ''
@@ -40,8 +41,19 @@ const relayFetch: LassoFetch = async (url, init) => {
 
 export default function FeedbackWidget() {
     const [ready, setReady] = useState(false)
-    // A ref, not state: createReport must keep one identity (see below) yet read the version late.
+    // Refs, not state: createReport must keep one identity (see below) yet read these late.
     const appVersionRef = useRef('unknown')
+    // The widget's own dialog takes focus when it opens, so the terminal in use is remembered beforehand.
+    const lastFocusedSessionRef = useRef<string | null>(null)
+
+    useEffect(() => {
+        const onFocusIn = (event: FocusEvent): void => {
+            const sessionId = sessionOfNode(event.target)
+            if (sessionId) lastFocusedSessionRef.current = sessionId
+        }
+        document.addEventListener('focusin', onFocusIn)
+        return () => document.removeEventListener('focusin', onFocusIn)
+    }, [])
 
     useEffect(() => {
         if (!ENDPOINT || !TOKEN) return
@@ -66,8 +78,12 @@ export default function FeedbackWidget() {
                 storage,
                 adapter: createLassoAdapter({ endpoint: ENDPOINT, token: TOKEN, fetch: relayFetch })
             }),
-            createReport: (parts: ReportParts) =>
-                buildReport(parts, {
+            createReport: async (parts: ReportParts) => {
+                // Every report carries the terminal it is about and what happened to it lately.
+                // Read at submit time; if main does not answer in time the report goes without it.
+                const target = resolveTerminalTarget(parts.element, lastFocusedSessionRef.current)
+                const terminal = await loadTerminalContext(target)
+                return buildReport(parts, {
                     app: APP_NAME,
                     platform: 'web',
                     sessionId,
@@ -75,9 +91,10 @@ export default function FeedbackWidget() {
                     ...webContextProviders(),
                     // The real URL is file:///…/app.asar/… — not HTTP(S), so the ingest would answer 400.
                     getUrl: feedbackPageUrl,
-                    getDiagnostics: () => sharedDiagnostics.snapshot(),
-                    extra: { appVersion: appVersionRef.current }
-                }),
+                    getDiagnostics: () => withTerminalEvents(sharedDiagnostics.snapshot(), terminal),
+                    extra: { appVersion: appVersionRef.current, ...terminalExtra(target, terminal) }
+                })
+            },
             getPathname: () => APP_ROUTE
         }
     }, [])

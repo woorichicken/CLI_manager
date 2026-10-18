@@ -55,8 +55,19 @@ export interface TerminalEvents {
     created: (id: string, cols: number, rows: number) => void
     output: (id: string, data: string) => void
     resized: (id: string, cols: number, rows: number) => void
-    exited: (id: string) => void
+    exited: (id: string, exit: TerminalExit) => void
+    /** A view attached; `existed` when the pty was already running (reload, reopened window, remount). */
+    attached: (id: string, existed: boolean) => void
+    /** A view never confirmed drawing its snapshot, so held output went out without it. */
+    attachTimedOut: (id: string) => void
+    /** The user cleared the terminal (Cmd+K). */
+    cleared: (id: string) => void
 }
+
+/** Why a pty is gone: the program ended by itself, or the app closed it. */
+export type TerminalExit =
+    | { by: 'program'; exitCode: number; signal?: number }
+    | { by: 'app' }
 
 export declare interface TerminalEventBus {
     on<E extends keyof TerminalEvents>(event: E, listener: TerminalEvents[E]): this
@@ -322,6 +333,7 @@ export class TerminalManager {
         // Clear terminal buffer (Cmd+K) - broadcasts clear event to all windows
         ipcMain.on('terminal-clear', (_, id: string) => {
             this.history?.clear(id)
+            this.events.emit('cleared', id)
             // Broadcast clear event to all windows (renderer will call xterm.clear())
             const channel = `terminal-clear-${id}`
             BrowserWindow.getAllWindows().forEach(win => {
@@ -363,7 +375,7 @@ export class TerminalManager {
         this.clearHolds(id)
         this.clearPendingOutput(id)
         this.cliTracker?.cleanup(id)
-        this.events.emit('exited', id)
+        this.events.emit('exited', id, { by: 'app' })
     }
 
     hasTerminal(id: string): boolean {
@@ -419,6 +431,7 @@ export class TerminalManager {
         } catch (e) {
             console.warn(`[TerminalManager] snapshot(${id}) failed:`, e)
         }
+        this.events.emit('attached', id, existed)
         return {
             existed,
             snapshot: snapshot?.data ?? null,
@@ -444,7 +457,10 @@ export class TerminalManager {
             tokens = new Map()
             this.holds.set(id, tokens)
         }
-        tokens.set(token, setTimeout(() => this.releaseHold(id, token), ATTACH_HOLD_TIMEOUT_MS))
+        tokens.set(token, setTimeout(() => {
+            this.events.emit('attachTimedOut', id)
+            this.releaseHold(id, token)
+        }, ATTACH_HOLD_TIMEOUT_MS))
         return token
     }
 
@@ -637,11 +653,11 @@ export class TerminalManager {
             this.events.emit('output', id, data)
         })
 
-        ptyProcess.onExit(() => {
+        ptyProcess.onExit(({ exitCode, signal }: { exitCode: number; signal?: number }) => {
             // Only report the pty we spawned: a kill-and-recreate with the same
             // id must not have the old process's exit mark the new one dead.
             if (this.terminals.get(id) === ptyProcess) {
-                this.events.emit('exited', id)
+                this.events.emit('exited', id, { by: 'program', exitCode, signal: signal || undefined })
             }
         })
 

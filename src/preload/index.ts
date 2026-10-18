@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -34,6 +34,7 @@ const api = {
     checkTools: (): Promise<{ git: boolean; gh: boolean; brew: boolean }> => ipcRenderer.invoke('check-tools'),
     getAppVersion: (): Promise<string> => ipcRenderer.invoke('get-app-version'),
     feedbackRelay: (request: FeedbackRelayRequest): Promise<FeedbackRelayResponse> => ipcRenderer.invoke('feedback-relay', request),
+    feedbackTerminalContext: (sessionId: string | null): Promise<FeedbackTerminalContext> => ipcRenderer.invoke('feedback-terminal-context', sessionId),
 
     // Templates
     getTemplates: (): Promise<any[]> => ipcRenderer.invoke('get-templates'),
