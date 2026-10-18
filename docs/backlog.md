@@ -25,7 +25,11 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: 사전 점검은 typecheck 다음 바로 `pnpm test:term` 이고, 테스트는 빌드된 `out/` 을 띄운다. 빌드는 그 뒤 `pnpm build:mac` 에서야 한다.
   그래서 **새 코드의 회귀가 옛 빌드로 통과**할 수 있다 — 이번엔 새 테스트가 옛 앱에서 실패해서 드러났다.
 - Why deferred: 릴리즈 도중 발견. 스크립트 변경은 릴리즈와 별개로 검증해야 한다.
-- Trigger: 다음 릴리즈 전.
+- Recurrences: **네 번 걸렸다** — 2026-09-12 v1.8.0(`out/` 이 08-18 빌드, t12~t14 실패 → `pnpm build` 뒤 86건 통과),
+  2026-10-03 v1.12.2(10-01 빌드, T26 10건 중 4건 실패), 2026-10-13 v1.13.1(위), 2026-10-18 v1.14.1(10-17 빌드, T32 앱 테스트 3건이
+  `window.api.feedbackTerminalContext is not a function` 로 실패 → `pnpm build` 뒤 148건 통과). 매번 게시물 없이 멈췄고 빌드 한 번으로 풀렸다.
+  세 번은 같은 항목을 새로 적었다 — 2026-10-18 에 하나로 합쳤다.
+- Trigger: 다음 릴리즈 전. 그때까지 우회: main 을 pull 한 뒤 `--check`·`--build` 전에 `pnpm build`.
 - Fix direction: 테스트 단계 앞에 `pnpm build` 를 넣거나, `out/` 이 HEAD 보다 오래됐으면 실패로 끊는다.
 - Owner: 없음
 
@@ -139,17 +143,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: Settings > Keyboard 에 "Use Option as Meta" 토글을 두고 xterm 옵션에 연결한다.
 - Owner: 없음
 
-### `scripts/release.cjs` — preflight 가 빌드 없이 `pnpm test:term` 을 돌려 낡은 `out/` 을 시험한다
-- Discovered: 2026-10-03, v1.12.2 릴리즈 중
-- Why deferred: 릴리즈를 막는 건 `pnpm build` 한 번으로 풀렸다. 스크립트 순서를 바꾸는 건 별도 변경이다.
-- Trigger: 다음 릴리즈 전, 또는 preflight 테스트가 "새로 추가한 테스트만" 실패할 때.
-- Evidence: `release.cjs:275` 가 `pnpm test:term` 을 바로 부른다. `test:term` 은 빌드된 `out/` 을 구동하는데,
-  주 체크아웃의 `out/` 은 10-01 빌드(이전 코드)였다. 그래서 머지된 T26 10건 중 4건이 **이전 앱**을 상대로
-  실패했고 `PREFLIGHT FAILED` 로 멈췄다(게시물 없음). `pnpm build` 후 재실행하면 통과.
-  반대 방향이 더 위험하다 — 낡은 `out/` 이 새 코드의 회귀를 숨기면 preflight 가 **통과**해 버린다.
-- Fix direction: 테스트 전에 `pnpm build` 를 넣거나, `out/` mtime 이 HEAD 커밋 시각보다 오래면 실패시킨다.
-- Owner: 없음
-
 ### `src/main/AgentStatusResolver.ts` — Codex 세션의 "실행 중"은 훅이 아니라 입력 가로채기에 의존한다
 - Discovered: 2026-08-16, 공식 훅 통합 구현 중
 - Why deferred: Codex CLI가 제공하는 이벤트가 `agent-turn-complete` **하나뿐**이라 턴 시작 신호가
@@ -255,17 +248,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   (발견 파일에서 url·token 을 읽고 REST 만 호출, 종료 코드로 질문 대기/회수/시간 초과 구분).
 - Evidence: `docs/architecture/control-api.md`「MCP 없이 쓰기」의 curl 예제는 토큰을 발견
   파일에서 꺼내는 준비 과정을 매번 요구한다.
-### `scripts/release.cjs` — 릴리즈 게이트의 테스트가 빌드 없이 기존 `out/`을 돌린다
-- Discovered: 2026-09-12, v1.8.0 preflight가 새 코드와 무관하게 실패해서
-- Why deferred: 게이트 앞에 `pnpm build`를 넣는 한 줄 수정이지만 이번 요청(배포) 범위 밖이고,
-  게이트 동작을 바꾸는 변경이라 따로 검토하는 게 맞다.
-- Trigger: 다음 릴리즈 전. 특히 main을 pull만 하고 `pnpm build`를 안 한 채 `--check`를 돌릴 때.
-- Evidence: `checkBuildHealth()`는 typecheck 후 바로 `pnpm test:term`을 부르는데, 테스트는
-  `out/main/index.js`를 띄운다. 주 체크아웃의 `out/`이 2026-08-18 빌드라 새 스펙(t12~t14)이 실패했고,
-  `pnpm build` 후엔 86건 전부 통과했다. 오늘은 **거짓 실패**였지만 반대 경우가 위험하다 — `out/`이
-  옛 코드면 새 코드의 회귀가 **통과한 채로** 서명·게시된다. 게이트가 소스가 아니라 산출물을 검사한다.
-- Owner: Maintainer
-
 ### `.github/workflows/ci.yml` — main CI가 2026-08-18 이후 한 번도 끝까지 가지 못했다
 - Discovered: 2026-09-12, v1.8.0 배포 후 CI 결과를 확인하다가
 - Why deferred: 원인이 macOS 러너에서의 테스트 소요 시간인지 특정 스펙의 행(hang)인지 가르려면
