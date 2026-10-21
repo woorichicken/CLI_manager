@@ -77,6 +77,8 @@ export interface LaunchOptions {
     env?: Record<string, string>
     /** Sidebar folders, stored in this order. */
     folders?: Array<{ id: string; name: string; isExpanded?: boolean; createdAt: number }>
+    /** Extra top-level keys for config.json (e.g. `sessionRelations`), written before launch. */
+    config?: Record<string, unknown>
 }
 
 /**
@@ -113,6 +115,7 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
         playgroundPath: userDataDir,
         customTemplates: options.customTemplates ?? [],
         ...(options.folders ? { folders: options.folders } : {}),
+        ...(options.config ?? {}),
         settings: {
             theme: 'dark',
             fontSize: 14,
