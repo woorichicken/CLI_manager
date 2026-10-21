@@ -19,26 +19,20 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### T26 — 「macOS 에서 Ctrl 키는 터미널로」 시험이 셸 시작 스크립트와 경주한다
+- Discovered: 2026-10-21 v1.15.0 릴리즈 사전 점검. 새 빌드에서 `t26-session-navigation.spec.ts:270` 이 3번 중 1번 실패, 나머지 두 번은 11/11 통과.
+- Evidence: 실패 화면에 `stty -icanon …; echo T26READY; cat -v` 가 두 번 찍히고 그 사이에 `load: 5.31 cmd: mise … running` — 개발자 셸 프로필(mise 훅)이 아직 도는 중에 명령·키가 들어가 `^W^R^T` 가 셸에 먹혔다(`^T` 는 SIGINFO 로 부하 줄을 찍음).
+- Why deferred: 릴리즈 도중 발견. 관련 세션 변경과 무관(키 처리·PTY 를 건드리지 않음).
+- Trigger: 사전 점검·CI 에서 t26 이 다시 실패할 때.
+- Fix direction: 시험 셸을 `zsh -f`(프로필 없이)로 띄우거나, `T26READY` 가 찍힌 **뒤에만** 키를 보내도록 기다림을 고친다.
+- Owner: 없음
+
 ### Control API — 관련 세션(`sessionRelations`)을 API 로 내보이지 않는다
 - Discovered: 2026-10-21, 세션 헤더 「관련 세션」(PR #37) 리뷰. 관계는 저장되지만 API 응답에는 메모리 전용 `openedBy` 만 있다.
 - Evidence: `src/main/ControlApiService.ts` `describe()` 는 `openedBy`(재시작 때 사라짐)만 싣고, `SessionRelations.list()` 를 부르는 길은 IPC(`get-session-relations`)뿐이다.
 - Why deferred: 리뷰에서 「이번엔 안 함, 다음 단계」로 정했다(2026-10-21). 응답 모양을 바꾸면 `t22` 계약과 `docs/architecture/control-api.md` 를 같이 고쳐야 한다.
 - Trigger: 에이전트가 「내 관련 세션」을 API 로 찾아야 하는 작업이 생길 때(예: 재시작 뒤 오케스트레이터가 자기 워커를 다시 찾기).
 - Fix direction: 세션 객체에 `relations: [{ sessionId, kind, direction }]` 를 더하거나 `GET /v1/sessions/:id/relations` — `openedBy` 는 호환을 위해 남긴다.
-- Owner: 없음
-
-### `scripts/release.cjs` — 사전 점검이 빌드 없이 남아 있는 `out/` 으로 테스트를 돌린다
-- Discovered: 2026-10-13 v1.13.1 릴리즈. 첫 `--check` 에서 6건 실패 — T29·T30 5건이 주 체크아웃의 10-09 빌드(`out/main/index.js` 에
-  `attachToken` 0건)를 상대로 돌았다. `pnpm build` 뒤 같은 점검은 133건 통과.
-- Evidence: 사전 점검은 typecheck 다음 바로 `pnpm test:term` 이고, 테스트는 빌드된 `out/` 을 띄운다. 빌드는 그 뒤 `pnpm build:mac` 에서야 한다.
-  그래서 **새 코드의 회귀가 옛 빌드로 통과**할 수 있다 — 이번엔 새 테스트가 옛 앱에서 실패해서 드러났다.
-- Why deferred: 릴리즈 도중 발견. 스크립트 변경은 릴리즈와 별개로 검증해야 한다.
-- Recurrences: **네 번 걸렸다** — 2026-09-12 v1.8.0(`out/` 이 08-18 빌드, t12~t14 실패 → `pnpm build` 뒤 86건 통과),
-  2026-10-03 v1.12.2(10-01 빌드, T26 10건 중 4건 실패), 2026-10-13 v1.13.1(위), 2026-10-18 v1.14.1(10-17 빌드, T32 앱 테스트 3건이
-  `window.api.feedbackTerminalContext is not a function` 로 실패 → `pnpm build` 뒤 148건 통과). 매번 게시물 없이 멈췄고 빌드 한 번으로 풀렸다.
-  세 번은 같은 항목을 새로 적었다 — 2026-10-18 에 하나로 합쳤다.
-- Trigger: 다음 릴리즈 전. 그때까지 우회: main 을 pull 한 뒤 `--check`·`--build` 전에 `pnpm build`.
-- Fix direction: 테스트 단계 앞에 `pnpm build` 를 넣거나, `out/` 이 HEAD 보다 오래됐으면 실패로 끊는다.
 - Owner: 없음
 
 ### xterm 리사이즈 — 창이 커질 때 커서가 맨 아래면 스크롤백 줄이 화면으로 내려와 Claude 리페인트에 지워진다

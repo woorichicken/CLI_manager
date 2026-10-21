@@ -316,6 +316,17 @@ function checkBuildHealth({ skipTests }) {
         return
     }
 
+    // The tests launch the app built in out/, and nothing else in preflight
+    // rebuilds it — a leftover out/ from an older checkout tested the old app
+    // five times (v1.8.0 · v1.12.2 · v1.13.1 · v1.14.1 · v1.15.0). Build first.
+    log('  ....  building out/ for the tests')
+    const build = tryRun('pnpm', ['build'], { stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 })
+    if (build.ok) pass('build for tests')
+    else {
+        fail('build for tests failed', '', 'pnpm build')
+        return
+    }
+
     log('  ....  running tests (a few minutes)')
     const tests = tryRun('pnpm', ['test:term'], { stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 })
     if (tests.ok) {
