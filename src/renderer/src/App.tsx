@@ -12,6 +12,8 @@ import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, E
 import { getErrorMessage } from './utils/errorMessages'
 import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare, Bot } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
+import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
+import { RelatedSessionsModal } from './components/RelatedSessions/RelatedSessionsModal'
 import { FullscreenTerminalView } from './components/FullscreenTerminalView'
 import { SystemMonitorPopover } from './components/SystemMonitorPopover'
 import { Onboarding } from './components/Onboarding'
@@ -23,6 +25,8 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { neighborSession, sidebarWorkspaceOrder } from './utils/sessionNavigation'
 import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
+import { useSessionRelations } from './hooks/useSessionRelations'
+import { relatedCounts } from './utils/relatedSessions'
 
 /** Let the window settle before spending anything on a network check. */
 const UPDATE_CHECK_STARTUP_DELAY_MS = 2000
@@ -68,6 +72,11 @@ function App() {
 
     // What went wrong with the last session link clicked (closed or ambiguous session)
     const [sessionLinkNotice, setSessionLinkNotice] = useState<string | null>(null)
+
+    // Session header "Related sessions": whose dialog is open, and the counts on the buttons
+    const [relatedDialogSessionId, setRelatedDialogSessionId] = useState<string | null>(null)
+    const sessionRelations = useSessionRelations()
+    const relatedCountBySession = useMemo(() => relatedCounts(sessionRelations, workspaces), [sessionRelations, workspaces])
 
     // Fullscreen terminal mode (for separate window)
     const [isFullscreenMode, setIsFullscreenMode] = useState(false)
@@ -507,13 +516,10 @@ function App() {
         })
     }
 
-    // A `climanager://session/…` link clicked in a terminal. One session is shown
-    // the way a sidebar click shows it; several open side by side in split view.
-    const handleSessionLink = (uri: string) => {
-        const refs = parseSessionLink(uri)
-        if (!refs) return
-
-        const resolution = resolveSessionLink(refs, workspaces)
+    // Sessions picked by id — from a session link or the Related sessions dialog.
+    // One is shown the way a sidebar click shows it; several open side by side in split view.
+    const showSessions = (refs: string[]) => {
+        const resolution = resolveSessionLink(refs.map(ref => ref.toLowerCase()), workspaces)
         setSessionLinkNotice(describeSessionLinkProblems(resolution))
 
         const linked = resolution.sessions
@@ -525,6 +531,14 @@ function App() {
             setActiveSession(null)
         }
     }
+
+    // A `climanager://session/…` link clicked in a terminal.
+    const handleSessionLink = (uri: string) => {
+        const refs = parseSessionLink(uri)
+        if (refs) showSessions(refs)
+    }
+
+    const closeRelatedDialog = React.useCallback(() => setRelatedDialogSessionId(null), [])
 
     useEffect(() => {
         if (!sessionLinkNotice) return
@@ -1413,6 +1427,13 @@ function App() {
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
                         {!splitLayout && (
                             <>
+                                {activeSession && (
+                                    <RelatedSessionsButton
+                                        sessionId={activeSession.id}
+                                        count={relatedCountBySession.get(activeSession.id) ?? 0}
+                                        onOpen={setRelatedDialogSessionId}
+                                    />
+                                )}
                                 <button
                                     onClick={() => {
                                         if (activeWorkspace) {
@@ -1575,6 +1596,8 @@ function App() {
                                                     }}
                                                     onPaneClick={() => setActiveSplitIndex(index)}
                                                     onReorder={handleSplitReorder}
+                                                    relatedCount={relatedCountBySession.get(sessionId) ?? 0}
+                                                    onOpenRelated={setRelatedDialogSessionId}
                                                 />
                                             </div>
                                             {/* Terminal placeholder - clicks pass through to terminal below */}
@@ -1840,6 +1863,17 @@ function App() {
                     sessions={activeWorkspace.sessions ?? []}
                     activeSessionId={activeSession?.id}
                     onClose={() => setDiffModalOpen(false)}
+                />
+            )}
+
+            {/* Related sessions — opened from a session header (single view or split pane) */}
+            {relatedDialogSessionId && (
+                <RelatedSessionsModal
+                    sessionId={relatedDialogSessionId}
+                    workspaces={workspaces}
+                    relations={sessionRelations}
+                    onClose={closeRelatedDialog}
+                    onShowSessions={showSessions}
                 />
             )}
 

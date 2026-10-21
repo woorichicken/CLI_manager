@@ -32,6 +32,7 @@ import { buildFeedbackTerminalContext } from './feedbackTerminalContext'
 import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
+import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
@@ -318,12 +319,15 @@ async function saveHistoryBeforeQuit(): Promise<void> {
     ])
 }
 
+const sessionRelations = new SessionRelations(store, (visible) => broadcast(SESSION_RELATIONS_CHANNEL, visible))
+
 const controlApiService = new ControlApiService({
     store,
     terminals: terminalManager,
     mirror: terminalMirror,
     broadcast,
     hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId),
+    relations: sessionRelations,
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)
@@ -3162,6 +3166,15 @@ app.whenReady().then(async () => {
         controlApiService.clearAiControl(sessionId)
     )
 
+    // Session header "Related sessions". Recorded automatically by the Control API
+    // (ControlApiService), added and removed by hand here.
+    ipcMain.handle('get-session-relations', () => sessionRelations.list())
+    ipcMain.handle('add-session-relation', (_e, from: string, to: string): boolean => sessionRelations.add(from, to))
+    ipcMain.handle('remove-session-relation', (_e, a: string, b: string): boolean => sessionRelations.remove(a, b))
+    ipcMain.handle('peek-sessions', (_e, sessionIds: string[]) =>
+        controlApiService.peekSessions(Array.isArray(sessionIds) ? sessionIds.filter((id) => typeof id === 'string') : [])
+    )
+
     ipcMain.handle('send-text-to-terminal', (_e, terminalId: string, text: string): IPCResult<null> => {
         try {
             terminalManager.writeToTerminal(terminalId, text)
@@ -3199,6 +3212,9 @@ app.whenReady().then(async () => {
 
     // Before the window loads, so the sidebar never shows a leftover scratch registration.
     controlApiService.pruneSpentEphemeral()
+    sessionRelations.prune(
+        new Set(((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => (w.sessions ?? []).map((s) => s.id)))
+    )
 
     // apply() never throws; a port conflict shows up in Settings instead of blocking boot.
     void controlApiServer.apply(getControlApiSettings()).then((state) => {

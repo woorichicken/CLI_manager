@@ -105,6 +105,7 @@ export interface AppConfig {
     customTemplates?: TerminalTemplate[]
     loopProjects?: LoopProject[]   // Loop Dashboard: projects promoted from workspaces
     loopSessions?: LoopSession[]   // Loop Dashboard: persisted loop sessions
+    sessionRelations?: SessionRelation[]   // Session header "Related sessions" (see SessionRelation)
 }
 
 export interface UserSettings {
@@ -846,4 +847,42 @@ export interface FeedbackTerminalContext {
     appEvents: TerminalEventRecord[]
     /** Null when no terminal was identified, or its id is unknown to main. */
     terminal: FeedbackTerminalState | null
+}
+
+/**
+ * How two sessions came to be related.
+ * - opened: `from` opened `to` through the Control API, saying who it was (X-Caller-Session).
+ * - connected: `from` first read or typed into `to` through the API, saying who it was.
+ * - manual: the user added it in the Related sessions dialog of `from`.
+ * Terminal output never creates one: it is untrusted text.
+ */
+export type SessionRelationKind = 'opened' | 'connected' | 'manual'
+
+/**
+ * Two sessions shown in each other's Related sessions dialog. At most one per
+ * pair of sessions, whichever direction. Persisted (unlike the orchestrator
+ * marks), and dropped as soon as either session closes.
+ */
+export interface SessionRelation {
+    from: string
+    to: string
+    kind: SessionRelationKind
+    /** Epoch ms it was recorded. */
+    at: number
+    /**
+     * The user removed it from the list. Kept so the next API call from the
+     * same agent does not put it straight back; adding it by hand clears it.
+     */
+    dismissed?: boolean
+}
+
+/** Main -> renderer: what the Related sessions dialog shows about a session, read from main's screen copy. */
+export interface SessionPeek {
+    sessionId: string
+    /** 'busy': output or a turn in progress. 'starting': no terminal yet. 'exited': the shell ended. */
+    state: 'busy' | 'idle' | 'starting' | 'exited'
+    /** A question or permission prompt is waiting for someone. */
+    awaitingInput: boolean
+    /** The last line of text above the agent's input box, or '' when there is none. */
+    lastLine: string
 }

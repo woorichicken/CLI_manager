@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### Control API — 관련 세션(`sessionRelations`)을 API 로 내보이지 않는다
+- Discovered: 2026-10-21, 세션 헤더 「관련 세션」(PR #37) 리뷰. 관계는 저장되지만 API 응답에는 메모리 전용 `openedBy` 만 있다.
+- Evidence: `src/main/ControlApiService.ts` `describe()` 는 `openedBy`(재시작 때 사라짐)만 싣고, `SessionRelations.list()` 를 부르는 길은 IPC(`get-session-relations`)뿐이다.
+- Why deferred: 리뷰에서 「이번엔 안 함, 다음 단계」로 정했다(2026-10-21). 응답 모양을 바꾸면 `t22` 계약과 `docs/architecture/control-api.md` 를 같이 고쳐야 한다.
+- Trigger: 에이전트가 「내 관련 세션」을 API 로 찾아야 하는 작업이 생길 때(예: 재시작 뒤 오케스트레이터가 자기 워커를 다시 찾기).
+- Fix direction: 세션 객체에 `relations: [{ sessionId, kind, direction }]` 를 더하거나 `GET /v1/sessions/:id/relations` — `openedBy` 는 호환을 위해 남긴다.
+- Owner: 없음
+
 ### `scripts/release.cjs` — 사전 점검이 빌드 없이 남아 있는 `out/` 으로 테스트를 돌린다
 - Discovered: 2026-10-13 v1.13.1 릴리즈. 첫 `--check` 에서 6건 실패 — T29·T30 5건이 주 체크아웃의 10-09 빌드(`out/main/index.js` 에
   `attachToken` 0건)를 상대로 돌았다. `pnpm build` 뒤 같은 점검은 133건 통과.
