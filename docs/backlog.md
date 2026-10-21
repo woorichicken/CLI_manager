@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### T26 — 「macOS 에서 Ctrl 키는 터미널로」 시험이 셸 시작 스크립트와 경주한다
+- Discovered: 2026-10-21 v1.15.0 릴리즈 사전 점검. 새 빌드에서 `t26-session-navigation.spec.ts:270` 이 3번 중 1번 실패, 나머지 두 번은 11/11 통과.
+- Evidence: 실패 화면에 `stty -icanon …; echo T26READY; cat -v` 가 두 번 찍히고 그 사이에 `load: 5.31 cmd: mise … running` — 개발자 셸 프로필(mise 훅)이 아직 도는 중에 명령·키가 들어가 `^W^R^T` 가 셸에 먹혔다(`^T` 는 SIGINFO 로 부하 줄을 찍음).
+- Why deferred: 릴리즈 도중 발견. 관련 세션 변경과 무관(키 처리·PTY 를 건드리지 않음).
+- Trigger: 사전 점검·CI 에서 t26 이 다시 실패할 때.
+- Fix direction: 시험 셸을 `zsh -f`(프로필 없이)로 띄우거나, `T26READY` 가 찍힌 **뒤에만** 키를 보내도록 기다림을 고친다.
+- Owner: 없음
+
 ### Control API — 관련 세션(`sessionRelations`)을 API 로 내보이지 않는다
 - Discovered: 2026-10-21, 세션 헤더 「관련 세션」(PR #37) 리뷰. 관계는 저장되지만 API 응답에는 메모리 전용 `openedBy` 만 있다.
 - Evidence: `src/main/ControlApiService.ts` `describe()` 는 `openedBy`(재시작 때 사라짐)만 싣고, `SessionRelations.list()` 를 부르는 길은 IPC(`get-session-relations`)뿐이다.
