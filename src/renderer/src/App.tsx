@@ -1077,8 +1077,8 @@ function App() {
         [activeWorkspace, sortedWorkspaces]
     )
     const workspacesInSidebarOrder = useMemo(
-        () => sidebarWorkspaceOrder(sortedWorkspaces, folders, settings.showWorktrees ?? true),
-        [sortedWorkspaces, folders, settings.showWorktrees]
+        () => sidebarWorkspaceOrder(sortedWorkspaces, folders, settings.showWorktrees ?? true, settings.showPlayground ?? true),
+        [sortedWorkspaces, folders, settings.showWorktrees, settings.showPlayground]
     )
 
     // Centralized keyboard shortcuts (session/workspace navigation, search, sidebar, settings, etc.)
@@ -1098,6 +1098,13 @@ function App() {
         onSetFileSearchMode: setFileSearchMode,
         onToggleSidebar: () => setIsSidebarOpen(prev => !prev),
         onToggleSettings: () => setSettingsOpen(prev => !prev),
+        onToggleRelated: () => {
+            // The dialog belongs to one session: the focused split pane, else the active tab.
+            const targetId = splitLayout
+                ? splitLayout.sessionIds[activeSplitIndex] ?? null
+                : activeSession?.id ?? null
+            setRelatedDialogSessionId(current => (current || !targetId ? null : targetId))
+        },
         onAddSession: (workspaceId, template) => {
             handleAddSession(workspaceId, 'regular', undefined, template?.command, template?.name)
         },
@@ -1290,6 +1297,7 @@ function App() {
         const homeSettingsChanged = oldShowHome !== newShowHome || oldHomePath !== newHomePath
 
         const worktreesNowHidden = (settings.showWorktrees ?? true) && !(newSettings.showWorktrees ?? true)
+        const playgroundNowHidden = (settings.showPlayground ?? true) && !(newSettings.showPlayground ?? true)
 
         setSettings(newSettings)
         await window.api.saveSettings(newSettings)
@@ -1297,6 +1305,12 @@ function App() {
         // Hiding worktrees removes their sidebar entry, so an active worktree
         // session would leave a terminal on screen with nothing selected in the
         // sidebar. Fall back to the parent workspace; sessions keep running.
+        // Same for a playground session once its section is gone.
+        if (playgroundNowHidden && activeWorkspace?.isPlayground) {
+            setActiveWorkspace(null)
+            setActiveSession(null)
+        }
+
         if (worktreesNowHidden && activeWorkspace?.parentWorkspaceId) {
             const parent = workspaces.find(w => w.id === activeWorkspace.parentWorkspaceId)
             const parentSession = parent?.sessions?.[0]
@@ -1384,6 +1398,7 @@ function App() {
                     fontSize={settings.fontSize}
                     showSessionCount={settings.showSessionCount}
                     showWorktrees={settings.showWorktrees ?? true}
+                    showPlayground={settings.showPlayground ?? true}
                     splitLayout={splitLayout}
                     onDragStartSession={handleSidebarDragStart}
                     onDragEndSession={handleSidebarDragEnd}

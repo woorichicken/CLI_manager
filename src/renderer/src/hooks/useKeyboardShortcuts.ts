@@ -29,6 +29,7 @@ interface UseKeyboardShortcutsConfig {
     onSetFileSearchMode: (mode: 'files' | 'content') => void
     onToggleSidebar: () => void
     onToggleSettings: () => void
+    onToggleRelated: () => void
     onAddSession: (workspaceId: string, template?: TerminalTemplate) => void
     onCloseSession: (workspaceId: string, sessionId: string) => void
     onClearSession: (sessionId: string) => void
@@ -103,6 +104,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onSetFileSearchMode,
         onToggleSidebar,
         onToggleSettings,
+        onToggleRelated,
         onAddSession,
         onCloseSession,
         onClearSession,
@@ -324,6 +326,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                 nextSplitPane: () => navigateSplitPane(1),
                 prevSplitPane: () => navigateSplitPane(-1),
                 toggleSidebar: () => onToggleSidebar(),
+                toggleRelated: () => onToggleRelated(),
                 fileSearch: () => {
                     if (activeWorkspace) {
                         onSetFileSearchMode('files')
@@ -397,6 +400,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         navigateSplitPane,
         onToggleSidebar,
         onToggleSettings,
+        onToggleRelated,
         onSetFileSearchOpen,
         onSetFileSearchMode,
         onAddSession,

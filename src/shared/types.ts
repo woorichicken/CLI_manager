@@ -159,6 +159,8 @@ export interface UserSettings {
      * running; they just have no entry point until this is turned back on.
      */
     showWorktrees?: boolean
+    /** Show the Playground section at the bottom of the sidebar (default: true). Off only hides it; running sessions are left alone. */
+    showPlayground?: boolean
     hasCompletedOnboarding?: boolean
     // Home Workspace 설정
     showHomeWorkspace?: boolean  // 홈 워크스페이스 표시 여부 (기본값: true)
@@ -288,7 +290,7 @@ export type ShortcutAction =
     | 'toggleSidebar' | 'toggleSettings'
     | 'fileSearch' | 'contentSearch'
     | 'newSession' | 'closeSession' | 'clearSession' | 'renameSession'
-    | 'toggleMemo'
+    | 'toggleMemo' | 'toggleRelated'
 
 export interface KeyBinding {
     key: string                          // Display key label (e.g., ']', '[', '`')
@@ -314,6 +316,7 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     clearSession:    { key: 'K', modifiers: ['mod'], code: 'k' },
     renameSession:   { key: 'R', modifiers: ['mod'], code: 'r' },
     toggleMemo:      { key: 'J', modifiers: ['mod'], code: 'j' },
+    toggleRelated:   { key: 'L', modifiers: ['mod', 'shift'], code: 'l' },
 }
 
 export type ShortcutGroup = 'navigation' | 'splitView' | 'search' | 'ui' | 'actions'
@@ -340,6 +343,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
     clearSession:    { label: 'Clear Terminal',      description: 'Clear terminal scrollback buffer',         group: 'actions' },
     renameSession:   { label: 'Rename Tab',          description: 'Rename the current tab',                   group: 'actions' },
     toggleMemo:      { label: 'Toggle Memo',         description: 'Open or close session memo',               group: 'actions' },
+    toggleRelated:   { label: 'Related Sessions',    description: 'Open or close the Related sessions dialog', group: 'actions' },
 }
 
 export const SHORTCUT_GROUP_NAMES: Record<ShortcutGroup, string> = {

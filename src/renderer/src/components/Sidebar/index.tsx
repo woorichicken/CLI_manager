@@ -91,6 +91,7 @@ interface SidebarProps {
     fontSize?: number  // Sidebar font size for workspace/session names
     showSessionCount?: boolean  // Show session count next to workspace names
     showWorktrees?: boolean  // Show worktree workspaces and their menu entries
+    showPlayground?: boolean  // Show the Playground section below the workspace list
     // Split view props
     splitLayout?: SplitTerminalLayout | null
     onDragStartSession?: (sessionId: string) => void
@@ -141,6 +142,7 @@ export function Sidebar({
     fontSize = 14,
     showSessionCount = false,
     showWorktrees = true,
+    showPlayground = true,
     splitLayout,
     onDragStartSession,
     onDragEndSession
@@ -822,10 +824,11 @@ export function Sidebar({
                     sidebarRef.current = el
                     sidebarContainerRef.current = el
                 }}
-                className="glass-panel mx-2 mb-2 mt-1 rounded-lg flex flex-col overflow-hidden relative"
+                className="glass-panel mx-2 mb-2 mt-2 rounded-lg flex flex-col overflow-hidden relative"
                 style={{ width: width, minWidth: 50, maxWidth: 480 }}
             >
-                <div className="py-1.5 px-2 border-b border-white/10 flex items-center justify-between draggable">
+                {/* Same height and top edge as the main header (App.tsx) so the two divider lines meet */}
+                <div className={`${splitLayout ? 'h-6' : 'h-10'} px-2 border-b border-white/10 flex items-center justify-between draggable transition-all`}>
                     {/* The label gives way first, so a narrow sidebar never clips the buttons */}
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">Workspaces</span>
                     <div className="flex items-center gap-1 no-drag shrink-0">
@@ -1194,6 +1197,7 @@ export function Sidebar({
                 )}
 
                 {/* Playground Section with Resizable Height */}
+                {showPlayground && (
                 <div
                     className="border-t border-white/10 relative flex flex-col flex-shrink-0"
                     style={{ height: playgroundHeight, minHeight: 100 }}
@@ -1251,6 +1255,7 @@ export function Sidebar({
                         </button>
                     </div>
                 </div>
+                )}
 
                 <CopyNotice notice={copyNotice} />
 

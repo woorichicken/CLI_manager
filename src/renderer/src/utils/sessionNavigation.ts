@@ -6,12 +6,13 @@ import { TerminalSession, Workspace, WorkspaceFolder } from '../../../shared/typ
  *
  * Mirrors Sidebar/index.tsx: home, pinned, folders (in folder order), unfoldered,
  * then playgrounds — each top-level workspace followed by its worktrees when
- * those are shown. `workspaces` must already be in display order (sortedWorkspaces).
+ * those are shown (playgrounds only while `showPlayground`). `workspaces` must already be in display order (sortedWorkspaces).
  */
 export function sidebarWorkspaceOrder(
     workspaces: Workspace[],
     folders: WorkspaceFolder[],
-    showWorktrees: boolean
+    showWorktrees: boolean,
+    showPlayground = true
 ): Workspace[] {
     const isTopLevel = (w: Workspace): boolean => !w.isPlayground && !w.parentWorkspaceId && !w.isHome
     const withWorktrees = (w: Workspace): Workspace[] => showWorktrees
@@ -24,7 +25,7 @@ export function sidebarWorkspaceOrder(
         workspaces.filter(w => isTopLevel(w) && !w.isPinned && w.folderId === folder.id))
     // A folderId pointing at a deleted folder renders nowhere; skip it like the sidebar does.
     const unfoldered = workspaces.filter(w => isTopLevel(w) && !w.isPinned && !w.folderId)
-    const playgrounds = workspaces.filter(w => w.isPlayground)
+    const playgrounds = showPlayground ? workspaces.filter(w => w.isPlayground) : []
 
     return [
         ...home,
