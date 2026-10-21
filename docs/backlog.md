@@ -116,22 +116,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   `install-app-deps` 를 넣거나, 최소한 `package.json` 의존성 범위를 만족하지 않는 설치본을 FAIL 로 잡는다.
 - Owner: 없음
 
-### CI `Install dependencies` — `@vscode/ripgrep` postinstall 이 GitHub 403 으로 설치를 죽인다
-- Discovered: 2026-10-17, 피드백 위젯 PR #31 CI. 두 번째 push 의 run 39036970480 이 재실행까지 2회 연속 같은 자리에서 실패.
-- Evidence: `@vscode/ripgrep postinstall: Downloading ripgrep failed after multiple retries: Error: Request failed: 403` → `ELIFECYCLE`.
-  main 에서도 run 38225007518(10-12)·38336224847·38409608740(10-13) 이 같은 단계에서 실패했다 — 익명 GitHub API 호출 한도다.
-  `node_modules/@vscode/ripgrep/lib/postinstall.js` 는 `process.env.GITHUB_TOKEN` 이 있으면 그 토큰으로 받는다.
-- Why deferred: 피드백 위젯과 무관한 CI 설정이고, 설치를 고쳐도 아래 테스트 단계가 25분 타임아웃이라 CI 는 여전히 초록이 안 된다.
-- Trigger: CI 를 다시 머지 게이트로 쓰려 할 때 — 아래 항목과 같이 고친다.
-- Fix direction: `.github/workflows/ci.yml` 의 Install 단계에 `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`.
-- Owner: 없음
-
 ### CI `Terminal + agent tests` — 앱을 띄우는 테스트가 CI 에서 전부 3분 타임아웃
 - Discovered: 2026-10-06, simple-git 4 업그레이드 PR CI
 - Why deferred: 로컬에서는 전체 123건이 통과한다(2026-10-06 릴리즈 preflight). CI 러너 환경 문제라 별도 조사가 필요하다.
 - Trigger: CI 를 다시 머지 게이트로 쓰려 할 때. 그 전까지 CI 초록은 typecheck·build·audit 까지만 뜻한다.
 - Evidence: run 37429282637 — 유닛(`loop-counter`) 8건만 통과, 그 뒤 t1·t4·t5·t6·t7 이 각각 3.0m 로 실패하다 job `timeout-minutes: 25` 로 취소.
   2026-10-03 main(v1.12.2 전후) 두 run 도 같은 단계에서 cancelled — simple-git 변경 이전부터다.
+  2026-10-17 main(v1.14.0) run 39038509159 와 2026-10-21 PR #34 재실행 run 39451565054 도 같은 모양 — t1·t31·t4·t5 가 각 3.0m 실패 후 25분에 취소.
+  설치 단계의 `@vscode/ripgrep` 403 은 PR #35 가 고쳤다 — 그 뒤 CI 를 막는 건 이 항목뿐이다.
 - Fix direction: 실패 아티팩트(스크린샷·main 로그)를 받아 앱 구동 단계에서 막히는지 본다. node-pty 를 Electron ABI 로 다시 빌드하는 `electron-builder install-app-deps` 단계가 CI 에 있는지부터 확인.
 - Owner: 없음
 
