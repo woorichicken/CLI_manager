@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css'
 import { ChevronUp, ChevronDown, FolderOpen, ExternalLink, Code } from 'lucide-react'
 import { TerminalPatternMatcher } from '../utils/terminalPatterns'
 import { registerFilePathLinks } from '../utils/filePathLinkProvider'
+import { SESSION_LINK_PROTOCOL, SESSION_LINK_REGEX } from '../utils/sessionLink'
 import { TerminalResizeManager } from '../utils/terminalResizeManager'
 import {
     debugRegisterTerminal,
@@ -46,6 +47,9 @@ interface TerminalViewProps {
     fileLinksEnabled?: boolean
     // Grid Window에서는 PTY resize를 비활성화 (메인 앱과 크기 충돌 방지)
     disablePtyResize?: boolean
+    // Clicking `climanager://session/<id>` in the output calls this. Without it
+    // (windows that cannot switch sessions) such text is not a link.
+    onSessionLink?: (uri: string) => void
 }
 
 // Default terminal font family (fallback when no custom font is set)
@@ -104,7 +108,8 @@ export function TerminalView({
     keyboardSettings,
     hooksSettings,
     fileLinksEnabled = true,
-    disablePtyResize = false
+    disablePtyResize = false,
+    onSessionLink
 }: TerminalViewProps) {
     // Compute effective font family with fallback
     // Empty string means user selected "Custom" but didn't enter a value yet
@@ -133,6 +138,9 @@ export function TerminalView({
     const spawnedHereRef = useRef<boolean>(false)
     // keyboardSettings를 ref로 저장하여 실시간 적용 지원
     const keyboardSettingsRef = useRef(keyboardSettings)
+    // The terminal is built once; a link click must reach the latest handler.
+    const onSessionLinkRef = useRef(onSessionLink)
+    onSessionLinkRef.current = onSessionLink
 
     // Context menu state
     const [contextMenu, setContextMenu] = useState<{
@@ -465,7 +473,14 @@ export function TerminalView({
             // openLinkExternally is the allowlist that keeps that safe.
             linkHandler: {
                 allowNonHttpProtocols: true,
-                activate: (_event, uri) => openLinkExternally(uri)
+                activate: (_event, uri) => {
+                    // A session link is the app's own address, never the OS's.
+                    if (uri.startsWith(SESSION_LINK_PROTOCOL)) {
+                        onSessionLinkRef.current?.(uri)
+                        return
+                    }
+                    openLinkExternally(uri)
+                }
             }
         })
 
@@ -755,6 +770,27 @@ export function TerminalView({
             }
         }
     }, [fileLinksEnabled, id, cwd])
+
+    // Session links reuse WebLinksAddon with their own pattern, so wrapping and
+    // wide-character handling match ordinary web links.
+    const sessionLinksEnabled = Boolean(onSessionLink)
+    useEffect(() => {
+        const term = xtermRef.current
+        if (!term || !sessionLinksEnabled) return
+
+        const sessionLinksAddon = new WebLinksAddon(
+            (_event, uri) => onSessionLinkRef.current?.(uri),
+            { urlRegex: SESSION_LINK_REGEX }
+        )
+        term.loadAddon(sessionLinksAddon)
+        return () => {
+            try {
+                sessionLinksAddon.dispose()
+            } catch {
+                // The terminal may already be disposed; that tears the addon down with it.
+            }
+        }
+    }, [sessionLinksEnabled, id, cwd])
 
     // Context menu handlers
     const closeContextMenu = useCallback(() => {

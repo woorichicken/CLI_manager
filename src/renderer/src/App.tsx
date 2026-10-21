@@ -21,6 +21,7 @@ import { FeedbackGate } from './components/Feedback/FeedbackGate'
 import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { neighborSession, sidebarWorkspaceOrder } from './utils/sessionNavigation'
+import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
 
 /** Let the window settle before spending anything on a network check. */
@@ -35,6 +36,9 @@ const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 /** Minimum gap between focus-triggered checks, so alt-tabbing costs nothing. */
 const UPDATE_CHECK_FOCUS_THROTTLE_MS = 30 * 60 * 1000
+
+/** How long a session link problem (closed or ambiguous session) stays on screen. */
+const SESSION_LINK_NOTICE_MS = 4000
 
 function App() {
     const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -61,6 +65,9 @@ function App() {
     const [isDraggingSession, setIsDraggingSession] = useState(false)
     const [dragOverZone, setDragOverZone] = useState<'split' | null>(null)
     const [activeSplitIndex, setActiveSplitIndex] = useState<number>(0) // Which pane is active in split view
+
+    // What went wrong with the last session link clicked (closed or ambiguous session)
+    const [sessionLinkNotice, setSessionLinkNotice] = useState<string | null>(null)
 
     // Fullscreen terminal mode (for separate window)
     const [isFullscreenMode, setIsFullscreenMode] = useState(false)
@@ -499,6 +506,31 @@ function App() {
             return next
         })
     }
+
+    // A `climanager://session/…` link clicked in a terminal. One session is shown
+    // the way a sidebar click shows it; several open side by side in split view.
+    const handleSessionLink = (uri: string) => {
+        const refs = parseSessionLink(uri)
+        if (!refs) return
+
+        const resolution = resolveSessionLink(refs, workspaces)
+        setSessionLinkNotice(describeSessionLinkProblems(resolution))
+
+        const linked = resolution.sessions
+        if (linked.length === 1) {
+            handleSelect(linked[0].workspace, linked[0].session)
+        } else if (linked.length > 1) {
+            setSplitLayout({ sessionIds: linked.map(entry => entry.session.id) })
+            setActiveSplitIndex(0)
+            setActiveSession(null)
+        }
+    }
+
+    useEffect(() => {
+        if (!sessionLinkNotice) return
+        const timer = setTimeout(() => setSessionLinkNotice(null), SESSION_LINK_NOTICE_MS)
+        return () => clearTimeout(timer)
+    }, [sessionLinkNotice])
 
     const activeAiControl = activeSession
         ? workspaces.find(w => w.id === activeWorkspace?.id)?.sessions.find(s => s.id === activeSession.id)?.aiControl
@@ -1697,6 +1729,7 @@ function App() {
                                             hooksSettings={settings.hooks}
                                             fileLinksEnabled={settings.terminalFileLinks ?? true}
                                             disablePtyResize={isInGridView}
+                                            onSessionLink={handleSessionLink}
                                         />
                                         <SessionMemo
                                             ref={(handle) => {
@@ -1748,6 +1781,14 @@ function App() {
                                         Report Issue
                                     </button>
                                 )}
+                            </div>
+                        )}
+                        {sessionLinkNotice && (
+                            <div
+                                data-testid="session-link-notice"
+                                className="absolute left-1/2 -translate-x-1/2 bottom-4 z-50 max-w-[80%] px-3 py-1.5 rounded border border-white/10 bg-[#1e1e20] shadow-xl text-xs text-amber-200 pointer-events-none"
+                            >
+                                {sessionLinkNotice}
                             </div>
                         )}
                     </div>

@@ -133,6 +133,7 @@ pnpm build && pnpm test:term
      - `useSidebarCollapseAll.ts`: 사이드바 전체 접기 — 접기 직전 펼침 상태를 기억했다가 다음 누름에 그대로 복원
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
+   - `utils/sessionLink.ts`: 세션 링크 `climanager://session/<id 또는 앞 8자>[,…]` — 터미널에서 누르면 그 세션으로(여럿이면 분할 화면, 최대 4). 화면 전환만 한다(터미널 출력은 믿을 수 없는 글). 에이전트는 터미널에 **앞 8자**로 찍는다 — Claude Code 는 화면보다 긴 낱말을 들여쓰기로 끊어 링크를 깨뜨린다
    - `constants/`: **상수 및 유틸리티**
      - `icons.tsx`: 템플릿 아이콘 매핑
      - `styles.ts`: 공통 스타일 상수
@@ -400,6 +401,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     순서대로인지, `exit 3` 의 종료 코드, 렌더러 크래시 → `renderer-gone`·`reattached`, 그리고 실제 위젯에서 터미널을 지목해 보낸 **페이로드**(main 의 `fetch` 를 바꿔 밖으로 안 나간다)가
     `source: picked`·사건 로그를 싣는지. 지목은 `page.mouse` 로 한다 — 지목 오버레이가 덮여 locator 클릭은 거부된다. 지목 메모의 완료 표시는 「보냈습니다」가 아니라
     `status` 「주석 1: …」의 「완료」다. 가짜 키는 실행 중에 조각을 이어 만든다 — 시크릿 스캔이 테스트 파일도 본다. `FEEDBACK_LIVE=1` 이면 라쏘런에 1건 보낸다
+  - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이
