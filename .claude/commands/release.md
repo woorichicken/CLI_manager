@@ -10,8 +10,9 @@ description: 릴리즈 — 빌드·공증·GitHub 게시·R2·웹사이트·chan
 ## 순서
 
 ```bash
-# 준비 상태 확인 (아무것도 안 바꿈)
-node scripts/release.cjs --check
+# 준비 상태 확인 (아무것도 안 바꿈) — 테스트는 아래 --build 가 한 번 돌린다.
+# --skip-tests 없이 돌리면 전체 스위트(약 8분)를 --check·--build 에서 두 번 돈다(2026-10-21 v1.14.2)
+node scripts/release.cjs --check --skip-tests
 
 # 빌드 — 약 10분. 세션 타임아웃에 안 죽게 분리 실행
 nohup sh -c 'node scripts/release.cjs --version X.Y.Z --build > /tmp/build.log 2>&1; \
