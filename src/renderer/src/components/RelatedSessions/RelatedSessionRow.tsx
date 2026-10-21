@@ -1,6 +1,6 @@
 import { Hash, StickyNote, X } from 'lucide-react'
-import { SessionPeek } from '../../../../shared/types'
-import { isTalkSession, RelatedEntry } from '../../utils/relatedSessions'
+import { SessionPeek, SessionRelationKind, TerminalSession, Workspace } from '../../../../shared/types'
+import { isTalkSession } from '../../utils/relatedSessions'
 
 type PeekState = SessionPeek['state'] | 'awaiting'
 
@@ -26,15 +26,25 @@ function peekState(peek: SessionPeek | undefined): PeekState | null {
     return peek.awaitingInput ? 'awaiting' : peek.state
 }
 
+/** A row needs no relation: the Recent and All tabs list sessions that merely exist. */
+export interface RowEntry {
+    session: TerminalSession
+    workspace: Workspace
+    kind?: SessionRelationKind
+}
+
 interface RelatedSessionRowProps {
-    entry: RelatedEntry
+    entry: RowEntry
     peek: SessionPeek | undefined
     selected: boolean
     /** The split view is full (this session plus three); only already-selected rows can change. */
     selectionFull: boolean
     onToggle: (sessionId: string) => void
     onShow: (sessionId: string) => void
-    onRemove: (sessionId: string) => void
+    /** Left out where "remove from related" means nothing (Recent, All). */
+    onRemove?: (sessionId: string) => void
+    /** No state dot or label: the All tab does not poll every session. */
+    hideState?: boolean
     /** Copies the session id (what the AI Control API calls it). */
     onCopyId: (sessionId: string) => void
     /** Levels of indentation in the relation tree; 0 for a flat list. */
@@ -46,7 +56,7 @@ const INDENT_STEP_PX = 12
 const MAX_INDENT_LEVELS = 3
 const BASE_PADDING_PX = 16
 
-export function RelatedSessionRow({ entry, peek, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, indent = 0 }: RelatedSessionRowProps) {
+export function RelatedSessionRow({ entry, peek, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, indent = 0, hideState = false }: RelatedSessionRowProps) {
     const { session, workspace, kind } = entry
     const state = peekState(peek)
     const memo = session.memo?.split('\n').find(line => line.trim())?.trim()
@@ -74,9 +84,11 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                 data-related-open={session.id}
             >
                 <div className="flex items-center gap-2 min-w-0">
-                    <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${state ? STATE_DOTS[state] : 'bg-gray-700'}`}
-                    />
+                    {!hideState && (
+                        <span
+                            className={`w-2 h-2 rounded-full shrink-0 ${state ? STATE_DOTS[state] : 'bg-gray-700'}`}
+                        />
+                    )}
                     <span className="text-sm text-gray-200 truncate">{session.name}</span>
                     {isTalkSession(session.name) && (
                         <span
@@ -95,13 +107,15 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                             connected
                         </span>
                     )}
-                    <span className="hidden min-[480px]:inline text-xs text-gray-500 truncate">{workspace.name}</span>
-                    <span
-                        className="ml-auto shrink-0 text-[11px] text-gray-400"
-                        data-related-state={state ?? ''}
-                    >
-                        {state ? STATE_LABELS[state] : ''}
-                    </span>
+                    <span className={`hidden min-[480px]:inline text-xs text-gray-500 truncate ${hideState ? 'ml-auto' : ''}`}>{workspace.name}</span>
+                    {!hideState && (
+                        <span
+                            className="ml-auto shrink-0 text-[11px] text-gray-400"
+                            data-related-state={state ?? ''}
+                        >
+                            {state ? STATE_LABELS[state] : ''}
+                        </span>
+                    )}
                 </div>
                 {peek?.lastLine && (
                     <div className="mt-0.5 pl-4 font-mono text-[11px] text-gray-500 truncate" data-related-last-line={session.id}>
@@ -123,14 +137,16 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
             >
                 <Hash size={12} />
             </button>
-            <button
-                onClick={() => onRemove(session.id)}
-                className="mt-0.5 p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-colors"
-                title="Remove from related sessions (the session keeps running)"
-                data-related-remove={session.id}
-            >
-                <X size={12} />
-            </button>
+            {onRemove && (
+                <button
+                    onClick={() => onRemove(session.id)}
+                    className="mt-0.5 p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-colors"
+                    title="Remove from related sessions (the session keeps running)"
+                    data-related-remove={session.id}
+                >
+                    <X size={12} />
+                </button>
+            )}
         </div>
     )
 }

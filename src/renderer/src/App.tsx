@@ -78,6 +78,13 @@ function App() {
     const sessionRelations = useSessionRelations()
     const relatedCountBySession = useMemo(() => relatedCounts(sessionRelations, workspaces), [sessionRelations, workspaces])
 
+    // The session the user is looking at: the focused split pane, else the active tab. One place reports it
+    // for the Related dialog's Recent tab; main skips a repeat of the id already in front.
+    const viewedSessionId = splitLayout ? splitLayout.sessionIds[activeSplitIndex] ?? null : activeSession?.id ?? null
+    useEffect(() => {
+        if (viewedSessionId) void window.api.pushRecentSession(viewedSessionId)
+    }, [viewedSessionId])
+
     // Fullscreen terminal mode (for separate window)
     const [isFullscreenMode, setIsFullscreenMode] = useState(false)
     const [fullscreenSessionIds, setFullscreenSessionIds] = useState<string[]>([])
