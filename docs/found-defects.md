@@ -23,6 +23,21 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 `src/main/index.ts` — 업데이트 확인이 「버전이 다르면 업데이트」라 더 낮은 버전도 권한다
+- Date: 2026-10-21
+- Where: `src/main/index.ts` 의 `check-for-update` 핸들러 — `if (latestVersion && latestVersion !== currentVersion)` 이면
+  `hasUpdate: true`. 받는 쪽은 `App.tsx` 의 주기 확인(토스트)과 `Settings.tsx` 의 수동 확인.
+- What: 크기 비교가 아니라 같은지만 본다. 게시 전 v1.14.2 설치본을 띄우자 왼쪽 아래에 「Update Available v1.14.1」이 떴다 —
+  지금 버전보다 낮은 GitHub 최신 릴리즈를 업데이트로 권한 것이다.
+- Surfaced by: v1.14.2 릴리즈 중 설치본에서 세션 링크를 캡처하다가.
+- Impact: 평소 사용자에겐 안 보인다(게시 뒤엔 최신 = 지금 버전). 릴리즈를 내려 최신이 한 단계 낮아졌을 때와, 게시 전 빌드를 돌릴 때
+  다운그레이드를 권한다. 「Download」를 누르면 무엇이 되는지는 확인하지 않았다(`autoUpdater.allowDowngrade` 는 설정하지 않음).
+- Workaround: 「Later」.
+- Fix direction: semver 로 `latest > current` 일 때만 `hasUpdate`. electron-updater 의 `update-available` 이벤트는 이미 크기를 비교하니
+  그 결과(`result.isUpdateAvailable` 등)를 그대로 쓰는 쪽이 간단하다.
+
+---
+
 ### 🐛 `Settings.tsx` — Theme 을 Light 로 바꿔도 화면이 그대로 어둡다
 - Date: 2026-10-09
 - Where: `src/renderer/src/components/Settings.tsx` 의 Theme 선택(`settings.theme`) ↔
