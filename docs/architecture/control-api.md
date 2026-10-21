@@ -65,6 +65,7 @@ opened), above the green AI mark: **master > ai > user**.
 | `CLIMANAGER_SESSION_ID` | Every pty is started with its own session id in this variable (same id when the terminal is recreated). |
 | `X-Caller-Session` | Optional request header, REST and MCP alike. The caller copies its `CLIMANAGER_SESSION_ID` into it. Must match `^[A-Za-z0-9_-]{1,64}$`; anything else, or an id that names no session, is **ignored, not rejected**. |
 | Becoming master | Only when a request carrying the header **opens a session** successfully. Reads and inputs do not. |
+| Related sessions | Opening a session with the header relates the two (`opened`). The **first** read, input, wait or focus of another session with the header relates them too (`connected`). See below. |
 | `lastSeen` | Updated on every later request carrying the header. |
 | Ending | The master's shell exits, the session is closed/removed, **30 minutes** without a request carrying its id (`ORCHESTRATOR_IDLE_MS`), or the API is switched off. |
 | Persistence | **Memory only.** An app restart clears every master mark and `openedBy` — the agents that made the calls are gone, and a red row restored from disk would point at nothing. |
@@ -77,6 +78,19 @@ The master session itself is not given the green AI mark.
 API fields: `orchestrator: { since, lastSeen, client, openedCount } | null` (ISO times;
 `openedCount` counts opened sessions still open) and `openedBy: <master session id> | null`, on every
 session object — `GET /v1/sessions`, `GET /v1/sessions/:id`, MCP `list_sessions`, open results.
+
+### Related sessions
+
+The session header's **Related** dialog lists the sessions that belong with a session. The API fills
+it from the same header: `opened` when the caller opens a session, `connected` the first time the
+caller reads, types into, waits on or focuses a session it did not open. One record per pair of
+sessions; a later call never changes it. The user can add pairs by hand and remove any of them — a
+removed pair stays marked so the agent's next call does not put it back.
+
+Unlike the master mark, **relations are persisted** (`sessionRelations` in electron-store). The mark
+says an agent is directing others *now*, which a restart ends; a relation says two sessions belong
+together, which the sessions themselves outlive. Either session closing — through the API or the
+sidebar — deletes the record. `openedBy` in API responses stays memory-only as before.
 
 For MCP, set the header in the client config, e.g. Claude Code `.mcp.json`:
 `"headers": { "X-Caller-Session": "${CLIMANAGER_SESSION_ID}" }`. With curl:

@@ -90,6 +90,14 @@ rules stay in the root; this file is the inventory.
 - 사용자는 그 세션을 앱에서 그대로 보고 끼어들 수 있다 — AI 세션은 사이드바 녹색 + 헤더 "AI connected"
 - REST(`/v1`) + MCP(`/mcp`), 로컬 전용·토큰 필수·기본 꺼짐. 계약: [`control-api.md`](control-api.md)
 
+#### 14. 관련 세션 (Related sessions)
+- 세션 헤더(단일 화면 오른쪽 「Related」, 분할 칸 헤더의 아이콘)에서 그 세션과 관련된 세션을 모달로 본다 — 0개여도 버튼은 보인다(손으로 추가하는 곳이라서)
+- 자동 등록: 에이전트가 `X-Caller-Session` 을 붙여 세션을 **열 때**(`opened`)와 다른 세션을 **처음 읽거나 입력할 때**(`connected`). 터미널 출력(링크 글자)으로는 등록하지 않는다
+- 손으로 추가·빼기. 뺀 쌍은 표시(`dismissed`)를 남겨 에이전트의 다음 호출이 다시 넣지 않게 하고, 손으로 다시 넣으면 풀린다
+- 모달: 「Opened from this session」 / 「Opened this session」 / 「Added by hand」 세 묶음 · 상태(Working/Waiting for you/Idle — main 의 화면 사본 기준) · 마지막 줄 · 메모 · 이름이 `대화:` 로 시작하면 「Talk」 배지. 누르면 사이드바 클릭과 같게 이동, 여럿 고르면 세션 링크처럼 나란히(최대 4)
+- 어느 쪽이든 세션이 닫히면(API·사이드바·워크스페이스 삭제) 그 관계는 저장소에서도 지워진다. 시작 때 없는 세션을 가리키는 관계를 정리한다
+- 코드: `src/main/SessionRelations.ts`(저장) · `ControlApiService`(자동 등록·`peekSessions`) · `src/renderer/src/utils/relatedSessions.ts`(묶음 계산) · `components/RelatedSessions/`
+
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
 - **별칭도 인식한다** — 사용자가 `cldy`로 띄워도 `claude`로 판정한다. 시작 시 `zsh -ic alias`를
@@ -160,7 +168,10 @@ User Action (Renderer)
   playgroundPath: string,
   customTemplates: TerminalTemplate[],
   settings: UserSettings,           // settings.controlApi = { enabled, port }
-  controlApiToken?: string          // Kept outside settings so a stale save-settings cannot rotate it
+  controlApiToken?: string,         // Kept outside settings so a stale save-settings cannot rotate it
+  sessionRelations?: [              // Related sessions — one record per pair, either direction
+    { from: string, to: string, kind: 'opened' | 'connected' | 'manual', at: number, dismissed?: boolean }
+  ]
 }
 ```
 
@@ -215,6 +226,11 @@ User Action (Renderer)
 - `regenerate-control-api-token`: 토큰 재발급 (기존 클라이언트 연결 끊김)
 - `control-api-release-session`: 사이드바 "Disconnect AI" — 세션은 유지, API 접근만 회수
 - `control-api-session` (main → renderer): API가 세션을 열기/닫기/갱신/포커스했음을 알림
+
+#### Related Sessions
+- `get-session-relations` → 보이는 관계(`dismissed` 제외) · `session-relations` (main → renderer): 바뀔 때마다 전체 목록
+- `add-session-relation(from, to)` / `remove-session-relation(a, b)`: 손으로 추가·빼기(빼기는 `dismissed` 표시)
+- `peek-sessions(ids)` → `SessionPeek[]`: 상태·질문 대기·마지막 줄. 읽기만 한다 — API 읽기와 달리 AI 표시를 붙이지 않는다
 
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)

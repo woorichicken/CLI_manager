@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react'
 import { GripVertical, Search, LayoutGrid, GitBranch, Settings, X } from 'lucide-react'
 import { TerminalSession, Workspace } from '../../../shared/types'
+import { RelatedSessionsButton } from './RelatedSessions/RelatedSessionsButton'
 
 interface SplitTerminalHeaderProps {
     session: TerminalSession
@@ -17,6 +18,9 @@ interface SplitTerminalHeaderProps {
     onDragStart?: (sessionId: string) => void
     onDragEnd?: () => void
     onReorder?: (fromSessionId: string, toSessionId: string) => void
+    // Related sessions dialog
+    relatedCount?: number
+    onOpenRelated?: (sessionId: string) => void
 }
 
 /**
@@ -36,7 +40,9 @@ export function SplitTerminalHeader({
     onPaneClick,
     onDragStart,
     onDragEnd,
-    onReorder
+    onReorder,
+    relatedCount = 0,
+    onOpenRelated
 }: SplitTerminalHeaderProps) {
     const [isDragOver, setIsDragOver] = useState(false)
 
@@ -147,6 +153,9 @@ export function SplitTerminalHeader({
 
             {/* Right: Action buttons */}
             <div className="flex items-center gap-0.5 shrink-0">
+                {onOpenRelated && (
+                    <RelatedSessionsButton sessionId={session.id} count={relatedCount} onOpen={onOpenRelated} compact />
+                )}
                 <button
                     onClick={handleSearchClick}
                     className="p-1 hover:bg-white/10 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"

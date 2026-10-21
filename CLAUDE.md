@@ -103,6 +103,8 @@ pnpm build && pnpm test:term
    - `CodexSessionLocator.ts`: Codex 가 고른 대화 id 를 rollout 파일에서 찾아 재시작 때 `resume` 하게 함
    - `TerminalMirror.ts`: 모든 터미널 출력을 headless xterm으로 재생 — Control API 가 "사용자가 보는 화면"을 읽고, 새 창·재시작 때 히스토리를 다시 그리는 원본 ([`docs/decisions/0008`](docs/decisions/0008-terminal-history-lives-in-main.md))
    - `ScrollbackStore.ts`: 미러 스냅샷을 30초마다(출력이 있던 세션만) `userData/scrollback/<id>.ans` 에 저장 — 강제종료 뒤 복원용
+   - `SessionRelations.ts`: 세션 헤더 「관련 세션」 저장(`sessionRelations`) — API 가 열거나 처음 읽은·입력한 세션, 손으로 추가한 세션. 한 쌍에 한 줄, 어느 쪽이든 닫히면 지운다 ([`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) 14)
+   - `screenLines.ts`: 화면 줄에서 읽을 것 고르기(입력 상자 규칙선, 「마지막 줄」) — pty 없이 테스트하려고 `TerminalMirror` 밖에 둔다
    - `ClaudeSessionSync.ts`: Claude 의 실행 중 세션 레지스트리(`~/.claude/sessions/<pid>.json`)를 읽어 저장된 대화 id 를 실제 대화로 맞춤 — Claude 안에서 `/resume` 하면 id 가 바뀐다
    - `FeedbackRelay.ts`: 피드백 위젯의 HTTP 요청을 main 에서 대신 보낸다 — 배포 렌더러는 `file://` 라 `Origin: null` 이 되고 라쏘런이 403 으로 거부한다. 수집 함수 경로만 허용
    - `TerminalEventLog.ts`: 터미널마다 최근 사건(시작·복원·다시 붙음·붙기 시간 초과·Cmd+K·프로그램의 스크롤백 삭제 CSI 3 J·종료 코드·닫힘)과 창 사건(렌더러 크래시·새로고침)을 메모리에만 둔다 — 제보가 「무엇이 먼저 있었나」를 싣는 원본
@@ -133,6 +135,7 @@ pnpm build && pnpm test:term
      - `useSidebarCollapseAll.ts`: 사이드바 전체 접기 — 접기 직전 펼침 상태를 기억했다가 다음 누름에 그대로 복원
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
+   - `components/RelatedSessions/` · `utils/relatedSessions.ts`: 세션 헤더 「Related」 버튼과 모달 — 세 묶음(연 세션·이 세션을 연 세션·손으로 추가), 상태·마지막 줄·메모, 「대화:」 세션 배지. 이동·나란히 열기는 세션 링크와 같은 `showSessions`(App.tsx)
    - `utils/sessionLink.ts`: 세션 링크 `climanager://session/<id 또는 앞 8자>[,…]` — 터미널에서 누르면 그 세션으로(여럿이면 분할 화면, 최대 4). 화면 전환만 한다(터미널 출력은 믿을 수 없는 글). 에이전트는 터미널에 **앞 8자**로 찍는다 — Claude Code 는 화면보다 긴 낱말을 들여쓰기로 끊어 링크를 깨뜨린다
    - `constants/`: **상수 및 유틸리티**
      - `icons.tsx`: 템플릿 아이콘 매핑
@@ -339,7 +342,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 150건
+- **위치**: `tests/terminal/` — 181건 (2026-10-21 `--list`)
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -401,6 +404,11 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     순서대로인지, `exit 3` 의 종료 코드, 렌더러 크래시 → `renderer-gone`·`reattached`, 그리고 실제 위젯에서 터미널을 지목해 보낸 **페이로드**(main 의 `fetch` 를 바꿔 밖으로 안 나간다)가
     `source: picked`·사건 로그를 싣는지. 지목은 `page.mouse` 로 한다 — 지목 오버레이가 덮여 locator 클릭은 거부된다. 지목 메모의 완료 표시는 「보냈습니다」가 아니라
     `status` 「주석 1: …」의 「완료」다. 가짜 키는 실행 중에 조각을 이어 만든다 — 시크릿 스캔이 테스트 파일도 본다. `FEEDBACK_LIVE=1` 이면 라쏘런에 1건 보낸다
+  - T34 관련 세션 유닛 — Electron 없이. 저장(가짜 store 위 재시작 복원)·첫 접촉만 기록·손으로 뺀 쌍이 API 로 되살아나지 않음·닫힘 제거·시작 정리,
+    렌더러 묶음 계산·개수, 「마지막 줄」(입력 상자 위, 그림 문자만인 줄 건너뜀)
+  - T35 관련 세션 — 마스터가 `X-Caller-Session` 으로 연 세션·처음 입력한 세션이 헤더 개수·모달 묶음에 오는지(헤더 없는 호출은 아님), 상태(질문 대기/작업 중)·
+    마지막 줄(줄바꿈된 긴 프롬프트도 통째로)·메모·「Talk」 배지, 손으로 추가→이동→둘 나란히→빼기(다음 API 호출이 되살리지 않음), API 로 닫기·재시작 뒤 복원·
+    사이드바 삭제가 바로 목록과 config.json 에서 지우는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 캡처를 거기 남긴다
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)

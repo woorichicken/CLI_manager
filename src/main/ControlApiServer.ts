@@ -396,14 +396,14 @@ export class ControlApiServer {
                 })
             ),
             route('GET', '/v1/sessions/:id', ({ params }) => service.getSession(params.id)),
-            route('GET', '/v1/sessions/:id/output', ({ params, query, client }) => {
+            route('GET', '/v1/sessions/:id/output', ({ params, query, client, caller }) => {
                 const mode = query.get('mode') ?? undefined
                 if (mode !== undefined && mode !== 'screen' && mode !== 'tail') {
                     throw new ControlApiError(400, 'bad_request', 'mode must be "screen" or "tail"')
                 }
-                return service.readOutput(params.id, { mode, lines: optionalNumber(query.get('lines'), 'lines'), client })
+                return service.readOutput(params.id, { mode, lines: optionalNumber(query.get('lines'), 'lines'), client, caller })
             }),
-            route('POST', '/v1/sessions/:id/input', ({ params, body, client }) => {
+            route('POST', '/v1/sessions/:id/input', ({ params, body, client, caller }) => {
                 const keys = body.keys
                 if (keys !== undefined && (!Array.isArray(keys) || keys.some((k) => typeof k !== 'string'))) {
                     throw new ControlApiError(400, 'bad_request', 'keys must be an array of strings')
@@ -413,19 +413,21 @@ export class ControlApiServer {
                     submit: optionalBoolean(body, 'submit'),
                     keys: keys as string[] | undefined,
                     force: optionalBoolean(body, 'force'),
-                    client
+                    client,
+                    caller
                 })
             }),
-            route('POST', '/v1/sessions/:id/wait', ({ params, body, signal, client }) =>
+            route('POST', '/v1/sessions/:id/wait', ({ params, body, signal, client, caller }) =>
                 service.waitForIdle(params.id, {
                     timeoutMs: optionalNumber(body.timeoutMs, 'timeoutMs'),
                     quietMs: optionalNumber(body.quietMs, 'quietMs'),
                     lines: optionalNumber(body.lines, 'lines'),
                     signal,
-                    client
+                    client,
+                    caller
                 })
             ),
-            route('POST', '/v1/sessions/:id/focus', ({ params, client }) => service.focusSession(params.id, client)),
+            route('POST', '/v1/sessions/:id/focus', ({ params, client, caller }) => service.focusSession(params.id, client, caller)),
             route('POST', '/v1/sessions/:id/rename', ({ params, body }) => {
                 const name = optionalString(body, 'name')
                 if (name === undefined) throw new ControlApiError(400, 'bad_request', 'name is required')

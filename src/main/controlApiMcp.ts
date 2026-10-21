@@ -302,11 +302,12 @@ async function callTool(
                 submit: bool(args, 'submit'),
                 keys: strList(args, 'keys'),
                 force: bool(args, 'force'),
-                client
+                client,
+                caller
             })
             const waitMs = seconds(num(args, 'wait_seconds'), 0)
             if (waitMs === 0) return JSON.stringify({ sent: true, session }, null, 1)
-            return formatScreen(await service.waitForIdle(sessionId, { timeoutMs: waitMs, signal, client }))
+            return formatScreen(await service.waitForIdle(sessionId, { timeoutMs: waitMs, signal, client, caller }))
         }
         case 'wait_for_idle':
             return formatScreen(
@@ -315,18 +316,19 @@ async function callTool(
                     quietMs: num(args, 'quiet_ms'),
                     lines: num(args, 'lines'),
                     signal,
-                    client
+                    client,
+                    caller
                 })
             )
         case 'read_output': {
             const mode = str(args, 'mode')
             if (mode !== undefined && mode !== 'screen' && mode !== 'tail') throw new InvalidParams('mode must be "screen" or "tail"')
             return formatScreen(
-                await service.readOutput(str(args, 'session_id', true)!, { mode, lines: num(args, 'lines'), client })
+                await service.readOutput(str(args, 'session_id', true)!, { mode, lines: num(args, 'lines'), client, caller })
             )
         }
         case 'focus_session':
-            return JSON.stringify(service.focusSession(str(args, 'session_id', true)!, client), null, 1)
+            return JSON.stringify(service.focusSession(str(args, 'session_id', true)!, client, caller), null, 1)
         case 'rename_session':
             return JSON.stringify(service.renameSession(str(args, 'session_id', true)!, str(args, 'name', true)!), null, 1)
         case 'release_session':

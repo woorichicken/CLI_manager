@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionPeek, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -289,7 +289,18 @@ const api = {
         const listener = (_e: unknown, masters: ControlApiMasters) => callback(masters)
         ipcRenderer.on('control-api-masters', listener)
         return () => ipcRenderer.removeListener('control-api-masters', listener)
-    }
+    },
+
+    // Session header "Related sessions"
+    getSessionRelations: (): Promise<SessionRelation[]> => ipcRenderer.invoke('get-session-relations'),
+    onSessionRelations: (callback: (relations: SessionRelation[]) => void) => {
+        const listener = (_e: unknown, relations: SessionRelation[]) => callback(relations)
+        ipcRenderer.on('session-relations', listener)
+        return () => ipcRenderer.removeListener('session-relations', listener)
+    },
+    addSessionRelation: (from: string, to: string): Promise<boolean> => ipcRenderer.invoke('add-session-relation', from, to),
+    removeSessionRelation: (a: string, b: string): Promise<boolean> => ipcRenderer.invoke('remove-session-relation', a, b),
+    peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

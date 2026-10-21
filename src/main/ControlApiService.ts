@@ -7,6 +7,7 @@ import {
     ControlApiSessionEvent,
     DEFAULT_CONTROL_API,
     OrchestratorInfo,
+    SessionPeek,
     TerminalSession,
     TerminalTemplate,
     UserSettings,
@@ -15,6 +16,7 @@ import {
 } from '../shared/types'
 import { TerminalManager } from './TerminalManager'
 import { TerminalMirror } from './TerminalMirror'
+import { SessionRelations } from './SessionRelations'
 
 /**
  * What the Control API can do, independent of transport. The HTTP routes and
@@ -259,6 +261,8 @@ export interface SendInputInput {
     force?: boolean
     /** Who is typing; recorded when this is the first touch of a session. */
     client?: string
+    /** X-Caller-Session of the request, if it said who it was. */
+    caller?: string
 }
 
 export interface WaitInput {
@@ -267,6 +271,7 @@ export interface WaitInput {
     lines?: number
     signal?: AbortSignal
     client?: string
+    caller?: string
 }
 
 export interface ControlApiDeps {
@@ -277,6 +282,8 @@ export interface ControlApiDeps {
     mirror: TerminalMirror
     broadcast: (channel: string, payload: unknown) => void
     hookStatus: (terminalId: string) => AgentStatusUpdate | null
+    /** Persistent "related sessions" — which session opened or first worked in which. */
+    relations: SessionRelations
     /** A session is gone for good (closed or deleted): drop what was kept for it elsewhere. */
     onSessionForgotten?: (sessionId: string) => void
 }
@@ -354,9 +361,9 @@ export class ControlApiService {
 
     async readOutput(
         sessionId: string,
-        options: { lines?: number; mode?: 'screen' | 'tail'; client?: string } = {}
+        options: { lines?: number; mode?: 'screen' | 'tail'; client?: string; caller?: string } = {}
     ): Promise<ApiOutput> {
-        const { workspace, session } = this.connect(sessionId, options.client)
+        const { workspace, session } = this.connect(sessionId, options.client, options.caller)
         await this.deps.mirror.flush(sessionId)
         const mode = options.mode ?? 'screen'
         const lines = clampLines(options.lines)
@@ -436,7 +443,10 @@ export class ControlApiService {
             ...(newFolder ? { folder: newFolder } : {}),
             focus: input.focus === true
         })
-        if (caller) this.recordOpened(caller, session.id, input.client)
+        if (caller) {
+            this.recordOpened(caller, session.id, input.client)
+            this.deps.relations.recordOpened(caller, session.id)
+        }
 
         const terminalStarted = await this.waitForPty(session.id, PTY_START_TIMEOUT_MS)
         const result: OpenSessionResult = {
@@ -486,7 +496,7 @@ export class ControlApiService {
     }
 
     async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession> {
-        this.connect(sessionId, input.client)
+        this.connect(sessionId, input.client, input.caller)
         await this.typeAndSubmit(sessionId, input)
         const { workspace, session } = this.requireSession(sessionId)
         return this.describe(workspace, session)
@@ -592,7 +602,7 @@ export class ControlApiService {
      * Returns the screen either way, flagged `timedOut` when it never settled.
      */
     async waitForIdle(sessionId: string, input: WaitInput = {}): Promise<ApiWaitResult> {
-        this.connect(sessionId, input.client)
+        this.connect(sessionId, input.client, input.caller)
         const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 120_000, 0), MAX_WAIT_MS)
         const quietMs = Math.max(input.quietMs ?? DEFAULT_QUIET_MS, 200)
         const started = Date.now()
@@ -627,12 +637,12 @@ export class ControlApiService {
             }
         }
 
-        const output = await this.readOutput(sessionId, { lines: input.lines, mode: 'screen', client: input.client })
+        const output = await this.readOutput(sessionId, { lines: input.lines, mode: 'screen', client: input.client, caller: input.caller })
         return { ...output, timedOut, waitedMs: Date.now() - started, sleptMs }
     }
 
-    focusSession(sessionId: string, client?: string): ApiSession {
-        const { workspace, session } = this.connect(sessionId, client)
+    focusSession(sessionId: string, client?: string, caller?: string): ApiSession {
+        const { workspace, session } = this.connect(sessionId, client, caller)
         this.emit({ type: 'focus', workspaceId: workspace.id, sessionId })
         return this.describe(workspace, session)
     }
@@ -671,6 +681,7 @@ export class ControlApiService {
         this.deps.onSessionForgotten?.(sessionId)
         this.lastEscapeAt.delete(sessionId)
         this.forgetOrchestration(sessionId)
+        this.deps.relations.forget(sessionId)
 
         const workspaces = this.workspaces()
         const target = workspaces.find((w) => w.id === workspace.id)
@@ -735,6 +746,28 @@ export class ControlApiService {
         this.deps.onSessionForgotten?.(sessionId)
         this.lastEscapeAt.delete(sessionId)
         this.forgetOrchestration(sessionId)
+        this.deps.relations.forget(sessionId)
+    }
+
+    /**
+     * State and last line of each session, for the Related sessions dialog.
+     * Read only: unlike the API's reads it does not mark anything as AI-driven.
+     * Unknown ids are skipped.
+     */
+    async peekSessions(sessionIds: string[]): Promise<SessionPeek[]> {
+        const peeks: SessionPeek[] = []
+        for (const sessionId of sessionIds) {
+            if (!this.hasSession(sessionId)) continue
+            await this.deps.mirror.flush(sessionId)
+            const hook = this.deps.hookStatus(sessionId)
+            peeks.push({
+                sessionId,
+                state: this.stateOf(sessionId, DEFAULT_QUIET_MS),
+                awaitingInput: this.deps.mirror.showsAwaitingInput(sessionId) || hook?.awaitingInput === true,
+                lastLine: this.deps.mirror.lastLine(sessionId)
+            })
+        }
+        return peeks
     }
 
     // ------------------------------------------------------------------
@@ -922,8 +955,10 @@ export class ControlApiService {
      * Marks a session as AI-driven the first time the API works in it, so the
      * user sees which of their terminals something else may type into. A
      * session that already carries the mark keeps its original client and time.
+     * When the request said which session it came from, the two become related
+     * (first contact only — see SessionRelations.recordConnected).
      */
-    private connect(sessionId: string, client?: string): { workspace: Workspace; session: TerminalSession } {
+    private connect(sessionId: string, client?: string, caller?: string): { workspace: Workspace; session: TerminalSession } {
         const workspaces = this.workspaces()
         for (const workspace of workspaces) {
             const session = workspace.sessions.find((s) => s.id === sessionId)
@@ -935,6 +970,9 @@ export class ControlApiService {
             }
             // Covers a session whose terminal has not started yet.
             this.deps.mirror.attach(sessionId)
+            if (caller && caller !== sessionId && this.hasSession(caller)) {
+                this.deps.relations.recordConnected(caller, sessionId)
+            }
             return { workspace, session }
         }
         throw new ControlApiError(404, 'not_found', `No session with id ${sessionId}. It may have been closed.`)

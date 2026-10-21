@@ -8,6 +8,7 @@ import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.js'
 // Same reason as above: bundled by file so the packaged app does not need it in node_modules.
 import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.js'
 import { TerminalManager } from './TerminalManager'
+import { INPUT_BOX_RULE, lastMeaningfulLine } from './screenLines'
 
 /**
  * Keeps a headless xterm copy of every terminal in the main process.
@@ -81,12 +82,6 @@ const ERASE_SCROLLBACK_PARAM = 3
 
 /** Agent dialogs put the question a few lines above the options at the bottom. */
 const QUESTION_REGION_LINES = 15
-
-/**
- * Claude Code draws its input box between two full-width rules. Matched on the
- * trimmed row, so a rule with a label inside it does not count.
- */
-const INPUT_BOX_RULE = /^─{20,}$/
 
 /** What an agent's input box currently holds, split by how it is drawn. */
 export interface InputBox {
@@ -282,6 +277,24 @@ export class TerminalMirror {
             lines.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? '')
         }
         return trimTrailingBlank(lines)
+    }
+
+    /** The last line worth reading on the screen (above the input box when there is one); '' when none. */
+    lastLine(id: string): string {
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return ''
+        const buffer = mirror.term.buffer.active
+        const rows: string[] = []
+        for (let row = 0; row < mirror.term.rows; row++) {
+            const line = buffer.getLine(buffer.viewportY + row)
+            // Untrimmed, so a space at the wrap survives the join below.
+            const text = line?.translateToString(false) ?? ''
+            // A row the terminal wrapped continues the one above: a long prompt
+            // would otherwise read as its last fragment.
+            if (line?.isWrapped && rows.length > 0) rows[rows.length - 1] += text
+            else rows.push(text)
+        }
+        return lastMeaningfulLine(rows)
     }
 
     /** The last `count` lines of scrollback plus screen, trailing blank rows dropped. */
