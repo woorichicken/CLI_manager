@@ -30,7 +30,7 @@ interface RelatedSessionRowProps {
     entry: RelatedEntry
     peek: SessionPeek | undefined
     selected: boolean
-    /** The split view is full; only already-selected rows can change. */
+    /** The split view is full (this session plus three); only already-selected rows can change. */
     selectionFull: boolean
     onToggle: (sessionId: string) => void
     onShow: (sessionId: string) => void
@@ -54,7 +54,7 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                 disabled={!selected && selectionFull}
                 onChange={() => onToggle(session.id)}
                 className="mt-1 accent-blue-500 disabled:opacity-30"
-                title={!selected && selectionFull ? 'Split view holds 4 sessions' : 'Select to open side by side'}
+                title={!selected && selectionFull ? 'Split view holds 4 sessions: this one and 3 more' : 'Select to open beside this session'}
                 data-related-select={session.id}
             />
             <button

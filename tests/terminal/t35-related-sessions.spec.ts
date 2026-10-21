@@ -11,8 +11,9 @@ import type { SessionRelation } from '../../src/shared/types'
  * An agent in session LEAD opens a worker and starts typing into a talk
  * session through the Control API, saying who it is with X-Caller-Session.
  * Both show up in LEAD's Related sessions dialog — with state, last line, memo
- * and the talk badge — and the user adds one by hand, goes to one, opens two
- * side by side and removes one. An agent closing a session and the user
+ * and the talk badge — and the user adds sessions by hand, goes to one, opens
+ * three beside LEAD (LEAD in the first pane, a fourth pick refused) and
+ * removes one. An agent closing a session and the user
  * deleting one each take it off the list at once. The list survives a restart.
  *
  * Judged at the ends: the header buttons and dialog in the DOM, the split view
@@ -170,14 +171,24 @@ test.describe('T35 related sessions', () => {
         await page.screenshot({ path: path.join(shots, 'related-modal-opened-by.png') })
         await page.keyboard.press('Escape')
 
-        // --- Tick two: side by side ------------------------------------------
+        // --- Tick up to three: side by side, this session in the first pane ---
         await activateSession(page, LEAD_NAME)
         await button(page, LEAD).click()
-        await row(page, TALK).locator('[data-related-select]').check()
-        await row(page, SITE).locator('[data-related-select]').check()
-        await dialog(page).locator('[data-related-open-split]').click()
-        await expect(page.locator(`[data-terminal-slot="${TALK}"]`)).toHaveCount(1)
-        await expect(page.locator(`[data-terminal-slot="${SITE}"]`)).toHaveCount(1)
+        // A fourth related session, so the cap of three picks has something to stop.
+        await dialog(page).locator('[data-related-add-input]').fill('zsh')
+        await dialog(page).locator(`[data-related-candidate="${SHELL}"]`).click()
+        await expect(inGroup(page, 'manual', SHELL)).toBeVisible()
+        const openSplit = dialog(page).locator('[data-related-open-split]')
+        await expect(openSplit).toBeDisabled()
+        for (const id of [TALK, SITE, worker]) await row(page, id).locator('[data-related-select]').check()
+        await expect(row(page, SHELL).locator('[data-related-select]')).toBeDisabled()
+        await expect(openSplit).toBeEnabled()
+        await page.waitForTimeout(2500) // one refresh of state and last lines after the add
+        await page.screenshot({ path: path.join(shots, 'related-modal-select.png') })
+        await openSplit.click()
+        const slots = () => page.locator('[data-terminal-slot]').evaluateAll(els => els.map(el => el.getAttribute('data-terminal-slot')))
+        await expect.poll(slots).toEqual([LEAD, TALK, SITE, worker])
+        await expect(button(page, LEAD)).toHaveAttribute('data-related-count', '4')
         await expect(button(page, TALK)).toHaveAttribute('data-related-count', '1')
         await expect(button(page, SITE)).toHaveAttribute('data-related-count', '1')
         await page.waitForTimeout(800)
@@ -195,7 +206,7 @@ test.describe('T35 related sessions', () => {
 
         // --- An agent closes one: gone from the list and from disk ------------
         expect((await api('DELETE', `/v1/sessions/${worker}`)).status).toBe(200)
-        await expect.poll(() => pairs(relationsOnDisk(ctx!.userDataDir))).toEqual([`${LEAD}>${SITE}:manual`])
+        await expect.poll(() => pairs(relationsOnDisk(ctx!.userDataDir))).toEqual([`${LEAD}>${SHELL}:manual`, `${LEAD}>${SITE}:manual`].sort())
         expect(relationsOnDisk(ctx.userDataDir).some(r => r.from === worker || r.to === worker)).toBe(false)
         expect(ctx.pageErrors).toEqual([])
 
@@ -219,9 +230,10 @@ test.describe('T35 related sessions', () => {
         const page2 = await relaunched.firstWindow()
         await page2.locator(`[data-session-item="${LEAD}"]`).waitFor({ timeout: 30_000 })
         await activateSession(page2, LEAD_NAME)
-        await expect(button(page2, LEAD)).toHaveAttribute('data-related-count', '1', { timeout: 10_000 })
+        await expect(button(page2, LEAD)).toHaveAttribute('data-related-count', '2', { timeout: 10_000 })
         await button(page2, LEAD).click()
         await expect(inGroup(page2, 'manual', SITE)).toBeVisible()
+        await expect(inGroup(page2, 'manual', SHELL)).toBeVisible()
         await page2.keyboard.press('Escape')
 
         // --- The user deletes the other one from the sidebar: gone at once ----
@@ -229,7 +241,7 @@ test.describe('T35 related sessions', () => {
         await siteRow.hover()
         await siteRow.getByTitle('Delete session').click()
         await expect(siteRow).toHaveCount(0)
-        await expect(button(page2, LEAD)).toHaveAttribute('data-related-count', '0')
-        await expect.poll(() => pairs(relationsOnDisk(userDataDir))).toEqual([])
+        await expect(button(page2, LEAD)).toHaveAttribute('data-related-count', '1')
+        await expect.poll(() => pairs(relationsOnDisk(userDataDir))).toEqual([`${LEAD}>${SHELL}:manual`])
     })
 })

@@ -16,6 +16,9 @@ interface RelatedSessionsModalProps {
     onShowSessions: (sessionIds: string[]) => void
 }
 
+/** "Open side by side" puts this session in the first pane, so the others get the rest of the split view. */
+const MAX_PICKED = MAX_LINKED_SESSIONS - 1
+
 const GROUPS: Array<{ key: 'fromHere' | 'toHere' | 'manual'; title: string; hint: string }> = [
     { key: 'fromHere', title: 'Opened from this session', hint: 'Its agent opened them, or started working in them, through the Control API.' },
     { key: 'toHere', title: 'Opened this session', hint: 'An agent there opened this session, or started working in it.' },
@@ -69,7 +72,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     if (!owner) return null
 
     const toggle = (id: string): void => {
-        setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id].slice(0, MAX_LINKED_SESSIONS))
+        setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id].slice(0, MAX_PICKED))
     }
     const show = (ids: string[]): void => {
         onShowSessions(ids)
@@ -112,7 +115,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                                     entry={entry}
                                     peek={peeks.get(entry.session.id)}
                                     selected={liveSelection.includes(entry.session.id)}
-                                    selectionFull={liveSelection.length >= MAX_LINKED_SESSIONS}
+                                    selectionFull={liveSelection.length >= MAX_PICKED}
                                     onToggle={toggle}
                                     onShow={id => show([id])}
                                     onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
@@ -126,12 +129,12 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     <div className="flex items-center gap-2 px-4 py-2 border-t border-white/10">
                         <span className="text-[11px] text-gray-500">
                             {liveSelection.length === 0
-                                ? `Click a session to go there, or tick up to ${MAX_LINKED_SESSIONS} to see them side by side.`
-                                : `${liveSelection.length} selected`}
+                                ? `Click a session to go there, or tick up to ${MAX_PICKED} to see them beside this one.`
+                                : `${liveSelection.length} of ${MAX_PICKED} selected — opens beside this session`}
                         </span>
                         <button
-                            onClick={() => show(liveSelection)}
-                            disabled={liveSelection.length < 2}
+                            onClick={() => show([sessionId, ...liveSelection])}
+                            disabled={liveSelection.length === 0}
                             className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded text-xs text-white bg-blue-600 hover:bg-blue-500 disabled:bg-white/5 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
                             data-related-open-split
                         >
