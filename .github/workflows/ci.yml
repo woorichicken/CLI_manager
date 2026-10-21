@@ -32,8 +32,13 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # @vscode/ripgrep's postinstall looks up its binary through api.github.com.
+      # Unauthenticated, that shares the runner IP's 60-requests-an-hour limit and
+      # fails the install with a 403; it sends GITHUB_TOKEN when one is set.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: pnpm typecheck
