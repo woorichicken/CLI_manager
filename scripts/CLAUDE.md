@@ -54,7 +54,8 @@ build, because the build is where they used to surface: a v1.6.1 attempt spent
 minutes signing and then died at notarization on an expired Apple agreement that
 one read-only API call reports instantly. Preflight covers branch and push state,
 version availability, signing identity, **notarization reachability**, repository
-hygiene, typecheck and tests.
+hygiene, typecheck, a fresh `pnpm build` and tests — the tests launch the app in
+`out/`, and a leftover `out/` from an older checkout tested the old app five times.
 
 After the build it asks the artifacts — not the build log — whether they are
 publishable: `spctl` must report `source=Notarized Developer ID`, and
