@@ -124,6 +124,9 @@ export function TerminalView({
     const isInitializedRef = useRef<boolean>(false)
     // 스크롤 중인지 추적 (스크롤 중에는 ResizeObserver 무시)
     const isScrollingRef = useRef<boolean>(false)
+    // A size change that arrived mid-scroll is dropped by the observer; remember it so the
+    // terminal can catch up once the scrolling stops (otherwise the bottom rows stay clipped).
+    const resizeSkippedWhileScrollingRef = useRef<boolean>(false)
     // 마지막 크기 추적 (1px 이상 변화만 감지)
     const lastSizeRef = useRef<{ width: number; height: number } | null>(null)
     // VS Code식 visible-aware resize coordinator
@@ -608,6 +611,12 @@ export function TerminalView({
                 if (scrollTimeout) clearTimeout(scrollTimeout)
                 scrollTimeout = setTimeout(() => {
                     isScrollingRef.current = false
+                    // term.onScroll also fires for every line a streaming TUI pushes, so "scrolling"
+                    // can last as long as the output does — apply the resize that was skipped meanwhile.
+                    if (resizeSkippedWhileScrollingRef.current) {
+                        resizeSkippedWhileScrollingRef.current = false
+                        requestResize()
+                    }
                 }, 200)
             })
 
@@ -702,7 +711,10 @@ export function TerminalView({
             if (!isInitializedRef.current) return
 
             // 스크롤 중이면 무시
-            if (visibleRef.current && isScrollingRef.current) return
+            if (visibleRef.current && isScrollingRef.current) {
+                resizeSkippedWhileScrollingRef.current = true
+                return
+            }
 
             const rect = terminalRef.current?.getBoundingClientRect()
             if (!rect) return

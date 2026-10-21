@@ -69,11 +69,14 @@ function TargetStatus({ state }: { state?: HookTargetState }) {
 function ThresholdRow({
     label,
     hint,
+    warning,
     value,
     onChange
 }: {
     label: string
     hint: string
+    /** Why this alert cannot fire right now, shown in place of nothing happening silently */
+    warning?: string
     value: number
     onChange: (next: number) => void
 }) {
@@ -82,6 +85,12 @@ function ThresholdRow({
             <div className="min-w-0">
                 <p className="text-sm text-gray-300">{label}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{hint}</p>
+                {warning && (
+                    <p className="text-xs text-amber-400 mt-1 flex items-start gap-1">
+                        <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                        <span>{warning}</span>
+                    </p>
+                )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
                 <input
@@ -261,6 +270,13 @@ export function AgentIntegrationSettings({ hooks, usageAlerts, onChange }: Agent
                         <ThresholdRow
                             label="Claude Code"
                             hint="Alerts on whichever of the 5-hour or weekly windows crosses first"
+                            // Claude only reports usage through the status line this integration installs,
+                            // so with it off the alert never receives a number and stays silent.
+                            warning={
+                                current.enabled && current.claudeStatusLine
+                                    ? undefined
+                                    : 'Never fires while "Claude Code — usage" is off under Official Agent Hooks above.'
+                            }
                             value={alerts.claudeThresholdPercent}
                             onChange={(value) => void updateAlerts({ ...alerts, claudeThresholdPercent: value })}
                         />

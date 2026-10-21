@@ -126,6 +126,21 @@ body {
   app-region: no-drag;
 }
 
+/* Electron hands any pixel inside a drag region to the window manager, even when another element
+   is painted over it — so the feedback widget's own UI, and the page underneath it while it is
+   picking an element, never received clicks along the header strip (reports 1e36db69, d2fc2339).
+   The picker listens for document clicks, so while it is on the headers stop being drag regions. */
+[data-feedback-kit],
+[data-feedback-kit] * {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+body:has([data-fk-pick-toggle='on']) .draggable {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 /* Light Mode Text Colors */
 .light .text-white {
   color: #1a1a1a !important;

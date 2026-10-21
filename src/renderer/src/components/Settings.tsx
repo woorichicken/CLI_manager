@@ -600,6 +600,35 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 </button>
                                             </div>
 
+                                            {/* Playground toggle */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Show Playground</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Off hides the Playground section at the bottom of the sidebar.
+                                                        Running sessions are left alone.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    data-testid="settings-show-playground"
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        showPlayground: !(prev.showPlayground ?? true)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
+                                                        (settings.showPlayground ?? true)
+                                                            ? 'bg-emerald-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.showPlayground ?? true)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
                                             {/* Custom Path */}
                                             {(settings.showHomeWorkspace ?? true) && (
                                                 <div>

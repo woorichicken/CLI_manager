@@ -409,6 +409,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T35 관련 세션 — 마스터가 `X-Caller-Session` 으로 연 세션·처음 입력한 세션이 헤더 개수·모달 묶음에 오는지(헤더 없는 호출은 아님), 상태(질문 대기/작업 중)·
     마지막 줄(줄바꿈된 긴 프롬프트도 통째로)·메모·「Talk」 배지, 손으로 추가→이동→지금 세션을 첫 칸으로 셋 나란히(넷째 체크 막힘)→빼기(다음 API 호출이 되살리지 않음), API 로 닫기·재시작 뒤 복원·
     사이드바 삭제가 바로 목록과 config.json 에서 지우는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 캡처를 거기 남긴다
+  - T36 밤 제보 묶음(2026-10-22) — 사이드바 헤더와 메인 헤더의 아래 경계가 같은 줄인지(박스 비교), 설정 「Show Playground」를 끄면 사이드바 Playground 구역이 사라지는지(T13 과 같은 UI 왕복),
+    Cmd+Shift+L(`toggleRelated`)이 활성 탭의 Related 대화상자를 열고 닫는지. 창 끌기 영역(`app-region`)은 Playwright 가 못 봐서 CSS 만 바꿨고 테스트가 없다 — 실제 앱에서 제보 위젯으로 헤더 줄을 눌러 본다
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
