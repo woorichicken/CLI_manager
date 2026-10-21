@@ -25,8 +25,12 @@ grep EXIT= /tmp/build.log
 # 게시 — 몇 초
 node scripts/release.cjs --version X.Y.Z --publish --notes /tmp/release-notes.md
 
-# 배포 — R2 · 웹사이트 링크 · changelog
-DATABASE_URL=... node scripts/post-release.cjs --version X.Y.Z --notes /tmp/changelog.json
+# 배포 — R2 · 웹사이트 링크 · changelog. 이것도 분리 실행한다:
+# DMG 두 개(약 230MB)를 한 번에 PUT 해서 느린 회선에선 수십 분 걸리고 끊기면 write EPIPE 로 실패한다(실패해도 사이트는 안 건드려 다시 돌리면 된다).
+# 그동안 사람이 앱 업데이트를 설치하면(재시작) 앱 터미널의 자식 프로세스가 같이 죽는다 — 2026-10-21 v1.15.0 에서 한 번 EPIPE, 한 번 재시작으로 끊겼다
+DATABASE_URL=... nohup sh -c 'node scripts/post-release.cjs --version X.Y.Z --notes /tmp/changelog.json > /tmp/post.log 2>&1; \
+  echo "EXIT=$?" >> /tmp/post.log' >/dev/null 2>&1 &
+disown
 ```
 
 ## 사용자에게 물을 것
