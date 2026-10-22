@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { SplitTerminalHeader } from './SplitTerminalHeader'
 import { TerminalView } from './TerminalView'
-import { Workspace, TerminalSession, SessionStatus, HooksSettings } from '../../../shared/types'
+import { Workspace, WorkspaceFolder, TerminalSession, SessionStatus, HooksSettings } from '../../../shared/types'
+import { buildSessionBreadcrumb } from '../utils/sessionBreadcrumb'
 
 interface FullscreenTerminalViewProps {
     sessionIds: string[]
@@ -60,12 +61,14 @@ export function FullscreenTerminalView({
     fileLinksEnabled = true
 }: FullscreenTerminalViewProps) {
     const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+    const [folders, setFolders] = useState<WorkspaceFolder[]>([])
     const [sessionStatuses, setSessionStatuses] = useState<Map<string, { status: SessionStatus, isClaudeCode: boolean }>>(new Map())
     const [activeSessionIds, setActiveSessionIds] = useState<string[]>(sessionIds)
 
-    // Load workspaces on mount
+    // Load workspaces and sidebar folders on mount (folders feed the header path)
     useEffect(() => {
         window.api.getWorkspaces().then(setWorkspaces)
+        window.api.getFolders().then(setFolders)
     }, [])
 
     // Listen for session updates from main window (one-way sync: main → grid)
@@ -131,6 +134,7 @@ export function FullscreenTerminalView({
                             <SplitTerminalHeader
                                 session={session}
                                 workspace={workspace}
+                                breadcrumb={buildSessionBreadcrumb(session, workspace, workspaces, folders)}
                                 onRemove={handleRemoveFromFullscreen}
                             />
                             <div className="flex-1 min-h-0 overflow-hidden">
