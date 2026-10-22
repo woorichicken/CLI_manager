@@ -137,6 +137,7 @@ pnpm build && pnpm test:term
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
    - `components/RelatedSessions/` · `utils/relatedSessions.ts`: 세션 헤더 「Related」 버튼과 모달 — 세 묶음(연 세션·이 세션을 연 세션·손으로 추가), 상태·마지막 줄·메모, 「대화:」 세션 배지. 이동·나란히 열기는 세션 링크와 같은 `showSessions`(App.tsx)
+   - `utils/terminalLinks.ts` · `components/TerminalLinkSchemesSetting.tsx`: 터미널 링크를 OS 로 넘겨도 되는지 판정 — 기본 허용(http·https·file·에디터) + 사용자가 Settings > Terminal 「App Links in Terminal」에 넣은 앱 스킴(`obsidian` 등, 기본 비어 있음). 그 스킴은 일반 텍스트(`obsidian://…`, 한글 그대로)도 링크로 잡는다. `javascript`·`data`·`climanager` 같은 예약 스킴은 넣을 수 없다
    - `utils/sessionLink.ts`: 세션 링크 `climanager://session/<id 또는 앞 8자>[,…]` — 터미널에서 누르면 그 세션으로(여럿이면 분할 화면, 최대 4). 화면 전환만 한다(터미널 출력은 믿을 수 없는 글). 에이전트는 터미널에 **앞 8자**로 찍는다 — Claude Code 는 화면보다 긴 낱말을 들여쓰기로 끊어 링크를 깨뜨린다
    - `constants/`: **상수 및 유틸리티**
      - `icons.tsx`: 템플릿 아이콘 매핑
@@ -343,7 +344,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 193건 (2026-10-22 `--list`)
+- **위치**: `tests/terminal/` — 203건 (2026-10-22 `--list`)
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -414,6 +415,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     Cmd+Shift+L(`toggleRelated`)이 활성 탭의 Related 대화상자를 열고 닫는지. 창 끌기 영역(`app-region`)은 Playwright 가 못 봐서 CSS 만 바꿨고 테스트가 없다 — 실제 앱에서 제보 위젯으로 헤더 줄을 눌러 본다
   - T37 헤더 브레드크럼 — 경로 계산(폴더 없음·삭제된 폴더·Playground·워크트리) 단위 시험 + 실제 헤더 DOM(`data-crumb`), 긴 이름의 분할 칸에서 세션 이름이 안 잘리는지
   - T38 스트리밍 중 리사이즈 — 출력이 흐르는 동안 창 크기가 바뀌어도 멈춘 뒤 줄 수가 상자에 맞는지(1.15.0 의 하단 잘림 회귀, 옛 TerminalView 에서 43줄 ↔ 56줄로 실패)
+  - T39 앱 링크 스킴 — 스킴 정규화·예약어 거부·허용 판정 유닛, 실제 WebLinksAddon 으로 일반 텍스트 감지(한글 경로·`obsidian:///절대경로`·줄바꿈·닮은꼴 무시), 그리고 실제 앱에서 Settings > Terminal 로 `obsidian` 을 넣고 빼며 일반 텍스트·OSC 8 링크가 `shell.openExternal` 에 닿는지/막히는지(main 에서 가로챔)
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)

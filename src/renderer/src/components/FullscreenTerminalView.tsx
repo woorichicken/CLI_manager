@@ -15,6 +15,7 @@ interface FullscreenTerminalViewProps {
     }
     hooksSettings?: HooksSettings
     fileLinksEnabled?: boolean
+    linkSchemes?: string[]
 }
 
 // Find session and its workspace from session ID
@@ -58,7 +59,8 @@ export function FullscreenTerminalView({
     shell,
     keyboardSettings,
     hooksSettings,
-    fileLinksEnabled = true
+    fileLinksEnabled = true,
+    linkSchemes
 }: FullscreenTerminalViewProps) {
     const [workspaces, setWorkspaces] = useState<Workspace[]>([])
     const [folders, setFolders] = useState<WorkspaceFolder[]>([])
@@ -149,6 +151,7 @@ export function FullscreenTerminalView({
                                     keyboardSettings={keyboardSettings}
                                     hooksSettings={hooksSettings}
                                     fileLinksEnabled={fileLinksEnabled}
+                                    linkSchemes={linkSchemes}
                                 />
                             </div>
                         </div>

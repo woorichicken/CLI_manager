@@ -122,6 +122,13 @@ export interface UserSettings {
      * the editor.
      */
     terminalFileLinks?: boolean
+    /**
+     * App link schemes (`obsidian`, `things`, …) a click in the terminal may hand
+     * to the OS, on top of the built-in http/https/file/editor schemes. Bare
+     * lowercase names. Terminal output is untrusted, so the list starts empty
+     * (see utils/terminalLinks.ts).
+     */
+    terminalLinkSchemes?: string[]
     portFilter?: {
         enabled: boolean
         minPort: number

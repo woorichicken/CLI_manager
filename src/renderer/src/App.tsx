@@ -1358,6 +1358,7 @@ function App() {
                 keyboardSettings={settings.keyboard}
                 hooksSettings={settings.hooks}
                 fileLinksEnabled={settings.terminalFileLinks ?? true}
+                linkSchemes={settings.terminalLinkSchemes}
             />
         )
     }
@@ -1784,6 +1785,7 @@ function App() {
                                             fileLinksEnabled={settings.terminalFileLinks ?? true}
                                             disablePtyResize={isInGridView}
                                             onSessionLink={handleSessionLink}
+                                            linkSchemes={settings.terminalLinkSchemes}
                                         />
                                         <SessionMemo
                                             ref={(handle) => {
