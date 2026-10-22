@@ -2,10 +2,13 @@ import React, { useCallback, useState } from 'react'
 import { GripVertical, Search, LayoutGrid, GitBranch, Settings, X } from 'lucide-react'
 import { TerminalSession, Workspace } from '../../../shared/types'
 import { RelatedSessionsButton } from './RelatedSessions/RelatedSessionsButton'
+import { SessionBreadcrumb } from './SessionBreadcrumb'
+import type { BreadcrumbSegment } from '../utils/sessionBreadcrumb'
 
 interface SplitTerminalHeaderProps {
     session: TerminalSession
     workspace: Workspace | undefined
+    breadcrumb: BreadcrumbSegment[] // folder > project > session
     isActive?: boolean // Whether this pane is the active one in split view
     // Pane actions
     onRemove: (sessionId: string) => void
@@ -31,6 +34,7 @@ interface SplitTerminalHeaderProps {
 export function SplitTerminalHeader({
     session,
     workspace,
+    breadcrumb,
     isActive,
     onRemove,
     onOpenSearch,
@@ -136,19 +140,7 @@ export function SplitTerminalHeader({
                 >
                     <GripVertical size={14} className="text-gray-500" />
                 </div>
-                <div className="flex items-center gap-1.5 min-w-0 truncate">
-                    {workspace && (
-                        <>
-                            <span className="text-xs text-gray-500 truncate max-w-[80px]" title={workspace.name}>
-                                {workspace.name}
-                            </span>
-                            <span className="text-gray-600">/</span>
-                        </>
-                    )}
-                    <span className="text-xs text-gray-300 truncate" title={session.name}>
-                        {session.name}
-                    </span>
-                </div>
+                <SessionBreadcrumb segments={breadcrumb} />
             </div>
 
             {/* Right: Action buttons */}
