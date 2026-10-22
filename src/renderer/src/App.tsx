@@ -12,6 +12,8 @@ import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, E
 import { getErrorMessage } from './utils/errorMessages'
 import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare, Bot } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
+import { SessionBreadcrumb } from './components/SessionBreadcrumb'
+import { buildSessionBreadcrumb } from './utils/sessionBreadcrumb'
 import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
 import { RelatedSessionsModal } from './components/RelatedSessions/RelatedSessionsModal'
 import { FullscreenTerminalView } from './components/FullscreenTerminalView'
@@ -1083,6 +1085,17 @@ function App() {
         () => (activeWorkspace ? sortedWorkspaces.find(w => w.id === activeWorkspace.id) ?? null : null),
         [activeWorkspace, sortedWorkspaces]
     )
+    // Read the live workspace and session: `activeSession` is a selection-time
+    // snapshot and keeps the old name after a rename.
+    const activeBreadcrumb = useMemo(
+        () => buildSessionBreadcrumb(
+            currentActiveWorkspace?.sessions.find(s => s.id === activeSession?.id) ?? null,
+            currentActiveWorkspace,
+            sortedWorkspaces,
+            folders
+        ),
+        [currentActiveWorkspace, activeSession?.id, sortedWorkspaces, folders]
+    )
     const workspacesInSidebarOrder = useMemo(
         () => sidebarWorkspaceOrder(sortedWorkspaces, folders, settings.showWorktrees ?? true, settings.showPlayground ?? true),
         [sortedWorkspaces, folders, settings.showWorktrees, settings.showPlayground]
@@ -1425,14 +1438,16 @@ function App() {
                             </button>
                         )}
                         {/* Show workspace name only in single view */}
-                        {!splitLayout && (
+                        {!splitLayout && (activeWorkspace ? (
+                            <SessionBreadcrumb segments={activeBreadcrumb} fontSize={settings.fontSize} />
+                        ) : (
                             <span
                                 className="text-gray-400"
                                 style={{ fontSize: `${settings.fontSize}px` }}
                             >
-                                {activeWorkspace ? activeWorkspace.name : 'Select a workspace to get started'}
+                                Select a workspace to get started
                             </span>
-                        )}
+                        ))}
                         {/* Read the live session, not activeSession: that object is not refreshed when the AI flag changes */}
                         {!splitLayout && activeAiControl && activeSession && (
                             <span
@@ -1606,6 +1621,7 @@ function App() {
                                                 <SplitTerminalHeader
                                                     session={foundSession}
                                                     workspace={foundWorkspace}
+                                                    breadcrumb={buildSessionBreadcrumb(foundSession, foundWorkspace, workspaces, folders)}
                                                     isActive={index === activeSplitIndex}
                                                     onRemove={handleRemoveFromSplit}
                                                     onOpenSearch={handleOpenSearchForWorkspace}

@@ -6,7 +6,7 @@ import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, L
 import type { SessionRelation } from '../../src/shared/types'
 
 /**
- * T38 — The Related dialog's relation tab.
+ * T40 — The Related dialog's relation tab.
  *
  * Seeded the way tonight's sessions look: a chief opened three leads, the first
  * lead opened a worker, and that worker opened a helper. Opened from the first
@@ -33,7 +33,7 @@ const RELATIONS: SessionRelation[] = [
     { from: WORKER, to: HELPER, kind: 'opened', at: 5 }
 ]
 
-test.describe('T38 session tree', () => {
+test.describe('T40 session tree', () => {
     let ctx: LaunchResult | undefined
     let relaunched: ElectronApplication | null = null
     const temps: string[] = []
@@ -50,8 +50,8 @@ test.describe('T38 session tree', () => {
     let homeDir = ''
 
     async function launch(): Promise<LaunchResult> {
-        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-tree-t38-ws-'))
-        homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-tree-t38-home-'))
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-tree-t40-ws-'))
+        homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-tree-t40-home-'))
         temps.push(folder, homeDir)
         return launchAppWithWorkspaces(
             [{
@@ -73,7 +73,7 @@ test.describe('T38 session tree', () => {
     const section = (p: Page, where: string) => dialog(p).locator(`[data-related-tree="${where}"]`)
     const rowIn = (p: Page, where: string, id: string) => section(p, where).locator(`[data-related-row="${id}"]`)
 
-    test('T38 a lead sees its sibling and goes there', async () => {
+    test('T40 a lead sees its sibling and goes there', async () => {
         ctx = await launch()
         const { page } = ctx
         await resizeMainWindow(ctx.app, 1280, 800)
@@ -106,7 +106,7 @@ test.describe('T38 session tree', () => {
         await expect(button(page, LEAD_A)).not.toBeVisible()
     })
 
-    test('T38 narrow window keeps rows readable', async () => {
+    test('T40 narrow window keeps rows readable', async () => {
         ctx = await launch()
         const { page } = ctx
         await resizeMainWindow(ctx.app, 390, 800)
@@ -152,7 +152,7 @@ test.describe('T38 session tree', () => {
     const recentOnDisk = (userDataDir: string): string[] =>
         JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8')).recentSessions ?? []
 
-    test('T38 recent tab follows what you looked at and survives a restart', async () => {
+    test('T40 recent tab follows what you looked at and survives a restart', async () => {
         ctx = await launch()
         const { page } = ctx
         await resizeMainWindow(ctx.app, 1280, 800)
@@ -210,7 +210,7 @@ test.describe('T38 session tree', () => {
         await expect.poll(() => recentOnDisk(userDataDir)).not.toContain(LEAD_B)
     })
 
-    test('T38 all tab filters by name and copies the id', async () => {
+    test('T40 all tab filters by name and copies the id', async () => {
         ctx = await launch()
         const { page, app } = ctx
         await resizeMainWindow(app, 1280, 800)
