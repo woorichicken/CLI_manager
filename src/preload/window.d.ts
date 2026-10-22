@@ -209,6 +209,8 @@ declare global {
             onSessionRelations: (callback: (relations: SessionRelation[]) => void) => () => void
             addSessionRelation: (from: string, to: string) => Promise<boolean>
             removeSessionRelation: (a: string, b: string) => Promise<boolean>
+            getRecentSessions: () => Promise<string[]>
+            pushRecentSession: (sessionId: string) => Promise<void>
             peekSessions: (sessionIds: string[]) => Promise<SessionPeek[]>
         }
     }

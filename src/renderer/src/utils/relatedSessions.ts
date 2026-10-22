@@ -117,3 +117,97 @@ export function addableSessions(
             .map(session => ({ session, workspace }))
     )
 }
+
+/** How many levels the tree follows up and down; a longer chain is cut here. */
+export const MAX_TREE_DEPTH = 6
+
+export interface TreeEntry extends RelatedEntry {
+    /** Levels away from the session: 1 is its parent / child, 2 the grandparent / grandchild. */
+    depth: number
+}
+
+export interface SessionTree {
+    /** Who opened this session, farthest first (the root of the chain on top). */
+    ancestors: TreeEntry[]
+    /** Sessions sharing a parent with this one. */
+    siblings: TreeEntry[]
+    /** What this session opened, children before their own children. */
+    descendants: TreeEntry[]
+    /** Added by hand: no direction, so no place in the tree. */
+    manual: RelatedEntry[]
+}
+
+/**
+ * The relations around `sessionId` as one tree. `from` is the parent for both
+ * `opened` and `connected`; `manual` has no direction and is kept apart.
+ *
+ * A session shows once: `connected` can point both ways (A→B, B→C, C→A), so
+ * the walk marks what it has placed. Below is placed first, then above, then
+ * beside — in a ring the others land below. A closed session is not in
+ * `workspaces`, which cuts the walk there, and what hung under it is lost.
+ */
+export function sessionTreeFor(relations: SessionRelation[], sessionId: string, workspaces: Workspace[]): SessionTree {
+    const index = sessionIndex(workspaces)
+    const tree: SessionTree = { ancestors: [], siblings: [], descendants: [], manual: [] }
+    if (!index.has(sessionId)) return tree
+
+    const children = new Map<string, SessionRelation[]>()
+    const parents = new Map<string, SessionRelation[]>()
+    for (const relation of relations) {
+        if (relation.dismissed || relation.from === relation.to) continue
+        if (!index.has(relation.from) || !index.has(relation.to)) continue
+        if (relation.kind === 'manual') {
+            if (relation.from !== sessionId && relation.to !== sessionId) continue
+            const other = index.get(relation.from === sessionId ? relation.to : relation.from)!
+            tree.manual.push({ ...other, kind: relation.kind, at: relation.at })
+            continue
+        }
+        children.set(relation.from, [...(children.get(relation.from) ?? []), relation])
+        parents.set(relation.to, [...(parents.get(relation.to) ?? []), relation])
+    }
+    tree.manual.sort((a, b) => b.at - a.at)
+
+    const placed = new Set<string>([sessionId])
+    const entryOf = (relation: SessionRelation, otherId: string, depth: number): TreeEntry => ({
+        ...index.get(otherId)!,
+        kind: relation.kind,
+        at: relation.at,
+        depth
+    })
+    const newestFirst = (a: SessionRelation, b: SessionRelation): number => b.at - a.at
+
+    const walkDown = (id: string, depth: number): void => {
+        if (depth > MAX_TREE_DEPTH) return
+        for (const relation of [...(children.get(id) ?? [])].sort(newestFirst)) {
+            if (placed.has(relation.to)) continue
+            placed.add(relation.to)
+            tree.descendants.push(entryOf(relation, relation.to, depth))
+            walkDown(relation.to, depth + 1)
+        }
+    }
+    walkDown(sessionId, 1)
+
+    let level = [sessionId]
+    for (let depth = 1; depth <= MAX_TREE_DEPTH && level.length > 0; depth++) {
+        const next: string[] = []
+        for (const id of level) {
+            for (const relation of [...(parents.get(id) ?? [])].sort(newestFirst)) {
+                if (placed.has(relation.from)) continue
+                placed.add(relation.from)
+                tree.ancestors.push(entryOf(relation, relation.from, depth))
+                next.push(relation.from)
+            }
+        }
+        level = next
+    }
+    tree.ancestors.sort((a, b) => b.depth - a.depth || b.at - a.at)
+
+    for (const parent of tree.ancestors.filter(entry => entry.depth === 1)) {
+        for (const relation of [...(children.get(parent.session.id) ?? [])].sort(newestFirst)) {
+            if (placed.has(relation.to)) continue
+            placed.add(relation.to)
+            tree.siblings.push(entryOf(relation, relation.to, 1))
+        }
+    }
+    return tree
+}

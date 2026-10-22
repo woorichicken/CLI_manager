@@ -18,7 +18,7 @@ import {
 } from './helpers'
 
 /**
- * T39 — app links (`obsidian://…`) the user allowed in Settings > Terminal.
+ * T41 — app links (`obsidian://…`) the user allowed in Settings > Terminal.
  *
  * Terminal output is untrusted, so a scheme outside the built-in list must do
  * nothing until the user adds it — both as plain text and as an OSC 8 link.
@@ -54,7 +54,7 @@ async function linksIn(output: string, cols: number, urlRegex: RegExp): Promise<
     return [...new Set(found)]
 }
 
-test.describe('T39 scheme rules (unit)', () => {
+test.describe('T41 scheme rules (unit)', () => {
     test('normalizes what the user types', () => {
         expect(normalizeLinkScheme('Obsidian')).toEqual({ scheme: 'obsidian' })
         expect(normalizeLinkScheme('obsidian:')).toEqual({ scheme: 'obsidian' })
@@ -93,7 +93,7 @@ test.describe('T39 scheme rules (unit)', () => {
     })
 })
 
-test.describe('T39 app link detection (real WebLinksAddon)', () => {
+test.describe('T41 app link detection (real WebLinksAddon)', () => {
     const regex = buildLinkSchemeRegex(['obsidian'])!
 
     test('finds a link with a raw Hangul path inside a sentence', async () => {
@@ -159,7 +159,7 @@ async function openTerminalSettings(page: Page): Promise<void> {
     await expect(page.getByTestId('link-scheme-input')).toBeVisible()
 }
 
-test.describe('T39 app links in the running app', () => {
+test.describe('T41 app links in the running app', () => {
     let ctx: LaunchResult
 
     test.afterEach(async () => {
@@ -167,10 +167,10 @@ test.describe('T39 app links in the running app', () => {
     })
 
     test('obsidian links open only while the scheme is allowed', async () => {
-        const PLAIN = 'obsidian://open?path=/tmp/t39/review.md'
-        const OSC = 'obsidian://open?path=/tmp/t39/osc.md'
+        const PLAIN = 'obsidian://open?path=/tmp/t41/review.md'
+        const OSC = 'obsidian://open?path=/tmp/t41/osc.md'
 
-        ctx = await launchAppWithSessions([{ id: 'sess-t39', name: 'T39SESS' }])
+        ctx = await launchAppWithSessions([{ id: 'sess-t41', name: 'T41SESS' }])
         const { app, page } = ctx
 
         await app.evaluate(({ shell }) => {
@@ -180,19 +180,19 @@ test.describe('T39 app links in the running app', () => {
         })
         const opened = () => app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened)
 
-        await activateSession(page, 'T39SESS')
+        await activateSession(page, 'T41SESS')
         await writeToTerminal(
             page,
-            'sess-t39',
-            `printf '${PLAIN}\\n\\033]8;;${OSC}\\033\\\\T39OSCLINK\\033]8;;\\033\\\\\\n'\n`
+            'sess-t41',
+            `printf '${PLAIN}\\n\\033]8;;${OSC}\\033\\\\T41OSCLINK\\033]8;;\\033\\\\\\n'\n`
         )
         // The typed command echoes both strings too; wait for the printed lines themselves.
-        await expect.poll(() => termText(page, 'sess-t39'), { timeout: 20_000 }).toMatch(/^T39OSCLINK\s*$/m)
-        expect(await termText(page, 'sess-t39')).toMatch(/^obsidian:\/\/open\?path=\/tmp\/t39\/review\.md\s*$/m)
+        await expect.poll(() => termText(page, 'sess-t41'), { timeout: 20_000 }).toMatch(/^T41OSCLINK\s*$/m)
+        expect(await termText(page, 'sess-t41')).toMatch(/^obsidian:\/\/open\?path=\/tmp\/t41\/review\.md\s*$/m)
 
         // Not allowed yet: neither form reaches the OS.
         await clickText(page, PLAIN)
-        await clickText(page, 'T39OSCLINK')
+        await clickText(page, 'T41OSCLINK')
         expect(await opened()).toEqual([])
 
         // Allow it through the real settings screen. Built-ins are listed but locked.
@@ -217,7 +217,7 @@ test.describe('T39 app links in the running app', () => {
 
         await clickText(page, PLAIN)
         await expect.poll(opened, { timeout: 10_000 }).toEqual([PLAIN])
-        await clickText(page, 'T39OSCLINK')
+        await clickText(page, 'T41OSCLINK')
         await expect.poll(opened, { timeout: 10_000 }).toEqual([PLAIN, OSC])
 
         // Removing it closes the door again.
@@ -227,7 +227,7 @@ test.describe('T39 app links in the running app', () => {
         await page.getByRole('button', { name: 'Save', exact: true }).click()
 
         await clickText(page, PLAIN)
-        await clickText(page, 'T39OSCLINK')
+        await clickText(page, 'T41OSCLINK')
         expect(await opened()).toEqual([PLAIN, OSC])
     })
 })
