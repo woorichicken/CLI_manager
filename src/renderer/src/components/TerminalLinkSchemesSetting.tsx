@@ -1,6 +1,9 @@
 import { useState } from 'react'
-import { Plus, X } from 'lucide-react'
-import { normalizeLinkScheme, sanitizeLinkSchemes } from '../utils/terminalLinks'
+import { Lock, Plus, X } from 'lucide-react'
+import { BUILTIN_LINK_PROTOCOLS, normalizeLinkScheme, sanitizeLinkSchemes } from '../utils/terminalLinks'
+
+// Shown read-only so the user sees the whole allowlist, not just their additions.
+const BUILTIN_SCHEMES = [...BUILTIN_LINK_PROTOCOLS].map(protocol => protocol.slice(0, -1))
 
 interface TerminalLinkSchemesSettingProps {
     schemes: string[] | undefined
@@ -35,7 +38,6 @@ export function TerminalLinkSchemesSetting({ schemes, onChange }: TerminalLinkSc
             <h3 className="text-sm font-semibold text-white mb-1">App Links in Terminal</h3>
             <p className="text-xs text-gray-400 mb-4">
                 Let links like <code className="text-gray-300">obsidian://open?path=…</code> open their app on click.
-                http, https, file and editor links always work.
             </p>
 
             <div className="flex gap-2">
@@ -67,8 +69,24 @@ export function TerminalLinkSchemesSetting({ schemes, onChange }: TerminalLinkSc
                 <p data-testid="link-scheme-error" className="text-xs text-red-400 mt-2">{error}</p>
             )}
 
+            <p className="text-[11px] text-gray-500 mt-4 mb-2">Always allowed</p>
+            <div className="flex flex-wrap gap-2">
+                {BUILTIN_SCHEMES.map(scheme => (
+                    <span
+                        key={scheme}
+                        data-testid={`link-scheme-builtin-${scheme}`}
+                        title="Built in — can't be removed"
+                        className="flex items-center gap-1 px-2 py-1 bg-white/[0.02] border border-white/5 rounded text-xs text-gray-500"
+                    >
+                        <Lock size={10} />
+                        {scheme}://
+                    </span>
+                ))}
+            </div>
+
+            <p className="text-[11px] text-gray-500 mt-4 mb-2">Added by you</p>
             {current.length > 0 ? (
-                <div className="flex flex-wrap gap-2 mt-3">
+                <div className="flex flex-wrap gap-2">
                     {current.map(scheme => (
                         <span
                             key={scheme}
@@ -88,7 +106,7 @@ export function TerminalLinkSchemesSetting({ schemes, onChange }: TerminalLinkSc
                     ))}
                 </div>
             ) : (
-                <p className="text-xs text-gray-500 mt-3">No app links allowed yet</p>
+                <p className="text-xs text-gray-500">None yet</p>
             )}
 
             <p className="text-xs text-gray-500 mt-3">

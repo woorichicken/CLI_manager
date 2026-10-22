@@ -195,8 +195,12 @@ test.describe('T39 app links in the running app', () => {
         await clickText(page, 'T39OSCLINK')
         expect(await opened()).toEqual([])
 
-        // Allow it through the real settings screen.
+        // Allow it through the real settings screen. Built-ins are listed but locked.
         await openTerminalSettings(page)
+        for (const builtin of ['http', 'https', 'file', 'vscode', 'cursor']) {
+            await expect(page.getByTestId(`link-scheme-builtin-${builtin}`)).toBeVisible()
+        }
+        await expect(page.locator('[data-testid^="link-scheme-builtin-"] button')).toHaveCount(0)
         await page.getByTestId('link-scheme-input').fill('javascript')
         await page.getByTestId('link-scheme-add').click()
         await expect(page.getByTestId('link-scheme-error')).toBeVisible()
