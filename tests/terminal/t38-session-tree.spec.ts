@@ -83,6 +83,8 @@ test.describe('T38 session tree', () => {
         await expect(rowIn(page, 'down', WORKER)).toBeVisible()
         await expect(rowIn(page, 'down', HELPER)).toBeVisible()
         await expect(section(page, 'side').locator('[data-related-row]')).toHaveCount(2)
+        // Last lines arrive on the next status poll; the shot should show them.
+        if (shots) await expect(page.locator(`[data-related-last-line="${HELPER}"]`)).toBeVisible()
         if (shots) await page.screenshot({ path: path.join(shots, 'tree-1280.png') })
 
         // The helper hangs one level deeper than the worker.
@@ -109,11 +111,11 @@ test.describe('T38 session tree', () => {
         const panel = await dialog(page).locator('> div').nth(1).boundingBox()
         expect(panel).not.toBeNull()
         const panelRight = panel!.x + panel!.width
-        if (shots) await page.screenshot({ path: path.join(shots, 'tree-390.png') })
 
         // A long last line (a prompt with a deep path) is cut at the front, so its end — where the session is — stays visible.
         const lastLine = page.locator(`[data-related-last-line="${HELPER}"]`)
         await expect(lastLine).toBeVisible()
+        if (shots) await page.screenshot({ path: path.join(shots, 'tree-390.png') })
         const tail = await lastLine.evaluate((el) => {
             const box = el.getBoundingClientRect()
             const caret = document.caretRangeFromPoint(box.right - 4, box.top + box.height / 2)
