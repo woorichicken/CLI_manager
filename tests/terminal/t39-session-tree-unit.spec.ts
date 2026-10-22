@@ -3,7 +3,7 @@ import { MAX_TREE_DEPTH, sessionTreeFor } from '../../src/renderer/src/utils/rel
 import type { SessionRelation, TerminalSession, Workspace } from '../../src/shared/types'
 
 /**
- * T37 — Session tree (the Related dialog's relation tab), pure logic (no Electron).
+ * T39 — Session tree (the Related dialog's relation tab), pure logic (no Electron).
  *
  * `sessionTreeFor` folds the same relations T34 groups into one tree around a
  * session: who opened it (above, several levels), who shares its parent
@@ -24,8 +24,8 @@ function rel(from: string, to: string, kind: SessionRelation['kind'] = 'opened',
 
 const ids = (entries: Array<{ session: { id: string } }>): string[] => entries.map(e => e.session.id)
 
-test.describe('T37 session tree', () => {
-    test('T37 tree: siblings come from the shared parent', () => {
+test.describe('T39 session tree', () => {
+    test('T39 tree: siblings come from the shared parent', () => {
         // Tonight's shape: chief -> leads A, B, C -> A opened two workers.
         const relations = [
             rel('chief', 'A', 'opened', 1), rel('chief', 'B', 'opened', 2), rel('chief', 'C', 'opened', 3),
@@ -38,7 +38,7 @@ test.describe('T37 session tree', () => {
         expect(tree.descendants.every(e => e.depth === 1)).toBe(true)
     })
 
-    test('T37 tree: a cycle of connected relations ends', () => {
+    test('T39 tree: a cycle of connected relations ends', () => {
         const relations = [rel('A', 'B', 'connected'), rel('B', 'C', 'connected'), rel('C', 'A', 'connected')]
         const tree = sessionTreeFor(relations, 'A', workspaces(['A', 'B', 'C']))
         const all = [...ids(tree.ancestors), ...ids(tree.siblings), ...ids(tree.descendants)]
@@ -46,7 +46,7 @@ test.describe('T37 session tree', () => {
         expect(all.sort()).toEqual(['B', 'C'])
     })
 
-    test('T37 tree: dismissed pairs and manual pairs stay out of the tree', () => {
+    test('T39 tree: dismissed pairs and manual pairs stay out of the tree', () => {
         const relations: SessionRelation[] = [
             rel('A', 'gone', 'opened'), { ...rel('A', 'hidden', 'opened'), dismissed: true },
             rel('A', 'hand', 'manual')
@@ -58,7 +58,7 @@ test.describe('T37 session tree', () => {
         expect(tree.siblings).toEqual([])
     })
 
-    test('T37 tree: two parents show both above, siblings are not repeated', () => {
+    test('T39 tree: two parents show both above, siblings are not repeated', () => {
         const relations = [
             rel('P', 'S', 'opened'), rel('Q', 'S', 'connected'),
             rel('P', 'X'), rel('Q', 'X', 'connected'), rel('Q', 'Y')
@@ -68,13 +68,13 @@ test.describe('T37 session tree', () => {
         expect(ids(tree.siblings).sort()).toEqual(['X', 'Y'])
     })
 
-    test('T37 tree: a closed middle session cuts what hangs under it', () => {
+    test('T39 tree: a closed middle session cuts what hangs under it', () => {
         const relations = [rel('A', 'M'), rel('M', 'leaf')]
         const tree = sessionTreeFor(relations, 'A', workspaces(['A', 'leaf']))
         expect(tree.descendants).toEqual([])
     })
 
-    test('T37 tree: depth is numbered and capped', () => {
+    test('T39 tree: depth is numbered and capped', () => {
         const chain = Array.from({ length: MAX_TREE_DEPTH + 3 }, (_, i) => `n${i}`)
         const relations = chain.slice(1).map((id, i) => rel(chain[i], id))
         const tree = sessionTreeFor(relations, 'n0', workspaces(chain))
