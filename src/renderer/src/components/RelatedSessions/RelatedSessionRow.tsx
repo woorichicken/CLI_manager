@@ -104,8 +104,10 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                     </span>
                 </div>
                 {peek?.lastLine && (
-                    <div className="mt-0.5 pl-4 font-mono text-[11px] text-gray-500 truncate" data-related-last-line={session.id}>
-                        {peek.lastLine}
+                    // A prompt ends with where the session is, so a long line is cut at the front (rtl box), not the end.
+                    // The bdi keeps the text itself left-to-right.
+                    <div className="mt-0.5 pl-4 font-mono text-[11px] text-gray-500 truncate text-left [direction:rtl]" data-related-last-line={session.id}>
+                        <bdi dir="ltr">{peek.lastLine}</bdi>
                     </div>
                 )}
                 {memo && (
