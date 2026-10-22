@@ -1,4 +1,4 @@
-import { StickyNote, X } from 'lucide-react'
+import { Hash, StickyNote, X } from 'lucide-react'
 import { SessionPeek } from '../../../../shared/types'
 import { isTalkSession, RelatedEntry } from '../../utils/relatedSessions'
 
@@ -35,16 +35,26 @@ interface RelatedSessionRowProps {
     onToggle: (sessionId: string) => void
     onShow: (sessionId: string) => void
     onRemove: (sessionId: string) => void
+    /** Copies the session id (what the AI Control API calls it). */
+    onCopyId: (sessionId: string) => void
+    /** Levels of indentation in the relation tree; 0 for a flat list. */
+    indent?: number
 }
 
-export function RelatedSessionRow({ entry, peek, selected, selectionFull, onToggle, onShow, onRemove }: RelatedSessionRowProps) {
+/** Each tree level steps in by this much; the cap keeps a deep chain readable in a narrow window. */
+const INDENT_STEP_PX = 12
+const MAX_INDENT_LEVELS = 3
+const BASE_PADDING_PX = 16
+
+export function RelatedSessionRow({ entry, peek, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, indent = 0 }: RelatedSessionRowProps) {
     const { session, workspace, kind } = entry
     const state = peekState(peek)
     const memo = session.memo?.split('\n').find(line => line.trim())?.trim()
 
     return (
         <div
-            className={`flex items-start gap-2 px-4 py-2 transition-colors ${selected ? 'bg-blue-500/10' : 'hover:bg-white/5'}`}
+            style={{ paddingLeft: BASE_PADDING_PX + Math.min(indent, MAX_INDENT_LEVELS) * INDENT_STEP_PX }}
+            className={`flex items-start gap-2 pr-4 py-2 transition-colors ${selected ? 'bg-blue-500/10' : 'hover:bg-white/5'}`}
             data-related-row={session.id}
             data-related-kind={kind}
         >
@@ -85,7 +95,7 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                             connected
                         </span>
                     )}
-                    <span className="text-xs text-gray-500 truncate">{workspace.name}</span>
+                    <span className="hidden min-[480px]:inline text-xs text-gray-500 truncate">{workspace.name}</span>
                     <span
                         className="ml-auto shrink-0 text-[11px] text-gray-400"
                         data-related-state={state ?? ''}
@@ -94,8 +104,10 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                     </span>
                 </div>
                 {peek?.lastLine && (
-                    <div className="mt-0.5 pl-4 font-mono text-[11px] text-gray-500 truncate" data-related-last-line={session.id}>
-                        {peek.lastLine}
+                    // A prompt ends with where the session is, so a long line is cut at the front (rtl box), not the end.
+                    // The bdi keeps the text itself left-to-right.
+                    <div className="mt-0.5 pl-4 font-mono text-[11px] text-gray-500 truncate text-left [direction:rtl]" data-related-last-line={session.id}>
+                        <bdi dir="ltr">{peek.lastLine}</bdi>
                     </div>
                 )}
                 {memo && (
@@ -104,6 +116,14 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                         <span className="truncate">{memo}</span>
                     </div>
                 )}
+            </button>
+            <button
+                onClick={() => onCopyId(session.id)}
+                className="mt-0.5 p-1 rounded hover:bg-white/10 text-gray-500 hover:text-gray-200 transition-colors"
+                title={`Copy session ID — ${session.id}`}
+                data-related-copy-id={session.id}
+            >
+                <Hash size={12} />
             </button>
             <button
                 onClick={() => onRemove(session.id)}

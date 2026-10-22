@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Columns2, Waypoints, X } from 'lucide-react'
 import { SessionRelation, Workspace } from '../../../../shared/types'
-import { RelatedEntry, relatedSessionsFor } from '../../utils/relatedSessions'
+import { RelatedEntry, sessionTreeFor } from '../../utils/relatedSessions'
 import { MAX_LINKED_SESSIONS } from '../../utils/sessionLink'
 import { useSessionPeeks } from '../../hooks/useSessionPeeks'
-import { RelatedSessionRow } from './RelatedSessionRow'
+import { RelationTree } from './RelationTree'
+import { CopyNotice, useCopyWithNotice } from '../Sidebar/CopyNotice'
 import { AddRelatedSession } from './AddRelatedSession'
 
 interface RelatedSessionsModalProps {
@@ -19,10 +20,13 @@ interface RelatedSessionsModalProps {
 /** "Open side by side" puts this session in the first pane, so the others get the rest of the split view. */
 const MAX_PICKED = MAX_LINKED_SESSIONS - 1
 
-const GROUPS: Array<{ key: 'fromHere' | 'toHere' | 'manual'; title: string; hint: string }> = [
-    { key: 'fromHere', title: 'Opened from this session', hint: 'Its agent opened them, or started working in them, through the Control API.' },
-    { key: 'toHere', title: 'Opened this session', hint: 'An agent there opened this session, or started working in it.' },
-    { key: 'manual', title: 'Added by hand', hint: 'Added in this dialog, here or in the other session.' }
+type RelatedTab = 'tree' | 'recent' | 'all'
+
+/** Only the relation tab exists so far; the others are shown so the dialog's shape can be judged. */
+const TABS: Array<{ key: RelatedTab; label: string; ready: boolean }> = [
+    { key: 'tree', label: 'Relations', ready: true },
+    { key: 'recent', label: 'Recent', ready: false },
+    { key: 'all', label: 'All', ready: false }
 ]
 
 /**
@@ -30,8 +34,12 @@ const GROUPS: Array<{ key: 'fromHere' | 'toHere' | 'manual'; title: string; hint
  * memo of each, one click to go there, or several side by side.
  */
 export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose, onShowSessions }: RelatedSessionsModalProps) {
-    const groups = useMemo(() => relatedSessionsFor(relations, sessionId, workspaces), [relations, sessionId, workspaces])
-    const entries: RelatedEntry[] = useMemo(() => [...groups.fromHere, ...groups.toHere, ...groups.manual], [groups])
+    const tree = useMemo(() => sessionTreeFor(relations, sessionId, workspaces), [relations, sessionId, workspaces])
+    const entries: RelatedEntry[] = useMemo(
+        () => [...tree.descendants, ...tree.ancestors, ...tree.siblings, ...tree.manual],
+        [tree]
+    )
+    const { notice, copy } = useCopyWithNotice()
     const relatedIds = useMemo(() => new Set(entries.map(entry => entry.session.id)), [entries])
     const peeks = useSessionPeeks(entries.map(entry => entry.session.id))
     const [selected, setSelected] = useState<string[]>([])
@@ -97,35 +105,43 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     </button>
                 </div>
 
+                <div className="flex gap-1 px-4 pt-2 border-b border-white/10" role="tablist">
+                    {TABS.map(tab => (
+                        <button
+                            key={tab.key}
+                            role="tab"
+                            aria-selected={tab.key === 'tree'}
+                            disabled={!tab.ready}
+                            title={tab.ready ? undefined : 'Coming in a later step'}
+                            className={`px-3 py-1.5 text-xs border-b-2 -mb-px transition-colors ${tab.key === 'tree' ? 'border-blue-500 text-white' : 'border-transparent text-gray-600 cursor-not-allowed'}`}
+                            data-related-tab={tab.key}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
                 <div className="max-h-[50vh] overflow-y-auto py-1">
-                    {groups.total === 0 && (
+                    {entries.length === 0 && (
                         <div className="px-4 py-6 text-center text-xs text-gray-500" data-related-empty>
                             No related sessions yet. Sessions an agent here opens or works in through the
                             Control API show up on their own; add one by hand below.
                         </div>
                     )}
-                    {GROUPS.map(group => groups[group.key].length > 0 && (
-                        <div key={group.key} data-related-group={group.key}>
-                            <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-gray-500" title={group.hint}>
-                                {group.title}
-                            </div>
-                            {groups[group.key].map(entry => (
-                                <RelatedSessionRow
-                                    key={entry.session.id}
-                                    entry={entry}
-                                    peek={peeks.get(entry.session.id)}
-                                    selected={liveSelection.includes(entry.session.id)}
-                                    selectionFull={liveSelection.length >= MAX_PICKED}
-                                    onToggle={toggle}
-                                    onShow={id => show([id])}
-                                    onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
-                                />
-                            ))}
-                        </div>
-                    ))}
+                    <RelationTree
+                        tree={tree}
+                        ownerName={owner.name}
+                        peeks={peeks}
+                        selected={liveSelection}
+                        selectionFull={liveSelection.length >= MAX_PICKED}
+                        onToggle={toggle}
+                        onShow={id => show([id])}
+                        onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
+                        onCopyId={id => void copy(id, 'session ID')}
+                    />
                 </div>
 
-                {groups.total > 0 && (
+                {entries.length > 0 && (
                     <div className="flex items-center gap-2 px-4 py-2 border-t border-white/10">
                         <span className="text-[11px] text-gray-500">
                             {liveSelection.length === 0
@@ -150,6 +166,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     relatedIds={relatedIds}
                     onAdd={id => void window.api.addSessionRelation(sessionId, id)}
                 />
+                <CopyNotice notice={notice} />
             </div>
         </div>
     )
