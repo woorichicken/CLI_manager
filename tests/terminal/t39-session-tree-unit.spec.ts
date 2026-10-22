@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { MAX_TREE_DEPTH, sessionTreeFor } from '../../src/renderer/src/utils/relatedSessions'
+import { RecentSessions, RECENT_SESSIONS_KEY, RECENT_SESSIONS_MAX } from '../../src/main/RecentSessions'
+import type { RelationStore } from '../../src/main/SessionRelations'
 import type { SessionRelation, TerminalSession, Workspace } from '../../src/shared/types'
 
 /**
@@ -79,5 +81,60 @@ test.describe('T39 session tree', () => {
         const relations = chain.slice(1).map((id, i) => rel(chain[i], id))
         const tree = sessionTreeFor(relations, 'n0', workspaces(chain))
         expect(tree.descendants.map(e => e.depth)).toEqual(Array.from({ length: MAX_TREE_DEPTH }, (_, i) => i + 1))
+    })
+})
+
+class MemoryStore implements RelationStore {
+    readonly data: Record<string, unknown> = {}
+    writes = 0
+    get(key: string): unknown {
+        return this.data[key]
+    }
+    set(key: string, value: unknown): void {
+        this.writes++
+        // A deep copy, as a JSON file would hold it.
+        this.data[key] = JSON.parse(JSON.stringify(value))
+    }
+}
+
+test.describe('T39 recent sessions', () => {
+    test('T39 recent: capped, repeat moves to front, survives a restart, prune drops gone ones', () => {
+        const store = new MemoryStore()
+        const recent = new RecentSessions(store)
+        for (let i = 0; i < RECENT_SESSIONS_MAX + 1; i++) recent.push(`s${i}`)
+        expect(recent.list()).toHaveLength(RECENT_SESSIONS_MAX)
+        // Newest first; the oldest one fell off.
+        expect(recent.list()[0]).toBe(`s${RECENT_SESSIONS_MAX}`)
+        expect(recent.list()).not.toContain('s0')
+
+        recent.push('s5')
+        expect(recent.list()[0]).toBe('s5')
+        expect(recent.list().filter(id => id === 's5')).toHaveLength(1)
+
+        // A new instance on the same store is a restart.
+        const afterRestart = new RecentSessions(store)
+        expect(afterRestart.list()).toEqual(recent.list())
+
+        afterRestart.prune(new Set(['s5', 's7']))
+        expect(afterRestart.list()).toEqual(['s5', 's7'])
+        expect(new RecentSessions(store).list()).toEqual(['s5', 's7'])
+    })
+
+    test('T39 recent: pushing the id already in front writes nothing', () => {
+        const store = new MemoryStore()
+        const recent = new RecentSessions(store)
+        recent.push('a')
+        const writes = store.writes
+        recent.push('a')
+        expect(store.writes).toBe(writes)
+        expect(store.data[RECENT_SESSIONS_KEY]).toEqual(['a'])
+    })
+
+    test('T39 recent: a closed session is dropped on forget', () => {
+        const recent = new RecentSessions(new MemoryStore())
+        recent.push('a')
+        recent.push('b')
+        recent.forget('a')
+        expect(recent.list()).toEqual(['b'])
     })
 })

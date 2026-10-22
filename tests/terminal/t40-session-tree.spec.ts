@@ -1,8 +1,8 @@
-import { test, expect, Page } from '@playwright/test'
+import { test, expect, Page, ElectronApplication, _electron as electron } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, REPO_ROOT } from './helpers'
 import type { SessionRelation } from '../../src/shared/types'
 
 /**
@@ -35,17 +35,24 @@ const RELATIONS: SessionRelation[] = [
 
 test.describe('T40 session tree', () => {
     let ctx: LaunchResult | undefined
+    let relaunched: ElectronApplication | null = null
     const temps: string[] = []
 
     test.afterEach(async () => {
         if (ctx) await closeApp(ctx)
         ctx = undefined
+        if (relaunched) await relaunched.close().catch(() => undefined)
+        relaunched = null
         for (const dir of temps.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
     })
 
+    // One CLIMANAGER_HOME per launch, kept so a restart can use the same one.
+    let homeDir = ''
+
     async function launch(): Promise<LaunchResult> {
         const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-tree-t40-ws-'))
-        temps.push(folder)
+        homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-tree-t40-home-'))
+        temps.push(folder, homeDir)
         return launchAppWithWorkspaces(
             [{
                 id: 'ws-tree', name: 'CLImanger', path: folder, sessions: [
@@ -57,7 +64,7 @@ test.describe('T40 session tree', () => {
                     { id: HELPER, name: HELPER_NAME }
                 ]
             }],
-            { config: { sessionRelations: RELATIONS }, env: { CLIMANAGER_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-tree-t40-home-')) } }
+            { config: { sessionRelations: RELATIONS }, env: { CLIMANAGER_HOME: homeDir } }
         )
     }
 
@@ -134,5 +141,121 @@ test.describe('T40 session tree', () => {
         }
         const nameBox = await helperRow.locator('[data-related-open]').boundingBox()
         expect(nameBox!.width).toBeGreaterThan(120)
+    })
+
+    const tab = (p: Page, key: string) => dialog(p).locator(`[data-related-tab="${key}"]`)
+    const recentOrder = (p: Page, among: string[]) =>
+        dialog(p).locator('[data-related-recent] [data-related-row]').evaluateAll(
+            (rows, wanted) => rows.map(row => row.getAttribute('data-related-row')!).filter(id => (wanted as string[]).includes(id)),
+            among
+        )
+    const recentOnDisk = (userDataDir: string): string[] =>
+        JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8')).recentSessions ?? []
+
+    test('T40 recent tab follows what you looked at and survives a restart', async () => {
+        ctx = await launch()
+        const { page } = ctx
+        await resizeMainWindow(ctx.app, 1280, 800)
+        const shots = process.env.RELATED_SESSIONS_SHOTS
+        if (shots) fs.mkdirSync(shots, { recursive: true })
+
+        // Look at three sessions in turn, then open the dialog from the last one.
+        await activateSession(page, LEAD_B_NAME)
+        await activateSession(page, 'AI: tr1022 lead C')
+        await activateSession(page, 'AI: tr1022 worker')
+        await button(page, WORKER).click()
+        await tab(page, 'recent').click()
+        await expect(tab(page, 'recent')).toHaveAttribute('aria-selected', 'true')
+        // Newest first; the dialog's own session is not offered.
+        await expect.poll(() => recentOrder(page, [LEAD_B, LEAD_C, WORKER])).toEqual([LEAD_C, LEAD_B])
+        await expect(dialog(page).locator(`[data-related-recent] [data-related-row="${WORKER}"]`)).toHaveCount(0)
+        if (shots) { await page.waitForTimeout(500); await page.screenshot({ path: path.join(shots, 'recent-1280.png') }) } // tab underline is a transition
+        await resizeMainWindow(ctx.app, 390, 800)
+        if (shots) { await page.waitForTimeout(500); await page.screenshot({ path: path.join(shots, 'recent-390.png') }) }
+        await page.keyboard.press('Escape')
+
+        // The order is on disk, so a restart brings it back.
+        await expect.poll(() => recentOnDisk(ctx!.userDataDir)[0]).toBe(WORKER)
+        const userDataDir = ctx.userDataDir
+        temps.push(userDataDir)
+        await ctx.app.close()
+        ctx = undefined
+        relaunched = await electron.launch({
+            args: [path.join(REPO_ROOT, 'out/main/index.js')],
+            env: {
+                ...process.env,
+                CLIMANGER_TEST_USERDATA: userDataDir,
+                CLIMANGER_TERM_DEBUG: '1',
+                CLIMANGER_TEST_HEADLESS: '1',
+                CLIMANAGER_HOME: homeDir
+            } as Record<string, string>
+        })
+        const page2 = await relaunched.firstWindow()
+        await page2.locator(`[data-session-item="${HELPER}"]`).waitFor({ timeout: 30_000 })
+        await activateSession(page2, HELPER_NAME)
+        await button(page2, HELPER).click()
+        await tab(page2, 'recent').click()
+        await expect.poll(() => recentOrder(page2, [WORKER, LEAD_C, LEAD_B])).toEqual([WORKER, LEAD_C, LEAD_B])
+        await page2.keyboard.press('Escape')
+
+        // A deleted session leaves the list.
+        const rowInSidebar = page2.locator(`[data-session-item="${LEAD_B}"]`)
+        await rowInSidebar.hover()
+        await rowInSidebar.getByTitle('Delete session').click()
+        await expect(rowInSidebar).toHaveCount(0)
+        await button(page2, HELPER).click()
+        await tab(page2, 'recent').click()
+        await expect(dialog(page2).locator(`[data-related-recent] [data-related-row="${LEAD_C}"]`)).toBeVisible()
+        await expect(dialog(page2).locator(`[data-related-recent] [data-related-row="${LEAD_B}"]`)).toHaveCount(0)
+        await expect.poll(() => recentOnDisk(userDataDir)).not.toContain(LEAD_B)
+    })
+
+    test('T40 all tab filters by name and copies the id', async () => {
+        ctx = await launch()
+        const { page, app } = ctx
+        await resizeMainWindow(app, 1280, 800)
+        const shots = process.env.RELATED_SESSIONS_SHOTS
+        if (shots) fs.mkdirSync(shots, { recursive: true })
+
+        await activateSession(page, LEAD_A_NAME)
+        await button(page, LEAD_A).click()
+        await tab(page, 'all').click()
+        await expect(tab(page, 'all')).toHaveAttribute('aria-selected', 'true')
+
+        const rows = dialog(page).locator('[data-related-all] [data-related-row]')
+        // Every other session, grouped under its workspace; no state is polled for them. (The app also
+        // opens a session of its own in its working folder, so the seeded ones are checked by id, not counted.)
+        for (const id of [CHIEF, LEAD_B, LEAD_C, WORKER, HELPER]) {
+            await expect(dialog(page).locator(`[data-related-all] [data-related-row="${id}"]`)).toBeVisible()
+        }
+        await expect(dialog(page).locator('[data-related-all] [data-related-workspace="ws-tree"]')).toBeVisible()
+        await expect(dialog(page).locator('[data-related-all] [data-related-state]')).toHaveCount(0)
+        await expect(dialog(page).locator(`[data-related-all] [data-related-row="${LEAD_A}"]`)).toHaveCount(0)
+        await expect(dialog(page).locator('[data-related-all] [data-related-remove]')).toHaveCount(0)
+        if (shots) { await page.waitForTimeout(500); await page.screenshot({ path: path.join(shots, 'all-1280.png') }) } // tab underline is a transition
+
+        await dialog(page).locator('[data-related-search]').fill('HELPER')
+        await expect(rows).toHaveCount(1)
+        await expect(dialog(page).locator(`[data-related-all] [data-related-row="${HELPER}"]`)).toBeVisible()
+        await dialog(page).locator('[data-related-search]').fill('no such session')
+        await expect(rows).toHaveCount(0)
+        await dialog(page).locator('[data-related-search]').fill('helper')
+
+        // The clipboard is the machine's, not the test's: put back what was there.
+        const saved = await app.evaluate(({ clipboard }) => clipboard.readText())
+        try {
+            await dialog(page).locator(`[data-related-all] [data-related-copy-id="${HELPER}"]`).click()
+            await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(HELPER)
+        } finally {
+            await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved)
+        }
+
+        await dialog(page).locator('[data-related-search]').fill('')
+        await resizeMainWindow(app, 390, 800)
+        // The copy notice covers the footer for a moment; wait it out.
+        if (shots) { await page.waitForTimeout(2200); await page.screenshot({ path: path.join(shots, 'all-390.png') }) }
+        const panel = await dialog(page).locator('> div').nth(1).boundingBox()
+        const box = await dialog(page).locator(`[data-related-all] [data-related-row="${HELPER}"]`).boundingBox()
+        expect(box!.x + box!.width).toBeLessThanOrEqual(panel!.x + panel!.width + 1)
     })
 })

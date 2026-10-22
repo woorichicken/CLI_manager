@@ -33,6 +33,7 @@ import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
+import { RecentSessions } from './RecentSessions'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
@@ -320,6 +321,7 @@ async function saveHistoryBeforeQuit(): Promise<void> {
 }
 
 const sessionRelations = new SessionRelations(store, (visible) => broadcast(SESSION_RELATIONS_CHANNEL, visible))
+const recentSessions = new RecentSessions(store)
 
 const controlApiService = new ControlApiService({
     store,
@@ -331,6 +333,7 @@ const controlApiService = new ControlApiService({
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)
+        recentSessions.forget(sessionId)
     }
 })
 const controlApiServer = new ControlApiServer({
@@ -3171,6 +3174,11 @@ app.whenReady().then(async () => {
     ipcMain.handle('get-session-relations', () => sessionRelations.list())
     ipcMain.handle('add-session-relation', (_e, from: string, to: string): boolean => sessionRelations.add(from, to))
     ipcMain.handle('remove-session-relation', (_e, a: string, b: string): boolean => sessionRelations.remove(a, b))
+    // The Related dialog's Recent tab: the renderer reports each session the user switches to.
+    ipcMain.handle('get-recent-sessions', () => recentSessions.list())
+    ipcMain.handle('push-recent-session', (_e, sessionId: string): void => {
+        if (typeof sessionId === 'string' && sessionId) recentSessions.push(sessionId)
+    })
     ipcMain.handle('peek-sessions', (_e, sessionIds: string[]) =>
         controlApiService.peekSessions(Array.isArray(sessionIds) ? sessionIds.filter((id) => typeof id === 'string') : [])
     )
@@ -3212,9 +3220,11 @@ app.whenReady().then(async () => {
 
     // Before the window loads, so the sidebar never shows a leftover scratch registration.
     controlApiService.pruneSpentEphemeral()
-    sessionRelations.prune(
-        new Set(((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => (w.sessions ?? []).map((s) => s.id)))
+    const existingSessionIds = new Set(
+        ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => (w.sessions ?? []).map((s) => s.id))
     )
+    sessionRelations.prune(existingSessionIds)
+    recentSessions.prune(existingSessionIds)
 
     // apply() never throws; a port conflict shows up in Settings instead of blocking boot.
     void controlApiServer.apply(getControlApiSettings()).then((state) => {
