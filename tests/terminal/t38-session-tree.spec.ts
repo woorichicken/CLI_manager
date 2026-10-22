@@ -118,6 +118,17 @@ test.describe('T38 session tree', () => {
         const panelRight = panel!.x + panel!.width
         if (shots) await page.screenshot({ path: path.join(shots, 'tree-390.png') })
 
+        // A long last line (a prompt with a deep path) is cut at the front, so its end — where the session is — stays visible.
+        const lastLine = page.locator(`[data-related-last-line="${HELPER}"]`)
+        await expect(lastLine).toBeVisible()
+        const tail = await lastLine.evaluate((el) => {
+            const box = el.getBoundingClientRect()
+            const caret = document.caretRangeFromPoint(box.right - 4, box.top + box.height / 2)
+            return { cut: el.scrollWidth > el.clientWidth, offset: caret?.startOffset ?? -1, length: (el.textContent ?? '').length }
+        })
+        expect(tail.cut).toBe(true)
+        expect(tail.offset).toBeGreaterThanOrEqual(tail.length - 3)
+
         // Even the deepest, longest-named row stays inside the dialog, and the name is not squeezed to nothing.
         const helperRow = rowIn(page, 'down', HELPER)
         await expect(helperRow).toBeVisible()

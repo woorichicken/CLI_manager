@@ -413,7 +413,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     Cmd+Shift+L(`toggleRelated`)이 활성 탭의 Related 대화상자를 열고 닫는지. 창 끌기 영역(`app-region`)은 Playwright 가 못 봐서 CSS 만 바꿨고 테스트가 없다 — 실제 앱에서 제보 위젯으로 헤더 줄을 눌러 본다
   - T37 세션 나무 유닛 — Electron 없이. `sessionTreeFor`: 같은 부모가 연 형제가 옆에 오는지, 고리(A→B→C→A)에서 세션이 한 번씩만 나오고 끝나는지, 지운 쌍·손으로 넣은 쌍이 나무에서 빠지는지,
     부모가 둘일 때 위 둘·옆 중복 없음, 중간 세션이 닫히면 그 아래가 끊기는지, 깊이 번호와 상한(`MAX_TREE_DEPTH`)
-  - T38 세션 나무 화면 — 시드한 `sessionRelations`(총괄→팀장 셋→작업→보조)로 Related 「Relations」 탭의 위·옆·아래 줄이 DOM(`data-related-tree`)에 맞게 오는지, 옆 줄을 눌러 그 세션으로 가는지,
+  - T38 세션 나무 화면 — 시드한 `sessionRelations`(총괄→팀장 셋→작업→보조)로 Related 「Relations」 탭의 위·옆·아래 줄이 DOM(`data-related-tree`)에 맞게 오는지, 옆 줄을 눌러 그 세션으로 가는지, 마지막 줄(프롬프트·경로)이 길면 앞이 잘려 끝이 보이는지,
     390 폭에서 가장 깊고 이름이 긴 줄이 모달 안에 들어오는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 `tree-1280.png`·`tree-390.png` 를 남긴다. 관계는 `helpers.ts` 의 `config` 옵션으로 config.json 에 직접 심는다
   - T37 최근 본(P2) — `RecentSessions`(가짜 store): 20개 상한(`RECENT_SESSIONS_MAX`)·같은 id 는 맨 앞 하나·재시작(새 인스턴스) 뒤 순서 유지·`prune`·맨 앞 id 를 다시 넣으면 쓰지 않음·`forget`
   - T38 최근 본·전체(P2·P3) — 세션 셋을 차례로 본 뒤 Recent 탭이 역순(자기 세션 제외)이고 config.json `recentSessions` 에 남는지, 앱 재시작 뒤 같은 순서인지, 삭제한 세션이 빠지는지. All 탭: 작업 영역별 목록·상태 표시 없음·이름 검색·# 를 누르면 시스템 클립보드에 세션 id(시험 뒤 원래 값 복원)·390 폭에서 줄이 안 잘림
