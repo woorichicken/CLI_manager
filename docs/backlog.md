@@ -444,14 +444,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 활성 세션 id 를 ref 로 들고 확인 창 뒤에 그 ref 로 판정한다(`setActiveSession`·`setActiveWorkspace`·상태 점 셋 다).
 - Owner: 없음
 
-### `tests/terminal/zz-focus-check.spec.ts` — 「SCRATCH」 표시의 일회용 시험이 main 에 들어가 있다
-- Discovered: 2026-10-24 night-1023, PR #51 워크트리를 보다가(`git ls-files tests/terminal | grep zz`).
-- Evidence: 파일 첫 줄이 `// SCRATCH — API 가 화면을 바꿀 때 키보드 포커스까지 가져가나`. 커밋 a678f11(「세션을 보여줄 때 에이전트가 사용자의 커서를 가져가지 않는다」)에 같이 들어갔다. 이름이 `t<번호>` 규칙 밖이라 CLAUDE.md 시험 목록에도 없고, 전체 스위트(`pnpm test:term`)에서는 돈다.
-- Why deferred: 지금 통과하고 해는 없다 — 지울지 정식 시험(T 번호)으로 올릴지는 그 동작(포커스 안 가져감)을 지키는 다른 시험이 있는지 보고 정한다.
-- Trigger: 다음에 Control API 포커스 동작을 만지거나 시험 목록을 정리할 때.
-- Fix direction: 같은 판정이 T15/T19 에 있으면 지우고, 없으면 `t<다음 번호>-control-api-focus.spec.ts` 로 이름을 바꿔 목록에 한 줄.
-- Owner: 없음
-
 ## Blocked
 
 없음.
