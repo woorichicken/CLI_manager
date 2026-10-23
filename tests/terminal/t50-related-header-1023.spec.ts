@@ -254,16 +254,32 @@ test.describe('T50 related dialog and header (day-1023)', () => {
         await activateSession(page, NAMES[LEAD])
         await button(page, LEAD).click()
         await expect(dialog(page).locator('[data-related-help-panel]')).toHaveCount(0)
+        const firstRow = dialog(page).locator('[data-related-row]').first()
+        const rowBefore = await firstRow.boundingBox()
         await dialog(page).locator('[data-related-help]').click()
         const help = dialog(page).locator('[data-related-help-panel]')
         await expect(help).toBeVisible()
+        // A floating panel: the list underneath does not move.
+        expect((await firstRow.boundingBox())!.y).toBe(rowBefore!.y)
         const shots = shotsDir()
         if (shots) await page.screenshot({ path: path.join(shots, 'related-help-1280.png') })
-        for (const term of ['Talk', 'connected', 'Grey text', 'Idle / Working / Waiting', 'copy the session ID', 'remove it from this list']) {
+        for (const term of ['Talk', 'connected', 'Grey text', 'Idle / Working / Waiting for you / Starting / Exited', 'grey = idle', 'copy the session ID', 'remove it from this list']) {
             await expect(help).toContainText(term)
         }
+        // Esc peels the help panel first; the Related dialog stays. Clicking elsewhere also closes a pinned one.
+        await page.keyboard.press('Escape')
+        await page.mouse.move(1, 1)
+        await expect(help).toHaveCount(0)
+        await expect(dialog(page)).toBeVisible()
         await dialog(page).locator('[data-related-help]').click()
-        // The pointer is still over the button, and hovering also shows the panel.
+        await page.mouse.move(1, 1)
+        await expect(help).toBeVisible()
+        // The title sits in the header, outside the floating panel.
+        await dialog(page).getByText('Related sessions', { exact: true }).click()
+        await expect(help).toHaveCount(0)
+        // Clicking the button again unpins; the pointer is still over it and hovering also shows the panel.
+        await dialog(page).locator('[data-related-help]').click()
+        await dialog(page).locator('[data-related-help]').click()
         await page.mouse.move(1, 1)
         await expect(help).toHaveCount(0)
     })

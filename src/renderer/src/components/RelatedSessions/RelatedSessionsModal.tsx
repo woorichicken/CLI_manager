@@ -53,7 +53,8 @@ const HELP_LINES: Array<[string, string]> = [
     ['Talk', 'a session opened for you to talk in (named "대화: …")'],
     ['connected', 'not opened by the API: the agent started working in a session that already existed'],
     ['Grey text', "the session's project (workspace) name"],
-    ['Idle / Working / Waiting', 'what the session is doing right now'],
+    ['Idle / Working / Waiting for you / Starting / Exited', 'what the session is doing right now'],
+    ['Dot', 'grey = idle · blue, pulsing = working · amber, pulsing = waiting for you · red = exited'],
     ['#', 'copy the session ID'],
     ['×', 'remove it from this list (the session keeps running)']
 ]
@@ -130,14 +131,25 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
             if (e.key === 'Escape') {
                 e.preventDefault()
                 e.stopPropagation()
-                // Esc peels one layer: the New session box first, then the Related dialog.
+                // Esc peels one layer: the New session box, then the help panel, then the Related dialog.
                 if (creating) setCreating(false)
+                else if (helpPinned || helpHover) { setHelpPinned(false); setHelpHover(false) }
                 else onClose()
             }
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
-    }, [onClose, creating])
+    }, [onClose, creating, helpPinned, helpHover])
+
+    // A pinned help panel closes on a click anywhere else.
+    useEffect(() => {
+        if (!helpPinned) return
+        const onMouseDown = (e: MouseEvent): void => {
+            if (!(e.target as Element).closest('[data-related-help], [data-related-help-panel]')) setHelpPinned(false)
+        }
+        window.addEventListener('mousedown', onMouseDown, true)
+        return () => window.removeEventListener('mousedown', onMouseDown, true)
+    }, [helpPinned])
 
     // The session whose dialog this is was closed: nothing left to show.
     useEffect(() => {
@@ -177,7 +189,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                 className="relative w-full max-w-2xl glass-panel rounded-lg shadow-2xl overflow-hidden outline-none"
                 data-related-modal={sessionId}
             >
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+                <div className="relative flex items-center gap-2 px-4 py-3 border-b border-white/10">
                     <Waypoints size={14} className="text-gray-400" />
                     <span className="text-sm text-white whitespace-nowrap">Related sessions</span>
                     <span className="text-xs text-gray-500 truncate">— {owner.name}</span>
@@ -207,20 +219,20 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors" title="Close (Esc)">
                         <X size={14} className="text-gray-400" />
                     </button>
+                    {/* Floats over the list instead of pushing it down; hover peeks, a click pins it. */}
+                    {(helpPinned || helpHover) && (
+                        <ul
+                            className="absolute left-3 right-3 top-full z-20 px-3 py-2.5 space-y-1 rounded-lg border border-white/10 bg-gray-900/95 backdrop-blur shadow-xl text-[11px] text-gray-400"
+                            data-related-help-panel
+                            onMouseEnter={() => setHelpHover(true)}
+                            onMouseLeave={() => setHelpHover(false)}
+                        >
+                            {HELP_LINES.map(([term, meaning]) => (
+                                <li key={term}><span className="text-gray-200">{term}</span> — {meaning}</li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
-
-                {(helpPinned || helpHover) && (
-                    <ul
-                        className="px-4 py-3 border-b border-white/10 bg-white/[0.03] space-y-1 text-[11px] text-gray-400"
-                        data-related-help-panel
-                        onMouseEnter={() => setHelpHover(true)}
-                        onMouseLeave={() => setHelpHover(false)}
-                    >
-                        {HELP_LINES.map(([term, meaning]) => (
-                            <li key={term}><span className="text-gray-200">{term}</span> — {meaning}</li>
-                        ))}
-                    </ul>
-                )}
 
                 <div className="flex items-end gap-1 px-4 pt-2 border-b border-white/10" role="tablist">
                     {TABS.map(item => (
