@@ -51,6 +51,12 @@ test.describe('T37 breadcrumb builder', () => {
             .toEqual(['Company', 'Proj-wt', 'Sess'])
     })
 
+    test('the Home workspace is flagged so the header can shorten it', () => {
+        const ws = workspace('w1', 'me@host.local', { isHome: true })
+        expect(buildSessionBreadcrumb(session('s1', 'Sess'), ws, [ws], FOLDERS))
+            .toEqual([{ kind: 'project', label: 'me@host.local', isHome: true }, { kind: 'session', label: 'Sess' }])
+    })
+
     test('no session yet leaves the project path only', () => {
         const ws = workspace('w1', 'Proj', { folderId: 'f1' })
         expect(buildSessionBreadcrumb(null, ws, [ws], FOLDERS).map(s => s.kind)).toEqual(['folder', 'project'])
@@ -125,5 +131,70 @@ test.describe('T37 header breadcrumb', () => {
         const overflowing = await page.locator('.pane-header').evaluateAll(els =>
             els.map(el => el.scrollWidth > el.clientWidth))
         expect(overflowing).toEqual([false, false])
+    })
+    test('narrowing the window drops whole leading segments behind one ellipsis (report 9b89b9f5)', async () => {
+        const pad = 'x'.repeat(34)
+        const page = await launch([
+            { id: 'ws-a', name: 'T37PROJ-' + pad, folderId: 'f-a', sessions: [{ id: 's-a', name: 'T37SESS' }] }
+        ], 'T37FOLDER-' + pad)
+        await page.locator('[data-session-item="s-a"]').click()
+        const header = 'div.flex-1.glass-panel > div.draggable'
+        await expect.poll(() => crumbs(page, header)).toHaveLength(3)
+        await expect(page.locator(`${header} [data-crumb-more]`)).toHaveCount(0)
+
+        const seen = new Set<string>()
+        for (let width = 900; width >= 40; width -= 20) {
+            // Cap the row itself: the test window does not shrink like a real one, but the
+            // row's own width is what the component measures.
+            await page.locator(`${header} [data-session-breadcrumb]`).evaluate((el, w) => { (el as HTMLElement).style.maxWidth = `${w}px` }, width)
+            await page.waitForTimeout(150)
+            const kinds = (await crumbs(page, header)).map(c => c.split(':')[0])
+            const more = await page.locator(`${header} [data-crumb-more]`).count()
+            seen.add(`${kinds.join('>')}${more ? ' +more' : ''}`)
+            // Whole segments only: the surviving ones are always a tail of folder>project>session.
+            expect(['folder>project>session', 'project>session', 'session']).toContain(kinds.join('>'))
+            expect(more > 0, `${width}: ellipsis iff something was dropped`).toBe(kinds.length < 3)
+            const nav = await page.locator(`${header} [data-session-breadcrumb]`).evaluate(el => el.scrollWidth > el.clientWidth)
+            expect(nav, `${width}: path overflows its row`).toBe(false)
+            if (more) {
+                // The tooltip on the ellipsis carries the full path.
+                expect(await page.locator(`${header} [data-crumb-more]`).getAttribute('title')).toContain('T37FOLDER')
+            }
+        }
+        expect([...seen]).toEqual(expect.arrayContaining(['folder>project>session', 'project>session +more', 'session +more']))
+        // Widening again brings the full path back.
+        await page.locator(`${header} [data-session-breadcrumb]`).evaluate(el => { (el as HTMLElement).style.maxWidth = '' })
+        await expect.poll(() => crumbs(page, header)).toHaveLength(3)
+    })
+
+    test('real layout, no width cap: long names fold and the header row still fits (report 9b89b9f5)', async () => {
+        const page = await launch([
+            { id: 'ws-a', name: 'Project-with-a-really-long-name-' + 'z'.repeat(60), folderId: 'f-a', sessions: [{ id: 's-a', name: 'T37REALSESS' }] }
+        ], 'Long-folder-name-' + 'y'.repeat(60))
+        await page.locator('[data-session-item="s-a"]').click()
+        const header = 'div.flex-1.glass-panel > div.draggable'
+        await expect.poll(() => page.locator(`${header} [data-crumb-more]`).count()).toBe(1)
+        const kinds = (await crumbs(page, header)).map(c => c.split(':')[0])
+        expect(kinds[kinds.length - 1]).toBe('session')
+        // The row must not overflow: the session name and the buttons on the right stay on screen.
+        const row = await page.locator(header).evaluate(el => ({ client: el.clientWidth, scroll: el.scrollWidth }))
+        expect(row.scroll, 'header row overflows').toBeLessThanOrEqual(row.client)
+        const related = await page.locator('[data-related-button]').first().boundingBox()
+        const win = await page.evaluate(() => window.innerWidth)
+        expect(related!.x + related!.width).toBeLessThanOrEqual(win)
+        const sessionBox = await page.locator(`${header} [data-crumb="session"]`).boundingBox()
+        expect(sessionBox!.x + sessionBox!.width).toBeLessThanOrEqual(related!.x)
+    })
+
+    test('the Home workspace shows a house and ~ with the full name in the tooltip (report 1fe246f5)', async () => {
+        const page = await launch([
+            { id: 'ws-h', name: 'someone@some-long-host-name.local', isHome: true, sessions: [{ id: 's-h', name: 'T37HOMESESS' }] }
+        ])
+        await page.locator('[data-session-item="s-h"]').click()
+        const header = 'div.flex-1.glass-panel > div.draggable'
+        await expect.poll(() => crumbs(page, header)).toEqual(['project:~', 'session:T37HOMESESS'])
+        const home = page.locator(`${header} [data-crumb="project"]`)
+        await expect(home.locator('svg')).toHaveCount(1)
+        expect(await home.getAttribute('title')).toBe('someone@some-long-host-name.local')
     })
 })

@@ -44,6 +44,8 @@ export interface SeedWorkspace {
     aiRegistration?: { client: string; since: number; ephemeral?: boolean }
     /** Sidebar folder the workspace sits in (see LaunchOptions.folders). */
     folderId?: string
+    /** Marks the Home workspace (its name is `user@host`). */
+    isHome?: boolean
 }
 
 export interface TermState {
@@ -110,7 +112,8 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
             ...(workspace.parentWorkspaceId ? { parentWorkspaceId: workspace.parentWorkspaceId } : {}),
             ...(workspace.branchName ? { branchName: workspace.branchName } : {}),
             ...(workspace.aiRegistration ? { aiRegistration: workspace.aiRegistration } : {}),
-            ...(workspace.folderId ? { folderId: workspace.folderId } : {})
+            ...(workspace.folderId ? { folderId: workspace.folderId } : {}),
+            ...(workspace.isHome ? { isHome: true } : {})
         })),
         playgroundPath: userDataDir,
         customTemplates: options.customTemplates ?? [],

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Columns2, Plus, Waypoints, X } from 'lucide-react'
+import { Columns2, Info, Plus, Waypoints, X } from 'lucide-react'
 import { SessionRelation, TerminalTemplate, Workspace } from '../../../../shared/types'
 import { RELATED_ORDERS, RelatedEntry, RelatedOrder, sessionTreeFor } from '../../utils/relatedSessions'
 import { MAX_LINKED_SESSIONS } from '../../utils/sessionLink'
@@ -48,6 +48,17 @@ function storeOrder(order: RelatedOrder): void {
     }
 }
 
+/** What the labels on a row mean; shown under the header's (i) button. */
+const HELP_LINES: Array<[string, string]> = [
+    ['Talk', 'a session opened for you to talk in (named "대화: …")'],
+    ['connected', 'not opened by the API: the agent started working in a session that already existed'],
+    ['Grey text', "the session's project (workspace) name"],
+    ['Idle / Working / Waiting for you / Starting / Exited', 'what the session is doing right now'],
+    ['Dot', 'grey = idle · blue, pulsing = working · amber, pulsing = waiting for you · red = exited'],
+    ['#', 'copy the session ID'],
+    ['×', 'remove it from this list (the session keeps running)']
+]
+
 const TABS: Array<{ key: RelatedTab; label: string }> = [
     { key: 'tree', label: 'Relations' },
     { key: 'recent', label: 'Recent' },
@@ -62,6 +73,8 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     const [order, setOrder] = useState<RelatedOrder>(storedOrder)
     const [recentIds, setRecentIds] = useState<string[]>([])
     const [creating, setCreating] = useState(false)
+    const [helpPinned, setHelpPinned] = useState(false)
+    const [helpHover, setHelpHover] = useState(false)
     const tree = useMemo(
         () => sessionTreeFor(relations, sessionId, workspaces, order, recentIds),
         [relations, sessionId, workspaces, order, recentIds]
@@ -118,12 +131,25 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
             if (e.key === 'Escape') {
                 e.preventDefault()
                 e.stopPropagation()
-                onClose()
+                // Esc peels one layer: the New session box, then the help panel, then the Related dialog.
+                if (creating) setCreating(false)
+                else if (helpPinned || helpHover) { setHelpPinned(false); setHelpHover(false) }
+                else onClose()
             }
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
-    }, [onClose])
+    }, [onClose, creating, helpPinned, helpHover])
+
+    // A pinned help panel closes on a click anywhere else.
+    useEffect(() => {
+        if (!helpPinned) return
+        const onMouseDown = (e: MouseEvent): void => {
+            if (!(e.target as Element).closest('[data-related-help], [data-related-help-panel]')) setHelpPinned(false)
+        }
+        window.addEventListener('mousedown', onMouseDown, true)
+        return () => window.removeEventListener('mousedown', onMouseDown, true)
+    }, [helpPinned])
 
     // The session whose dialog this is was closed: nothing left to show.
     useEffect(() => {
@@ -163,10 +189,22 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                 className="relative w-full max-w-2xl glass-panel rounded-lg shadow-2xl overflow-hidden outline-none"
                 data-related-modal={sessionId}
             >
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+                <div className="relative flex items-center gap-2 px-4 py-3 border-b border-white/10">
                     <Waypoints size={14} className="text-gray-400" />
                     <span className="text-sm text-white whitespace-nowrap">Related sessions</span>
                     <span className="text-xs text-gray-500 truncate">— {owner.name}</span>
+                    <button
+                        onClick={() => setHelpPinned(open => !open)}
+                        onMouseEnter={() => setHelpHover(true)}
+                        onMouseLeave={() => setHelpHover(false)}
+                        className={`shrink-0 p-1 rounded transition-colors ${helpPinned ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white hover:bg-white/10'}`}
+                        title="What do these labels mean?"
+                        aria-label="What do these labels mean?"
+                        aria-expanded={helpPinned || helpHover}
+                        data-related-help
+                    >
+                        <Info size={13} />
+                    </button>
                     <button
                         onClick={() => setCreating(open => !open)}
                         className={`ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${creating ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
@@ -181,17 +219,20 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors" title="Close (Esc)">
                         <X size={14} className="text-gray-400" />
                     </button>
+                    {/* Floats over the list instead of pushing it down; hover peeks, a click pins it. */}
+                    {(helpPinned || helpHover) && (
+                        <ul
+                            className="absolute left-3 right-3 top-full z-20 px-3 py-2.5 space-y-1 rounded-lg border border-white/10 bg-gray-900/95 backdrop-blur shadow-xl text-[11px] text-gray-400"
+                            data-related-help-panel
+                            onMouseEnter={() => setHelpHover(true)}
+                            onMouseLeave={() => setHelpHover(false)}
+                        >
+                            {HELP_LINES.map(([term, meaning]) => (
+                                <li key={term}><span className="text-gray-200">{term}</span> — {meaning}</li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
-
-                {creating && (
-                    <NewRelatedSession
-                        defaultWorkspaceId={workspaces.find(w => w.sessions?.some(s => s.id === sessionId))?.id ?? workspaces[0]?.id ?? ''}
-                        workspaces={workspaces}
-                        templates={templates}
-                        onCreate={createSession}
-                        onCancel={() => setCreating(false)}
-                    />
-                )}
 
                 <div className="flex items-end gap-1 px-4 pt-2 border-b border-white/10" role="tablist">
                     {TABS.map(item => (
@@ -297,6 +338,15 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                 )}
                 <CopyNotice notice={notice} />
             </div>
+            {creating && (
+                <NewRelatedSession
+                    defaultWorkspaceId={workspaces.find(w => w.sessions?.some(s => s.id === sessionId))?.id ?? workspaces[0]?.id ?? ''}
+                    workspaces={workspaces}
+                    templates={templates}
+                    onCreate={createSession}
+                    onCancel={() => setCreating(false)}
+                />
+            )}
         </div>
     )
 }
