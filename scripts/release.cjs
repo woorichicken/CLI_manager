@@ -153,6 +153,29 @@ function checkToolchain() {
     }
 }
 
+/**
+ * pnpm keeps a copy of the lockfile it last installed from in node_modules. When
+ * it differs from the committed one, node_modules is from an older install and
+ * the build ships those packages — v1.13.0 nearly shipped simple-git 3.36.0
+ * while package.json asked for ^4.0.2. Read-only: preflight changes nothing.
+ */
+function checkInstalledDependencies() {
+    section('Dependencies')
+
+    const installed = join(ROOT, 'node_modules', '.pnpm', 'lock.yaml')
+    const committed = join(ROOT, 'pnpm-lock.yaml')
+    const reinstall = 'pnpm install --frozen-lockfile && pnpm exec electron-builder install-app-deps'
+    if (!existsSync(installed)) {
+        fail('node_modules not installed', '', reinstall)
+        return
+    }
+    if (readFileSync(installed, 'utf-8') === readFileSync(committed, 'utf-8')) {
+        pass('node_modules matches pnpm-lock.yaml')
+    } else {
+        fail('node_modules is from another lockfile', 'the build would ship the old packages', reinstall)
+    }
+}
+
 function checkSigning() {
     section('Code signing')
 
@@ -559,6 +582,7 @@ function main() {
 
     checkToolchain()
     checkGitState()
+    checkInstalledDependencies()
     if (version) checkVersion(version)
     checkSigning()
     checkNotarizationAccess()
@@ -605,4 +629,6 @@ function main() {
     return failed ? 1 : 0
 }
 
-process.exit(main())
+if (require.main === module) process.exit(main())
+
+module.exports = { checkInstalledDependencies, hasFailed: () => failed }
