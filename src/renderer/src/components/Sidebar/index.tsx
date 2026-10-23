@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, PanelLeftClose, GripVertical, FolderPlus, Folder, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Search } from 'lucide-react'
+import { Plus, PanelLeftClose, GripVertical, FolderPlus, Folder, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Search, List, FolderTree } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
 import { Workspace, WorkspaceFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import { useWorkspaceBranches } from '../../hooks/useWorkspaceBranches'
@@ -8,7 +8,9 @@ import { useSidebarCollapseAll } from '../../hooks/useSidebarCollapseAll'
 import { WorkspaceItem } from './WorkspaceItem'
 import { WorkspaceContextMenu, WorktreeContextMenu, BranchMenu, SessionContextMenu, FolderContextMenu } from './ContextMenus'
 import { BranchPromptModal } from './Modals'
-import { SidebarSearchInput, SidebarSearchStatus, findMatchingProjects } from './SidebarSearch'
+import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatchingProjects, findMatchingSessions } from './SidebarSearch'
+import { SidebarSessionList } from './SidebarSessionList'
+import { sessionsInSidebarOrder, orderByRecent } from '../../utils/sessionNavigation'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 
 /**
@@ -54,6 +56,17 @@ function ReorderableRow<T>({ value, title, children, onDragStart, onDragEnd }: R
             </div>
         </Reorder.Item>
     )
+}
+
+type SidebarViewMode = 'folders' | 'all'
+const VIEW_MODE_STORAGE_KEY = 'sidebar-view-mode'
+
+function readSavedViewMode(): SidebarViewMode {
+    try {
+        return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'all' ? 'all' : 'folders'
+    } catch {
+        return 'folders'
+    }
 }
 
 interface SidebarProps {
@@ -165,6 +178,26 @@ export function Sidebar({
     const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null)
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
+
+    // "All sessions" swaps the workspace tree for one flat list of every session. Kept in
+    // localStorage like the Playground height: a per-machine view choice, not workspace data.
+    const [viewMode, setViewMode] = useState<SidebarViewMode>(readSavedViewMode)
+    const [recentIds, setRecentIds] = useState<string[]>([])
+    // A click inside the list changes the active session; reordering the rows under the pointer
+    // at that moment would move what the user is about to click next.
+    const pointerInSessionListRef = useRef(false)
+
+    // Newest-first ids from main. The active session is put in front here because the report of
+    // "now viewing X" travels to main separately and may not have landed when this runs.
+    useEffect(() => {
+        if (viewMode !== 'all' || pointerInSessionListRef.current) return
+        let cancelled = false
+        window.api.getRecentSessions().then(ids => {
+            if (cancelled) return
+            setRecentIds(activeSessionId ? [activeSessionId, ...ids.filter(id => id !== activeSessionId)] : ids)
+        }).catch(() => {})
+        return () => { cancelled = true }
+    }, [viewMode, activeSessionId])
 
     const { anyExpanded, toggleCollapseAll } = useSidebarCollapseAll({
         workspaces,
@@ -603,6 +636,18 @@ export function Sidebar({
         ? findMatchingProjects(workspaces, folders, searchQuery, showWorktrees)
         : []
 
+    const allSessionEntries = sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground)
+    const sessionResults = isSearching ? findMatchingSessions(allSessionEntries, searchQuery) : []
+    const isAllSessionsView = viewMode === 'all'
+
+    const toggleViewMode = () => {
+        const next: SidebarViewMode = isAllSessionsView ? 'folders' : 'all'
+        setViewMode(next)
+        try {
+            localStorage.setItem(VIEW_MODE_STORAGE_KEY, next)
+        } catch { /* storage blocked: the choice just won't survive a restart */ }
+    }
+
     const closeSearch = () => {
         setSearchOpen(false)
         setSearchQuery('')
@@ -610,12 +655,34 @@ export function Sidebar({
 
     const openTopSearchResult = () => {
         const top = searchResults[0]
+        // Projects keep their place at the top; a name that only matches a session opens that session.
+        if (!top && sessionResults[0]) {
+            onSelect(sessionResults[0].workspace, sessionResults[0].session)
+            return
+        }
         if (!top) return
         if (top.sessions.length > 0) {
             onSelect(top, top.sessions[0])
         } else if (!expanded.has(top.id)) {
             toggleExpand(top.id)
         }
+    }
+
+    const sessionListProps = {
+        activeSessionId,
+        sessionStatuses,
+        hooksSettings,
+        terminalPreview,
+        renamingSessionId,
+        fontSize,
+        splitLayout,
+        onSelect,
+        onRemoveSession,
+        onRenameSession: handleRenameSubmit,
+        onSessionContextMenu: handleSessionContextMenu,
+        onRenameCancel: () => setRenamingSessionId(null),
+        onDragStartSession,
+        onDragEndSession
     }
 
     return (
@@ -830,15 +897,26 @@ export function Sidebar({
                 {/* Same height and top edge as the main header (App.tsx) so the two divider lines meet */}
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} px-2 border-b border-white/10 flex items-center justify-between draggable transition-all`}>
                     {/* The label gives way first, so a narrow sidebar never clips the buttons */}
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">Workspaces</span>
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">{isAllSessionsView ? 'All sessions' : 'Workspaces'}</span>
                     <div className="flex items-center gap-1 no-drag shrink-0">
                         <button
                             data-testid="sidebar-search-toggle"
                             onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
                             className={`p-1 hover:bg-white/10 rounded transition-colors ${searchOpen ? 'bg-white/10' : ''}`}
-                            title="Search Projects"
+                            title="Search projects and sessions"
                         >
                             <Search size={14} className={searchOpen ? 'text-blue-400' : 'text-gray-400'} />
+                        </button>
+                        <button
+                            data-testid="sidebar-view-toggle"
+                            data-state={viewMode}
+                            onClick={toggleViewMode}
+                            className={`p-1 hover:bg-white/10 rounded transition-colors ${isAllSessionsView ? 'bg-white/10' : ''}`}
+                            title={isAllSessionsView ? 'Back to folders' : 'All sessions'}
+                        >
+                            {isAllSessionsView
+                                ? <FolderTree size={14} className="text-blue-400" />
+                                : <List size={14} className="text-gray-400" />}
                         </button>
                         <button
                             data-testid="sidebar-collapse-all"
@@ -886,7 +964,7 @@ export function Sidebar({
 
                 {isSearching ? (
                     <div data-testid="sidebar-search-results" className="flex-1 overflow-y-auto p-2 space-y-0.5">
-                        <SidebarSearchStatus query={searchQuery} resultCount={searchResults.length} />
+                        <SidebarSearchStatus query={searchQuery} projectCount={searchResults.length} sessionCount={sessionResults.length} />
                         {searchResults.map(workspace => (
                             <WorkspaceItem
                                 key={workspace.id}
@@ -921,6 +999,31 @@ export function Sidebar({
                                 onDragEndSession={onDragEndSession}
                             />
                         ))}
+                        {sessionResults.length > 0 && (
+                            <>
+                                <SidebarGroupHeading
+                                    testId="sidebar-search-sessions-heading"
+                                    label={sessionResults.length === 1 ? 'session' : 'sessions'}
+                                    count={sessionResults.length}
+                                />
+                                <div data-testid="sidebar-search-session-results">
+                                    <SidebarSessionList entries={sessionResults} {...sessionListProps} />
+                                </div>
+                            </>
+                        )}
+                    </div>
+                ) : isAllSessionsView ? (
+                    <div
+                        data-testid="sidebar-all-sessions"
+                        className="flex-1 overflow-y-auto p-2"
+                        onMouseEnter={() => { pointerInSessionListRef.current = true }}
+                        onMouseLeave={() => { pointerInSessionListRef.current = false }}
+                    >
+                        {allSessionEntries.length === 0 ? (
+                            <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
+                        ) : (
+                            <SidebarSessionList entries={orderByRecent(allSessionEntries, recentIds)} {...sessionListProps} />
+                        )}
                     </div>
                 ) : (
                 <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
@@ -1197,7 +1300,7 @@ export function Sidebar({
                 )}
 
                 {/* Playground Section with Resizable Height */}
-                {showPlayground && (
+                {showPlayground && !isAllSessionsView && (
                 <div
                     className="border-t border-white/10 relative flex flex-col flex-shrink-0"
                     style={{ height: playgroundHeight, minHeight: 100 }}
