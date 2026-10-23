@@ -105,19 +105,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   삭제 테스트는 셸 준비(프롬프트 출력)를 기다린 뒤 지우거나, 테스트 모드에서 확인창을 건너뛰는 경로를 쓴다.
 - Owner: 없음
 
-### `scripts/release.cjs` — preflight 가 `node_modules` 가 lockfile 과 맞는지 보지 않는다
-- Discovered: 2026-10-09, v1.13.0 릴리즈 준비
-- Why deferred: 이번엔 손으로 `pnpm install --frozen-lockfile` + `electron-builder install-app-deps` 를 먼저 돌려 막았다.
-- Trigger: 다음 릴리즈 전, 또는 의존성을 바꾸는 PR 이 머지된 직후의 릴리즈.
-- Evidence: 주 체크아웃의 `node_modules/simple-git` 이 **3.36.0** 이었다(`package.json` 은 PR #25 이후 `^4.0.2`).
-  preflight 는 typecheck·테스트만 보므로 그대로 빌드하면 critical 취약점을 고친 버전이 아니라 **옛 버전이 배포본에 실린다**.
-  재설치 뒤에는 2월부터 남은 끊어진 링크 `node_modules/.pnpm/node_modules/node-gyp-build` 때문에
-  `install-app-deps` 가 `ENOENT … stat` 로 실패해, 그 링크를 지우고 다시 돌렸다. 배포본은 app.asar 를 열어
-  simple-git 4.0.2 · 새 사이드바 번들 문자열을 확인한 뒤 게시했다.
-- Fix direction: preflight 에 `pnpm install --frozen-lockfile --offline`(또는 `pnpm list --prod` 와 lockfile 대조)과
-  `install-app-deps` 를 넣거나, 최소한 `package.json` 의존성 범위를 만족하지 않는 설치본을 FAIL 로 잡는다.
-- Owner: 없음
-
 ### CI `Terminal + agent tests` — 앱을 띄우는 테스트가 CI 에서 전부 3분 타임아웃
 - Discovered: 2026-10-06, simple-git 4 업그레이드 PR CI
 - Why deferred: 로컬에서는 전체 123건이 통과한다(2026-10-06 릴리즈 preflight). CI 러너 환경 문제라 별도 조사가 필요하다.
@@ -261,19 +248,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 다음 릴리즈에서 또 실패하면 그때 남는 `/tmp/release-tests-*.log` 로 스펙을 특정한다.
 - Evidence: `--check` 1회차와 `--build` 1회차가 `tests failed` 로 멈췄고, 사이에 돌린
   `pnpm test:term` 은 87 passed (3.7m). 세 번째 `--check` 도 87 passed.
-- Owner: Maintainer
-
-### `scripts/post-release.cjs` — 웹사이트 저장소가 뒤처져 있으면 링크 커밋을 만든 뒤에야 push 가 거부된다
-- Discovered: 2026-10-01, v1.11.0 배포 중
-- Why deferred: 배포 도중이라 손으로 풀고 넘어갔다(`git pull --rebase origin main` 후 `git push origin main`).
-- Trigger: 다음 릴리즈 전
-- Evidence: 프리플라이트는 `website repo clean`·`website on main` 만 본다. 웹사이트 로컬 main 이 origin 보다 14커밋
-  뒤처진 상태에서 링크 갱신 커밋을 만들었고 `push failed — … fast-forwards` 로 끝났다(R2 업로드와 changelog 는 성공,
-  종료는 `COMPLETED WITH FAILURES`). "no stale version references" 검사도 낡은 트리를 본 것이다.
-  제안: 프리플라이트에서 `git fetch` 후 `HEAD..origin/main` 이 비어 있는지 확인하거나 먼저 `pull --ff-only`.
-  같은 원인으로 이 스크립트는 `SITE_DIR = ~/Downloads/solhun-web-page`(사이트 **주 체크아웃**)에 커밋한다 — 주 체크아웃은
-  main 그대로 두는 운영 규칙과 충돌한다(2026-09-30 확인). 임시 워크트리(`git worktree add … origin/main`)에서 커밋·push 하도록
-  바꾸면 뒤처짐 문제도 함께 사라진다. 사이트는 이제 `climanager.solhun.com` 이다(검증 명령은 PR #15 에서 갱신).
 - Owner: Maintainer
 
 ### `.github/workflows/ci.yml` — 설치 단계 403 은 지나갔고, 지금은 터미널 테스트 시간 초과로 취소된다
@@ -443,6 +417,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 세션을 닫은 뒤 헤더 경로가 엉뚱한 작업 영역을 가리킨다는 제보가 올 때, 또는 `handleRemoveSession` 을 다시 만질 때.
 - Fix direction: 활성 세션 id 를 ref 로 들고 확인 창 뒤에 그 ref 로 판정한다(`setActiveSession`·`setActiveWorkspace`·상태 점 셋 다).
 - Owner: 없음
+
+### `scripts/post-release.cjs` — 링크 커밋을 웹사이트 **주 체크아웃**(`~/Downloads/solhun-web-page`)에 만든다
+- Discovered: 2026-10-01, v1.11.0 배포 중(뒤처짐 부분은 2026-10-24 night-1023 preflight 검사로 닫음 — `checkWebsiteUpToDate`).
+- Why deferred: 지금은 preflight 가 「깨끗함 · main · origin 과 같음」을 먼저 확인하므로 커밋은 안전하게 들어간다.
+- Trigger: 웹사이트 저장소를 다른 세션이 동시에 만지는 날, 또는 주 체크아웃을 main 그대로 두는 규칙을 이 스크립트에도 맞출 때.
+- Evidence: `SITE_DIR = ~/Downloads/solhun-web-page` 에서 `git add`·`commit`·`push origin main` 을 한다 — 주 체크아웃은 main 그대로 두고 커밋하지 않는 운영 규칙과 충돌(2026-09-30 확인).
+- Fix direction: 임시 워크트리(`git worktree add … origin/main`)에서 링크를 고치고 커밋·push 한 뒤 워크트리를 지운다.
+- Owner: Maintainer
 
 ## Blocked
 
