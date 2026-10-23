@@ -44,3 +44,39 @@ export function neighborSession(sessions: TerminalSession[], sessionId: string):
     if (index < 0) return null
     return sessions[index - 1] ?? sessions[index + 1] ?? null
 }
+
+/** A session together with the workspace row it lives under. */
+export interface SessionEntry {
+    workspace: Workspace
+    session: TerminalSession
+}
+
+/** Every session in the order the sidebar draws them (workspace order, then each workspace's own session order). */
+export function sessionsInSidebarOrder(
+    workspaces: Workspace[],
+    folders: WorkspaceFolder[],
+    showWorktrees: boolean,
+    showPlayground = true
+): SessionEntry[] {
+    return sidebarWorkspaceOrder(workspaces, folders, showWorktrees, showPlayground)
+        .flatMap(workspace => (workspace.sessions ?? []).map(session => ({ workspace, session })))
+}
+
+/**
+ * The "All sessions" order: sessions the user looked at lately first (newest
+ * first), then the ones never looked at in sidebar order. Ids that no longer
+ * exist are ignored.
+ */
+export function orderByRecent(entries: SessionEntry[], recentIds: string[]): SessionEntry[] {
+    const byId = new Map(entries.map(entry => [entry.session.id, entry]))
+    const seen = new Set<string>()
+    const recent: SessionEntry[] = []
+    for (const id of recentIds) {
+        const entry = byId.get(id)
+        if (entry && !seen.has(id)) {
+            seen.add(id)
+            recent.push(entry)
+        }
+    }
+    return [...recent, ...entries.filter(entry => !seen.has(entry.session.id))]
+}
