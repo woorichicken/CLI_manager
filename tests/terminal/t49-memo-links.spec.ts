@@ -79,6 +79,44 @@ test.describe('T49 memo links', () => {
         expect(await opened()).toEqual([LONG_URL])
     })
 
+    test('selecting text keeps the reading view, and Enter on a link only opens it', async () => {
+        ctx = await launchAppWithWorkspaces([
+            { id: 'ws-memo', name: 'T49WS', sessions: [{ id: 's-memo', name: 'T49SESS', memo: MEMO }] }
+        ], { settings: { showHomeWorkspace: false } })
+        const { app, page } = ctx
+        await activateSession(page, 'T49SESS')
+        const opened = () => app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened)
+        await app.evaluate(({ shell }) => {
+            const urls: string[] = []
+            ;(globalThis as unknown as { __opened: string[] }).__opened = urls
+            shell.openExternal = async (url: string) => { urls.push(url) }
+        })
+
+        await page.locator('button[title="Session Memo (⌘J)"]:visible').click()
+        await page.getByText('Memo', { exact: true }).click()
+        const read = page.getByTestId('session-memo-read')
+        const textarea = page.locator('textarea[placeholder="Quick notes..."]')
+        await expect(read).toBeVisible()
+
+        // Dragging over the text selects it; the click that ends the drag must not swap in the textarea.
+        const box = await read.boundingBox()
+        expect(box).not.toBeNull()
+        await page.mouse.move(box!.x + 14, box!.y + 14)
+        await page.mouse.down()
+        await page.mouse.move(box!.x + 90, box!.y + 14, { steps: 6 })
+        await page.mouse.up()
+        expect(await page.evaluate(() => window.getSelection()?.toString().length ?? 0)).toBeGreaterThan(0)
+        await expect(read).toBeVisible()
+        await expect(textarea).toHaveCount(0)
+
+        // Enter on a focused link opens the link and stays in the reading view.
+        await read.locator('a[data-memo-link]').focus()
+        await page.keyboard.press('Enter')
+        await expect.poll(opened).toEqual([LONG_URL])
+        await expect(read).toBeVisible()
+        await expect(textarea).toHaveCount(0)
+    })
+
     test('an empty memo stays a textarea', async () => {
         ctx = await launchAppWithWorkspaces([
             { id: 'ws-empty', name: 'T49EMPTY', sessions: [{ id: 's-empty', name: 'T49EMPTYSESS' }] }

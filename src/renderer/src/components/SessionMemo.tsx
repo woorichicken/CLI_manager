@@ -169,8 +169,16 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
 
         const handleReadViewKeyDown = (e: React.KeyboardEvent) => {
             if (e.key === 'Escape') closeMemo()
-            else if (e.key === 'Enter') setIsEditing(true)
+            // Enter on a focused link opens that link (its own click); only Enter on the memo itself starts editing.
+            else if (e.key === 'Enter' && !(e.target as HTMLElement).closest('a')) setIsEditing(true)
             e.stopPropagation()
+        }
+
+        const handleReadViewClick = (e: React.MouseEvent<HTMLDivElement>) => {
+            // Selecting text by dragging ends in a click too: keep the selection rather than swap in the textarea.
+            const selection = window.getSelection()
+            if (selection && !selection.isCollapsed && e.currentTarget.contains(selection.anchorNode)) return
+            setIsEditing(true)
         }
 
         // Keyboard shortcut: Escape to close
@@ -231,7 +239,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                             <div
                                 data-testid="session-memo-read"
                                 tabIndex={0}
-                                onClick={() => setIsEditing(true)}
+                                onClick={handleReadViewClick}
                                 onKeyDown={handleReadViewKeyDown}
                                 className="w-full h-32 px-3 py-2 text-sm text-gray-200 whitespace-pre-wrap break-words overflow-y-auto cursor-text outline-none"
                             >
