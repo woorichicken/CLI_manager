@@ -154,6 +154,7 @@ User Action (Renderer)
           cwd: string,
           type: 'regular' | 'worktree',
           memo?: string,              // Session memo text
+          isPinned?: boolean,         // Kept at the top of the sidebar's All sessions list (unpinned = no field)
           cliSessionId?: string,      // Claude: --session-id we injected · Codex: id found in its rollout (CodexSessionLocator)
           cliToolName?: string,       // 'claude' (resume: <cmd> --resume <id>) · 'codex' (resume: <cmd> resume <id>)
           cliCommand?: string,        // What started it (`cldy`) — resume repeats this, not `claude`
@@ -191,6 +192,7 @@ User Action (Renderer)
 - `toggle-folder-expanded`: 사이드바 폴더 하나 펼침/접힘 전환(저장됨)
 - `set-folders-expanded`: 여러 폴더의 펼침 상태를 한 번에 저장 — 전체 접기/복원용
 - `update-session-memo`: 세션 메모 저장
+- `toggle-pin-session`: 세션 고정(All sessions 맨 위) 켜기/끄기 — 새 값을 돌려준다
 
 #### Git Operations
 - `git-list-branches`: 브랜치 목록 조회
