@@ -368,6 +368,17 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: `src/shared` 에 resize 보정 함수 하나 + 두 곳에서 import. T29·T38·T41 과 함께 녹화 재생 시험을 붙인다.
 - Owner: Human Review
 
+### 숨긴 세션의 시작 크기 — PR #47 뒤에 남은 것 (위 「높이만 바뀌는 resize」와 한 묶음)
+- Discovered: 2026-10-23 day-1023, PR #47 총괄 독립 리뷰.
+- Evidence: #47 은 숨긴 채 만든 세션도 상자 크기로 PTY 를 띄운다. 그래도 남는 경우가 셋이다.
+  ① 숨긴 세션은 **보이기 전에 잰 크기**를 그대로 쓴다 — 앱 시작 중 사이드바·글꼴 로딩으로 상자가 최종 크기와 다르거나, 숨긴 동안 창 크기를 바꾸면 처음 볼 때 resize 가 한 번 일어난다(옛 코드보다 확률은 낮다).
+  ② 분할 화면에서 숨긴 세션은 **전체 폭**으로 재서 시작하고, 칸에 처음 보일 때 resize 된다(옛 코드와 같음).
+  ③ 시험 공백: T41 은 20×5 가드(`MIN_HIDDEN_FIT_COLS`·`MIN_HIDDEN_FIT_ROWS`) · 분할 칸 · 이미 살아 있는 PTY 에 다시 붙는 경로(`existed: true`) · 실제 Claude 를 덮지 않는다.
+- Why deferred: #47 이 가장 흔한 원인(80×30 시작)을 없앴고, 남은 셋은 처음 볼 때 resize 를 0 으로 만드는 일이라 위 「높이만 바뀌는 resize」 보정(공용 모듈, 사람 컨펌)과 같이 풀어야 덜 겹친다.
+- Trigger: 사람이 높이 보정 공용 모듈을 승인할 때, 또는 #47 뒤에도 재시작·분할 화면에서 표 잘림 제보가 올 때.
+- Fix direction: 보이기 직전에 한 번 더 재서 다르면 그때 PTY 를 맞추고(보이기 전이라 잔해가 화면에 안 남음), 분할 칸은 칸 상자로 잰다. T41 에 가드·분할·`existed` 경우를 더하고, 실제 Claude 녹화 재생을 고정 입력으로 쓴다.
+- Owner: Human Review
+
 ### `tests/terminal/helpers.ts` — `closeApp` 이 닫기 실패를 삼키고 시험 앱을 남긴다
 - Discovered: 2026-10-23 day-1023, 렌더링 묶음 실행 중 T1 시험 앱이 CPU 100% 로 7분 남아 playwright 가 멈췄다(재현 안 됨, `kill -9` 로 정리).
 - Evidence: `closeApp()` 은 `app.close()` 의 예외를 무시하고 userData 만 지운다 — 프로세스가 살아 있는지 보지 않는다.
