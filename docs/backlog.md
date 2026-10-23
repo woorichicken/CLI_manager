@@ -344,6 +344,86 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   `aiControl` 세션만 허용(기존 경계 유지).
 - Owner: Human Review
 
+### `src/renderer/src/utils/terminalResizeManager.ts` — 보이는 터미널의 창 크기 변경이 PTY resize 를 두 번 보낸다
+- Discovered: 2026-10-23 day-1023, 터미널 표 잘림(f77530f2 · 982d348d) 원인 추적.
+- Evidence: 창 크기를 바꾸면 rows 는 즉시, cols 는 100ms 뒤에 따로 PTY 로 간다 → Claude Code 가 두 번 다시 그리고, 다시 그릴 때마다 화면 줄만 지우고 새로 써서 스크롤백에 경계가 두 번 생길 수 있다(Claude 의 다시 그리기 방식은 `docs/integrations/CLAUDE.md`, PR #47).
+- Why deferred: 이번 수정(PR #47)은 숨긴 터미널의 첫 크기를 맞춘 것이고, 보이는 터미널의 resize 묶기는 별개 동작 변경이다.
+- Trigger: 창 크기·분할 크기를 바꾼 뒤 Claude 표가 잘리거나 겹친다는 제보가 다시 올 때.
+- Fix direction: rows·cols 를 한 번의 PTY resize 로 묶는다. 묶은 뒤 T4(리사이즈 폭풍)·T38(스트리밍 중 리사이즈)·T41 을 돌린다.
+- Owner: 없음
+
+### `src/main/TerminalEventLog.ts` — 제보 사건 기록에 PTY 크기 변경이 없다
+- Discovered: 2026-10-23 day-1023, 982d348d 를 가르다가.
+- Evidence: 제보에 실리는 사건(시작·복원·다시 붙음·Cmd+K·스크롤백 삭제·종료·크래시)에 PTY resize 가 없어, 경계 직전에 크기 변경이 있었는지 제보만으로 못 가른다. 같은 제보의 미러 줄·크기·appVersion 이 원인을 가른 결정적 근거였다.
+- Why deferred: 본론(숨김 터미널 크기)과 별개의 진단 기능이다.
+- Trigger: 터미널 렌더링 제보를 다시 가를 때 「그 전에 크기가 바뀌었나」가 필요해지면.
+- Fix direction: `resized 80x30→111x43` 사건을 `TerminalManager` 의 resize 경로에서 남긴다(짧은 시간에 몰리면 묶어 한 줄).
+- Owner: 없음
+
+### 렌더러·미러 공용 — 높이만 바뀌는 resize 를 「화면 아래 기준」으로 맞출지 (모듈화 사람 컨펌)
+- Discovered: 2026-10-23 day-1023, 982d348d 재현. 시제품 `~/Downloads/_batches/day-1023/review/climanager/terminal/evidence/anchor-replay.cjs`.
+- Evidence: 실제 Claude 녹화 재생에서 높이만 바뀐 resize 3건이 xterm 기본 동작으로는 답 첫 줄 사라짐·배너 중복을 냈고, 「화면 아래 기준」으로 맞추면 0건이었다(폭+높이 표 이상 1→0, resize 없는 녹화는 동일).
+- Why deferred: 렌더러(`TerminalView.tsx`)와 main 미러(`TerminalMirror.ts`)가 같은 로직을 써야 해서 `src/shared` 새 파일이 필요하다 — 새 공용 모듈은 사람 컨펌 뒤에 만든다.
+- Trigger: 사람이 공용 모듈을 승인할 때(day-1023 팀장 보고 「정할 것」).
+- Fix direction: `src/shared` 에 resize 보정 함수 하나 + 두 곳에서 import. T29·T38·T41 과 함께 녹화 재생 시험을 붙인다.
+- Owner: Human Review
+
+### `tests/terminal/helpers.ts` — `closeApp` 이 닫기 실패를 삼키고 시험 앱을 남긴다
+- Discovered: 2026-10-23 day-1023, 렌더링 묶음 실행 중 T1 시험 앱이 CPU 100% 로 7분 남아 playwright 가 멈췄다(재현 안 됨, `kill -9` 로 정리).
+- Evidence: `closeApp()` 은 `app.close()` 의 예외를 무시하고 userData 만 지운다 — 프로세스가 살아 있는지 보지 않는다.
+- Why deferred: 재현이 안 됐고 시험 하네스 변경이다.
+- Trigger: 시험 묶음이 끝나지 않거나 남은 Electron 프로세스가 다시 보일 때.
+- Fix direction: 닫기 실패·시간 초과 때 `app.process()` 의 pid 를 죽이고, 남은 프로세스를 로그로 남긴다.
+- Owner: 없음
+
+### `tests/terminal/helpers.ts` — 첫 시드 작업 영역이 닫힌 폴더 안이면 앱 구동이 30초 시간 초과
+- Discovered: 2026-10-23 day-1023, T45 를 쓰다가(4건 시간 초과).
+- Evidence: `launchAppWithWorkspaces` 가 첫 작업 영역 이름이 보일 때까지 기다리는데, 닫힌 폴더 안이면 이름이 안 그려진다. 시드 순서를 바꿔 피했다(T45 주석). 워크트리 시드를 저장소 루트 경로로 주면 시작 때 워크트리 스캔이 지운다는 것도 같은 날 나왔다(T13 패턴).
+- Why deferred: 피하는 길이 있고 하네스 변경이다.
+- Trigger: 폴더를 닫은 상태를 시드하는 시험을 또 쓸 때.
+- Fix direction: 「사이드바가 그려졌다」를 첫 이름 대신 사이드바 루트 요소로 기다린다.
+- Owner: 없음
+
+### `scripts/mock-cli/record-claude.cjs` — 녹화 Claude 가 폴더 신뢰 질문에서 꺼지고, 부른 세션에 훅이 붙을 수 있다
+- Discovered: 2026-10-23 day-1023, 터미널 잘림 녹화.
+- Evidence: cwd 가 HOME 이라 신뢰 질문이 뜨고 기본 선택 「No, exit」로 바로 끝난다. 또 `CLIMANAGER_SESSION_ID` 를 물려받아 녹화 Claude 의 훅이 부른 앱 세션에 붙을 수 있다. 둘 다 처리한 녹화기: `~/Downloads/_batches/day-1023/review/climanager/terminal/evidence/record.cjs`.
+- Why deferred: 녹화는 그 날 scratch 녹화기로 했다.
+- Trigger: 다음에 실제 CLI 를 녹화할 때.
+- Fix direction: 임시 폴더를 cwd 로 쓰고(신뢰는 그 폴더에서 Yes), 자식 환경에서 `CLIMANAGER_SESSION_ID` 를 지운다.
+- Owner: 없음
+
+### `src/renderer/src/components/Sidebar/index.tsx` — 사이드바 헤더 버튼이 하나 더 늘면 제목이 잘린다
+- Discovered: 2026-10-23 day-1023, 「All sessions」 토글(PR #44)을 넣다가.
+- Evidence: 버튼이 5개가 되자 기본 폭에서 「WORKSPACES」가 잘려 간격(`gap-0.5`)을 줄여 맞췄다. 여유가 거의 없다.
+- Why deferred: 지금은 맞는다.
+- Trigger: 사이드바 헤더에 버튼을 또 넣을 때.
+- Fix direction: 자주 안 쓰는 버튼(전체 접기·폴더 추가)을 「…」 넘침 메뉴로 접는다.
+- Owner: 없음
+
+### 링크 허용 규칙이 두 곳에 있다 — 터미널 `ALLOWED_LINK_PROTOCOLS` 와 메모의 http(s) 정규식 (모듈화 사람 컨펌)
+- Discovered: 2026-10-23 day-1023, 메모 링크(PR #45).
+- Evidence: `src/renderer/src/components/TerminalView.tsx:66` 의 `ALLOWED_LINK_PROTOCOLS` 는 컴포넌트 안에 있어 메모가 못 쓰고, `SessionMemo.tsx` 는 http(s)만 따로 고른다(터미널 허용의 부분집합이라 지금은 안전).
+- Why deferred: 공용으로 빼면 새 공용 모듈이다 — 사람 컨펌 뒤에 한다.
+- Trigger: 링크를 여는 곳이 세 번째로 생기거나, 허용 규칙을 바꿀 때.
+- Fix direction: `utils/` 에 허용 판정 함수 하나를 두고 터미널·메모가 같이 쓴다.
+- Owner: Human Review
+
+### 분할 화면 칸 헤더에는 ‹ › 와 상위 세션 바로가기가 없다
+- Discovered: 2026-10-23 day-1023, PR #46(38121cd5 · 1ae4d3c8).
+- Evidence: 단일 화면 헤더(`App.tsx`)에만 넣었다. `SplitTerminalHeader.tsx` 는 칸이 좁아 Related 버튼만 있다.
+- Why deferred: 제보는 단일 화면 헤더를 가리켰고, 분할 칸은 공간이 없다.
+- Trigger: 분할 화면에서도 쓰고 싶다는 제보가 올 때.
+- Fix direction: 칸 헤더에는 아이콘만(↰) 넣고, ‹ › 는 활성 칸 기준으로 단일 헤더 자리에 둔다.
+- Owner: 없음
+
+### `src/main/screenLines.ts` — Related 줄의 recap 은 Claude Code 의 `※ recap:` 표기에 기댄다
+- Discovered: 2026-10-23 day-1023, PR #46(9f4f923e).
+- Evidence: `recapOf()` 는 `※ recap:` 로 시작하는 줄 + 들여쓴 이어짐 줄을 읽고 「(disable recaps in /config)」를 뗀다. 형식은 이 맥의 스크롤백 스냅샷에서 확인했고 시험(T34·T50)은 그 모양을 흉내 낸 가짜 화면이다 — 실제 Claude 로 돌린 시험은 없다.
+- Why deferred: 지금 형식으로는 맞는다.
+- Trigger: Claude Code 업데이트 뒤 Related 줄이 비거나 recap 이 안 보인다는 제보가 올 때.
+- Fix direction: 실제 Claude 녹화(`scripts/mock-cli/record-claude.cjs`)에서 recap 줄을 뽑아 T34 고정 입력으로 쓴다.
+- Owner: 없음
+
 ## Blocked
 
 없음.
