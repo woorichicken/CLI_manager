@@ -97,6 +97,30 @@ class MemoryStore implements RelationStore {
     }
 }
 
+test.describe('T39 tree order (49825c14)', () => {
+    // A opened w1..w3 in that order and w2 opened its own helper; chief opened A and B.
+    const relations = [
+        rel('chief', 'A', 'opened', 1), rel('chief', 'B', 'opened', 2),
+        rel('A', 'w1', 'opened', 3), rel('A', 'w2', 'opened', 4), rel('A', 'w3', 'opened', 5),
+        rel('w2', 'helper', 'opened', 6)
+    ]
+    const all = workspaces(['chief', 'A', 'B', 'w1', 'w2', 'w3', 'helper'])
+
+    test('T39 order: recently viewed first, never viewed after them newest first; children stay under their parent', () => {
+        // Viewed w3 last, then w1; w2 never — and B (a sibling) was viewed, the chief was not.
+        const tree = sessionTreeFor(relations, 'A', all, 'viewed', ['w1', 'B', 'w3'])
+        expect(ids(tree.descendants)).toEqual(['w1', 'w3', 'w2', 'helper'])
+        expect(tree.descendants.find(e => e.session.id === 'helper')?.depth).toBe(2)
+        expect(ids(tree.siblings)).toEqual(['B'])
+    })
+
+    test('T39 order: oldest first and by name keep the same tree', () => {
+        expect(ids(sessionTreeFor(relations, 'A', all, 'oldest').descendants)).toEqual(['w1', 'w2', 'helper', 'w3'])
+        expect(ids(sessionTreeFor(relations, 'A', all, 'name').descendants)).toEqual(['w1', 'w2', 'helper', 'w3'])
+        expect(ids(sessionTreeFor(relations, 'A', all).descendants)).toEqual(['w3', 'w2', 'helper', 'w1'])
+    })
+})
+
 test.describe('T39 recent sessions', () => {
     test('T39 recent: capped, repeat moves to front, survives a restart, prune drops gone ones', () => {
         const store = new MemoryStore()

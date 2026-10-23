@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { SessionRelations, SESSION_RELATIONS_KEY, RelationStore } from '../../src/main/SessionRelations'
-import { lastMeaningfulLine } from '../../src/main/screenLines'
+import { lastMeaningfulLine, recapOf, screenSummary } from '../../src/main/screenLines'
 import {
     addableSessions,
     isTalkSession,
@@ -206,5 +206,43 @@ test.describe('lastMeaningfulLine', () => {
         const line = lastMeaningfulLine(['x'.repeat(500)])
         expect(line.length).toBe(200)
         expect(line.endsWith('…')).toBe(true)
+    })
+})
+
+// 9f4f923e: with an agent input box the dialog showed the recap's tail ("/config)") or a timer
+// ("✻ Churned for 1m 13s"); now it shows the recap whole, or nothing.
+test.describe('screenSummary', () => {
+    const RULE = '─'.repeat(40)
+    const BOX = [RULE, '❯ ', RULE, '  ? for shortcuts']
+    const RECAP = [
+        '✻ Brewed for 1m 24s · done 9:43 PM · 1 shell still running',
+        '',
+        '※ recap: 대화 세션 16개에서 정한 내용을 총괄 폴더로 정리하려고, 방법과 기준을 제안해 둔 상태입니다.',
+        '  그 기준대로 정리 파일이 없는 7개부터 돌릴지 답만 주시면 바로 시작합니다. (disable recaps in /config)',
+        ''
+    ]
+    const WHOLE = '대화 세션 16개에서 정한 내용을 총괄 폴더로 정리하려고, 방법과 기준을 제안해 둔 상태입니다. 그 기준대로 정리 파일이 없는 7개부터 돌릴지 답만 주시면 바로 시작합니다.'
+
+    test('an agent screen gives its recap whole, without the hint', () => {
+        expect(screenSummary([...RECAP, ...BOX])).toEqual({ text: WHOLE, isRecap: true })
+        // The old reading took the row above the box: the recap's last fragment.
+        expect(lastMeaningfulLine([...RECAP, ...BOX])).not.toBe(WHOLE)
+    })
+
+    test('an agent screen without a recap gives nothing', () => {
+        expect(screenSummary(['⏺ Done.', '', '✻ Churned for 1m 13s · done 12:42 AM', '', ...BOX])).toEqual({ text: '', isRecap: false })
+    })
+
+    test('the last recap wins, and rows after it are not part of it', () => {
+        const rows = ['※ recap: first turn.', '', '❯ go on', '⏺ ok', '', '※ recap: second turn,', '  still going.', '⏺ next', ...BOX]
+        expect(recapOf(rows)).toBe('second turn, still going.')
+    })
+
+    test('a screen without an input box keeps the last row (a shell prompt with its path)', () => {
+        expect(screenSummary(['$ ls', 'a b', 'user@host deep/path/repo %'])).toEqual({ text: 'user@host deep/path/repo %', isRecap: false })
+    })
+
+    test('a hint-only recap reads as nothing', () => {
+        expect(recapOf(['※ recap: (disable recaps in /config)'])).toBe('')
     })
 })
