@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { orderByRecent, sessionsInSidebarOrder } from '../../src/renderer/src/utils/sessionNavigation'
+import { mostRecentOtherSession, orderByRecent, orderForAllSessions, sessionsInSidebarOrder } from '../../src/renderer/src/utils/sessionNavigation'
 import { findMatchingSessions } from '../../src/renderer/src/components/Sidebar/SidebarSearch'
 import type { TerminalSession, Workspace, WorkspaceFolder } from '../../src/shared/types'
 
@@ -39,6 +39,25 @@ test.describe('T47 sidebar session order', () => {
         expect(ids(orderByRecent(entries, ['g1', 'gone', 'l1', 'g1'])))
             .toEqual(['g1', 'l1', 'h1', 'p1', 'f1a', 'f1b', 'w1'])
         expect(ids(orderByRecent(entries, []))).toEqual(ids(entries))
+    })
+
+    test('pinned sessions come first in sidebar order, however recently the others were viewed', () => {
+        const withPins = all.map(w => w.id === 'loose' || w.id === 'inFolder'
+            ? { ...w, sessions: w.sessions.map(s => s.id === 'l1' || s.id === 'f1b' ? { ...s, isPinned: true } : s) }
+            : w)
+        const entries = sessionsInSidebarOrder(withPins, folders, true, true)
+        // l1 was viewed after f1b, but pins keep the sidebar order (f1b's folder comes before loose).
+        expect(ids(orderForAllSessions(entries, ['g1', 'l1', 'f1b', 'h1'])))
+            .toEqual(['f1b', 'l1', 'g1', 'h1', 'p1', 'f1a', 'w1'])
+    })
+
+    test('closing from the list lands on the session viewed before it, skipping closed ones', () => {
+        const entries = sessionsInSidebarOrder(all, folders, true, true)
+        expect(mostRecentOtherSession(entries, ['l1', 'gone', 'g1', 'h1'], 'l1')?.session.id).toBe('g1')
+        // Closing one that was not the latest still picks the latest other one.
+        expect(mostRecentOtherSession(entries, ['g1', 'l1'], 'l1')?.session.id).toBe('g1')
+        expect(mostRecentOtherSession(entries, ['l1'], 'l1')).toBeNull()
+        expect(mostRecentOtherSession(entries, [], 'l1')).toBeNull()
     })
 
     test('name match: prefix before contains, case-insensitive, keeps sidebar order within a rank', () => {

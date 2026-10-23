@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, Trash2, GripVertical, Bot, Crown } from 'lucide-react'
+import { Terminal, Trash2, GripVertical, Bot, Crown, Pin } from 'lucide-react'
 import clsx from 'clsx'
 import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion'
 import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/types'
@@ -329,6 +329,11 @@ export function SessionItem({
                         />
                     ) : (
                         <span className={workspaceLabel ? 'truncate min-w-0' : 'truncate flex-1'} style={{ fontSize: `${fontSize}px` }}>{session.name}</span>
+                    )}
+                    {session.isPinned && !isRenaming && (
+                        <span title="Pinned to the top of All sessions" data-session-pinned={session.id} className="shrink-0">
+                            <Pin size={10} className="text-blue-400" />
+                        </span>
                     )}
                     {workspaceLabel && !isRenaming && (
                         <span

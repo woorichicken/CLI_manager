@@ -606,6 +606,9 @@ interface SessionContextMenuProps {
     sessionName: string
     /** Directory the session's shell started in. */
     sessionPath: string
+    /** Pinned sessions stay at the top of the "All sessions" list. */
+    isPinned: boolean
+    onTogglePin: () => void
     /** Writes to the clipboard and shows the sidebar's "Copied" notice. */
     onCopy: (text: string, label: string) => void
     onRename: () => void
@@ -626,6 +629,8 @@ export function SessionContextMenu({
     sessionId,
     sessionName,
     sessionPath,
+    isPinned,
+    onTogglePin,
     onCopy,
     onRename,
     onDelete,
@@ -695,6 +700,18 @@ export function SessionContextMenu({
                 <span className="truncate">Copy Session ID</span>
             </button>
             <div className="border-t border-white/10 my-0.5"></div>
+            <button
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                onClick={() => {
+                    onTogglePin()
+                    onClose()
+                }}
+                title={isPinned ? 'Let it move with the recently viewed sessions again' : 'Keep it at the top of All sessions'}
+                data-session-pin-toggle={sessionId}
+            >
+                <Pin size={12} className={isPinned ? 'text-blue-400 shrink-0' : 'text-gray-400 shrink-0'} />
+                <span className="truncate">{isPinned ? 'Unpin' : 'Pin to Top'}</span>
+            </button>
             <button
                 className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
                 onClick={() => {
