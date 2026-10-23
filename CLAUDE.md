@@ -421,6 +421,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T39 최근 본(P2) — `RecentSessions`(가짜 store): 20개 상한(`RECENT_SESSIONS_MAX`)·같은 id 는 맨 앞 하나·재시작(새 인스턴스) 뒤 순서 유지·`prune`·맨 앞 id 를 다시 넣으면 쓰지 않음·`forget`
   - T40 최근 본·전체(P2·P3) — 세션 셋을 차례로 본 뒤 Recent 탭이 역순(자기 세션 제외)이고 config.json `recentSessions` 에 남는지, 앱 재시작 뒤 같은 순서인지, 삭제한 세션이 빠지는지. All 탭: 작업 영역별 목록·상태 표시 없음·이름 검색·# 를 누르면 시스템 클립보드에 세션 id(시험 뒤 원래 값 복원)·390 폭에서 줄이 안 잘림
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
+  - T48 메모 링크 유닛 — Electron 없이. `splitMemoLinks`(http(s)만 링크, 문장부호·짝 없는 닫는 괄호 제외, 글자 보존)·`shortenUrl`(호스트 + …/마지막 조각, 40자)
+  - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이
