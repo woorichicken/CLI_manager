@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, PanelLeftClose, GripVertical, FolderPlus, Folder, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Search, List, FolderTree } from 'lucide-react'
+import { Plus, PanelLeftClose, GripVertical, Folder, ChevronDown, ChevronRight, Search, List, FolderTree } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
 import { Workspace, WorkspaceFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import { useWorkspaceBranches } from '../../hooks/useWorkspaceBranches'
@@ -10,6 +10,7 @@ import { WorkspaceContextMenu, WorktreeContextMenu, BranchMenu, SessionContextMe
 import { BranchPromptModal } from './Modals'
 import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatchingProjects, findMatchingSessions } from './SidebarSearch'
 import { SidebarSessionList } from './SidebarSessionList'
+import { SidebarMoreMenu } from './SidebarMoreMenu'
 import { sessionsInSidebarOrder, orderByRecent } from '../../utils/sessionNavigation'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 
@@ -929,24 +930,11 @@ export function Sidebar({
                                 ? <FolderTree size={14} className="text-blue-400" />
                                 : <List size={14} className="text-gray-400" />}
                         </button>
-                        <button
-                            data-testid="sidebar-collapse-all"
-                            data-state={anyExpanded ? 'expanded' : 'collapsed'}
-                            onClick={toggleCollapseAll}
-                            className="p-1 hover:bg-white/10 rounded transition-colors"
-                            title={anyExpanded ? 'Collapse All' : 'Expand All'}
-                        >
-                            {anyExpanded
-                                ? <ChevronsDownUp size={14} className="text-gray-400" />
-                                : <ChevronsUpDown size={14} className="text-gray-400" />}
-                        </button>
-                        <button
-                            onClick={() => setShowFolderPrompt(true)}
-                            className="p-1 hover:bg-white/10 rounded transition-colors"
-                            title="New Folder"
-                        >
-                            <FolderPlus size={14} className="text-gray-400" />
-                        </button>
+                        <SidebarMoreMenu
+                            anyExpanded={anyExpanded}
+                            onToggleCollapseAll={toggleCollapseAll}
+                            onNewFolder={() => setShowFolderPrompt(true)}
+                        />
                         <button
                             onClick={onAddWorkspace}
                             className="p-1 hover:bg-white/10 rounded transition-colors"

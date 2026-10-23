@@ -121,6 +121,7 @@ pnpm build && pnpm test:term
      - `ContextMenus.tsx`: 컨텍스트 메뉴 컴포넌트들
      - `Modals.tsx`: 모달 컴포넌트들
      - `SidebarSearch.tsx`: 프로젝트 검색 입력 + 매칭(`findMatchingProjects`). 검색 중엔 드래그 목록 대신 평평한 결과 목록을 쓴다 — 재정렬 핸들러는 받은 목록 순서를 그대로 저장해서, 걸러진 목록을 주면 행이 빠진다
+     - `SidebarMoreMenu.tsx`: 머리 줄 「…」 메뉴 — 전체 접기(`sidebar-collapse-all`)·새 폴더(`sidebar-new-folder`). 인박스 종이 들어가며 버튼 수를 예전과 같게 두려고 접었다(기본 폭 256 에서 제목이 안 잘리게)
      - `CopyNotice.tsx`: 메뉴의 Copy 항목이 쓰는 클립보드 복사 + "Copied …" 알림
      - `SidebarSessionList.tsx`: 세션을 작업 영역 이름(흐리게)과 함께 평평하게 그리는 목록 — 헤더 「All sessions」 토글(`sidebar-view-toggle`, localStorage `sidebar-view-mode`)과 검색의 「Sessions」 묶음이 같이 쓴다. 행은 트리와 같은 `SessionItem`. 순서는 최근 본 순(`getRecentSessions`) 뒤에 안 본 세션을 사이드바 순서로(`utils/sessionNavigation.ts` 의 `orderByRecent`)
    - `components/Feedback/`: feedback-kit 위젯 — `FeedbackGate`(비밀번호 관문·마운트), `FeedbackWidget`(배선, 통과한 뒤에만 lazy import), `FeedbackModeSetting`(Settings > Feedback 토글), `terminalContext`(제보가 어느 터미널 얘기인지 정하고 main 의 터미널 정보를 싣는다). 판정·상수는 `utils/feedbackGate.ts`
@@ -350,7 +351,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 260건 (2026-10-24 `--list`)
+- **위치**: `tests/terminal/` — 261건 (2026-10-24 `--list`)
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -436,7 +437,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T50 Related 창·헤더(day-1023) — 입력 상자가 있는 「Claude」 화면(셸 스크립트가 그린 가짜)이 Related 줄에 `※ recap` 을 통째로(「(disable recaps in /config)」 없이) 보이고 recap 이 없으면 줄이 없는지, Relations 탭 Sort(Newest first·Oldest first·Name·Recently viewed — 화면 시험은 Newest·Name·Oldest, Recently viewed 는 T39 유닛)가 같은 층 순서만 바꾸고 다시 열어도 기억되는지,
     헤더 상위 세션 바로가기(부모가 하나일 때만)·‹ › 뒤로/앞으로(다른 길로 옮기면 앞으로가 사라짐), Related 「New session」으로 다른 프로젝트·템플릿·이름을 골라 만들면 그 세션이 보이고 「Added by hand」에 들어가는지, 390 폭에서 폼이 창 안에 드는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 캡처를 남긴다
   - T51 앱 링크 스킴 — 스킴 정규화·예약어 거부·허용 판정 유닛, 실제 WebLinksAddon 으로 일반 텍스트 감지(한글 경로·`obsidian:///절대경로`·줄바꿈·닮은꼴 무시), 그리고 실제 앱에서 Settings > Terminal 로 `obsidian` 을 넣고 빼며 일반 텍스트·OSC 8 링크가 `shell.openExternal` 에 닿는지/막히는지(main 에서 가로챔)
-  - T52 인박스 — API 로 보낸 요청이 종 숫자·행 점·Dock 배지(`app.dock.getBadge()`)에 오는지, 팝오버 항목을 누르면 그 세션이 보이고 읽음, 사이드바로 들어가도 읽음, 창이 백그라운드(blur)면 보이는 세션 요청도 안 읽은 채로 남는지, 같은 요청 두 번 → 1개, `javascript:` 링크·세션 없음(400)·없는 세션(404), 링크 누르면 `shell.openExternal`(main 에서 가로챔)·허용 밖 스킴은 안 열림, Mark all read, `POST /v1/inbox/:id/read`, MCP `inbox_notify`·`inbox_list`, 사이드바를 접으면 헤더 종, 세션을 닫으면(API·사이드바) 지워짐, 재시작 뒤 안 읽은 것 남음. `INBOX_SHOTS=<폴더>` 면 1280·390 캡처를 남긴다(첫 두 장은 인박스 호출 전이라 옛 코드에서도 찍힌다)
+  - T52 인박스 — API 로 보낸 요청이 종 숫자·행 점·Dock 배지(`app.dock.getBadge()`)에 오는지, 팝오버 항목을 누르면 그 세션이 보이고 읽음, 사이드바로 들어가도 읽음, 창이 백그라운드(blur)면 보이는 세션 요청도 안 읽은 채로 남는지, 같은 요청 두 번 → 1개, `javascript:` 링크·세션 없음(400)·없는 세션(404), 링크 누르면 `shell.openExternal`(main 에서 가로챔)·허용 밖 스킴은 안 열림, Mark all read, `POST /v1/inbox/:id/read`, MCP `inbox_notify`·`inbox_list`, 사이드바를 접으면 헤더 종, 세션을 닫으면(API·사이드바) 지워짐, 재시작 뒤 안 읽은 것 남음, 기본 폭에서 머리 줄 제목(Workspaces·All sessions)이 안 잘리는지(`scrollWidth <= clientWidth`)와 「…」 메뉴의 새 폴더가 config.json 까지 가는지. `INBOX_SHOTS=<폴더>` 면 1280·390 캡처를 남긴다(첫 두 장은 인박스 호출 전이라 옛 코드에서도 찍힌다)
   - T53 인박스 저장 유닛 — Electron 없이. `checkInboxInput`(종류 기본값·한 줄 접기·200자 자르기·예약 스킴·2000자), 같은 안 읽은 요청 하나로·읽은 뒤엔 새로, 200 상한(읽은 것부터), 시작 정리(없는 세션·7일 지난 읽은 것), `forget`
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - T48 메모 링크 유닛 — Electron 없이. `splitMemoLinks`(http(s)만 링크, 문장부호·짝 없는 닫는 괄호 제외, 글자 보존)·`shortenUrl`(호스트 + …/마지막 조각, 40자)

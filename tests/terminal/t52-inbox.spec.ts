@@ -321,6 +321,53 @@ test.describe('T52 inbox', () => {
         await expect.poll(async () => (await list()).some((r) => r.sessionId === C)).toBe(false)
     })
 
+    test('the bell leaves the sidebar title whole; collapse all and new folder sit in the … menu', async () => {
+        ctx = await launch()
+        const { app, page, userDataDir } = ctx
+        const shots = shotsDir()
+        await resizeMainWindow(app, 1280, 800)
+
+        // The header row is [title span][buttons]; the title must not be cut at the default sidebar width.
+        const title = () => page.getByTestId('sidebar-search-toggle').evaluate((button) => {
+            const label = button.parentElement!.parentElement!.querySelector(':scope > span') as HTMLElement
+            return { text: label.textContent, scroll: label.scrollWidth, client: label.clientWidth }
+        })
+        const workspaces = await title()
+        expect(workspaces.text).toBe('Workspaces')
+        expect(workspaces.scroll, JSON.stringify(workspaces)).toBeLessThanOrEqual(workspaces.client)
+        await expect(sidebarBell(page)).toBeVisible()
+        // The longer "All sessions" title too.
+        await page.getByTestId('sidebar-view-toggle').click()
+        await expect.poll(async () => (await title()).text).toBe('All sessions')
+        const allSessions = await title()
+        expect(allSessions.scroll, JSON.stringify(allSessions)).toBeLessThanOrEqual(allSessions.client)
+        await page.getByTestId('sidebar-view-toggle').click()
+        await expect.poll(async () => (await title()).text).toBe('Workspaces')
+
+        // New Folder through the menu: the prompt opens and the folder is saved.
+        await page.getByTestId('sidebar-more').click()
+        await expect(page.getByTestId('sidebar-more-menu')).toBeVisible()
+        await expect(page.getByTestId('sidebar-collapse-all')).toHaveText('Collapse All')
+        if (shots) await page.screenshot({ path: path.join(shots, 'sidebar-more-1280.png') })
+        await page.getByTestId('sidebar-new-folder').click()
+        await expect(page.getByTestId('sidebar-more-menu')).toHaveCount(0)
+        const name = page.getByPlaceholder('Folder name')
+        await expect(name).toBeFocused()
+        await name.fill('T52 folder')
+        await name.press('Enter')
+        await expect.poll(() =>
+            (JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8')).folders ?? []).map((f: { name: string }) => f.name)
+        ).toContain('T52 folder')
+
+        // Outside click and Escape close the menu without running anything.
+        await page.getByTestId('sidebar-more').click()
+        await page.mouse.click(900, 400)
+        await expect(page.getByTestId('sidebar-more-menu')).toHaveCount(0)
+        await page.getByTestId('sidebar-more').click()
+        await page.keyboard.press('Escape')
+        await expect(page.getByTestId('sidebar-more-menu')).toHaveCount(0)
+    })
+
     test('unread requests survive a restart', async () => {
         ctx = await launch()
         const { page } = ctx
