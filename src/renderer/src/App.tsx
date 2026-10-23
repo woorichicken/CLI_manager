@@ -1442,7 +1442,8 @@ function App() {
             <div className="flex-1 glass-panel m-2 ml-0 rounded-lg overflow-hidden flex flex-col">
                 {/* Header - minimized in split view */}
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} border-b border-white/10 flex items-center px-4 draggable justify-between relative z-10 transition-all`}>
-                    <div className="flex items-center gap-2">
+                    {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers */}
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                         {!isSidebarOpen && (
                             <button
                                 onClick={() => setIsSidebarOpen(true)}
@@ -1478,7 +1479,7 @@ function App() {
                             </span>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 no-drag">
+                    <div className="flex items-center gap-2 no-drag shrink-0">
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
                         {!splitLayout && (
                             <>
