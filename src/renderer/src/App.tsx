@@ -1442,7 +1442,8 @@ function App() {
             <div className="flex-1 glass-panel m-2 ml-0 rounded-lg overflow-hidden flex flex-col">
                 {/* Header - minimized in split view */}
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} border-b border-white/10 flex items-center px-4 draggable justify-between relative z-10 transition-all`}>
-                    <div className="flex items-center gap-2">
+                    {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers */}
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                         {!isSidebarOpen && (
                             <button
                                 onClick={() => setIsSidebarOpen(true)}
@@ -1469,16 +1470,16 @@ function App() {
                         {/* Read the live session, not activeSession: that object is not refreshed when the AI flag changes */}
                         {!splitLayout && activeAiControl && activeSession && (
                             <span
-                                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-300"
-                                title={`Driven by AI (${activeAiControl.client}). Right-click the session → Disconnect AI to take it back.`}
+                                className="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
+                                title={`AI connected — driven by ${activeAiControl.client}. Right-click the session → Disconnect AI to take it back.`}
+                                aria-label="AI connected"
                                 data-ai-badge={activeSession.id}
                             >
-                                <Bot size={11} />
-                                AI connected
+                                <Bot size={13} />
                             </span>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 no-drag">
+                    <div className="flex items-center gap-2 no-drag shrink-0">
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
                         {!splitLayout && (
                             <>

@@ -296,6 +296,11 @@ test.describe('T15 AI Control API', () => {
         await closeRow.waitFor({ timeout: 15_000 })
         // focus: true selected it, so its terminal shows the AI badge.
         await expect(page.locator(`[data-ai-badge="${temp.json.session.id}"]`)).toBeVisible({ timeout: 5_000 })
+        // Icon only (report d1ec2a35): no words in the header, the meaning lives in the tooltip.
+        const aiBadge = page.locator(`[data-ai-badge="${temp.json.session.id}"]`)
+        expect((await aiBadge.textContent())?.trim()).toBe('')
+        await expect(aiBadge.locator('svg')).toHaveCount(1)
+        expect(await aiBadge.getAttribute('title')).toContain('AI connected')
         expect((await api('DELETE', `/v1/sessions/${temp.json.session.id}`)).status).toBe(200)
         await expect(closeRow).toHaveCount(0, { timeout: 5_000 })
         expect((await api('GET', `/v1/sessions/${temp.json.session.id}`)).status).toBe(404)
