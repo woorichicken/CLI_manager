@@ -75,6 +75,24 @@ are load-bearing. Checked by driving a real session through the API:
 - `@xterm/headless` 6.0.0 (not a CLI, but the same kind of external fact): its `module` field names
   `lib/xterm.mjs`, which the package does not ship. Import `lib-headless/xterm-headless.js`.
 
+### Claude Code redraws only the screen (verified 2026-10-23, v2.1.309)
+
+Recorded with a real `claude` in a pty and replayed into `@xterm/headless` (reports f77530f2,
+982d348d — "the table is cut"):
+
+- On SIGWINCH it moves home and rewrites the **visible rows only** (`ESC[H`, then `ESC[2K` per row —
+  no `ESC[2J`, no `ESC[3J`) with the last N rows of the conversation laid out for the new size.
+  The rows already in the scrollback keep the old layout, so a resize leaves an old-width copy above
+  the redraw and a seam where rows drop out or repeat. Every terminal shows this; the app's part is to
+  not resize a pty for nothing (Terminal Rendering Invariant 2 in the root `CLAUDE.md`).
+- The same seam appears **without any resize**: while a reply taller than the screen streams, a
+  markdown table re-measures its columns as rows arrive, and Claude Code redraws the visible part
+  with the new widths. The rows that scrolled off keep the old ones (recording: first column 10 → 11
+  wide halfway down the table). Nothing on our side can rewrite those rows.
+- It never moves the cursor above the screen: across the recordings, 0 cursor-up moves asked for
+  more rows than the cursor had above it. The seams are what it writes, not something a terminal
+  clamped.
+
 ## Research notes
 
 Background material gathered before the integration was built. Kept because it records what was

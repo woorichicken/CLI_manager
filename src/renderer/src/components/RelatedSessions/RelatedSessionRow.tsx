@@ -117,7 +117,18 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                         </span>
                     )}
                 </div>
-                {peek?.lastLine && (
+                {peek?.lastLine && peek.lastLineIsRecap && (
+                    // The agent's own summary is a sentence: read from its start, over two lines at most.
+                    <div
+                        className="mt-0.5 pl-4 text-[11px] text-gray-400 line-clamp-2 break-words"
+                        title={peek.lastLine}
+                        data-related-last-line={session.id}
+                        data-related-recap
+                    >
+                        {peek.lastLine}
+                    </div>
+                )}
+                {peek?.lastLine && !peek.lastLineIsRecap && (
                     // A prompt ends with where the session is, so a long line is cut at the front (rtl box), not the end.
                     // The bdi keeps the text itself left-to-right.
                     <div className="mt-0.5 pl-4 font-mono text-[11px] text-gray-500 truncate text-left [direction:rtl]" data-related-last-line={session.id}>

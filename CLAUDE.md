@@ -121,6 +121,7 @@ pnpm build && pnpm test:term
      - `Modals.tsx`: 모달 컴포넌트들
      - `SidebarSearch.tsx`: 프로젝트 검색 입력 + 매칭(`findMatchingProjects`). 검색 중엔 드래그 목록 대신 평평한 결과 목록을 쓴다 — 재정렬 핸들러는 받은 목록 순서를 그대로 저장해서, 걸러진 목록을 주면 행이 빠진다
      - `CopyNotice.tsx`: 메뉴의 Copy 항목이 쓰는 클립보드 복사 + "Copied …" 알림
+     - `SidebarSessionList.tsx`: 세션을 작업 영역 이름(흐리게)과 함께 평평하게 그리는 목록 — 헤더 「All sessions」 토글(`sidebar-view-toggle`, localStorage `sidebar-view-mode`)과 검색의 「Sessions」 묶음이 같이 쓴다. 행은 트리와 같은 `SessionItem`. 순서는 최근 본 순(`getRecentSessions`) 뒤에 안 본 세션을 사이드바 순서로(`utils/sessionNavigation.ts` 의 `orderByRecent`)
    - `components/Feedback/`: feedback-kit 위젯 — `FeedbackGate`(비밀번호 관문·마운트), `FeedbackWidget`(배선, 통과한 뒤에만 lazy import), `FeedbackModeSetting`(Settings > Feedback 토글), `terminalContext`(제보가 어느 터미널 얘기인지 정하고 main 의 터미널 정보를 싣는다). 판정·상수는 `utils/feedbackGate.ts`
    - `components/SessionBreadcrumb.tsx` · `utils/sessionBreadcrumb.ts`: 세션 헤더 `폴더 > 프로젝트 > 세션` 경로(단일 헤더·분할 칸·Grid 창이 같이 쓴다). 폴더가 없거나 Playground 면 그 칸을 뺀다, 워크트리는 부모 폴더를 따른다, 좁으면 폴더·프로젝트부터 줄인다
    - `components/TerminalView.tsx`: xterm.js 터미널 인스턴스
@@ -137,6 +138,7 @@ pnpm build && pnpm test:term
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
    - `components/RelatedSessions/` · `utils/relatedSessions.ts`: 세션 헤더 「Related」 버튼과 모달 — 세 묶음(연 세션·이 세션을 연 세션·손으로 추가), 상태·마지막 줄·메모, 「대화:」 세션 배지. 이동·나란히 열기는 세션 링크와 같은 `showSessions`(App.tsx)
+   - `components/SessionNavButtons.tsx` · `hooks/useSessionHistory.ts`: 세션 헤더의 ‹ ›(보여 준 세션을 브라우저처럼 뒤로/앞으로 — 메모리에만, 닫힌 세션은 건너뜀)와 상위 세션 바로가기(이 세션을 연 세션이 하나일 때만)
    - `utils/terminalLinks.ts` · `components/TerminalLinkSchemesSetting.tsx`: 터미널 링크를 OS 로 넘겨도 되는지 판정 — 기본 허용(http·https·file·에디터) + 사용자가 Settings > Terminal 「App Links in Terminal」에 넣은 앱 스킴(`obsidian` 등, 기본 비어 있음). 그 스킴은 일반 텍스트(`obsidian://…`, 한글 그대로)도 링크로 잡는다. `javascript`·`data`·`climanager` 같은 예약 스킴은 넣을 수 없다
    - `utils/sessionLink.ts`: 세션 링크 `climanager://session/<id 또는 앞 8자>[,…]` — 터미널에서 누르면 그 세션으로(여럿이면 분할 화면, 최대 4). 화면 전환만 한다(터미널 출력은 믿을 수 없는 글). 에이전트는 터미널에 **앞 8자**로 찍는다 — Claude Code 는 화면보다 긴 낱말을 들여쓰기로 끊어 링크를 깨뜨린다
    - `constants/`: **상수 및 유틸리티**
@@ -245,10 +247,12 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
 1. **`scrollOnEraseInDisplay: true`** (TerminalView.tsx, xterm 6.0+)
    - CLI가 전체 클리어(CSI 2J)할 때 viewport 내용을 지우는 대신 scrollback으로 보존
    - 이 옵션이 없으면 클리어마다 화면에 보이던 대화 내용이 영구 파괴됨
-2. **숨김 터미널 PTY resize 보류** (applyTerminalDimensions)
-   - `visible`이 아닌 터미널은 PTY resize를 보내지 않음 (xterm resize만 수행)
+2. **숨김 터미널 resize 보류 — xterm 도 PTY 크기에 묶어 둔다** (applyTerminalDimensions)
+   - `visible`이 아닌 터미널은 PTY resize를 보내지 않고, **xterm resize 도 하지 않는다**(Grid 창의 `disablePtyResize` 만 예외)
    - PTY resize = SIGWINCH = CLI 전체 리페인트 → 터미널 N개면 창 드래그 1번에 N개 세션의 scrollback이 리페인트 잔여물로 오염됨
-   - visible 전환 시 visibility effect가 `lastPtySizeRef`를 비워 최신 크기를 정확히 1회 적용
+   - 숨긴 xterm 만 크기를 바꾸면 프로그램은 옛 크기로 그리는데 화면은 새 크기로 접어 쓴다 — 그 잔해가 보인 뒤에도 스크롤백에 남고, main 의 미러(PTY 크기)와 달라진다(제보 325d9a7d 에서 화면 ↔ 미러가 달랐다)
+   - visible 전환 시 visibility effect가 `lastPtySizeRef`를 비워 최신 크기를 xterm·PTY 에 정확히 1회 적용
+   - **숨긴 채 만들어지는 터미널도 상자에 맞춘 크기로 PTY 를 띄운다.** 숨김은 `visibility: hidden` 이라 상자 크기가 이미 있다. 예전엔 80×30 으로 띄워 복원된·API 가 연 Claude 가 대화 전체를 80칸으로 그렸고, 처음 볼 때의 resize 에 Claude Code 는 **화면에 보이는 줄만** 새 폭으로 다시 그려서 80칸 사본이 그 위 스크롤백에 남고 경계에서 줄이 빠지거나 겹쳤다(제보 f77530f2 · 325d9a7d — 좁은 사본의 가장 긴 줄이 정확히 80). 회귀는 `t41-hidden-terminal-size.spec.ts`
 3. **출력 IPC 배칭** (TerminalManager.enqueueOutput)
    - pty 청크를 4ms 윈도우로 병합 후 renderer로 전송 (TUI 1프레임 = 1메시지)
 4. **터미널 데이터 리스너는 effect cleanup에서 해제** (dataCleanup)
@@ -344,7 +348,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 217건 (2026-10-22 `--list`)
+- **위치**: `tests/terminal/` — 254건 (2026-10-23 `--list`)
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -419,10 +423,20 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     부모가 둘일 때 위 둘·옆 중복 없음, 중간 세션이 닫히면 그 아래가 끊기는지, 깊이 번호와 상한(`MAX_TREE_DEPTH`)
   - T40 세션 나무 화면 — 시드한 `sessionRelations`(총괄→팀장 셋→작업→보조)로 Related 「Relations」 탭의 위·옆·아래 줄이 DOM(`data-related-tree`)에 맞게 오는지, 옆 줄을 눌러 그 세션으로 가는지, 마지막 줄(프롬프트·경로)이 길면 앞이 잘려 끝이 보이는지,
     390 폭에서 가장 깊고 이름이 긴 줄이 모달 안에 들어오는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 `tree-1280.png`·`tree-390.png` 를 남긴다. 관계는 `helpers.ts` 의 `config` 옵션으로 config.json 에 직접 심는다
+  - T39 나무 순서(49825c14) — `sessionTreeFor` 의 order: Recently viewed(본 순 → 안 본 것은 최신순)·Oldest·Name 이 같은 층 순서만 바꾸고 자식은 부모 밑(깊이 2)에 남는지
   - T39 최근 본(P2) — `RecentSessions`(가짜 store): 20개 상한(`RECENT_SESSIONS_MAX`)·같은 id 는 맨 앞 하나·재시작(새 인스턴스) 뒤 순서 유지·`prune`·맨 앞 id 를 다시 넣으면 쓰지 않음·`forget`
   - T40 최근 본·전체(P2·P3) — 세션 셋을 차례로 본 뒤 Recent 탭이 역순(자기 세션 제외)이고 config.json `recentSessions` 에 남는지, 앱 재시작 뒤 같은 순서인지, 삭제한 세션이 빠지는지. All 탭: 작업 영역별 목록·상태 표시 없음·이름 검색·# 를 누르면 시스템 클립보드에 세션 id(시험 뒤 원래 값 복원)·390 폭에서 줄이 안 잘림
-  - T41 앱 링크 스킴 — 스킴 정규화·예약어 거부·허용 판정 유닛, 실제 WebLinksAddon 으로 일반 텍스트 감지(한글 경로·`obsidian:///절대경로`·줄바꿈·닮은꼴 무시), 그리고 실제 앱에서 Settings > Terminal 로 `obsidian` 을 넣고 빼며 일반 텍스트·OSC 8 링크가 `shell.openExternal` 에 닿는지/막히는지(main 에서 가로챔)
+  - T41 숨김 터미널 크기 — 숨긴 세션 B 의 전경 프로그램이 자기 tty 크기를 시작 때와 SIGWINCH 마다 파일에 적는다. B 의 PTY 가 보이는 터미널과 같은 크기로 시작하는지, 처음 볼 때 SIGWINCH 가 0번인지, 숨긴 동안 B 의 xterm 크기 = PTY 크기인지, 앱 시작 뒤 **첫** 창 크기 변경이 보이는 터미널에 반영되는지(ResizeObserver 의 첫 콜백이 초기화 전에 와서 버려지고 그다음 실제 변경이 「기준값」으로 삼켜졌다). 옛 TerminalView 에서 80×30 ↔ 103×43 · 80×24 ↔ 80×30 · 43줄 그대로로 3건 실패. 판정 프로그램은 `trap … WINCH` 셸 루프가 아니라 node 다 — SIGWINCH 는 전경 프로세스 그룹(`sleep`)으로 가서 셸 트랩은 resize 를 놓친다(헛통과)
+  - T42 PTY 크기 검사 유닛 — Electron 없이. `terminal-create`·`terminal-resize` 가 렌더러 값을 그대로 node-pty 에 넘기지 않게 하는 `clampPtySize`(TerminalManager.ts): 정수로 내림 · 하한 2×1 · 상한 1000×500 · 숫자가 아니면 80×30. TerminalManager 는 불러올 때 Electron ABI 의 node-pty 를 require 하므로 시험은 그 require 만 빈 객체로 바꿔 불러온다
+  - T45 사이드바 All sessions — 토글이 닫힌 폴더·워크트리까지 모든 세션을 평평하게 보이는지(DOM), 줄 라벨이 작업 영역 이름인지, 클릭·우클릭이 트리와 같은지, 최근 본 순서, 재시작 뒤에도 유지되는지, 포인터가 올라간 채 검색이 목록을 대신했다 돌아오면 최신 순서로 다시 읽는지. 워크트리 시드는 평범한 폴더 경로여야 한다(저장소 루트면 시작 때 워크트리 스캔이 지운다)
+  - T46 사이드바 세션 검색 — 세션 이름으로 찾고(닫힌 폴더 안도), 「Sessions」 묶음이 프로젝트 묶음 뒤에 오고, Enter 가 프로젝트가 있으면 기존 동작·없으면 첫 세션을 여는지
+  - T47 세션 순서 유닛 — Electron 없이. `sessionsInSidebarOrder`·`orderByRecent`·`findMatchingSessions`
+  - T50 Related 창·헤더(day-1023) — 입력 상자가 있는 「Claude」 화면(셸 스크립트가 그린 가짜)이 Related 줄에 `※ recap` 을 통째로(「(disable recaps in /config)」 없이) 보이고 recap 이 없으면 줄이 없는지, Relations 탭 Sort(Newest first·Oldest first·Name·Recently viewed — 화면 시험은 Newest·Name·Oldest, Recently viewed 는 T39 유닛)가 같은 층 순서만 바꾸고 다시 열어도 기억되는지,
+    헤더 상위 세션 바로가기(부모가 하나일 때만)·‹ › 뒤로/앞으로(다른 길로 옮기면 앞으로가 사라짐), Related 「New session」으로 다른 프로젝트·템플릿·이름을 골라 만들면 그 세션이 보이고 「Added by hand」에 들어가는지, 390 폭에서 폼이 창 안에 드는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 캡처를 남긴다
+  - T51 앱 링크 스킴 — 스킴 정규화·예약어 거부·허용 판정 유닛, 실제 WebLinksAddon 으로 일반 텍스트 감지(한글 경로·`obsidian:///절대경로`·줄바꿈·닮은꼴 무시), 그리고 실제 앱에서 Settings > Terminal 로 `obsidian` 을 넣고 빼며 일반 텍스트·OSC 8 링크가 `shell.openExternal` 에 닿는지/막히는지(main 에서 가로챔)
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
+  - T48 메모 링크 유닛 — Electron 없이. `splitMemoLinks`(http(s)만 링크, 문장부호·짝 없는 닫는 괄호 제외, 글자 보존)·`shortenUrl`(호스트 + …/마지막 조각, 40자)
+  - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지, 끌어 선택한 뒤의 클릭·링크 위 Enter 가 편집으로 바꾸지 않는지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

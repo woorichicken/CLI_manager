@@ -760,11 +760,13 @@ export class ControlApiService {
             if (!this.hasSession(sessionId)) continue
             await this.deps.mirror.flush(sessionId)
             const hook = this.deps.hookStatus(sessionId)
+            const summary = this.deps.mirror.summary(sessionId)
             peeks.push({
                 sessionId,
                 state: this.stateOf(sessionId, DEFAULT_QUIET_MS),
                 awaitingInput: this.deps.mirror.showsAwaitingInput(sessionId) || hook?.awaitingInput === true,
-                lastLine: this.deps.mirror.lastLine(sessionId)
+                lastLine: summary.text,
+                lastLineIsRecap: summary.isRecap
             })
         }
         return peeks

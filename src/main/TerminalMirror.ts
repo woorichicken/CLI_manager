@@ -8,7 +8,7 @@ import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.js'
 // Same reason as above: bundled by file so the packaged app does not need it in node_modules.
 import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.js'
 import { TerminalManager } from './TerminalManager'
-import { INPUT_BOX_RULE, lastMeaningfulLine } from './screenLines'
+import { INPUT_BOX_RULE, ScreenSummary, screenSummary } from './screenLines'
 
 /**
  * Keeps a headless xterm copy of every terminal in the main process.
@@ -279,10 +279,10 @@ export class TerminalMirror {
         return trimTrailingBlank(lines)
     }
 
-    /** The last line worth reading on the screen (above the input box when there is one); '' when none. */
-    lastLine(id: string): string {
+    /** One line about the session: the agent's recap above its input box, else the last row worth reading. */
+    summary(id: string): ScreenSummary {
         const mirror = this.mirrors.get(id)
-        if (!mirror) return ''
+        if (!mirror) return { text: '', isRecap: false }
         const buffer = mirror.term.buffer.active
         const rows: string[] = []
         for (let row = 0; row < mirror.term.rows; row++) {
@@ -294,7 +294,7 @@ export class TerminalMirror {
             if (line?.isWrapped && rows.length > 0) rows[rows.length - 1] += text
             else rows.push(text)
         }
-        return lastMeaningfulLine(rows)
+        return screenSummary(rows)
     }
 
     /** The last `count` lines of scrollback plus screen, trailing blank rows dropped. */
