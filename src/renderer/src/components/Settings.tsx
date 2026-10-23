@@ -8,6 +8,7 @@ import { AgentIntegrationSettings } from './AgentIntegrationSettings'
 import { ControlApiSettings } from './ControlApiSettings'
 import { CHANGELOG_URL } from '../constants/links'
 import { FeedbackModeSetting } from './Feedback/FeedbackModeSetting'
+import { TerminalLinkSchemesSetting } from './TerminalLinkSchemesSetting'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
@@ -1006,6 +1007,11 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                             )}
                                         </div>
                                     </div>
+
+                                    <TerminalLinkSchemesSetting
+                                        schemes={settings.terminalLinkSchemes}
+                                        onChange={next => setSettings(prev => ({ ...prev, terminalLinkSchemes: next }))}
+                                    />
 
                                     <div className="mt-6 pt-6 border-t border-white/10">
                                         <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded">

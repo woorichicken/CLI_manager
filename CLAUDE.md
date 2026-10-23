@@ -139,6 +139,7 @@ pnpm build && pnpm test:term
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
    - `components/RelatedSessions/` · `utils/relatedSessions.ts`: 세션 헤더 「Related」 버튼과 모달 — 세 묶음(연 세션·이 세션을 연 세션·손으로 추가), 상태·마지막 줄·메모, 「대화:」 세션 배지. 이동·나란히 열기는 세션 링크와 같은 `showSessions`(App.tsx)
    - `components/SessionNavButtons.tsx` · `hooks/useSessionHistory.ts`: 세션 헤더의 ‹ ›(보여 준 세션을 브라우저처럼 뒤로/앞으로 — 메모리에만, 닫힌 세션은 건너뜀)와 상위 세션 바로가기(이 세션을 연 세션이 하나일 때만)
+   - `utils/terminalLinks.ts` · `components/TerminalLinkSchemesSetting.tsx`: 터미널 링크를 OS 로 넘겨도 되는지 판정 — 기본 허용(http·https·file·에디터) + 사용자가 Settings > Terminal 「App Links in Terminal」에 넣은 앱 스킴(`obsidian` 등, 기본 비어 있음). 그 스킴은 일반 텍스트(`obsidian://…`, 한글 그대로)도 링크로 잡는다. `javascript`·`data`·`climanager` 같은 예약 스킴은 넣을 수 없다
    - `utils/sessionLink.ts`: 세션 링크 `climanager://session/<id 또는 앞 8자>[,…]` — 터미널에서 누르면 그 세션으로(여럿이면 분할 화면, 최대 4). 화면 전환만 한다(터미널 출력은 믿을 수 없는 글). 에이전트는 터미널에 **앞 8자**로 찍는다 — Claude Code 는 화면보다 긴 낱말을 들여쓰기로 끊어 링크를 깨뜨린다
    - `constants/`: **상수 및 유틸리티**
      - `icons.tsx`: 템플릿 아이콘 매핑
@@ -347,7 +348,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
-- **위치**: `tests/terminal/` — 193건 (2026-10-22 `--list`)
+- **위치**: `tests/terminal/` — 254건 (2026-10-23 `--list`)
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
@@ -432,6 +433,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T47 세션 순서 유닛 — Electron 없이. `sessionsInSidebarOrder`·`orderByRecent`·`findMatchingSessions`
   - T50 Related 창·헤더(day-1023) — 입력 상자가 있는 「Claude」 화면(셸 스크립트가 그린 가짜)이 Related 줄에 `※ recap` 을 통째로(「(disable recaps in /config)」 없이) 보이고 recap 이 없으면 줄이 없는지, Relations 탭 Sort(Newest first·Oldest first·Name·Recently viewed — 화면 시험은 Newest·Name·Oldest, Recently viewed 는 T39 유닛)가 같은 층 순서만 바꾸고 다시 열어도 기억되는지,
     헤더 상위 세션 바로가기(부모가 하나일 때만)·‹ › 뒤로/앞으로(다른 길로 옮기면 앞으로가 사라짐), Related 「New session」으로 다른 프로젝트·템플릿·이름을 골라 만들면 그 세션이 보이고 「Added by hand」에 들어가는지, 390 폭에서 폼이 창 안에 드는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 캡처를 남긴다
+  - T51 앱 링크 스킴 — 스킴 정규화·예약어 거부·허용 판정 유닛, 실제 WebLinksAddon 으로 일반 텍스트 감지(한글 경로·`obsidian:///절대경로`·줄바꿈·닮은꼴 무시), 그리고 실제 앱에서 Settings > Terminal 로 `obsidian` 을 넣고 빼며 일반 텍스트·OSC 8 링크가 `shell.openExternal` 에 닿는지/막히는지(main 에서 가로챔)
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - T48 메모 링크 유닛 — Electron 없이. `splitMemoLinks`(http(s)만 링크, 문장부호·짝 없는 닫는 괄호 제외, 글자 보존)·`shortenUrl`(호스트 + …/마지막 조각, 40자)
   - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지, 끌어 선택한 뒤의 클릭·링크 위 Enter 가 편집으로 바꾸지 않는지

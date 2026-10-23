@@ -8,6 +8,7 @@ import { ChevronUp, ChevronDown, FolderOpen, ExternalLink, Code } from 'lucide-r
 import { TerminalPatternMatcher } from '../utils/terminalPatterns'
 import { registerFilePathLinks } from '../utils/filePathLinkProvider'
 import { SESSION_LINK_PROTOCOL, SESSION_LINK_REGEX } from '../utils/sessionLink'
+import { buildLinkSchemeRegex, isLinkAllowed } from '../utils/terminalLinks'
 import { TerminalResizeManager } from '../utils/terminalResizeManager'
 import {
     debugRegisterTerminal,
@@ -50,40 +51,20 @@ interface TerminalViewProps {
     // Clicking `climanager://session/<id>` in the output calls this. Without it
     // (windows that cannot switch sessions) such text is not a link.
     onSessionLink?: (uri: string) => void
+    // App schemes the user allowed in Settings > Terminal (`obsidian`, …), on top
+    // of the built-in ones. They open on click like web links.
+    linkSchemes?: string[]
 }
 
 // Default terminal font family (fallback when no custom font is set)
 const DEFAULT_TERMINAL_FONT_FAMILY = 'Menlo, Monaco, "Courier New", monospace'
 
-/**
- * Protocols a terminal is allowed to hand to the OS.
- *
- * Terminal output is untrusted: anything the agent prints — including the
- * contents of a file it read — can carry an OSC 8 hyperlink with an arbitrary
- * scheme. Editor schemes are here because Codex emits them for file citations
- * (`file_opener` defaults to "vscode").
- */
-const ALLOWED_LINK_PROTOCOLS = new Set([
-    'http:',
-    'https:',
-    'file:',
-    'vscode:',
-    'vscode-insiders:',
-    'cursor:',
-    'windsurf:'
-])
+const NO_LINK_SCHEMES: string[] = []
 
-function openLinkExternally(uri: string): void {
-    let protocol: string
-    try {
-        protocol = new URL(uri).protocol
-    } catch {
-        console.warn('[Terminal] Ignoring unparsable link:', uri)
-        return
-    }
-
-    if (!ALLOWED_LINK_PROTOCOLS.has(protocol)) {
-        console.warn('[Terminal] Blocked link with disallowed protocol:', protocol)
+// The allowlist lives in utils/terminalLinks.ts — terminal output is untrusted.
+function openLinkExternally(uri: string, extraSchemes: readonly string[]): void {
+    if (!isLinkAllowed(uri, extraSchemes)) {
+        console.warn('[Terminal] Blocked link with a scheme that is not allowed:', uri.split(':')[0])
         return
     }
 
@@ -120,7 +101,8 @@ export function TerminalView({
     hooksSettings,
     fileLinksEnabled = true,
     disablePtyResize = false,
-    onSessionLink
+    onSessionLink,
+    linkSchemes = NO_LINK_SCHEMES
 }: TerminalViewProps) {
     // Compute effective font family with fallback
     // Empty string means user selected "Custom" but didn't enter a value yet
@@ -155,6 +137,9 @@ export function TerminalView({
     // The terminal is built once; a link click must reach the latest handler.
     const onSessionLinkRef = useRef(onSessionLink)
     onSessionLinkRef.current = onSessionLink
+    // Read at click time: the OSC 8 handler is installed once when xterm is created.
+    const linkSchemesRef = useRef(linkSchemes)
+    linkSchemesRef.current = linkSchemes
 
     // Context menu state
     const [contextMenu, setContextMenu] = useState<{
@@ -499,7 +484,7 @@ export function TerminalView({
                         onSessionLinkRef.current?.(uri)
                         return
                     }
-                    openLinkExternally(uri)
+                    openLinkExternally(uri, linkSchemesRef.current)
                 }
             }
         })
@@ -509,7 +494,7 @@ export function TerminalView({
 
         // URL links addon (http://, https://, localhost, etc.)
         const webLinksAddon = new WebLinksAddon((_event, uri) => {
-            openLinkExternally(uri)
+            openLinkExternally(uri, linkSchemesRef.current)
         })
         term.loadAddon(webLinksAddon)
 
@@ -829,6 +814,28 @@ export function TerminalView({
             }
         }
     }, [sessionLinksEnabled, id, cwd])
+
+    // Plain-text links for the app schemes the user allowed (`obsidian://…`).
+    // The addon's own pattern only knows http(s); OSC 8 links need no detector.
+    const linkSchemesKey = linkSchemes.join(',')
+    useEffect(() => {
+        const term = xtermRef.current
+        const urlRegex = buildLinkSchemeRegex(linkSchemesKey ? linkSchemesKey.split(',') : [])
+        if (!term || !urlRegex) return
+
+        const appLinksAddon = new WebLinksAddon(
+            (_event, uri) => openLinkExternally(uri, linkSchemesRef.current),
+            { urlRegex }
+        )
+        term.loadAddon(appLinksAddon)
+        return () => {
+            try {
+                appLinksAddon.dispose()
+            } catch {
+                // The terminal may already be disposed; that tears the addon down with it.
+            }
+        }
+    }, [linkSchemesKey, id, cwd])
 
     // Context menu handlers
     const closeContextMenu = useCallback(() => {
