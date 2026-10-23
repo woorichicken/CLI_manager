@@ -403,14 +403,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 임시 폴더를 cwd 로 쓰고(신뢰는 그 폴더에서 Yes), 자식 환경에서 `CLIMANAGER_SESSION_ID` 를 지운다.
 - Owner: 없음
 
-### `src/renderer/src/components/Sidebar/index.tsx` — 사이드바 헤더 버튼이 하나 더 늘면 제목이 잘린다
-- Discovered: 2026-10-23 day-1023, 「All sessions」 토글(PR #44)을 넣다가.
-- Evidence: 버튼이 5개가 되자 기본 폭에서 「WORKSPACES」가 잘려 간격(`gap-0.5`)을 줄여 맞췄다. 여유가 거의 없다.
-- Why deferred: 지금은 맞는다.
-- Trigger: 사이드바 헤더에 버튼을 또 넣을 때.
-- Fix direction: 자주 안 쓰는 버튼(전체 접기·폴더 추가)을 「…」 넘침 메뉴로 접는다.
-- Owner: 없음
-
 ### 링크 허용 규칙이 두 곳에 있다 — 터미널 `ALLOWED_LINK_PROTOCOLS` 와 메모의 http(s) 정규식 (모듈화 사람 컨펌)
 - Discovered: 2026-10-23 day-1023, 메모 링크(PR #45).
 - Evidence: `src/renderer/src/components/TerminalView.tsx:66` 의 `ALLOWED_LINK_PROTOCOLS` 는 컴포넌트 안에 있어 메모가 못 쓰고, `SessionMemo.tsx` 는 http(s)만 따로 고른다(터미널 허용의 부분집합이라 지금은 안전).
