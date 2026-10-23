@@ -189,15 +189,15 @@ export function Sidebar({
 
     // Newest-first ids from main. The active session is put in front here because the report of
     // "now viewing X" travels to main separately and may not have landed when this runs.
-    useEffect(() => {
-        if (viewMode !== 'all' || pointerInSessionListRef.current) return
-        let cancelled = false
+    const refreshRecentIds = useCallback(() => {
         window.api.getRecentSessions().then(ids => {
-            if (cancelled) return
             setRecentIds(activeSessionId ? [activeSessionId, ...ids.filter(id => id !== activeSessionId)] : ids)
         }).catch(() => {})
-        return () => { cancelled = true }
-    }, [viewMode, activeSessionId])
+    }, [activeSessionId])
+
+    useEffect(() => {
+        if (viewMode === 'all' && !pointerInSessionListRef.current) refreshRecentIds()
+    }, [viewMode, refreshRecentIds])
 
     const { anyExpanded, toggleCollapseAll } = useSidebarCollapseAll({
         workspaces,
@@ -898,7 +898,7 @@ export function Sidebar({
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} px-2 border-b border-white/10 flex items-center justify-between draggable transition-all`}>
                     {/* The label gives way first, so a narrow sidebar never clips the buttons */}
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">{isAllSessionsView ? 'All sessions' : 'Workspaces'}</span>
-                    <div className="flex items-center gap-1 no-drag shrink-0">
+                    <div className="flex items-center gap-0.5 no-drag shrink-0">
                         <button
                             data-testid="sidebar-search-toggle"
                             onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
@@ -1017,7 +1017,11 @@ export function Sidebar({
                         data-testid="sidebar-all-sessions"
                         className="flex-1 overflow-y-auto p-2"
                         onMouseEnter={() => { pointerInSessionListRef.current = true }}
-                        onMouseLeave={() => { pointerInSessionListRef.current = false }}
+                        onMouseLeave={() => {
+                            pointerInSessionListRef.current = false
+                            // Clicks inside the list were held back; the pointer is gone, so catch up now.
+                            refreshRecentIds()
+                        }}
                     >
                         {allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>

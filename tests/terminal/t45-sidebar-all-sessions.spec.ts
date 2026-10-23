@@ -86,6 +86,11 @@ test.describe('T45 sidebar all sessions', () => {
         await list.locator('[data-session-item="s-a2"]').click()
         await expect.poll(() => visibleTerminal(page)).toBe('s-a2')
 
+        // The rows do not jump under the pointer; once it leaves the list, the clicked one moves to the top.
+        await page.mouse.move(900, 500)
+        await expect.poll(() => listOrder(page).then(ids => ids[0])).toBe('s-a2')
+        await list.locator('[data-session-item="s-w1"]').hover()
+
         // Right-click opens the session menu (same component as the tree).
         await list.locator('[data-session-item="s-w1"]').click({ button: 'right' })
         await expect(page.getByRole('button', { name: 'Copy Session ID', exact: true })).toBeVisible()
