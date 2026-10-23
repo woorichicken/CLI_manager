@@ -92,6 +92,17 @@ function openLinkExternally(uri: string): void {
 
 const VIEWPORT_REFRESH_ANSI_REGEX = /\x1b\[[0-9;?]*[HJKf]|\x1b\[\?1049[hl]/
 
+/** Size a pty starts at when its box gives nothing better. */
+const FALLBACK_PTY_COLS = 80
+const FALLBACK_PTY_ROWS = 30
+/**
+ * Smallest box a terminal that starts hidden trusts. Mid-layout the box can be
+ * non-zero yet tiny; a pty started there makes a resumed agent draw its whole
+ * history that narrow, and the first look leaves it behind as a cut copy.
+ */
+const MIN_HIDDEN_FIT_COLS = 20
+const MIN_HIDDEN_FIT_ROWS = 5
+
 export function TerminalView({
     id,
     cwd,
@@ -539,8 +550,8 @@ export function TerminalView({
         terminalRef.current?.addEventListener('contextmenu', contextMenuHandler, { capture: true })
 
         // Initialize backend terminal
-        let initialCols = 80
-        let initialRows = 30
+        let initialCols = FALLBACK_PTY_COLS
+        let initialRows = FALLBACK_PTY_ROWS
 
         // Data listener disposer — must be released in the effect cleanup,
         // otherwise removed sessions leak IPC listeners that keep writing
@@ -556,13 +567,18 @@ export function TerminalView({
         // Claude then redraws only the rows on screen and leaves the narrow copy above.
         try {
             const proposed = getProposedDimensions()
-            if (proposed) {
+            const tooSmallWhileHidden = !visible && proposed !== null &&
+                (proposed.cols < MIN_HIDDEN_FIT_COLS || proposed.rows < MIN_HIDDEN_FIT_ROWS)
+            if (proposed && !tooSmallWhileHidden) {
                 initialCols = proposed.cols
                 initialRows = proposed.rows
-                term.resize(proposed.cols, proposed.rows)
             }
         } catch (e) {
             console.error('Failed to fit terminal initially:', e)
+        }
+        // The view starts at its pty's size even on the fallback (xterm's own default is 80x24).
+        if (term.cols !== initialCols || term.rows !== initialRows) {
+            term.resize(initialCols, initialRows)
         }
 
         window.api.createTerminal(id, cwd, initialCols, initialRows, shell).then((attach) => {
