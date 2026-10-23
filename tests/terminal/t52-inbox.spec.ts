@@ -314,6 +314,11 @@ test.describe('T52 inbox', () => {
         await expect(sidebarBell(page)).toHaveAttribute('data-unread', '0')
         // …and so does one deleted from the sidebar.
         expect((await list()).some((r) => r.sessionId === C)).toBe(true)
+        // A shell still starting under load has a child process, and deleting it then asks
+        // "Terminate running processes?" in a native box no test can click — answer Terminate in main.
+        await app.evaluate(({ dialog }) => {
+            dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as unknown as typeof dialog.showMessageBox
+        })
         const rowC = page.locator(`[data-session-item="${C}"]`)
         await rowC.hover()
         await rowC.getByTitle('Delete session').click()
