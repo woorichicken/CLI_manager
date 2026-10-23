@@ -33,6 +33,31 @@ const OUTPUT_FLUSH_BYTES = 256 * 1024
  */
 const ATTACH_HOLD_TIMEOUT_MS = 3000
 
+/** The size a pty starts at when nothing better is known. */
+const PTY_DEFAULT_COLS = 80
+const PTY_DEFAULT_ROWS = 30
+/**
+ * Bounds for a pty size coming from a renderer. Every view now measures its own
+ * box — hidden ones too — and a box caught mid-layout, or a bad message, must not
+ * reach node-pty as a fraction, zero, or a size nobody can draw.
+ */
+export const PTY_MIN_COLS = 2
+export const PTY_MIN_ROWS = 1
+export const PTY_MAX_COLS = 1000
+export const PTY_MAX_ROWS = 500
+
+/** Whole cells within the bounds above; anything that is not a number gets the default size. */
+export function clampPtySize(cols: unknown, rows: unknown): { cols: number; rows: number } {
+    const fit = (value: unknown, min: number, max: number, fallback: number): number =>
+        typeof value === 'number' && Number.isFinite(value)
+            ? Math.min(max, Math.max(min, Math.floor(value)))
+            : fallback
+    return {
+        cols: fit(cols, PTY_MIN_COLS, PTY_MAX_COLS, PTY_DEFAULT_COLS),
+        rows: fit(rows, PTY_MIN_ROWS, PTY_MAX_ROWS, PTY_DEFAULT_ROWS)
+    }
+}
+
 /**
  * Terminal history kept outside the renderer, so a view that attaches late —
  * a reopened window, a reloaded renderer, the grid window — can redraw it.
@@ -294,9 +319,10 @@ export class TerminalManager {
     }
 
     private setupIpc() {
-        ipcMain.handle('terminal-create', (_, id: string, cwd: string, cols: number, rows: number, shell?: string) =>
-            this.attachView(id, cwd, cols, rows, shell)
-        )
+        ipcMain.handle('terminal-create', (_, id: string, cwd: string, cols: number, rows: number, shell?: string) => {
+            const size = clampPtySize(cols, rows)
+            return this.attachView(id, cwd, size.cols, size.rows, shell)
+        })
 
         // The view drew its snapshot and listens for output now.
         ipcMain.on('terminal-attached', (_, id: string, token: number) => {
@@ -307,9 +333,10 @@ export class TerminalManager {
             this.writeInput(id, data)
         })
 
-        ipcMain.handle('terminal-resize', (_, id: string, cols: number, rows: number) => {
+        ipcMain.handle('terminal-resize', (_, id: string, requestedCols: number, requestedRows: number) => {
             const ptyProcess = this.terminals.get(id)
             if (ptyProcess) {
+                const { cols, rows } = clampPtySize(requestedCols, requestedRows)
                 ptyProcess.resize(cols, rows)
                 this.sizes.set(id, { cols, rows })
                 this.events.emit('resized', id, cols, rows)
@@ -605,7 +632,7 @@ export class TerminalManager {
         this.outputBuffers.clear()
     }
 
-    private createTerminal(id: string, cwd: string, cols: number = 80, rows: number = 30, requestedShell?: string) {
+    private createTerminal(id: string, cwd: string, cols: number = PTY_DEFAULT_COLS, rows: number = PTY_DEFAULT_ROWS, requestedShell?: string) {
         // 이미 존재하는 터미널이면 생성 건너뛰기
         if (this.terminals.has(id)) {
             console.log(`Terminal ${id} already exists, skipping creation`)

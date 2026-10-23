@@ -246,10 +246,12 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
 1. **`scrollOnEraseInDisplay: true`** (TerminalView.tsx, xterm 6.0+)
    - CLI가 전체 클리어(CSI 2J)할 때 viewport 내용을 지우는 대신 scrollback으로 보존
    - 이 옵션이 없으면 클리어마다 화면에 보이던 대화 내용이 영구 파괴됨
-2. **숨김 터미널 PTY resize 보류** (applyTerminalDimensions)
-   - `visible`이 아닌 터미널은 PTY resize를 보내지 않음 (xterm resize만 수행)
+2. **숨김 터미널 resize 보류 — xterm 도 PTY 크기에 묶어 둔다** (applyTerminalDimensions)
+   - `visible`이 아닌 터미널은 PTY resize를 보내지 않고, **xterm resize 도 하지 않는다**(Grid 창의 `disablePtyResize` 만 예외)
    - PTY resize = SIGWINCH = CLI 전체 리페인트 → 터미널 N개면 창 드래그 1번에 N개 세션의 scrollback이 리페인트 잔여물로 오염됨
-   - visible 전환 시 visibility effect가 `lastPtySizeRef`를 비워 최신 크기를 정확히 1회 적용
+   - 숨긴 xterm 만 크기를 바꾸면 프로그램은 옛 크기로 그리는데 화면은 새 크기로 접어 쓴다 — 그 잔해가 보인 뒤에도 스크롤백에 남고, main 의 미러(PTY 크기)와 달라진다(제보 325d9a7d 에서 화면 ↔ 미러가 달랐다)
+   - visible 전환 시 visibility effect가 `lastPtySizeRef`를 비워 최신 크기를 xterm·PTY 에 정확히 1회 적용
+   - **숨긴 채 만들어지는 터미널도 상자에 맞춘 크기로 PTY 를 띄운다.** 숨김은 `visibility: hidden` 이라 상자 크기가 이미 있다. 예전엔 80×30 으로 띄워 복원된·API 가 연 Claude 가 대화 전체를 80칸으로 그렸고, 처음 볼 때의 resize 에 Claude Code 는 **화면에 보이는 줄만** 새 폭으로 다시 그려서 80칸 사본이 그 위 스크롤백에 남고 경계에서 줄이 빠지거나 겹쳤다(제보 f77530f2 · 325d9a7d — 좁은 사본의 가장 긴 줄이 정확히 80). 회귀는 `t41-hidden-terminal-size.spec.ts`
 3. **출력 IPC 배칭** (TerminalManager.enqueueOutput)
    - pty 청크를 4ms 윈도우로 병합 후 renderer로 전송 (TUI 1프레임 = 1메시지)
 4. **터미널 데이터 리스너는 effect cleanup에서 해제** (dataCleanup)
@@ -423,6 +425,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T39 나무 순서(49825c14) — `sessionTreeFor` 의 order: Recently viewed(본 순 → 안 본 것은 최신순)·Oldest·Name 이 같은 층 순서만 바꾸고 자식은 부모 밑(깊이 2)에 남는지
   - T39 최근 본(P2) — `RecentSessions`(가짜 store): 20개 상한(`RECENT_SESSIONS_MAX`)·같은 id 는 맨 앞 하나·재시작(새 인스턴스) 뒤 순서 유지·`prune`·맨 앞 id 를 다시 넣으면 쓰지 않음·`forget`
   - T40 최근 본·전체(P2·P3) — 세션 셋을 차례로 본 뒤 Recent 탭이 역순(자기 세션 제외)이고 config.json `recentSessions` 에 남는지, 앱 재시작 뒤 같은 순서인지, 삭제한 세션이 빠지는지. All 탭: 작업 영역별 목록·상태 표시 없음·이름 검색·# 를 누르면 시스템 클립보드에 세션 id(시험 뒤 원래 값 복원)·390 폭에서 줄이 안 잘림
+  - T41 숨김 터미널 크기 — 숨긴 세션 B 의 전경 프로그램이 자기 tty 크기를 시작 때와 SIGWINCH 마다 파일에 적는다. B 의 PTY 가 보이는 터미널과 같은 크기로 시작하는지, 처음 볼 때 SIGWINCH 가 0번인지, 숨긴 동안 B 의 xterm 크기 = PTY 크기인지, 앱 시작 뒤 **첫** 창 크기 변경이 보이는 터미널에 반영되는지(ResizeObserver 의 첫 콜백이 초기화 전에 와서 버려지고 그다음 실제 변경이 「기준값」으로 삼켜졌다). 옛 TerminalView 에서 80×30 ↔ 103×43 · 80×24 ↔ 80×30 · 43줄 그대로로 3건 실패. 판정 프로그램은 `trap … WINCH` 셸 루프가 아니라 node 다 — SIGWINCH 는 전경 프로세스 그룹(`sleep`)으로 가서 셸 트랩은 resize 를 놓친다(헛통과)
+  - T42 PTY 크기 검사 유닛 — Electron 없이. `terminal-create`·`terminal-resize` 가 렌더러 값을 그대로 node-pty 에 넘기지 않게 하는 `clampPtySize`(TerminalManager.ts): 정수로 내림 · 하한 2×1 · 상한 1000×500 · 숫자가 아니면 80×30. TerminalManager 는 불러올 때 Electron ABI 의 node-pty 를 require 하므로 시험은 그 require 만 빈 객체로 바꿔 불러온다
   - T45 사이드바 All sessions — 토글이 닫힌 폴더·워크트리까지 모든 세션을 평평하게 보이는지(DOM), 줄 라벨이 작업 영역 이름인지, 클릭·우클릭이 트리와 같은지, 최근 본 순서, 재시작 뒤에도 유지되는지, 포인터가 올라간 채 검색이 목록을 대신했다 돌아오면 최신 순서로 다시 읽는지. 워크트리 시드는 평범한 폴더 경로여야 한다(저장소 루트면 시작 때 워크트리 스캔이 지운다)
   - T46 사이드바 세션 검색 — 세션 이름으로 찾고(닫힌 폴더 안도), 「Sessions」 묶음이 프로젝트 묶음 뒤에 오고, Enter 가 프로젝트가 있으면 기존 동작·없으면 첫 세션을 여는지
   - T47 세션 순서 유닛 — Electron 없이. `sessionsInSidebarOrder`·`orderByRecent`·`findMatchingSessions`
