@@ -126,6 +126,16 @@ export interface TreeEntry extends RelatedEntry {
     depth: number
 }
 
+/** How the Relations tab orders the sessions on one level of the tree. */
+export type RelatedOrder = 'newest' | 'oldest' | 'name' | 'viewed'
+
+export const RELATED_ORDERS: Array<{ key: RelatedOrder; label: string }> = [
+    { key: 'newest', label: 'Newest first' },
+    { key: 'oldest', label: 'Oldest first' },
+    { key: 'name', label: 'Name' },
+    { key: 'viewed', label: 'Recently viewed' }
+]
+
 export interface SessionTree {
     /** Who opened this session, farthest first (the root of the chain on top). */
     ancestors: TreeEntry[]
@@ -146,8 +156,30 @@ export interface SessionTree {
  * beside — in a ring the others land below. A closed session is not in
  * `workspaces`, which cuts the walk there, and what hung under it is lost.
  */
-export function sessionTreeFor(relations: SessionRelation[], sessionId: string, workspaces: Workspace[]): SessionTree {
+export function sessionTreeFor(
+    relations: SessionRelation[],
+    sessionId: string,
+    workspaces: Workspace[],
+    order: RelatedOrder = 'newest',
+    /** Session ids the user looked at, newest first — for the 'viewed' order. */
+    viewedIds: string[] = []
+): SessionTree {
     const index = sessionIndex(workspaces)
+    const viewedRank = new Map(viewedIds.map((id, rank) => [id, rank]))
+    // Only the order within one level changes: a child stays under its parent.
+    const compare = (aId: string, aAt: number, bId: string, bAt: number): number => {
+        if (order === 'oldest') return aAt - bAt
+        if (order === 'name') {
+            const byName = index.get(aId)!.session.name.localeCompare(index.get(bId)!.session.name, undefined, { numeric: true })
+            if (byName !== 0) return byName
+        }
+        if (order === 'viewed') {
+            const aRank = viewedRank.get(aId) ?? Number.MAX_SAFE_INTEGER
+            const bRank = viewedRank.get(bId) ?? Number.MAX_SAFE_INTEGER
+            if (aRank !== bRank) return aRank - bRank
+        }
+        return bAt - aAt
+    }
     const tree: SessionTree = { ancestors: [], siblings: [], descendants: [], manual: [] }
     if (!index.has(sessionId)) return tree
 
@@ -165,7 +197,7 @@ export function sessionTreeFor(relations: SessionRelation[], sessionId: string, 
         children.set(relation.from, [...(children.get(relation.from) ?? []), relation])
         parents.set(relation.to, [...(parents.get(relation.to) ?? []), relation])
     }
-    tree.manual.sort((a, b) => b.at - a.at)
+    tree.manual.sort((a, b) => compare(a.session.id, a.at, b.session.id, b.at))
 
     const placed = new Set<string>([sessionId])
     const entryOf = (relation: SessionRelation, otherId: string, depth: number): TreeEntry => ({
@@ -174,11 +206,12 @@ export function sessionTreeFor(relations: SessionRelation[], sessionId: string, 
         at: relation.at,
         depth
     })
-    const newestFirst = (a: SessionRelation, b: SessionRelation): number => b.at - a.at
+    const childOrder = (a: SessionRelation, b: SessionRelation): number => compare(a.to, a.at, b.to, b.at)
+    const parentOrder = (a: SessionRelation, b: SessionRelation): number => compare(a.from, a.at, b.from, b.at)
 
     const walkDown = (id: string, depth: number): void => {
         if (depth > MAX_TREE_DEPTH) return
-        for (const relation of [...(children.get(id) ?? [])].sort(newestFirst)) {
+        for (const relation of [...(children.get(id) ?? [])].sort(childOrder)) {
             if (placed.has(relation.to)) continue
             placed.add(relation.to)
             tree.descendants.push(entryOf(relation, relation.to, depth))
@@ -191,7 +224,7 @@ export function sessionTreeFor(relations: SessionRelation[], sessionId: string, 
     for (let depth = 1; depth <= MAX_TREE_DEPTH && level.length > 0; depth++) {
         const next: string[] = []
         for (const id of level) {
-            for (const relation of [...(parents.get(id) ?? [])].sort(newestFirst)) {
+            for (const relation of [...(parents.get(id) ?? [])].sort(parentOrder)) {
                 if (placed.has(relation.from)) continue
                 placed.add(relation.from)
                 tree.ancestors.push(entryOf(relation, relation.from, depth))
@@ -200,14 +233,31 @@ export function sessionTreeFor(relations: SessionRelation[], sessionId: string, 
         }
         level = next
     }
-    tree.ancestors.sort((a, b) => b.depth - a.depth || b.at - a.at)
+    tree.ancestors.sort((a, b) => b.depth - a.depth || compare(a.session.id, a.at, b.session.id, b.at))
 
     for (const parent of tree.ancestors.filter(entry => entry.depth === 1)) {
-        for (const relation of [...(children.get(parent.session.id) ?? [])].sort(newestFirst)) {
+        for (const relation of [...(children.get(parent.session.id) ?? [])].sort(childOrder)) {
             if (placed.has(relation.to)) continue
             placed.add(relation.to)
             tree.siblings.push(entryOf(relation, relation.to, 1))
         }
     }
     return tree
+}
+
+/**
+ * The sessions that opened `sessionId`, or first worked in it — its parents in
+ * the tree, newest first. Hand-added pairs have no direction and are left out.
+ */
+export function parentSessionsOf(relations: SessionRelation[], sessionId: string, workspaces: Workspace[]): RelatedEntry[] {
+    const index = sessionIndex(workspaces)
+    const parents = new Map<string, RelatedEntry>()
+    for (const relation of relations) {
+        if (relation.dismissed || relation.kind === 'manual' || relation.to !== sessionId || relation.from === sessionId) continue
+        const parent = index.get(relation.from)
+        if (!parent) continue
+        const known = parents.get(relation.from)
+        if (!known || known.at < relation.at) parents.set(relation.from, { ...parent, kind: relation.kind, at: relation.at })
+    }
+    return [...parents.values()].sort((a, b) => b.at - a.at)
 }

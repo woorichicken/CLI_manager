@@ -887,6 +887,11 @@ export interface SessionPeek {
     state: 'busy' | 'idle' | 'starting' | 'exited'
     /** A question or permission prompt is waiting for someone. */
     awaitingInput: boolean
-    /** The last line of text above the agent's input box, or '' when there is none. */
+    /**
+     * One line about the session, or '' when there is none. With an agent input box on screen it is
+     * the agent's recap (`※ recap: …`) or nothing; otherwise the last row worth reading.
+     */
     lastLine: string
+    /** `lastLine` is the agent's recap — a sentence, not a raw row such as a prompt with a path. */
+    lastLineIsRecap: boolean
 }

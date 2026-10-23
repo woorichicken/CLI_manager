@@ -138,6 +138,7 @@ pnpm build && pnpm test:term
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
    - `components/RelatedSessions/` · `utils/relatedSessions.ts`: 세션 헤더 「Related」 버튼과 모달 — 세 묶음(연 세션·이 세션을 연 세션·손으로 추가), 상태·마지막 줄·메모, 「대화:」 세션 배지. 이동·나란히 열기는 세션 링크와 같은 `showSessions`(App.tsx)
+   - `components/SessionNavButtons.tsx` · `hooks/useSessionHistory.ts`: 세션 헤더의 ‹ ›(보여 준 세션을 브라우저처럼 뒤로/앞으로 — 메모리에만, 닫힌 세션은 건너뜀)와 상위 세션 바로가기(이 세션을 연 세션이 하나일 때만)
    - `utils/sessionLink.ts`: 세션 링크 `climanager://session/<id 또는 앞 8자>[,…]` — 터미널에서 누르면 그 세션으로(여럿이면 분할 화면, 최대 4). 화면 전환만 한다(터미널 출력은 믿을 수 없는 글). 에이전트는 터미널에 **앞 8자**로 찍는다 — Claude Code 는 화면보다 긴 낱말을 들여쓰기로 끊어 링크를 깨뜨린다
    - `constants/`: **상수 및 유틸리티**
      - `icons.tsx`: 템플릿 아이콘 매핑
@@ -419,14 +420,17 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     부모가 둘일 때 위 둘·옆 중복 없음, 중간 세션이 닫히면 그 아래가 끊기는지, 깊이 번호와 상한(`MAX_TREE_DEPTH`)
   - T40 세션 나무 화면 — 시드한 `sessionRelations`(총괄→팀장 셋→작업→보조)로 Related 「Relations」 탭의 위·옆·아래 줄이 DOM(`data-related-tree`)에 맞게 오는지, 옆 줄을 눌러 그 세션으로 가는지, 마지막 줄(프롬프트·경로)이 길면 앞이 잘려 끝이 보이는지,
     390 폭에서 가장 깊고 이름이 긴 줄이 모달 안에 들어오는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 `tree-1280.png`·`tree-390.png` 를 남긴다. 관계는 `helpers.ts` 의 `config` 옵션으로 config.json 에 직접 심는다
+  - T39 나무 순서(49825c14) — `sessionTreeFor` 의 order: Recently viewed(본 순 → 안 본 것은 최신순)·Oldest·Name 이 같은 층 순서만 바꾸고 자식은 부모 밑(깊이 2)에 남는지
   - T39 최근 본(P2) — `RecentSessions`(가짜 store): 20개 상한(`RECENT_SESSIONS_MAX`)·같은 id 는 맨 앞 하나·재시작(새 인스턴스) 뒤 순서 유지·`prune`·맨 앞 id 를 다시 넣으면 쓰지 않음·`forget`
   - T40 최근 본·전체(P2·P3) — 세션 셋을 차례로 본 뒤 Recent 탭이 역순(자기 세션 제외)이고 config.json `recentSessions` 에 남는지, 앱 재시작 뒤 같은 순서인지, 삭제한 세션이 빠지는지. All 탭: 작업 영역별 목록·상태 표시 없음·이름 검색·# 를 누르면 시스템 클립보드에 세션 id(시험 뒤 원래 값 복원)·390 폭에서 줄이 안 잘림
-  - T45 사이드바 All sessions — 토글이 닫힌 폴더·워크트리까지 모든 세션을 평평하게 보이는지(DOM), 줄 라벨이 작업 영역 이름인지, 클릭·우클릭이 트리와 같은지, 최근 본 순서, 재시작 뒤에도 유지되는지. 워크트리 시드는 평범한 폴더 경로여야 한다(저장소 루트면 시작 때 워크트리 스캔이 지운다)
+  - T45 사이드바 All sessions — 토글이 닫힌 폴더·워크트리까지 모든 세션을 평평하게 보이는지(DOM), 줄 라벨이 작업 영역 이름인지, 클릭·우클릭이 트리와 같은지, 최근 본 순서, 재시작 뒤에도 유지되는지, 포인터가 올라간 채 검색이 목록을 대신했다 돌아오면 최신 순서로 다시 읽는지. 워크트리 시드는 평범한 폴더 경로여야 한다(저장소 루트면 시작 때 워크트리 스캔이 지운다)
   - T46 사이드바 세션 검색 — 세션 이름으로 찾고(닫힌 폴더 안도), 「Sessions」 묶음이 프로젝트 묶음 뒤에 오고, Enter 가 프로젝트가 있으면 기존 동작·없으면 첫 세션을 여는지
   - T47 세션 순서 유닛 — Electron 없이. `sessionsInSidebarOrder`·`orderByRecent`·`findMatchingSessions`
+  - T50 Related 창·헤더(day-1023) — 입력 상자가 있는 「Claude」 화면(셸 스크립트가 그린 가짜)이 Related 줄에 `※ recap` 을 통째로(「(disable recaps in /config)」 없이) 보이고 recap 이 없으면 줄이 없는지, Relations 탭 Sort(Newest first·Oldest first·Name·Recently viewed — 화면 시험은 Newest·Name·Oldest, Recently viewed 는 T39 유닛)가 같은 층 순서만 바꾸고 다시 열어도 기억되는지,
+    헤더 상위 세션 바로가기(부모가 하나일 때만)·‹ › 뒤로/앞으로(다른 길로 옮기면 앞으로가 사라짐), Related 「New session」으로 다른 프로젝트·템플릿·이름을 골라 만들면 그 세션이 보이고 「Added by hand」에 들어가는지, 390 폭에서 폼이 창 안에 드는지. `RELATED_SESSIONS_SHOTS=<폴더>` 면 캡처를 남긴다
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - T48 메모 링크 유닛 — Electron 없이. `splitMemoLinks`(http(s)만 링크, 문장부호·짝 없는 닫는 괄호 제외, 글자 보존)·`shortenUrl`(호스트 + …/마지막 조각, 40자)
-  - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지
+  - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지, 끌어 선택한 뒤의 클릭·링크 위 Enter 가 편집으로 바꾸지 않는지
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

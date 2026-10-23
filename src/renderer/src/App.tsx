@@ -15,6 +15,8 @@ import { SplitTerminalHeader } from './components/SplitTerminalHeader'
 import { SessionBreadcrumb } from './components/SessionBreadcrumb'
 import { buildSessionBreadcrumb } from './utils/sessionBreadcrumb'
 import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
+import { ParentSessionButton, SessionHistoryButtons } from './components/SessionNavButtons'
+import { useSessionHistory } from './hooks/useSessionHistory'
 import { RelatedSessionsModal } from './components/RelatedSessions/RelatedSessionsModal'
 import { FullscreenTerminalView } from './components/FullscreenTerminalView'
 import { SystemMonitorPopover } from './components/SystemMonitorPopover'
@@ -28,7 +30,7 @@ import { neighborSession, sidebarWorkspaceOrder } from './utils/sessionNavigatio
 import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
-import { relatedCounts } from './utils/relatedSessions'
+import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 
 /** Let the window settle before spending anything on a network check. */
 const UPDATE_CHECK_STARTUP_DELAY_MS = 2000
@@ -559,6 +561,16 @@ function App() {
         ? workspaces.find(w => w.id === activeWorkspace?.id)?.sessions.find(s => s.id === activeSession.id)?.aiControl
         : undefined
 
+    // Single view only: a split view shows several sessions at once and has no one place in a history.
+    const sessionHistory = useSessionHistory(
+        splitLayout ? undefined : activeSession?.id,
+        id => workspaces.some(w => w.sessions?.some(s => s.id === id))
+    )
+    const activeParents = useMemo(
+        () => (activeSession ? parentSessionsOf(sessionRelations, activeSession.id, workspaces) : []),
+        [sessionRelations, activeSession, workspaces]
+    )
+
     // Select a session the AI asked to show, once it exists in state. Deferred
     // through state because the 'opened' event and the select must not race.
     useEffect(() => {
@@ -1036,9 +1048,9 @@ function App() {
         }, 300)
     }
 
-    const handleAddSession = async (workspaceId: string, type: 'regular' | 'worktree' = 'regular', branchName?: string, initialCommand?: string, sessionName?: string) => {
+    const handleAddSession = async (workspaceId: string, type: 'regular' | 'worktree' = 'regular', branchName?: string, initialCommand?: string, sessionName?: string): Promise<TerminalSession | undefined> => {
         const result = await window.api.addSession(workspaceId, type, branchName, initialCommand, sessionName)
-        if (!result) return
+        if (!result) return undefined
 
         if (result.success && result.data) {
             const newSession = result.data
@@ -1064,7 +1076,9 @@ function App() {
                 next.set(workspaceId, [...currentOrder, newSession.id])
                 return next
             })
+            return newSession
         }
+        return undefined
     }
 
     // Handle clearing terminal buffer (Cmd+K)
@@ -1437,6 +1451,9 @@ function App() {
                                 <PanelLeft size={splitLayout ? 14 : 16} />
                             </button>
                         )}
+                        {!splitLayout && activeSession && (
+                            <SessionHistoryButtons history={sessionHistory} onShow={id => showSessions([id])} />
+                        )}
                         {/* Show workspace name only in single view */}
                         {!splitLayout && (activeWorkspace ? (
                             <SessionBreadcrumb segments={activeBreadcrumb} fontSize={settings.fontSize} />
@@ -1464,6 +1481,7 @@ function App() {
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
                         {!splitLayout && (
                             <>
+                                <ParentSessionButton parents={activeParents} onShow={id => showSessions([id])} />
                                 {activeSession && (
                                     <RelatedSessionsButton
                                         sessionId={activeSession.id}
@@ -1912,6 +1930,10 @@ function App() {
                     relations={sessionRelations}
                     onClose={closeRelatedDialog}
                     onShowSessions={showSessions}
+                    templates={customTemplates}
+                    onCreateSession={async (workspaceId, template, name) =>
+                        (await handleAddSession(workspaceId, 'regular', undefined, template.command, name || template.name))?.id
+                    }
                 />
             )}
 
