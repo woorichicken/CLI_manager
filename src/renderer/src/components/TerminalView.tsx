@@ -219,6 +219,22 @@ export function TerminalView({
         const terminal = xtermRef.current
         if (!terminal) return
 
+        // Hidden terminals defer the pty resize until they become visible.
+        // Every pty resize SIGWINCHes the shell, and CLI TUIs respond with a
+        // full repaint — with many sessions a single window drag multiplies
+        // into dozens of repaints that pollute every session's scrollback.
+        // When the terminal becomes visible, the visibility effect clears
+        // lastPtySizeRef and re-applies the latest dimensions exactly once.
+        //
+        // The view waits with its pty. The program keeps drawing for the pty's
+        // size; a view of another size wraps those lines and places its
+        // redraws on other rows, and that garbage stays in the scrollback
+        // after the session is shown (the mirror in main, sized like the pty,
+        // never had it).
+        if (!disablePtyResize && !visibleRef.current) {
+            return
+        }
+
         let didResize = false
         if (terminal.cols !== dimensions.cols || terminal.rows !== dimensions.rows) {
             terminal.resize(dimensions.cols, dimensions.rows)
@@ -236,16 +252,6 @@ export function TerminalView({
         }
 
         if (disablePtyResize) {
-            return
-        }
-
-        // Hidden terminals defer the pty resize until they become visible.
-        // Every pty resize SIGWINCHes the shell, and CLI TUIs respond with a
-        // full repaint — with many sessions a single window drag multiplies
-        // into dozens of repaints that pollute every session's scrollback.
-        // When the terminal becomes visible, the visibility effect clears
-        // lastPtySizeRef and re-applies the latest dimensions exactly once.
-        if (!visibleRef.current) {
             return
         }
 
@@ -543,17 +549,20 @@ export function TerminalView({
         // Set by the effect cleanup; createTerminal can resolve after it.
         let disposed = false
 
-        if (visible) {
-            try {
-                const proposed = fitAddon.proposeDimensions()
-                if (proposed) {
-                    initialCols = proposed.cols
-                    initialRows = proposed.rows
-                    term.resize(proposed.cols, proposed.rows)
-                }
-            } catch (e) {
-                console.error('Failed to fit terminal initially:', e)
+        // Fit hidden terminals too: they are only `visibility: hidden`, so their box
+        // already has the size they will be shown at. Restored sessions and sessions
+        // the Control API opens start hidden; a pty started at 80x30 makes a resumed
+        // Claude draw its whole history 80 columns wide, and the first look resizes it —
+        // Claude then redraws only the rows on screen and leaves the narrow copy above.
+        try {
+            const proposed = getProposedDimensions()
+            if (proposed) {
+                initialCols = proposed.cols
+                initialRows = proposed.rows
+                term.resize(proposed.cols, proposed.rows)
             }
+        } catch (e) {
+            console.error('Failed to fit terminal initially:', e)
         }
 
         window.api.createTerminal(id, cwd, initialCols, initialRows, shell).then((attach) => {
@@ -722,18 +731,19 @@ export function TerminalView({
             const newWidth = Math.round(rect.width)
             const newHeight = Math.round(rect.height)
 
-            // 초기값 설정
-            if (!lastSizeRef.current) {
-                lastSizeRef.current = { width: newWidth, height: newHeight }
-                return
-            }
+            // No baseline yet is not "nothing changed": the observer's own first call
+            // arrives before initialization and is dropped above, so the first call
+            // that gets here is already the first real change (a window resize, the
+            // sidebar). Treating it as the baseline kept the terminal at its old size
+            // with its bottom rows clipped. requestResize does nothing if the size holds.
+            if (lastSizeRef.current) {
+                // 1px 이상 변화만 감지
+                const widthChanged = Math.abs(newWidth - lastSizeRef.current.width) >= 1
+                const heightChanged = Math.abs(newHeight - lastSizeRef.current.height) >= 1
 
-            // 1px 이상 변화만 감지
-            const widthChanged = Math.abs(newWidth - lastSizeRef.current.width) >= 1
-            const heightChanged = Math.abs(newHeight - lastSizeRef.current.height) >= 1
-
-            if (!widthChanged && !heightChanged) {
-                return
+                if (!widthChanged && !heightChanged) {
+                    return
+                }
             }
 
             lastSizeRef.current = { width: newWidth, height: newHeight }
