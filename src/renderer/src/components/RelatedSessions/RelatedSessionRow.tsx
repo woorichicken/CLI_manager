@@ -107,7 +107,7 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                             connected
                         </span>
                     )}
-                    <span className={`hidden min-[480px]:inline text-xs text-gray-500 truncate ${hideState ? 'ml-auto' : ''}`}>{workspace.name}</span>
+                    <span className={`hidden min-[480px]:inline text-xs text-gray-500 truncate ${hideState ? 'ml-auto' : ''}`} title={`Project: ${workspace.name}`}>{workspace.name}</span>
                     {!hideState && (
                         <span
                             className="ml-auto shrink-0 text-[11px] text-gray-400"

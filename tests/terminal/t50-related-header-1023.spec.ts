@@ -196,7 +196,7 @@ test.describe('T50 related dialog and header (day-1023)', () => {
         await activateSession(page, NAMES[LEAD])
         await button(page, LEAD).click()
         await dialog(page).locator('[data-related-new]').click()
-        const form = dialog(page).locator('[data-related-new-form]')
+        const form = page.locator('[data-related-new-form]')
         await expect(form).toBeVisible()
         await expect(form.locator('[data-related-new-workspace]')).toHaveValue('ws-t50')
         await form.locator('[data-related-new-workspace]').selectOption('ws-t50-other')
@@ -225,6 +225,49 @@ test.describe('T50 related dialog and header (day-1023)', () => {
         await expect(dialog(page).locator(`[data-related-tree="manual"] [data-related-row="${createdId}"]`)).toBeVisible()
     })
 
+    test('T50 New session is a small dialog over the Related one; Esc closes only it (report d2b01912)', async () => {
+        ctx = await launch()
+        const { page } = ctx
+        await activateSession(page, NAMES[LEAD])
+        await button(page, LEAD).click()
+        await expect(dialog(page)).toBeVisible()
+        await dialog(page).locator('[data-related-new]').click()
+        const form = page.locator('[data-related-new-form]')
+        await expect(form).toBeVisible()
+        // Floats above: it is not a block inside the panel pushing the list down.
+        await expect(dialog(page).locator('[data-related-new-form]')).toHaveCount(0)
+        const panel = await dialog(page).boundingBox()
+        const box = await form.boundingBox()
+        expect(box!.y).toBeGreaterThan(panel!.y)
+        expect(box!.y + box!.height).toBeLessThanOrEqual(panel!.y + panel!.height)
+        // One Esc: the small dialog goes, the Related dialog stays. A second Esc closes that.
+        await page.keyboard.press('Escape')
+        await expect(form).toHaveCount(0)
+        await expect(dialog(page)).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(dialog(page)).toHaveCount(0)
+    })
+
+    test('T50 the (i) button explains the labels (report 40b8e459)', async () => {
+        ctx = await launch()
+        const { page } = ctx
+        await activateSession(page, NAMES[LEAD])
+        await button(page, LEAD).click()
+        await expect(dialog(page).locator('[data-related-help-panel]')).toHaveCount(0)
+        await dialog(page).locator('[data-related-help]').click()
+        const help = dialog(page).locator('[data-related-help-panel]')
+        await expect(help).toBeVisible()
+        const shots = shotsDir()
+        if (shots) await page.screenshot({ path: path.join(shots, 'related-help-1280.png') })
+        for (const term of ['Talk', 'connected', 'Grey text', 'Idle / Working / Waiting', 'copy the session ID', 'remove it from this list']) {
+            await expect(help).toContainText(term)
+        }
+        await dialog(page).locator('[data-related-help]').click()
+        // The pointer is still over the button, and hovering also shows the panel.
+        await page.mouse.move(1, 1)
+        await expect(help).toHaveCount(0)
+    })
+
     test('T50 narrow window keeps the new-session form inside the dialog', async () => {
         ctx = await launch()
         const { page } = ctx
@@ -233,13 +276,15 @@ test.describe('T50 related dialog and header (day-1023)', () => {
         await activateSession(page, NAMES[LEAD])
         await button(page, LEAD).click()
         await dialog(page).locator('[data-related-new]').click()
-        const panel = await dialog(page).locator('> div').nth(1).boundingBox()
+        const panel = await dialog(page).boundingBox()
         expect(panel).not.toBeNull()
-        for (const selector of ['[data-related-new-workspace]', '[data-related-new-template]', '[data-related-new-create]', '[data-related-order]']) {
-            const box = await dialog(page).locator(selector).boundingBox()
+        for (const selector of ['[data-related-new-workspace]', '[data-related-new-template]', '[data-related-new-create]']) {
+            const box = await page.locator(selector).boundingBox()
             expect(box, selector).not.toBeNull()
             expect(box!.x + box!.width, selector).toBeLessThanOrEqual(panel!.x + panel!.width + 1)
         }
+        const sortBox = await dialog(page).locator('[data-related-order]').boundingBox()
+        expect(sortBox!.x + sortBox!.width, 'sort').toBeLessThanOrEqual(panel!.x + panel!.width + 1)
         if (shots) await page.screenshot({ path: path.join(shots, 'related-new-session-390.png') })
     })
 })

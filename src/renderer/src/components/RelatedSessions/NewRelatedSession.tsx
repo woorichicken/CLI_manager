@@ -23,7 +23,8 @@ interface NewRelatedSessionProps {
 /**
  * Start a session from the Related dialog: pick the project and what runs in it,
  * the way the sidebar's "New Terminal" menu does. Only for the Related dialog,
- * hence not a shared component.
+ * hence not a shared component. It floats above the Related dialog (its own
+ * backdrop) so the session list underneath keeps its place.
  */
 export function NewRelatedSession({ defaultWorkspaceId, workspaces, templates, onCreate, onCancel }: NewRelatedSessionProps) {
     const [workspaceId, setWorkspaceId] = useState(defaultWorkspaceId)
@@ -46,7 +47,10 @@ export function NewRelatedSession({ defaultWorkspaceId, workspaces, templates, o
     const selectClass = 'min-w-0 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none focus:border-blue-500/50'
 
     return (
-        <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] space-y-2" data-related-new-form>
+        <div className="absolute inset-0 z-10 flex items-center justify-center px-4" role="dialog" aria-label="New session">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onCancel} />
+            <div className="relative w-full max-w-md glass-panel rounded-lg shadow-2xl border border-white/10 px-4 py-3 space-y-3" data-related-new-form>
+            <div className="text-sm text-white">New session</div>
             <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
                 <label className="text-[11px] text-gray-500" htmlFor="related-new-workspace">Project</label>
                 <select
@@ -83,6 +87,7 @@ export function NewRelatedSession({ defaultWorkspaceId, workspaces, templates, o
                     placeholder={template.name}
                     className={`${selectClass} placeholder-gray-600`}
                     data-related-new-name
+                    autoFocus
                 />
             </div>
             <div className="flex items-center gap-2">
@@ -102,6 +107,7 @@ export function NewRelatedSession({ defaultWorkspaceId, workspaces, templates, o
                     <Plus size={12} />
                     Create
                 </button>
+            </div>
             </div>
         </div>
     )
