@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Columns2, Waypoints, X } from 'lucide-react'
-import { SessionRelation, Workspace } from '../../../../shared/types'
-import { RelatedEntry, sessionTreeFor } from '../../utils/relatedSessions'
+import { Columns2, Plus, Waypoints, X } from 'lucide-react'
+import { SessionRelation, TerminalTemplate, Workspace } from '../../../../shared/types'
+import { RELATED_ORDERS, RelatedEntry, RelatedOrder, sessionTreeFor } from '../../utils/relatedSessions'
 import { MAX_LINKED_SESSIONS } from '../../utils/sessionLink'
 import { useSessionPeeks } from '../../hooks/useSessionPeeks'
 import { RelationTree } from './RelationTree'
 import { AllList, RecentList, recentSessionRows } from './SessionListTabs'
 import { CopyNotice, useCopyWithNotice } from '../Sidebar/CopyNotice'
 import { AddRelatedSession } from './AddRelatedSession'
+import { NewRelatedSession } from './NewRelatedSession'
 
 interface RelatedSessionsModalProps {
     sessionId: string
@@ -16,12 +17,36 @@ interface RelatedSessionsModalProps {
     onClose: () => void
     /** One id: show it as a sidebar click does. Several: side by side in split view. */
     onShowSessions: (sessionIds: string[]) => void
+    /** What "New session" can run: the user's terminal templates. */
+    templates: TerminalTemplate[]
+    /** Starts a session the way the sidebar does and shows it; resolves to its id, or undefined when it failed. */
+    onCreateSession: (workspaceId: string, template: TerminalTemplate, name: string) => Promise<string | undefined>
 }
 
 /** "Open side by side" puts this session in the first pane, so the others get the rest of the split view. */
 const MAX_PICKED = MAX_LINKED_SESSIONS - 1
 
 type RelatedTab = 'tree' | 'recent' | 'all'
+
+/** The Relations tab's order is a preference: it outlives the dialog and a restart. */
+const ORDER_STORAGE_KEY = 'climanager.related.order'
+
+function storedOrder(): RelatedOrder {
+    try {
+        const value = localStorage.getItem(ORDER_STORAGE_KEY)
+        return RELATED_ORDERS.some(order => order.key === value) ? (value as RelatedOrder) : 'newest'
+    } catch {
+        return 'newest'
+    }
+}
+
+function storeOrder(order: RelatedOrder): void {
+    try {
+        localStorage.setItem(ORDER_STORAGE_KEY, order)
+    } catch {
+        // Not remembered this time; the order still applies.
+    }
+}
 
 const TABS: Array<{ key: RelatedTab; label: string }> = [
     { key: 'tree', label: 'Relations' },
@@ -33,8 +58,14 @@ const TABS: Array<{ key: RelatedTab; label: string }> = [
  * The sessions that belong with this one, at a glance: state, last line and
  * memo of each, one click to go there, or several side by side.
  */
-export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose, onShowSessions }: RelatedSessionsModalProps) {
-    const tree = useMemo(() => sessionTreeFor(relations, sessionId, workspaces), [relations, sessionId, workspaces])
+export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose, onShowSessions, templates, onCreateSession }: RelatedSessionsModalProps) {
+    const [order, setOrder] = useState<RelatedOrder>(storedOrder)
+    const [recentIds, setRecentIds] = useState<string[]>([])
+    const [creating, setCreating] = useState(false)
+    const tree = useMemo(
+        () => sessionTreeFor(relations, sessionId, workspaces, order, recentIds),
+        [relations, sessionId, workspaces, order, recentIds]
+    )
     const entries: RelatedEntry[] = useMemo(
         () => [...tree.descendants, ...tree.ancestors, ...tree.siblings, ...tree.manual],
         [tree]
@@ -42,7 +73,6 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     const { notice, copy } = useCopyWithNotice()
     const relatedIds = useMemo(() => new Set(entries.map(entry => entry.session.id)), [entries])
     const [tab, setTab] = useState<RelatedTab>('tree')
-    const [recentIds, setRecentIds] = useState<string[]>([])
     const recentRows = useMemo(() => recentSessionRows(recentIds, workspaces, sessionId), [recentIds, workspaces, sessionId])
     const allIds = useMemo(
         () => workspaces.flatMap(workspace => (workspace.sessions ?? []).map(s => s.id)).filter(id => id !== sessionId),
@@ -70,13 +100,13 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     // A selected session that closed (or was removed) cannot be opened any more.
     const liveSelection = selected.filter(id => visibleIds.includes(id))
 
-    // Read when the tab opens, not before: it is what the user looked at up to now.
+    // Read when the tab (or the order that needs it) opens, not before: it is what the user looked at up to now.
     useEffect(() => {
-        if (tab !== 'recent') return
+        if (tab !== 'recent' && order !== 'viewed') return
         let cancelled = false
         window.api.getRecentSessions().then(ids => { if (!cancelled) setRecentIds(ids) }).catch(() => {})
         return () => { cancelled = true }
-    }, [tab])
+    }, [tab, order])
 
     // Take focus from the terminal: keys typed while the dialog is open must not reach the shell.
     useEffect(() => {
@@ -112,6 +142,17 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
         onShowSessions(ids)
         onClose()
     }
+    const changeOrder = (next: RelatedOrder): void => {
+        setOrder(next)
+        storeOrder(next)
+    }
+    // The new session is listed with this one, then shown — the dialog has done its job.
+    const createSession = async (workspaceId: string, template: TerminalTemplate, name: string): Promise<void> => {
+        const newId = await onCreateSession(workspaceId, template, name)
+        if (!newId) return
+        await window.api.addSessionRelation(sessionId, newId)
+        onClose()
+    }
 
     return (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4">
@@ -126,12 +167,32 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     <Waypoints size={14} className="text-gray-400" />
                     <span className="text-sm text-white">Related sessions</span>
                     <span className="text-xs text-gray-500 truncate">— {owner.name}</span>
-                    <button onClick={onClose} className="ml-auto p-1 hover:bg-white/10 rounded transition-colors" title="Close (Esc)">
+                    <button
+                        onClick={() => setCreating(open => !open)}
+                        className={`ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${creating ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+                        title="Start a session and list it here"
+                        aria-expanded={creating}
+                        data-related-new
+                    >
+                        <Plus size={12} />
+                        New session
+                    </button>
+                    <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors" title="Close (Esc)">
                         <X size={14} className="text-gray-400" />
                     </button>
                 </div>
 
-                <div className="flex gap-1 px-4 pt-2 border-b border-white/10" role="tablist">
+                {creating && (
+                    <NewRelatedSession
+                        defaultWorkspaceId={workspaces.find(w => w.sessions?.some(s => s.id === sessionId))?.id ?? workspaces[0]?.id ?? ''}
+                        workspaces={workspaces}
+                        templates={templates}
+                        onCreate={createSession}
+                        onCancel={() => setCreating(false)}
+                    />
+                )}
+
+                <div className="flex items-end gap-1 px-4 pt-2 border-b border-white/10" role="tablist">
                     {TABS.map(item => (
                         <button
                             key={item.key}
@@ -144,6 +205,22 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                             {item.label}
                         </button>
                     ))}
+                    {tab === 'tree' && (
+                        <label className="ml-auto mb-1 flex items-center gap-1.5 text-[11px] text-gray-500">
+                            Sort
+                            <select
+                                value={order}
+                                onChange={e => changeOrder(e.target.value as RelatedOrder)}
+                                className="bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[11px] text-gray-200 outline-none focus:border-blue-500/50"
+                                title="Order within each group. A session's own children stay under it."
+                                data-related-order
+                            >
+                                {RELATED_ORDERS.map(item => (
+                                    <option key={item.key} value={item.key} className="bg-gray-900">{item.label}</option>
+                                ))}
+                            </select>
+                        </label>
+                    )}
                 </div>
 
                 <div className="max-h-[50vh] overflow-y-auto py-1">
