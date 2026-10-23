@@ -117,6 +117,30 @@ test.describe('T45 sidebar all sessions', () => {
         await expect.poll(() => listOrder(page)).toEqual(['s-w1', 's-b1', 's-a1', 's-a2'])
     })
 
+    test('a list that goes away under the pointer catches up when it comes back', async () => {
+        ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
+        const { page } = ctx
+        await activateSession(page, 'T45A1')
+        await activateSession(page, 'T45B1')
+        await page.getByTestId('sidebar-view-toggle').click()
+        const list = page.getByTestId('sidebar-all-sessions')
+        await expect.poll(async () => (await listOrder(page)).slice(0, 2)).toEqual(['s-b1', 's-a1'])
+
+        // A click inside the list holds the order back while the pointer stays on it.
+        await list.locator('[data-session-item="s-w1"]').click()
+        await expect.poll(() => visibleTerminal(page)).toBe('s-w1')
+        expect((await listOrder(page))[0]).toBe('s-b1')
+
+        // Search replaces the list without the pointer moving: no mouseleave ever comes.
+        await page.getByTestId('sidebar-search-toggle').dispatchEvent('click')
+        const input = page.getByTestId('sidebar-search-input')
+        await input.fill('T45')
+        await expect(list).toHaveCount(0)
+        await input.fill('')
+        await expect(list).toBeVisible()
+        await expect.poll(() => listOrder(page)).toEqual(['s-w1', 's-b1', 's-a1', 's-a2'])
+    })
+
     test('the choice survives an app restart', async () => {
         ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(false))
         await ctx.page.getByTestId('sidebar-view-toggle').click()

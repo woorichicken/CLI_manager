@@ -195,9 +195,16 @@ export function Sidebar({
         }).catch(() => {})
     }, [activeSessionId])
 
+    // The list is on screen only in the All view and while no search result list replaces it.
+    // When it goes, the pointer goes with it: an unmounted list never gets its mouseleave.
+    const allSessionListShown = viewMode === 'all' && !(searchOpen && searchQuery.trim().length > 0)
     useEffect(() => {
-        if (viewMode === 'all' && !pointerInSessionListRef.current) refreshRecentIds()
-    }, [viewMode, refreshRecentIds])
+        if (!allSessionListShown) {
+            pointerInSessionListRef.current = false
+            return
+        }
+        if (!pointerInSessionListRef.current) refreshRecentIds()
+    }, [allSessionListShown, refreshRecentIds])
 
     const { anyExpanded, toggleCollapseAll } = useSidebarCollapseAll({
         workspaces,
