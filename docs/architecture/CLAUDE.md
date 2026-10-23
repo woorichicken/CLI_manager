@@ -172,7 +172,11 @@ User Action (Renderer)
   controlApiToken?: string,         // Kept outside settings so a stale save-settings cannot rotate it
   sessionRelations?: [              // Related sessions — one record per pair, either direction
     { from: string, to: string, kind: 'opened' | 'connected' | 'manual', at: number, dismissed?: boolean }
-  ]
+  ],
+  inbox?: [                         // Inbox — requests sessions sent for the user's hands (InboxStore), newest first
+    { id: string, sessionId: string, kind: 'login' | 'review' | 'question' | 'other', text: string, url?: string,
+      at: number, createdAt: number, readAt?: number, client: string }
+  ]                                 // ≤200 · read ones dropped after 7 days (startup) · a closed session takes its own
 }
 ```
 
@@ -233,6 +237,11 @@ User Action (Renderer)
 - `add-session-relation(from, to)` / `remove-session-relation(a, b)`: 손으로 추가·빼기(빼기는 `dismissed` 표시)
 - `get-recent-sessions` → 최근 본 세션 id(최신이 앞, 최대 20 — `RECENT_SESSIONS_MAX`) · `push-recent-session(id)`: 렌더러가 보는 세션(분할이면 포커스된 칸)이 바뀔 때 보고. 저장 키 `recentSessions`(config.json). 닫힘·시작 때 정리, 없는 세션은 탭이 숨김
 - `peek-sessions(ids)` → `SessionPeek[]`: 상태·질문 대기·마지막 줄. 읽기만 한다 — API 읽기와 달리 AI 표시를 붙이지 않는다
+
+#### Inbox
+- `get-inbox` → `InboxRequest[]`(최신이 앞, 읽은 것 포함) · `inbox` (main → renderer): 바뀔 때마다 전체 목록. main 은 같은 때 Dock 배지(안 읽은 수)를 고친다
+- `mark-inbox-read(id)` · `mark-inbox-sessions-read(ids)` · `mark-inbox-all-read`: 목록에서 누름 · 그 세션이 보임(창이 포커스일 때 — `useInboxReadOnView`) · 「Mark all read」
+- 코드: `src/main/InboxStore.ts`(저장·검사) · `ControlApiService.notifyInbox`(API) · `hooks/useInbox.ts` · `components/Inbox/`(종·목록·행 점). 계약은 [`control-api.md`](control-api.md) 「Inbox」
 
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)

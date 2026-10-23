@@ -30,6 +30,8 @@ import { neighborSession, sidebarWorkspaceOrder } from './utils/sessionNavigatio
 import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
+import { useInboxReadOnView } from './hooks/useInbox'
+import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 
 /** Let the window settle before spending anything on a network check. */
@@ -95,6 +97,14 @@ function App() {
 
     // Grid view state (sessions currently open in grid window)
     const [gridViewSessionIds, setGridViewSessionIds] = useState<string[]>([])
+
+    // Inbox: every session this window shows has been seen. A Grid window shows its panes,
+    // the main window its split panes or the active tab.
+    const shownSessionIds = useMemo(
+        () => (isFullscreenMode ? fullscreenSessionIds : splitLayout ? splitLayout.sessionIds : activeSession ? [activeSession.id] : []),
+        [isFullscreenMode, fullscreenSessionIds, splitLayout, activeSession]
+    )
+    useInboxReadOnView(shownSessionIds)
 
     // Check URL parameters for fullscreen mode
     useEffect(() => {
@@ -1437,6 +1447,15 @@ function App() {
                     splitLayout={splitLayout}
                     onDragStartSession={handleSidebarDragStart}
                     onDragEndSession={handleSidebarDragEnd}
+                    inboxSlot={
+                        <InboxButton
+                            placement="sidebar"
+                            workspaces={workspaces}
+                            linkSchemes={settings.terminalLinkSchemes}
+                            onShowSession={id => showSessions([id])}
+                            compact={Boolean(splitLayout)}
+                        />
+                    }
                 />
             )}
             <div className="flex-1 glass-panel m-2 ml-0 rounded-lg overflow-hidden flex flex-col">
@@ -1451,6 +1470,16 @@ function App() {
                             >
                                 <PanelLeft size={splitLayout ? 14 : 16} />
                             </button>
+                        )}
+                        {/* The inbox must not vanish with the sidebar */}
+                        {!isSidebarOpen && (
+                            <InboxButton
+                                placement="header"
+                                workspaces={workspaces}
+                                linkSchemes={settings.terminalLinkSchemes}
+                                onShowSession={id => showSessions([id])}
+                                compact={Boolean(splitLayout)}
+                            />
                         )}
                         {!splitLayout && activeSession && (
                             <SessionHistoryButtons history={sessionHistory} onShow={id => showSessions([id])} />

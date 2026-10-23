@@ -106,6 +106,7 @@ export interface AppConfig {
     loopProjects?: LoopProject[]   // Loop Dashboard: projects promoted from workspaces
     loopSessions?: LoopSession[]   // Loop Dashboard: persisted loop sessions
     sessionRelations?: SessionRelation[]   // Session header "Related sessions" (see SessionRelation)
+    inbox?: InboxRequest[]   // Requests sessions sent for the user's hands (see InboxRequest)
 }
 
 export interface UserSettings {
@@ -901,4 +902,39 @@ export interface SessionPeek {
     lastLine: string
     /** `lastLine` is the agent's recap — a sentence, not a raw row such as a prompt with a path. */
     lastLineIsRecap: boolean
+}
+
+/**
+ * What a session asks the user for, through the Control API's inbox.
+ * - login: sign in somewhere (a browser login the agent cannot do itself)
+ * - review: look at something the agent made (a page, a diff, a report)
+ * - question: answer a question the agent is waiting on
+ * - other: anything else that needs the user
+ */
+export type InboxKind = 'login' | 'review' | 'question' | 'other'
+
+export const INBOX_KINDS: readonly InboxKind[] = ['login', 'review', 'question', 'other']
+
+/**
+ * One request in the inbox: a session that needs the user's hands. Kept by main
+ * (InboxStore) in electron-store, so unread requests survive a restart. Deleted
+ * when the session closes — a request with no session to go to is only noise.
+ */
+export interface InboxRequest {
+    id: string
+    /** The session that asked. Opening the request shows this session. */
+    sessionId: string
+    kind: InboxKind
+    /** One line, at most 200 characters, newlines folded into spaces. */
+    text: string
+    /** Page to open (login page, review page). Checked against the terminal link rules when clicked. */
+    url?: string
+    /** Epoch ms of the last time it was sent (a repeat of an unread request moves this forward). */
+    at: number
+    /** Epoch ms it was first sent. */
+    createdAt: number
+    /** Epoch ms it was read, or absent while unread. */
+    readAt?: number
+    /** X-Client-Name of the sender. */
+    client: string
 }

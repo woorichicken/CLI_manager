@@ -440,7 +440,22 @@ export class ControlApiServer {
             route('DELETE', '/v1/sessions/:id', ({ params }) => {
                 service.closeSession(params.id)
                 return { ok: true }
-            })
+            }),
+            route('POST', '/v1/inbox', ({ body, client, caller }) =>
+                service.notifyInbox({
+                    kind: body.kind,
+                    text: body.text,
+                    url: body.url,
+                    sessionId: optionalString(body, 'sessionId'),
+                    client,
+                    caller
+                })
+            ),
+            route('GET', '/v1/inbox', ({ query }) => {
+                const unread = query.get('unread')
+                return service.listInbox({ unreadOnly: unread === '1' || unread === 'true' })
+            }),
+            route('POST', '/v1/inbox/:id/read', ({ params }) => service.readInbox(params.id))
         ]
     }
 }

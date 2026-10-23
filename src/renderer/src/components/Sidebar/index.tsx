@@ -109,6 +109,8 @@ interface SidebarProps {
     splitLayout?: SplitTerminalLayout | null
     onDragStartSession?: (sessionId: string) => void
     onDragEndSession?: () => void
+    /** The inbox bell (App builds it: it needs the session navigation and link settings). Drawn first in the header. */
+    inboxSlot?: React.ReactNode
 }
 
 /**
@@ -158,7 +160,8 @@ export function Sidebar({
     showPlayground = true,
     splitLayout,
     onDragStartSession,
-    onDragEndSession
+    onDragEndSession,
+    inboxSlot
 }: SidebarProps) {
     // 커스텀 훅으로 상태 관리
     const customTemplates = useTemplates(settingsOpen)
@@ -906,6 +909,7 @@ export function Sidebar({
                     {/* The label gives way first, so a narrow sidebar never clips the buttons */}
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">{isAllSessionsView ? 'All sessions' : 'Workspaces'}</span>
                     <div className="flex items-center gap-0.5 no-drag shrink-0">
+                        {inboxSlot}
                         <button
                             data-testid="sidebar-search-toggle"
                             onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
