@@ -5,6 +5,8 @@ export type BreadcrumbKind = 'folder' | 'project' | 'session'
 export interface BreadcrumbSegment {
     kind: BreadcrumbKind
     label: string
+    /** The Home workspace: its name is `user@host`, so the header shows a house and `~` instead. */
+    isHome?: boolean
 }
 
 /**
@@ -31,7 +33,7 @@ export function buildSessionBreadcrumb(
         const folder = folderId ? folders.find(f => f.id === folderId) : undefined
         if (folder) segments.push({ kind: 'folder', label: folder.name })
     }
-    if (workspace) segments.push({ kind: 'project', label: workspace.name })
+    if (workspace) segments.push({ kind: 'project', label: workspace.name, ...(workspace.isHome ? { isHome: true } : {}) })
     if (session) segments.push({ kind: 'session', label: session.name })
 
     return segments
