@@ -165,7 +165,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
             >
                 <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
                     <Waypoints size={14} className="text-gray-400" />
-                    <span className="text-sm text-white">Related sessions</span>
+                    <span className="text-sm text-white whitespace-nowrap">Related sessions</span>
                     <span className="text-xs text-gray-500 truncate">— {owner.name}</span>
                     <button
                         onClick={() => setCreating(open => !open)}
@@ -175,7 +175,8 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                         data-related-new
                     >
                         <Plus size={12} />
-                        New session
+                        {/* A narrow window keeps the icon: the title and the session name need the room. */}
+                        <span className="hidden min-[480px]:inline">New session</span>
                     </button>
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors" title="Close (Esc)">
                         <X size={14} className="text-gray-400" />
