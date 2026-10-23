@@ -57,6 +57,12 @@ function App() {
     const [sessionOrders, setSessionOrders] = useState<Map<string, string[]>>(new Map())
     const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null)
     const [activeSession, setActiveSession] = useState<TerminalSession | null>(null)
+    // The session on screen right now, for handlers that await (a confirmation dialog) and must
+    // not judge by the session that was active when they started.
+    const activeSessionIdRef = useRef<string | null>(null)
+    useEffect(() => {
+        activeSessionIdRef.current = activeSession?.id ?? null
+    }, [activeSession])
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [gitPanelOpen, setGitPanelOpen] = useState(false)
     const [diffModalOpen, setDiffModalOpen] = useState(false)
@@ -1250,8 +1256,10 @@ function App() {
         // Removing the visible tab shows its neighbour instead of an empty screen.
         // Functional update: the confirmation dialog awaits, and the user may have
         // switched tabs meanwhile — then the current selection stays.
+        // Read after the awaits above: the user may have switched tabs while the dialog was up.
+        const wasOnScreen = activeSessionIdRef.current === sessionId
         setActiveSession(prev => (prev?.id === sessionId ? neighbor : prev))
-        if (neighbor && activeSession?.id === sessionId) {
+        if (neighbor && wasOnScreen) {
             // The recent session can live in another workspace; the header and file search follow it.
             if (neighborWorkspace && neighborWorkspace.id !== workspaceId) setActiveWorkspace(neighborWorkspace)
             // Landing on a tab counts as seeing it, as selecting it does in handleSelect.
