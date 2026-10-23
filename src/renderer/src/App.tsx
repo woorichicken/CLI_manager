@@ -1469,12 +1469,12 @@ function App() {
                         {/* Read the live session, not activeSession: that object is not refreshed when the AI flag changes */}
                         {!splitLayout && activeAiControl && activeSession && (
                             <span
-                                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-300"
-                                title={`Driven by AI (${activeAiControl.client}). Right-click the session → Disconnect AI to take it back.`}
+                                className="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
+                                title={`AI connected — driven by ${activeAiControl.client}. Right-click the session → Disconnect AI to take it back.`}
+                                aria-label="AI connected"
                                 data-ai-badge={activeSession.id}
                             >
-                                <Bot size={11} />
-                                AI connected
+                                <Bot size={13} />
                             </span>
                         )}
                     </div>
