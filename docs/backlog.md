@@ -414,8 +414,9 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 ### 링크 허용 규칙이 두 곳에 있다 — 터미널 `ALLOWED_LINK_PROTOCOLS` 와 메모의 http(s) 정규식 (모듈화 사람 컨펌)
 - Discovered: 2026-10-23 day-1023, 메모 링크(PR #45).
 - Evidence: `src/renderer/src/components/TerminalView.tsx:66` 의 `ALLOWED_LINK_PROTOCOLS` 는 컴포넌트 안에 있어 메모가 못 쓰고, `SessionMemo.tsx` 는 http(s)만 따로 고른다(터미널 허용의 부분집합이라 지금은 안전).
-- Why deferred: 공용으로 빼면 새 공용 모듈이다 — 사람 컨펌 뒤에 한다.
-- Trigger: 링크를 여는 곳이 세 번째로 생기거나, 허용 규칙을 바꿀 때.
+  - 2026-10-24 night-1023: 터미널 판정은 PR #50 이 `src/renderer/src/utils/terminalLinks.ts`(기본 허용 + Settings 의 앱 스킴 · 예약 스킴)로 옮겼다. **트리거가 걸렸다** — 인박스(PR #54)가 링크를 여는 세 번째 곳이다. 렌더러는 `terminalLinks.ts` 를 그대로 쓰지만, API(main) 쪽 예약 스킴 5개(`javascript`·`data`·`vbscript`·`blob`·`about`)는 그 파일의 `RESERVED_SCHEMES` 와 같은 내용을 따로 들고 있다. 메모는 여전히 http(s) 정규식.
+- Why deferred: 공용으로 빼면 새 공용 모듈이다 — 사람 컨펌 뒤에 한다(night-1023 팀장 보고 「정할 것」에 올림).
+- Trigger: 링크를 여는 곳이 세 번째로 생기거나, 허용 규칙을 바꿀 때. — **걸림(인박스)**. 지금은 사람 컨펌 대기.
 - Fix direction: `utils/` 에 허용 판정 함수 하나를 두고 터미널·메모가 같이 쓴다.
 - Owner: Human Review
 
@@ -433,6 +434,22 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 지금 형식으로는 맞는다.
 - Trigger: Claude Code 업데이트 뒤 Related 줄이 비거나 recap 이 안 보인다는 제보가 올 때.
 - Fix direction: 실제 Claude 녹화(`scripts/mock-cli/record-claude.cjs`)에서 recap 줄을 뽑아 T34 고정 입력으로 쓴다.
+- Owner: 없음
+
+### `src/renderer/src/App.tsx` `handleRemoveSession` — 확인 창이 떠 있는 동안 탭을 바꾸면 착지 판정이 옛 활성 세션을 본다
+- Discovered: 2026-10-24 night-1023, PR #52(All sessions 에서 닫으면 그 전에 본 세션으로) 독립 리뷰.
+- Evidence: `setActiveSession` 은 함수형 갱신이라 그 사이 바뀐 선택을 존중하지만, 바로 아래 `if (neighbor && activeSession?.id === sessionId)` 는 닫기 시작 때의 `activeSession`(클로저)을 읽는다. PR #52 가 그 블록에 `setActiveWorkspace` 를 더해, 실행 중 프로세스 확인 창이 떠 있는 동안 다른 탭으로 옮긴 경우 헤더·파일 검색의 작업 영역이 닫힌 세션 쪽 이웃으로 바뀔 수 있다(예전엔 상태 점만 바뀌었다).
+- Why deferred: 확인 창이 떠 있는 동안 탭을 옮겨야 생긴다 — 드물고, 원래 있던 패턴이다.
+- Trigger: 세션을 닫은 뒤 헤더 경로가 엉뚱한 작업 영역을 가리킨다는 제보가 올 때, 또는 `handleRemoveSession` 을 다시 만질 때.
+- Fix direction: 활성 세션 id 를 ref 로 들고 확인 창 뒤에 그 ref 로 판정한다(`setActiveSession`·`setActiveWorkspace`·상태 점 셋 다).
+- Owner: 없음
+
+### `tests/terminal/zz-focus-check.spec.ts` — 「SCRATCH」 표시의 일회용 시험이 main 에 들어가 있다
+- Discovered: 2026-10-24 night-1023, PR #51 워크트리를 보다가(`git ls-files tests/terminal | grep zz`).
+- Evidence: 파일 첫 줄이 `// SCRATCH — API 가 화면을 바꿀 때 키보드 포커스까지 가져가나`. 커밋 a678f11(「세션을 보여줄 때 에이전트가 사용자의 커서를 가져가지 않는다」)에 같이 들어갔다. 이름이 `t<번호>` 규칙 밖이라 CLAUDE.md 시험 목록에도 없고, 전체 스위트(`pnpm test:term`)에서는 돈다.
+- Why deferred: 지금 통과하고 해는 없다 — 지울지 정식 시험(T 번호)으로 올릴지는 그 동작(포커스 안 가져감)을 지키는 다른 시험이 있는지 보고 정한다.
+- Trigger: 다음에 Control API 포커스 동작을 만지거나 시험 목록을 정리할 때.
+- Fix direction: 같은 판정이 T15/T19 에 있으면 지우고, 없으면 `t<다음 번호>-control-api-focus.spec.ts` 로 이름을 바꿔 목록에 한 줄.
 - Owner: 없음
 
 ## Blocked
