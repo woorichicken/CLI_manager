@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Search, X } from 'lucide-react'
 import { Workspace, WorkspaceFolder } from '../../../../shared/types'
+import type { SessionEntry } from '../../utils/sessionNavigation'
 
 // Ranks keep the result the user most likely meant on top, so Enter opens it.
 const RANK_NAME_PREFIX = 0
@@ -44,6 +45,26 @@ export function findMatchingProjects(
         .map(r => r.workspace)
 }
 
+/**
+ * Sessions whose own name matches, in the order the caller gave (sidebar order).
+ * A name that starts with the query comes before one that merely contains it,
+ * so Enter lands on the closest name.
+ */
+export function findMatchingSessions(entries: SessionEntry[], query: string): SessionEntry[] {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+
+    return entries
+        .map((entry, index) => {
+            const name = entry.session.name.toLowerCase()
+            const rank = name.startsWith(q) ? RANK_NAME_PREFIX : name.includes(q) ? RANK_NAME_CONTAINS : null
+            return { entry, index, rank }
+        })
+        .filter((r): r is { entry: SessionEntry; index: number; rank: number } => r.rank !== null)
+        .sort((a, b) => a.rank - b.rank || a.index - b.index)
+        .map(r => r.entry)
+}
+
 interface SidebarSearchInputProps {
     query: string
     onQueryChange: (query: string) => void
@@ -70,7 +91,7 @@ export function SidebarSearchInput({ query, onQueryChange, onSubmit, onClose }: 
                     ref={inputRef}
                     data-testid="sidebar-search-input"
                     className="flex-1 min-w-0 bg-transparent text-xs text-gray-300 outline-none placeholder:text-gray-500"
-                    placeholder="Search projects"
+                    placeholder="Search projects and sessions"
                     value={query}
                     onChange={e => onQueryChange(e.target.value)}
                     onKeyDown={e => {
@@ -103,22 +124,29 @@ export function SidebarSearchInput({ query, onQueryChange, onSubmit, onClose }: 
 
 interface SidebarSearchStatusProps {
     query: string
-    resultCount: number
+    projectCount: number
+    sessionCount: number
 }
 
-/** "2 projects" above the results, or the empty state. */
-export function SidebarSearchStatus({ query, resultCount }: SidebarSearchStatusProps) {
-    if (resultCount === 0) {
+/** The empty state, or the "Projects" heading above the project results. */
+export function SidebarSearchStatus({ query, projectCount, sessionCount }: SidebarSearchStatusProps) {
+    if (projectCount === 0 && sessionCount === 0) {
         return (
             <div data-testid="sidebar-search-empty" className="px-2 py-3 text-xs text-gray-500">
-                No projects match “{query.trim()}”
+                No projects or sessions match “{query.trim()}”
             </div>
         )
     }
+    if (projectCount === 0) return null
+    return <SidebarGroupHeading label={projectCount === 1 ? 'project' : 'projects'} count={projectCount} />
+}
+
+/** "2 projects" / "3 sessions": the heading of one result group. */
+export function SidebarGroupHeading({ label, count, testId }: { label: string; count: number; testId?: string }) {
     return (
-        <div className="px-2 pt-1 pb-0.5">
+        <div className="px-2 pt-1 pb-0.5" data-testid={testId}>
             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                {resultCount} {resultCount === 1 ? 'project' : 'projects'}
+                {count} {label}
             </span>
         </div>
     )

@@ -76,6 +76,10 @@ interface SessionItemProps {
     isInSplit?: boolean
     onDragStartSession?: (sessionId: string) => void
     onDragEndSession?: () => void
+    /** Dimmed text after the name — the "All sessions" list shows which workspace a row belongs to. */
+    workspaceLabel?: string
+    /** Reordering means nothing in a flat list that mixes workspaces. */
+    hideDragHandle?: boolean
 }
 
 /**
@@ -101,7 +105,9 @@ export function SessionItem({
     onRenameCancel,
     isInSplit,
     onDragStartSession,
-    onDragEndSession
+    onDragEndSession,
+    workspaceLabel,
+    hideDragHandle = false
 }: SessionItemProps) {
     const [tempName, setTempName] = useState(session.name)
     const [previewLines, setPreviewLines] = useState<string[] | null>(null)
@@ -266,7 +272,7 @@ export function SessionItem({
                 )}
 
                 {/* 드래그 핸들 - framer-motion drag only for reorder within workspace */}
-                <div
+                {!hideDragHandle && <div
                     draggable={false}
                     onDragStart={(e) => {
                         // Prevent HTML5 drag on handle - let framer-motion handle it
@@ -286,7 +292,7 @@ export function SessionItem({
                     title="Drag to reorder"
                 >
                     <GripVertical size={12} className="text-gray-500" />
-                </div>
+                </div>}
 
                 <div
                     onClick={() => !isRenaming && onSelect(workspace, session)}
@@ -322,7 +328,16 @@ export function SessionItem({
                             onClick={(e) => e.stopPropagation()}
                         />
                     ) : (
-                        <span className="truncate flex-1" style={{ fontSize: `${fontSize}px` }}>{session.name}</span>
+                        <span className={workspaceLabel ? 'truncate min-w-0' : 'truncate flex-1'} style={{ fontSize: `${fontSize}px` }}>{session.name}</span>
+                    )}
+                    {workspaceLabel && !isRenaming && (
+                        <span
+                            data-testid="session-workspace-label"
+                            className="flex-1 min-w-0 truncate text-[10px] text-gray-500"
+                            title={workspaceLabel}
+                        >
+                            {workspaceLabel}
+                        </span>
                     )}
                     {getSessionStatusBadge()}
                 </div>
