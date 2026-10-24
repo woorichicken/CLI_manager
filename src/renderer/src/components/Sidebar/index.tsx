@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, PanelLeftClose, GripVertical, FolderPlus, Folder, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Search, List, FolderTree } from 'lucide-react'
+import { Plus, PanelLeftClose, GripVertical, Folder, ChevronDown, ChevronRight, Search, List, FolderTree } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
 import { Workspace, WorkspaceFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import { useWorkspaceBranches } from '../../hooks/useWorkspaceBranches'
@@ -8,6 +8,7 @@ import { useSidebarCollapseAll } from '../../hooks/useSidebarCollapseAll'
 import { WorkspaceItem } from './WorkspaceItem'
 import { WorkspaceContextMenu, WorktreeContextMenu, BranchMenu, SessionContextMenu, FolderContextMenu } from './ContextMenus'
 import { BranchPromptModal } from './Modals'
+import { SidebarMoreMenu } from './SidebarMoreMenu'
 import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatchingProjects, findMatchingSessions } from './SidebarSearch'
 import { SidebarSessionList } from './SidebarSessionList'
 import { sessionsInSidebarOrder, orderByRecent } from '../../utils/sessionNavigation'
@@ -109,6 +110,8 @@ interface SidebarProps {
     splitLayout?: SplitTerminalLayout | null
     onDragStartSession?: (sessionId: string) => void
     onDragEndSession?: () => void
+    /** The inbox bell (App builds it: it needs the session navigation and link settings). Drawn first in the header. */
+    inboxSlot?: React.ReactNode
 }
 
 /**
@@ -158,7 +161,8 @@ export function Sidebar({
     showPlayground = true,
     splitLayout,
     onDragStartSession,
-    onDragEndSession
+    onDragEndSession,
+    inboxSlot
 }: SidebarProps) {
     // 커스텀 훅으로 상태 관리
     const customTemplates = useTemplates(settingsOpen)
@@ -906,6 +910,7 @@ export function Sidebar({
                     {/* The label gives way first, so a narrow sidebar never clips the buttons */}
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">{isAllSessionsView ? 'All sessions' : 'Workspaces'}</span>
                     <div className="flex items-center gap-0.5 no-drag shrink-0">
+                        {inboxSlot}
                         <button
                             data-testid="sidebar-search-toggle"
                             onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
@@ -925,24 +930,11 @@ export function Sidebar({
                                 ? <FolderTree size={14} className="text-blue-400" />
                                 : <List size={14} className="text-gray-400" />}
                         </button>
-                        <button
-                            data-testid="sidebar-collapse-all"
-                            data-state={anyExpanded ? 'expanded' : 'collapsed'}
-                            onClick={toggleCollapseAll}
-                            className="p-1 hover:bg-white/10 rounded transition-colors"
-                            title={anyExpanded ? 'Collapse All' : 'Expand All'}
-                        >
-                            {anyExpanded
-                                ? <ChevronsDownUp size={14} className="text-gray-400" />
-                                : <ChevronsUpDown size={14} className="text-gray-400" />}
-                        </button>
-                        <button
-                            onClick={() => setShowFolderPrompt(true)}
-                            className="p-1 hover:bg-white/10 rounded transition-colors"
-                            title="New Folder"
-                        >
-                            <FolderPlus size={14} className="text-gray-400" />
-                        </button>
+                        <SidebarMoreMenu
+                            anyExpanded={anyExpanded}
+                            onToggleCollapseAll={toggleCollapseAll}
+                            onNewFolder={() => setShowFolderPrompt(true)}
+                        />
                         <button
                             onClick={onAddWorkspace}
                             className="p-1 hover:bg-white/10 rounded transition-colors"

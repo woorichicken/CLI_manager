@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionPeek, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -302,6 +302,15 @@ const api = {
     removeSessionRelation: (a: string, b: string): Promise<boolean> => ipcRenderer.invoke('remove-session-relation', a, b),
     getRecentSessions: (): Promise<string[]> => ipcRenderer.invoke('get-recent-sessions'),
     pushRecentSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('push-recent-session', sessionId),
+    getInbox: (): Promise<InboxRequest[]> => ipcRenderer.invoke('get-inbox'),
+    onInbox: (callback: (requests: InboxRequest[]) => void) => {
+        const listener = (_e: unknown, requests: InboxRequest[]) => callback(requests)
+        ipcRenderer.on('inbox', listener)
+        return () => ipcRenderer.removeListener('inbox', listener)
+    },
+    markInboxRead: (id: string): Promise<void> => ipcRenderer.invoke('mark-inbox-read', id),
+    markInboxSessionsRead: (sessionIds: string[]): Promise<void> => ipcRenderer.invoke('mark-inbox-sessions-read', sessionIds),
+    markInboxAllRead: (): Promise<void> => ipcRenderer.invoke('mark-inbox-all-read'),
     peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds)
 }
 
