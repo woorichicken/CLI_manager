@@ -19,6 +19,15 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 사이드바 「Delete session」 버튼 클릭 — 긴 묶음 실행에서 30초 타임아웃으로 멈춘다(T26 · T40)
+- Discovered: 2026-10-25 fb-1025, PR #58·#59 를 main 과 합친 트리에서 관련 스펙 13개를 한 번에(`--workers=1`) 돌리다가.
+- Evidence: `t26-session-navigation.spec.ts:129` 이 `deleteFromSidebar` 의 `getByTitle('Delete session').click()` 에서 「visible, enabled and stable」을 30초 기다리다 실패(버튼은 `opacity-0 group-hover:opacity-100`). 같은 트리에서 그 시험만 3/3, T26 파일 전체 11/11 통과. 47건 중 1건.
+- Evidence: 2026-10-25 1.18.0 릴리스 빌드 1회차 사전 점검 — `t40-session-tree.spec.ts:204` 「T40 recent tab follows what you looked at and survives a restart」가 전체 실행(17.1m) 중 같은 버튼 `rowInSidebar.getByTitle('Delete session').click()` 에서 30초 타임아웃(이번엔 hover 뒤 「performing click action」에서 멈춤) + worker teardown 240초 초과로 1회 실패. 단독 `--repeat-each=5` 20/20, 같은 커밋 `--check` 268 통과(로그 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1792931888745.log`). teardown 까지 막힌 것은 클릭 뒤 앱이 응답하지 않았다는 뜻일 수 있다.
+- Why deferred: 두 번 다 그 시험이 바꾼 코드와 무관한 사이드바 삭제 버튼에서 났고, 단독으로는 재현되지 않는다. 간헐이라 원인 실측이 먼저다.
+- Trigger: 사전 점검·묶음 실행에서 같은 줄이 다시 실패할 때.
+- Fix direction: 먼저 실패 때 화면과 main 쪽 상태를 남긴다(삭제가 pty 종료·히스토리 파일 삭제·관계 정리를 하는 동안 렌더러/main 이 막히는지). 그다음 공용 도우미 하나로 「행 hover → 버튼 보임 대기 → 클릭 → 행 사라짐 대기」를 묶어 T26·T40 이 같이 쓰게 한다.
+- Owner: 없음
+
 ### T26 — 「macOS 에서 Ctrl 키는 터미널로」 시험이 셸 시작 스크립트와 경주한다
 - Discovered: 2026-10-21 v1.15.0 릴리즈 사전 점검. 새 빌드에서 `t26-session-navigation.spec.ts:270` 이 3번 중 1번 실패, 나머지 두 번은 11/11 통과.
 - Evidence: 실패 화면에 `stty -icanon …; echo T26READY; cat -v` 가 두 번 찍히고 그 사이에 `load: 5.31 cmd: mise … running` — 개발자 셸 프로필(mise 훅)이 아직 도는 중에 명령·키가 들어가 `^W^R^T` 가 셸에 먹혔다(`^T` 는 SIGINFO 로 부하 줄을 찍음).
@@ -42,6 +51,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   이번 변경 전에도 있던 동작이다 — 그때는 Claude 자신의 이전 출력이 같은 식으로 사라졌다. 미러도 같은 리사이즈를 거치므로 두 사본은 같이 잃는다.
 - Why deferred: 히스토리 복원과 별개인 xterm·Claude 상호작용이고, 실제 복원 흐름(리사이즈가 리페인트보다 먼저 끝남)에서는 재현되지 않았다.
 - Trigger: 창 크기를 키운 뒤 대화 몇 줄이 사라졌다는 제보가 나올 때.
+- Trigger hit: 2026-10-25 fb-1025 — 제보 f2a636b9(오랜만에 돌아오면 마지막 표 앞이 잘림, 1.17.0). 제보에 실린 미러 줄에도 같은 줄이 빠져 있고(124→125행) 스크롤백 삭제(CSI 3 J) 사건은 0 — 렌더러만의 문제가 아니다. 이 항목과 idle 압축 때 다시 그리기 둘 중 무엇인지는 크기 변경 사건이 없어 못 갈랐다 → PR #59 가 제보에 `resized` 사건을 싣는다. 고칠 방향은 아래 「높이만 바뀌는 resize」 공용 모듈 컨펌과 같이 정한다.
 - Fix direction: 행이 늘 때 스크롤백을 끌어내리지 않게 xterm 리사이즈 전에 빈 줄로 커서를 올려 두는 식의 보정 — 먼저 실제 Claude 로 재현을 잰다.
 - Owner: 없음
 
