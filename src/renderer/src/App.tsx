@@ -26,7 +26,7 @@ import { BusyOverlay } from './components/BusyOverlay'
 import { FeedbackGate } from './components/Feedback/FeedbackGate'
 import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { neighborSession, sidebarWorkspaceOrder } from './utils/sessionNavigation'
+import { mostRecentOtherSession, neighborSession, sidebarWorkspaceOrder, type SessionLanding } from './utils/sessionNavigation'
 import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
@@ -57,6 +57,12 @@ function App() {
     const [sessionOrders, setSessionOrders] = useState<Map<string, string[]>>(new Map())
     const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null)
     const [activeSession, setActiveSession] = useState<TerminalSession | null>(null)
+    // The session on screen right now, for handlers that await (a confirmation dialog) and must
+    // not judge by the session that was active when they started.
+    const activeSessionIdRef = useRef<string | null>(null)
+    useEffect(() => {
+        activeSessionIdRef.current = activeSession?.id ?? null
+    }, [activeSession])
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [gitPanelOpen, setGitPanelOpen] = useState(false)
     const [diffModalOpen, setDiffModalOpen] = useState(false)
@@ -979,6 +985,14 @@ function App() {
         ))
     }
 
+    const handleToggleSessionPin = async (workspaceId: string, sessionId: string) => {
+        const pinned = await window.api.togglePinSession(workspaceId, sessionId)
+        setWorkspaces(prev => prev.map(w => w.id !== workspaceId ? w : {
+            ...w,
+            sessions: w.sessions.map(s => s.id === sessionId ? { ...s, isPinned: pinned || undefined } : s)
+        }))
+    }
+
     // Folder handlers
     const handleCreateFolder = async (name: string) => {
         const newFolder = await window.api.createFolder(name)
@@ -1170,7 +1184,13 @@ function App() {
         }
     }
 
-    const handleRemoveSession = async (workspaceId: string, sessionId: string, skipConfirm?: boolean) => {
+    /**
+     * `landing` says where the user goes when the closed session was on screen:
+     * the tab above it in its workspace (sidebar tree, Cmd+W), or the session
+     * looked at most recently before it (the sidebar's "All sessions" list,
+     * which is ordered that way).
+     */
+    const handleRemoveSession = async (workspaceId: string, sessionId: string, skipConfirm?: boolean, landing: SessionLanding = 'neighbor') => {
         // Check if there are running processes (skip if already confirmed)
         if (!skipConfirm) {
             const hasRunning = await window.api.hasRunningProcess(sessionId)
@@ -1192,7 +1212,17 @@ function App() {
         // Pick the landing tab before the session leaves the list. Sidebar order,
         // because that is where the user looks for "the one above".
         const owner = sortedWorkspaces.find(w => w.id === workspaceId)
-        const neighbor = owner ? neighborSession(owner.sessions, sessionId) : null
+        const neighborInWorkspace = owner ? neighborSession(owner.sessions, sessionId) : null
+        const recentTarget = landing === 'recent'
+            ? mostRecentOtherSession(
+                sortedWorkspaces.flatMap(workspace => workspace.sessions.map(session => ({ workspace, session }))),
+                await window.api.getRecentSessions().catch(() => [] as string[]),
+                sessionId
+            )
+            : null
+        // Nothing else was looked at yet: the tab above is still better than an empty screen.
+        const neighbor = recentTarget?.session ?? neighborInWorkspace
+        const neighborWorkspace = recentTarget?.workspace ?? owner
 
         // A split pane showing this session would otherwise stay as an empty slot.
         if (splitLayout?.sessionIds.includes(sessionId)) {
@@ -1226,8 +1256,12 @@ function App() {
         // Removing the visible tab shows its neighbour instead of an empty screen.
         // Functional update: the confirmation dialog awaits, and the user may have
         // switched tabs meanwhile — then the current selection stays.
+        // Read after the awaits above: the user may have switched tabs while the dialog was up.
+        const wasOnScreen = activeSessionIdRef.current === sessionId
         setActiveSession(prev => (prev?.id === sessionId ? neighbor : prev))
-        if (neighbor && activeSession?.id === sessionId) {
+        if (neighbor && wasOnScreen) {
+            // The recent session can live in another workspace; the header and file search follow it.
+            if (neighborWorkspace && neighborWorkspace.id !== workspaceId) setActiveWorkspace(neighborWorkspace)
             // Landing on a tab counts as seeing it, as selecting it does in handleSelect.
             setSessionStatuses(prev => {
                 const current = prev.get(neighbor.id)
@@ -1419,6 +1453,7 @@ function App() {
                     onReorderSessions={handleReorderSessions}
                     onReorderWorkspaces={handleReorderWorkspaces}
                     onTogglePin={handleTogglePin}
+                    onToggleSessionPin={handleToggleSessionPin}
                     folders={folders}
                     onCreateFolder={handleCreateFolder}
                     onRenameFolder={handleRenameFolder}

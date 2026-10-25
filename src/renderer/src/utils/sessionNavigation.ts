@@ -45,6 +45,9 @@ export function neighborSession(sessions: TerminalSession[], sessionId: string):
     return sessions[index - 1] ?? sessions[index + 1] ?? null
 }
 
+/** Where closing the session on screen takes the user — see App's handleRemoveSession. */
+export type SessionLanding = 'neighbor' | 'recent'
+
 /** A session together with the workspace row it lives under. */
 export interface SessionEntry {
     workspace: Workspace
@@ -79,4 +82,29 @@ export function orderByRecent(entries: SessionEntry[], recentIds: string[]): Ses
         }
     }
     return [...recent, ...entries.filter(entry => !seen.has(entry.session.id))]
+}
+
+/**
+ * The "All sessions" list: pinned sessions first, in sidebar order so they stay
+ * where the user put them, then everything else by `orderByRecent`.
+ */
+export function orderForAllSessions(entries: SessionEntry[], recentIds: string[]): SessionEntry[] {
+    const pinned = entries.filter(entry => entry.session.isPinned)
+    const rest = entries.filter(entry => !entry.session.isPinned)
+    return [...pinned, ...orderByRecent(rest, recentIds)]
+}
+
+/**
+ * Where to land after closing `closingId` from the "All sessions" list: the
+ * session looked at most recently before it that still exists. Null when the
+ * user has looked at no other session yet.
+ */
+export function mostRecentOtherSession(entries: SessionEntry[], recentIds: string[], closingId: string): SessionEntry | null {
+    const byId = new Map(entries.map(entry => [entry.session.id, entry]))
+    for (const id of recentIds) {
+        if (id === closingId) continue
+        const entry = byId.get(id)
+        if (entry) return entry
+    }
+    return null
 }

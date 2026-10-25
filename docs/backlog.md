@@ -410,14 +410,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 실제 Claude 녹화(`scripts/mock-cli/record-claude.cjs`)에서 recap 줄을 뽑아 T34 고정 입력으로 쓴다.
 - Owner: 없음
 
-### `src/renderer/src/App.tsx` `handleRemoveSession` — 확인 창이 떠 있는 동안 탭을 바꾸면 착지 판정이 옛 활성 세션을 본다
-- Discovered: 2026-10-24 night-1023, PR #52(All sessions 에서 닫으면 그 전에 본 세션으로) 독립 리뷰.
-- Evidence: `setActiveSession` 은 함수형 갱신이라 그 사이 바뀐 선택을 존중하지만, 바로 아래 `if (neighbor && activeSession?.id === sessionId)` 는 닫기 시작 때의 `activeSession`(클로저)을 읽는다. PR #52 가 그 블록에 `setActiveWorkspace` 를 더해, 실행 중 프로세스 확인 창이 떠 있는 동안 다른 탭으로 옮긴 경우 헤더·파일 검색의 작업 영역이 닫힌 세션 쪽 이웃으로 바뀔 수 있다(예전엔 상태 점만 바뀌었다).
-- Why deferred: 확인 창이 떠 있는 동안 탭을 옮겨야 생긴다 — 드물고, 원래 있던 패턴이다.
-- Trigger: 세션을 닫은 뒤 헤더 경로가 엉뚱한 작업 영역을 가리킨다는 제보가 올 때, 또는 `handleRemoveSession` 을 다시 만질 때.
-- Fix direction: 활성 세션 id 를 ref 로 들고 확인 창 뒤에 그 ref 로 판정한다(`setActiveSession`·`setActiveWorkspace`·상태 점 셋 다).
-- Owner: 없음
-
 ### `scripts/post-release.cjs` — 링크 커밋을 웹사이트 **주 체크아웃**(`~/Downloads/solhun-web-page`)에 만든다
 - Discovered: 2026-10-01, v1.11.0 배포 중(뒤처짐 부분은 2026-10-24 night-1023 preflight 검사로 닫음 — `checkWebsiteUpToDate`).
 - Why deferred: 지금은 preflight 가 「깨끗함 · main · origin 과 같음」을 먼저 확인하므로 커밋은 안전하게 들어간다.

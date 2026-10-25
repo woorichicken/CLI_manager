@@ -141,6 +141,61 @@ test.describe('T45 sidebar all sessions', () => {
         await expect.poll(() => listOrder(page)).toEqual(['s-w1', 's-b1', 's-a1', 's-a2'])
     })
 
+    test('Pin to Top keeps a session above the recently viewed ones and is saved', async () => {
+        ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
+        const { page } = ctx
+        await activateSession(page, 'T45A1')
+        await activateSession(page, 'T45B1')
+        await activateSession(page, 'T45W1')
+        await page.getByTestId('sidebar-view-toggle').click()
+        const list = page.getByTestId('sidebar-all-sessions')
+        await expect.poll(() => listOrder(page)).toEqual(['s-w1', 's-b1', 's-a1', 's-a2'])
+
+        // Never viewed, so last — pinning puts it first.
+        await list.locator('[data-session-item="s-a2"]').click({ button: 'right' })
+        await page.getByRole('button', { name: 'Pin to Top', exact: true }).click()
+        await page.mouse.move(900, 500)
+        await expect.poll(() => listOrder(page)).toEqual(['s-a2', 's-w1', 's-b1', 's-a1'])
+        await expect(list.locator('[data-session-item="s-a2"] [data-session-pinned]')).toHaveCount(1)
+        const pinnedInStore = (): string[] => {
+            const config = JSON.parse(fs.readFileSync(path.join(ctx.userDataDir, 'config.json'), 'utf8'))
+            return (config.workspaces as Array<{ sessions: Array<{ id: string; isPinned?: boolean }> }>)
+                .flatMap(w => w.sessions).filter(s => s.isPinned).map(s => s.id)
+        }
+        await expect.poll(pinnedInStore).toEqual(['s-a2'])
+
+        // Viewing others does not move the pinned row.
+        await list.locator('[data-session-item="s-a1"]').click()
+        await page.mouse.move(900, 500)
+        await expect.poll(() => listOrder(page)).toEqual(['s-a2', 's-a1', 's-w1', 's-b1'])
+
+        await list.locator('[data-session-item="s-a2"]').click({ button: 'right' })
+        await page.getByRole('button', { name: 'Unpin', exact: true }).click()
+        await page.mouse.move(900, 500)
+        await expect.poll(() => listOrder(page)).toEqual(['s-a1', 's-w1', 's-b1', 's-a2'])
+        await expect.poll(pinnedInStore).toEqual([])
+    })
+
+    test('closing the session on screen from the list goes to the one viewed before it', async () => {
+        ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
+        const { page } = ctx
+        // A2's workspace neighbour is A1; the session viewed before A2 is B1, in another workspace.
+        await activateSession(page, 'T45A1')
+        await activateSession(page, 'T45B1')
+        await activateSession(page, 'T45A2')
+        await page.getByTestId('sidebar-view-toggle').click()
+        const list = page.getByTestId('sidebar-all-sessions')
+        await expect.poll(() => listOrder(page).then(ids => ids[0])).toBe('s-a2')
+
+        const row = list.locator('[data-session-item="s-a2"]')
+        await row.hover()
+        await row.getByTitle('Delete session').click()
+        await expect(list.locator('[data-session-item="s-a2"]')).toHaveCount(0)
+        await expect.poll(() => visibleTerminal(page)).toBe('s-b1')
+        // The header follows it into the other workspace.
+        await expect(page.locator('[data-session-breadcrumb] [data-crumb="project"]')).toHaveText('T45BETA')
+    })
+
     test('the choice survives an app restart', async () => {
         ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(false))
         await ctx.page.getByTestId('sidebar-view-toggle').click()
