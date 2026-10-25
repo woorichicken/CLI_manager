@@ -1633,6 +1633,18 @@ app.whenReady().then(async () => {
         return true
     })
 
+    ipcMain.handle('toggle-pin-session', (_, workspaceId: string, sessionId: string) => {
+        const workspaces = store.get('workspaces') as Workspace[]
+        const session = workspaces.find(w => w.id === workspaceId)?.sessions.find(s => s.id === sessionId)
+        if (!session) return false
+
+        session.isPinned = !session.isPinned
+        // Unpinned sessions carry no flag, the way they did before pinning existed.
+        if (!session.isPinned) delete session.isPinned
+        store.set('workspaces', workspaces)
+        return session.isPinned === true
+    })
+
     ipcMain.handle('toggle-pin-workspace', (_, workspaceId: string) => {
         const workspaces = store.get('workspaces') as Workspace[]
         const workspace = workspaces.find(w => w.id === workspaceId)

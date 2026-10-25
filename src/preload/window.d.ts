@@ -18,6 +18,7 @@ declare global {
             updateSessionMemo: (workspaceId: string, sessionId: string, memo: string) => Promise<boolean>
             reorderWorkspaces: (workspaceIds: string[]) => Promise<boolean>
             togglePinWorkspace: (workspaceId: string) => Promise<boolean>
+            togglePinSession: (workspaceId: string, sessionId: string) => Promise<boolean>
             getFolders: () => Promise<WorkspaceFolder[]>
             createFolder: (name: string) => Promise<WorkspaceFolder>
             renameFolder: (folderId: string, newName: string) => Promise<boolean>

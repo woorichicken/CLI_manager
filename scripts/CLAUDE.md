@@ -53,7 +53,8 @@ The ordering is deliberate. Every cheap, checkable precondition runs before the
 build, because the build is where they used to surface: a v1.6.1 attempt spent
 minutes signing and then died at notarization on an expired Apple agreement that
 one read-only API call reports instantly. Preflight covers branch and push state,
-version availability, signing identity, **notarization reachability**, repository
+**installed packages matching `pnpm-lock.yaml`** (`node_modules/.pnpm/lock.yaml` is pnpm's copy of
+the lockfile it installed from — v1.13.0 nearly shipped simple-git 3 against `^4`), version availability, signing identity, **notarization reachability**, repository
 hygiene, typecheck, a fresh `pnpm build` and tests — the tests launch the app in
 `out/`, and a leftover `out/` from an older checkout tested the old app five times.
 
@@ -85,6 +86,10 @@ is rewritten to point at it. An upload API call returning success is not the
 same fact as a working download, and the site is what users click. If R2
 verification fails the website is left untouched, still pointing at the previous
 release, which is the safe state.
+
+Preflight also fetches the website repository and fails when its `main` is behind `origin/main`:
+a link commit made on a stale tree is rejected at push, after R2 and the site files were already
+touched (v1.11.0, `COMPLETED WITH FAILURES`).
 
 The site's version strings are found by reading the current version out of the
 files rather than assuming it, and a repository-wide grep afterwards fails the

@@ -42,6 +42,8 @@ export interface TerminalSession {
      */
     cliCommand?: string
     memo?: string  // Quick notepad text per session
+    /** Kept at the top of the sidebar's "All sessions" list, above the recently viewed ones. */
+    isPinned?: boolean
     /**
      * Set while an external AI works in this session through the Control API:
      * when the API opens it, or the first time the API reads, types into, waits

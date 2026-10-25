@@ -11,7 +11,7 @@ import { BranchPromptModal } from './Modals'
 import { SidebarMoreMenu } from './SidebarMoreMenu'
 import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatchingProjects, findMatchingSessions } from './SidebarSearch'
 import { SidebarSessionList } from './SidebarSessionList'
-import { sessionsInSidebarOrder, orderByRecent } from '../../utils/sessionNavigation'
+import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 
 /**
@@ -77,7 +77,7 @@ interface SidebarProps {
     onRemoveWorkspace: (id: string) => void
     onAddSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string) => void
     onAddWorktreeWorkspace: (parentWorkspaceId: string, branchName: string) => void
-    onRemoveSession: (workspaceId: string, sessionId: string, skipConfirm?: boolean) => Promise<void>
+    onRemoveSession: (workspaceId: string, sessionId: string, skipConfirm?: boolean, landing?: SessionLanding) => Promise<void>
     onCreatePlayground: () => void
     activeSessionId?: string
     sessionStatuses?: Map<string, { status: SessionStatus, isClaudeCode: boolean, source?: AgentStatusSource, awaitingInput?: boolean }>
@@ -91,6 +91,7 @@ interface SidebarProps {
     onReorderSessions: (workspaceId: string, sessions: TerminalSession[]) => void
     onReorderWorkspaces: (workspaces: Workspace[]) => void
     onTogglePin: (workspaceId: string) => void
+    onToggleSessionPin: (workspaceId: string, sessionId: string) => void
     folders: WorkspaceFolder[]
     onCreateFolder: (name: string) => void
     onRenameFolder: (folderId: string, newName: string) => void
@@ -144,6 +145,7 @@ export function Sidebar({
     onReorderSessions,
     onReorderWorkspaces,
     onTogglePin,
+    onToggleSessionPin,
     folders,
     onCreateFolder,
     onRenameFolder,
@@ -679,6 +681,12 @@ export function Sidebar({
         }
     }
 
+    // The All sessions list is ordered by what the user looked at, so closing a session there
+    // goes back to the one looked at before it rather than to its workspace neighbour.
+    const closingLanding: SessionLanding = isAllSessionsView ? 'recent' : 'neighbor'
+    const removeFromList = (workspaceId: string, sessionId: string, skipConfirm?: boolean) =>
+        onRemoveSession(workspaceId, sessionId, skipConfirm, closingLanding)
+
     const sessionListProps = {
         activeSessionId,
         sessionStatuses,
@@ -688,7 +696,7 @@ export function Sidebar({
         fontSize,
         splitLayout,
         onSelect,
-        onRemoveSession,
+        onRemoveSession: removeFromList,
         onRenameSession: handleRenameSubmit,
         onSessionContextMenu: handleSessionContextMenu,
         onRenameCancel: () => setRenamingSessionId(null),
@@ -820,13 +828,15 @@ export function Sidebar({
                         sessionId={sessionMenuOpen.sessionId}
                         sessionName={menuSession?.name ?? ''}
                         sessionPath={menuSession?.cwd || menuWorkspace?.path || ''}
+                        isPinned={menuSession?.isPinned === true}
+                        onTogglePin={() => onToggleSessionPin(sessionMenuOpen.workspaceId, sessionMenuOpen.sessionId)}
                         onCopy={copy}
                         onRename={() => {
                             setRenamingSessionId(sessionMenuOpen.sessionId)
                             setSessionMenuOpen(null)
                         }}
                         onDelete={() => {
-                            onRemoveSession(sessionMenuOpen.workspaceId, sessionMenuOpen.sessionId)
+                            onRemoveSession(sessionMenuOpen.workspaceId, sessionMenuOpen.sessionId, false, closingLanding)
                             setSessionMenuOpen(null)
                         }}
                         onClear={() => {
@@ -1025,7 +1035,7 @@ export function Sidebar({
                         {allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
                         ) : (
-                            <SidebarSessionList entries={orderByRecent(allSessionEntries, recentIds)} {...sessionListProps} />
+                            <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} {...sessionListProps} />
                         )}
                     </div>
                 ) : (
