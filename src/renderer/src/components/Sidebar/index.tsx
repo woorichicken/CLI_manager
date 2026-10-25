@@ -929,6 +929,17 @@ export function Sidebar({
                         >
                             <Search size={14} className={searchOpen ? 'text-blue-400' : 'text-gray-400'} />
                         </button>
+                        {/* Both menu items act on the folder tree. The flat All sessions list has no
+                            folders to collapse or create, so pressing them there changed nothing on screen.
+                            It sits left of the view toggle: the buttons are right-aligned, so dropping it
+                            shifts only what is left of it and the toggle stays under the pointer. */}
+                        {!isAllSessionsView && (
+                            <SidebarMoreMenu
+                                anyExpanded={anyExpanded}
+                                onToggleCollapseAll={toggleCollapseAll}
+                                onNewFolder={() => setShowFolderPrompt(true)}
+                            />
+                        )}
                         <button
                             data-testid="sidebar-view-toggle"
                             data-state={viewMode}
@@ -940,11 +951,6 @@ export function Sidebar({
                                 ? <FolderTree size={14} className="text-blue-400" />
                                 : <List size={14} className="text-gray-400" />}
                         </button>
-                        <SidebarMoreMenu
-                            anyExpanded={anyExpanded}
-                            onToggleCollapseAll={toggleCollapseAll}
-                            onNewFolder={() => setShowFolderPrompt(true)}
-                        />
                         <button
                             onClick={onAddWorkspace}
                             className="p-1 hover:bg-white/10 rounded transition-colors"
