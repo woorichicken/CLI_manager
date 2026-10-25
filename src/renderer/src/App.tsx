@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Sidebar } from './components/Sidebar/index'
-import { TerminalView } from './components/TerminalView'
+import { TerminalView, requestOpenTerminalPath } from './components/TerminalView'
 import { SessionMemo, SessionMemoHandle } from './components/SessionMemo'
 import { StatusBar } from './components/StatusBar'
 import { Settings } from './components/Settings'
@@ -1167,6 +1167,7 @@ function App() {
                 memoRefsMap.current.get(activeSession.id)?.toggle()
             }
         },
+        onOpenSessionPath: requestOpenTerminalPath,
     })
 
     const handleAddWorktreeWorkspace = async (parentWorkspaceId: string, branchName: string) => {

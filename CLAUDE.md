@@ -437,6 +437,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - T48 메모 링크 유닛 — Electron 없이. `splitMemoLinks`(http(s)만 링크, 문장부호·짝 없는 닫는 괄호 제외, 글자 보존)·`shortenUrl`(호스트 + …/마지막 조각, 40자)
   - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지, 끌어 선택한 뒤의 클릭·링크 위 Enter 가 편집으로 바꾸지 않는지, 머리 줄 복사 버튼이 메모 전체(줄바꿈·전체 URL)를 시스템 클립보드에 넣고 편집·읽기 보기를 그대로 두는지(빈 메모는 비활성)
+  - T55 경로 열기 단축키(7d7abfff) — Cmd+Shift+O(`revealInFinder`)·Cmd+Shift+E(`openInEditor`)가 터미널에서 고른 경로(우클릭 메뉴와 같은 `file:line` 처리)를, 고른 게 없으면 세션 폴더를 여는지. 판정은 끝단 — main 의 `shell.showItemInFolder` 를 바꿔 기록하고, 에디터는 `$PWD` 와 인자를 적는 스크립트. 선택은 실제 더블클릭으로 하고 `__termDebug.selection` 으로 확인한다. 단축키는 App 이 맞추고, 선택은 그 세션의 TerminalView 가 창 이벤트(`requestOpenTerminalPath`)로 받아 읽는다
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

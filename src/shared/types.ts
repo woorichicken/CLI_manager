@@ -300,6 +300,7 @@ export type ShortcutAction =
     | 'fileSearch' | 'contentSearch'
     | 'newSession' | 'closeSession' | 'clearSession' | 'renameSession'
     | 'toggleMemo' | 'toggleRelated'
+    | 'revealInFinder' | 'openInEditor'
 
 export interface KeyBinding {
     key: string                          // Display key label (e.g., ']', '[', '`')
@@ -326,6 +327,8 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     renameSession:   { key: 'R', modifiers: ['mod'], code: 'r' },
     toggleMemo:      { key: 'J', modifiers: ['mod'], code: 'j' },
     toggleRelated:   { key: 'L', modifiers: ['mod', 'shift'], code: 'l' },
+    revealInFinder:  { key: 'O', modifiers: ['mod', 'shift'], code: 'o' },
+    openInEditor:    { key: 'E', modifiers: ['mod', 'shift'], code: 'e' },
 }
 
 export type ShortcutGroup = 'navigation' | 'splitView' | 'search' | 'ui' | 'actions'
@@ -353,6 +356,8 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
     renameSession:   { label: 'Rename Tab',          description: 'Rename the current tab',                   group: 'actions' },
     toggleMemo:      { label: 'Toggle Memo',         description: 'Open or close session memo',               group: 'actions' },
     toggleRelated:   { label: 'Related Sessions',    description: 'Open or close the Related sessions dialog', group: 'actions' },
+    revealInFinder:  { label: 'Reveal in Finder',    description: 'Show the selected path in Finder, or the session folder', group: 'actions' },
+    openInEditor:    { label: 'Open in Editor',      description: 'Open the selected path in the editor, or the session folder', group: 'actions' },
 }
 
 export const SHORTCUT_GROUP_NAMES: Record<ShortcutGroup, string> = {
