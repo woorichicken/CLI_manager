@@ -12,6 +12,7 @@ import { Terminal } from '@xterm/xterm'
  *  - state(id): viewport/buffer geometry snapshot
  *  - text(id, maxLines?): scrollback buffer as plain text
  *  - scrollLines(id, n) / scrollToTop(id): simulate user scrolling
+ *  - fontSize(id): the font size the view renders with (a hidden view may lag the setting)
  *  - counters(): pty resize / write counters collected since last reset
  *  - resetCounters()
  */
@@ -83,6 +84,7 @@ function exposeGlobal(): void {
         scrollToTop: (id: string) => {
             registry.get(id)?.scrollToTop()
         },
+        fontSize: (id: string) => registry.get(id)?.options.fontSize ?? null,
         counters: () => ({
             ptyResize: Object.fromEntries(ptyResizeCounts),
             ptyResizeTotal: [...ptyResizeCounts.values()].reduce((a, b) => a + b, 0),
