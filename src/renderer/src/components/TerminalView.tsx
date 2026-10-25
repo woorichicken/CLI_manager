@@ -215,6 +215,24 @@ export function TerminalView({
     // 마지막으로 PTY에 전달한 터미널 크기 (중복 호출 방지)
     const lastPtySizeRef = useRef<{ cols: number; rows: number } | null>(null)
 
+    // A hidden terminal takes a font change only when it is shown. Setting the font
+    // re-measures the cell and re-renders every row, hidden or not: with 39 sessions
+    // one Cmd+- took 925ms, nearly all of it in terminals nobody was looking at
+    // (report f800638c). Read through refs so the visibility effect sees the latest.
+    const fontSizeRef = useRef(fontSize)
+    fontSizeRef.current = fontSize
+    const fontFamilyRef = useRef(effectiveFontFamily)
+    fontFamilyRef.current = effectiveFontFamily
+
+    const applyFontOptions = useCallback((terminal: Terminal) => {
+        if (terminal.options.fontSize !== fontSizeRef.current) {
+            terminal.options.fontSize = fontSizeRef.current
+        }
+        if (terminal.options.fontFamily !== fontFamilyRef.current) {
+            terminal.options.fontFamily = fontFamilyRef.current
+        }
+    }, [])
+
     const forceViewportRefresh = useCallback((terminal?: Terminal | null) => {
         const target = terminal ?? xtermRef.current
         if (!target) return
@@ -430,6 +448,8 @@ export function TerminalView({
         if (!isInitializedRef.current) return
 
         if (visible && fitAddonRef.current && xtermRef.current) {
+            // A font change made while hidden lands now, before the fit below measures cells.
+            applyFontOptions(xtermRef.current)
             // VS Code setVisible 흐름처럼 pending resize를 flush한 뒤 최신 dimensions로 다시 맞춘다.
             lastPtySizeRef.current = null
             pendingViewportRefreshWritesRef.current = 4
@@ -454,15 +474,10 @@ export function TerminalView({
     // IMPORTANT: visible은 의존성에서 제거 - visible 변경 시에는 visibility useEffect에서 처리함
     // visible을 의존성에 넣으면 세션 전환 시 불필요한 resize가 먼저 실행될 수 있음
     useEffect(() => {
-        if (xtermRef.current && fitAddonRef.current && isInitializedRef.current) {
-            xtermRef.current.options.fontSize = fontSize
-            // fontFamily 동적 업데이트 (빈 문자열이면 기본 폰트 사용)
-            xtermRef.current.options.fontFamily = effectiveFontFamily
-            // visible 상태일 때만 fit 호출 (display:none 상태에서는 크기 계산이 잘못됨)
-            // 비활성 터미널은 visible이 true가 될 때 visibility useEffect에서 fit 호출됨
-            if (visible) {
-                requestResize({ immediate: true })
-            }
+        // Hidden terminals keep their font until the visibility effect shows them (see applyFontOptions).
+        if (visible && xtermRef.current && fitAddonRef.current && isInitializedRef.current) {
+            applyFontOptions(xtermRef.current)
+            requestResize({ immediate: true })
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fontSize, fontFamily, id])  // visible 제거! effectiveFontFamily는 fontFamily에서 파생됨
@@ -722,6 +737,8 @@ export function TerminalView({
                 // This triggers SIGWINCH in the shell, causing it to redraw
                 // Essential for Grid View where PTY already exists but xterm is new
                 if (visibleRef.current) {
+                    // A font change during startup was skipped by the font effect (not initialized yet).
+                    applyFontOptions(term)
                     requestResize({ immediate: true })
                 }
             }, 300)
