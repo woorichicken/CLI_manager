@@ -108,7 +108,7 @@ pnpm build && pnpm test:term
    - `screenLines.ts`: 화면 줄에서 읽을 것 고르기(입력 상자 규칙선, 「마지막 줄」) — pty 없이 테스트하려고 `TerminalMirror` 밖에 둔다
    - `ClaudeSessionSync.ts`: Claude 의 실행 중 세션 레지스트리(`~/.claude/sessions/<pid>.json`)를 읽어 저장된 대화 id 를 실제 대화로 맞춤 — Claude 안에서 `/resume` 하면 id 가 바뀐다
    - `FeedbackRelay.ts`: 피드백 위젯의 HTTP 요청을 main 에서 대신 보낸다 — 배포 렌더러는 `file://` 라 `Origin: null` 이 되고 라쏘런이 403 으로 거부한다. 수집 함수 경로만 허용
-   - `TerminalEventLog.ts`: 터미널마다 최근 사건(시작·복원·다시 붙음·붙기 시간 초과·Cmd+K·프로그램의 스크롤백 삭제 CSI 3 J·종료 코드·닫힘)과 창 사건(렌더러 크래시·새로고침)을 메모리에만 둔다 — 제보가 「무엇이 먼저 있었나」를 싣는 원본
+   - `TerminalEventLog.ts`: 터미널마다 최근 사건(시작·복원·다시 붙음·붙기 시간 초과·Cmd+K·PTY 크기 변경 `80x30→111x43`(창 끌기처럼 몰린 것은 한 줄)·프로그램의 스크롤백 삭제 CSI 3 J·종료 코드·닫힘)과 창 사건(렌더러 크래시·새로고침)을 메모리에만 둔다 — 제보가 「무엇이 먼저 있었나」를 싣는 원본
    - `feedbackTerminalContext.ts` / `maskSecrets.ts`: 제보에 실을 터미널 상태와 최근 200줄을 만든다. 줄은 비밀값·홈 폴더·계정 이름을 가린 뒤 나간다. 오른쪽 끝에서 끊긴 키도 가린다 — zsh 는 긴 입력 줄을 스스로 끊어 wrap 표시가 없다
 
 2. **Renderer Process** (`src/renderer/`)
@@ -410,7 +410,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     진짜 비밀번호(`~/.config/climanager-app-feedback-password` 있을 때만), 릴레이가 수집 함수 밖 URL·메서드를 거부하는지. 청크는 Playwright
     request 이벤트로 본다 — `file://` 에선 Resource Timing 이 아무것도 기록하지 않아 「안 불렀다」가 늘 참이 된다. `FEEDBACK_LIVE=1` 이면 실제 UI 로 라쏘런에 1건 보낸다
   - T32 제보의 터미널 정보 — 실제 pty 에서 Cmd+K → `printf '\033[3J'` → 가짜 키 출력(한 벌은 `$COLUMNS-5` 칸 뒤라 줄 경계에 걸린다) 후 main IPC 답이 키 앞뒤 조각·계정 이름·홈 경로 없이 오고 사건이
-    순서대로인지, `exit 3` 의 종료 코드, 렌더러 크래시 → `renderer-gone`·`reattached`, 그리고 실제 위젯에서 터미널을 지목해 보낸 **페이로드**(main 의 `fetch` 를 바꿔 밖으로 안 나간다)가
+    순서대로인지, `exit 3` 의 종료 코드, 보이는 세션의 창 크기 변경이 `resized <전>→<후>` 로 남는지(유닛: 같은 크기 다시 보냄은 무시 · 몰린 크기 변경은 처음→끝 한 줄), 렌더러 크래시 → `renderer-gone`·`reattached`, 그리고 실제 위젯에서 터미널을 지목해 보낸 **페이로드**(main 의 `fetch` 를 바꿔 밖으로 안 나간다)가
     `source: picked`·사건 로그를 싣는지. 지목은 `page.mouse` 로 한다 — 지목 오버레이가 덮여 locator 클릭은 거부된다. 지목 메모의 완료 표시는 「보냈습니다」가 아니라
     `status` 「주석 1: …」의 「완료」다. 가짜 키는 실행 중에 조각을 이어 만든다 — 시크릿 스캔이 테스트 파일도 본다. `FEEDBACK_LIVE=1` 이면 라쏘런에 1건 보낸다
   - T34 관련 세션 유닛 — Electron 없이. 저장(가짜 store 위 재시작 복원)·첫 접촉만 기록·손으로 뺀 쌍이 API 로 되살아나지 않음·닫힘 제거·시작 정리,
@@ -442,7 +442,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T53 인박스 저장 유닛 — Electron 없이. `checkInboxInput`(종류 기본값·한 줄 접기·200자 자르기·예약 스킴·2000자), 같은 안 읽은 요청 하나로·읽은 뒤엔 새로, 200 상한(읽은 것부터), 시작 정리(없는 세션·7일 지난 읽은 것), `forget`
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - T48 메모 링크 유닛 — Electron 없이. `splitMemoLinks`(http(s)만 링크, 문장부호·짝 없는 닫는 괄호 제외, 글자 보존)·`shortenUrl`(호스트 + …/마지막 조각, 40자)
-  - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지, 끌어 선택한 뒤의 클릭·링크 위 Enter 가 편집으로 바꾸지 않는지
+  - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지, 끌어 선택한 뒤의 클릭·링크 위 Enter 가 편집으로 바꾸지 않는지, 머리 줄 복사 버튼이 메모 전체(줄바꿈·전체 URL)를 시스템 클립보드에 넣고 편집·읽기 보기를 그대로 두는지(빈 메모는 비활성)
+  - T55 경로 열기 단축키(7d7abfff) — Cmd+Shift+O(`revealInFinder`)·Cmd+Shift+E(`openInEditor`)가 터미널에서 고른 경로(우클릭 메뉴와 같은 `file:line` 처리)를, 고른 게 없으면 세션 폴더를 여는지. 판정은 끝단 — main 의 `shell.showItemInFolder` 를 바꿔 기록하고, 에디터는 `$PWD` 와 인자를 적는 스크립트. 선택은 실제 더블클릭으로 하고 `__termDebug.selection` 으로 확인한다. 단축키는 App 이 맞추고, 선택은 그 세션의 TerminalView 가 창 이벤트(`requestOpenTerminalPath`)로 받아 읽는다
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

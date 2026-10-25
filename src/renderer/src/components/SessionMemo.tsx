@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
-import { StickyNote, X } from 'lucide-react'
+import { Check, Copy, StickyNote, X } from 'lucide-react'
 
 interface SessionMemoProps {
     sessionId: string
@@ -14,6 +14,9 @@ export interface SessionMemoHandle {
 
 // Debounce delay for auto-saving memo (ms)
 const SAVE_DEBOUNCE_MS = 500
+
+// How long the copy button shows its check mark after copying (ms).
+const COPIED_FEEDBACK_MS = 1500
 
 // A link in the reading view is shown at about this many characters; the tooltip has the whole URL.
 const LINK_DISPLAY_MAX_CHARS = 40
@@ -89,6 +92,8 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
         const [isEditing, setIsEditing] = useState(true)
         const saveTimerRef = useRef<NodeJS.Timeout | null>(null)
         const textareaRef = useRef<HTMLTextAreaElement>(null)
+        const [copied, setCopied] = useState(false)
+        const copiedTimerRef = useRef<NodeJS.Timeout | null>(null)
 
         // Sync with external initialMemo changes (e.g., session switch)
         useEffect(() => {
@@ -111,8 +116,25 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                 if (saveTimerRef.current) {
                     clearTimeout(saveTimerRef.current)
                 }
+                if (copiedTimerRef.current) {
+                    clearTimeout(copiedTimerRef.current)
+                }
             }
         }, [])
+
+        // Copies the whole memo, so it can be pasted to an agent without selecting it first (report 533a22ba).
+        const copyMemo = useCallback(async () => {
+            if (!memo) return
+            try {
+                await navigator.clipboard.writeText(memo)
+            } catch (err) {
+                console.error('Failed to copy memo:', err)
+                return
+            }
+            setCopied(true)
+            if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current)
+            copiedTimerRef.current = setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
+        }, [memo])
 
         const openMemo = useCallback(() => {
             setIsOpen(true)
@@ -215,12 +237,28 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                         {/* Header */}
                         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50">
                             <span className="text-xs text-gray-400 font-medium">Memo</span>
-                            <button
-                                onClick={closeMemo}
-                                className="text-gray-500 hover:text-gray-300 transition-colors"
-                            >
-                                <X size={12} />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    data-testid="session-memo-copy"
+                                    onClick={copyMemo}
+                                    // Keep the textarea focused: a blur would switch it to the reading view.
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    disabled={!memo}
+                                    className={`transition-colors disabled:opacity-30 disabled:cursor-default ${
+                                        copied ? 'text-emerald-400' : 'text-gray-500 hover:text-gray-300'
+                                    }`}
+                                    title={copied ? 'Copied' : 'Copy memo'}
+                                    aria-label={copied ? 'Copied' : 'Copy memo'}
+                                >
+                                    {copied ? <Check size={12} /> : <Copy size={12} />}
+                                </button>
+                                <button
+                                    onClick={closeMemo}
+                                    className="text-gray-500 hover:text-gray-300 transition-colors"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
                         </div>
                         {isEditing || !memo ? (
                             <textarea

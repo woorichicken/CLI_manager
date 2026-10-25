@@ -11,6 +11,7 @@ import { Terminal } from '@xterm/xterm'
  *  - ids(): registered terminal session ids
  *  - state(id): viewport/buffer geometry snapshot
  *  - text(id, maxLines?): scrollback buffer as plain text
+ *  - selection(id): the text currently selected in the view
  *  - scrollLines(id, n) / scrollToTop(id): simulate user scrolling
  *  - fontSize(id): the font size the view renders with (a hidden view may lag the setting)
  *  - counters(): pty resize / write counters collected since last reset
@@ -78,6 +79,7 @@ function exposeGlobal(): void {
             const term = registry.get(id)
             return term ? bufferText(term, maxLines) : null
         },
+        selection: (id: string) => registry.get(id)?.getSelection() ?? null,
         scrollLines: (id: string, n: number) => {
             registry.get(id)?.scrollLines(n)
         },

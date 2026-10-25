@@ -131,5 +131,47 @@ test.describe('T49 memo links', () => {
         // Nothing to read yet: still the textarea, not an empty reading box.
         await expect(textarea).toBeVisible()
         await expect(page.getByTestId('session-memo-read')).toHaveCount(0)
+        // Nothing to copy either.
+        await expect(page.getByTestId('session-memo-copy')).toBeDisabled()
+    })
+
+    test('the copy button puts the whole memo on the clipboard and keeps the textarea (533a22ba)', async () => {
+        const memo = `T49 copy line one\nline two with ${LONG_URL}`
+        ctx = await launchAppWithWorkspaces([
+            { id: 'ws-copy', name: 'T49COPY', sessions: [{ id: 's-copy', name: 'T49COPYSESS', memo }] }
+        ], { settings: { showHomeWorkspace: false } })
+        const { app, page } = ctx
+        await activateSession(page, 'T49COPYSESS')
+
+        // The clipboard is the machine's, not the test's: put back what was there.
+        const savedClipboard = await app.evaluate(({ clipboard }) => clipboard.readText())
+        const readClipboard = () => app.evaluate(({ clipboard }) => clipboard.readText())
+        try {
+            await app.evaluate(({ clipboard }) => clipboard.writeText('T49-BEFORE'))
+            await page.locator('button[title="Session Memo (⌘J)"]:visible').click()
+            const textarea = page.locator('textarea[placeholder="Quick notes..."]')
+            await expect(textarea).toBeFocused()
+
+            const copy = page.getByTestId('session-memo-copy')
+            await copy.click()
+            // The whole memo, line breaks and the full URL included — not the shortened link text.
+            await expect.poll(readClipboard).toBe(memo)
+            await expect(copy).toHaveAttribute('title', 'Copied')
+            // Copying is not "done editing": the textarea keeps focus and the caret stays put.
+            await expect(textarea).toBeFocused()
+            await expect(page.getByTestId('session-memo-read')).toHaveCount(0)
+            await expect(copy).toHaveAttribute('title', 'Copy memo', { timeout: 5_000 })
+
+            // From the reading view too, and it stays the reading view.
+            await page.getByText('Memo', { exact: true }).click()
+            const read = page.getByTestId('session-memo-read')
+            await expect(read).toBeVisible()
+            await app.evaluate(({ clipboard }) => clipboard.writeText('T49-BEFORE'))
+            await copy.click()
+            await expect.poll(readClipboard).toBe(memo)
+            await expect(read).toBeVisible()
+        } finally {
+            await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), savedClipboard)
+        }
     })
 })

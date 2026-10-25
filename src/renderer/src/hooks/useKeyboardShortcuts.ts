@@ -35,6 +35,8 @@ interface UseKeyboardShortcutsConfig {
     onClearSession: (sessionId: string) => void
     onRenameSession: (sessionId: string) => void
     onToggleMemo: () => void
+    /** The selected path in that session's terminal, or its folder, in Finder or the editor. */
+    onOpenSessionPath: (sessionId: string, target: 'finder' | 'editor') => void
 }
 
 function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
@@ -110,6 +112,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onClearSession,
         onRenameSession,
         onToggleMemo,
+        onOpenSessionPath,
     } = config
 
     // Chord mode state (for Cmd+T → number sequences)
@@ -213,6 +216,14 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
             } else if (activeWorkspace && activeSession) {
                 onCloseSession(activeWorkspace.id, activeSession.id)
             }
+        }
+
+        // The session the user is looking at: the active pane in split view.
+        const activeSessionId = (): string | null => {
+            if (splitLayout && splitLayout.sessionIds.length > 0) {
+                return splitLayout.sessionIds[activeSplitIndex] ?? null
+            }
+            return activeSession?.id ?? null
         }
 
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -362,6 +373,14 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                         onRenameSession(activeSession.id)
                     }
                 },
+                revealInFinder: () => {
+                    const sessionId = activeSessionId()
+                    if (sessionId) onOpenSessionPath(sessionId, 'finder')
+                },
+                openInEditor: () => {
+                    const sessionId = activeSessionId()
+                    if (sessionId) onOpenSessionPath(sessionId, 'editor')
+                },
             }
 
             for (const [action, handler] of Object.entries(actionHandlers)) {
@@ -408,6 +427,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onClearSession,
         onRenameSession,
         onToggleMemo,
+        onOpenSessionPath,
         cancelChordMode,
         createSessionWithTemplateIndex,
     ])

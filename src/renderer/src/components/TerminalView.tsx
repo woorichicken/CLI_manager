@@ -84,6 +84,22 @@ const FALLBACK_PTY_ROWS = 30
 const MIN_HIDDEN_FIT_COLS = 20
 const MIN_HIDDEN_FIT_ROWS = 5
 
+/**
+ * The Reveal in Finder / Open in Editor shortcuts are matched in App, but the
+ * selection lives in this view's xterm — App names the session, the view acts.
+ */
+const OPEN_PATH_EVENT = 'climanager:open-terminal-path'
+
+interface OpenPathRequest {
+    sessionId: string
+    target: 'finder' | 'editor'
+}
+
+/** Opens the path selected in that session's terminal, or the session folder when nothing is selected. */
+export function requestOpenTerminalPath(sessionId: string, target: OpenPathRequest['target']): void {
+    window.dispatchEvent(new CustomEvent<OpenPathRequest>(OPEN_PATH_EVENT, { detail: { sessionId, target } }))
+}
+
 export function TerminalView({
     id,
     cwd,
@@ -859,10 +875,7 @@ export function TerminalView({
         setContextMenu({ visible: false, x: 0, y: 0, selectedText: '' })
     }, [])
 
-    const handleOpenInEditor = useCallback(async () => {
-        const text = contextMenu.selectedText
-        closeContextMenu()
-
+    const openPathInEditor = useCallback(async (text: string) => {
         // Parse line:column if present (e.g., file.ts:42:10)
         const match = text.match(/^(.+?)(?::(\d+))?(?::(\d+))?$/)
         if (match) {
@@ -871,16 +884,41 @@ export function TerminalView({
             const column = match[3] ? parseInt(match[3], 10) : undefined
             await window.api.openFileInEditor(filePath, cwd, line, column)
         }
-    }, [contextMenu.selectedText, cwd, closeContextMenu])
+    }, [cwd])
+
+    const revealPathInFinder = useCallback(async (text: string) => {
+        // Remove line:column suffix if present
+        const filePath = text.replace(/:\d+(:\d+)?$/, '')
+        await window.api.revealInFinder(filePath, cwd)
+    }, [cwd])
+
+    const handleOpenInEditor = useCallback(async () => {
+        const text = contextMenu.selectedText
+        closeContextMenu()
+        await openPathInEditor(text)
+    }, [contextMenu.selectedText, closeContextMenu, openPathInEditor])
 
     const handleRevealInFinder = useCallback(async () => {
         const text = contextMenu.selectedText
         closeContextMenu()
+        await revealPathInFinder(text)
+    }, [contextMenu.selectedText, closeContextMenu, revealPathInFinder])
 
-        // Remove line:column suffix if present
-        const filePath = text.replace(/:\d+(:\d+)?$/, '')
-        await window.api.revealInFinder(filePath, cwd)
-    }, [contextMenu.selectedText, cwd, closeContextMenu])
+    // Shortcuts (report 7d7abfff): the same two actions on the selected path, or on the session folder.
+    useEffect(() => {
+        const handleOpenPath = (event: Event) => {
+            const { sessionId, target } = (event as CustomEvent<OpenPathRequest>).detail
+            if (sessionId !== id) return
+            const selected = xtermRef.current?.getSelection().trim() ?? ''
+            if (target === 'finder') {
+                void (selected ? revealPathInFinder(selected) : window.api.revealInFinder(cwd))
+            } else {
+                void (selected ? openPathInEditor(selected) : window.api.openInEditor(cwd))
+            }
+        }
+        window.addEventListener(OPEN_PATH_EVENT, handleOpenPath)
+        return () => window.removeEventListener(OPEN_PATH_EVENT, handleOpenPath)
+    }, [id, cwd, openPathInEditor, revealPathInFinder])
 
     const handleOpenAsLink = useCallback(async () => {
         let text = contextMenu.selectedText

@@ -4,7 +4,7 @@ import { EventEmitter } from 'events'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT, waitForBufferText, writeToTerminal } from './helpers'
+import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText, writeToTerminal } from './helpers'
 import { maskSecretLines, MASK } from '../../src/main/maskSecrets'
 import { TerminalEventLog } from '../../src/main/TerminalEventLog'
 import { buildFeedbackTerminalContext, FeedbackTerminalSources } from '../../src/main/feedbackTerminalContext'
@@ -120,6 +120,41 @@ test.describe('T32 units', () => {
 
         log.forget('t249')
         expect(log.events('t249')).toEqual([])
+    })
+
+    test('event log: a pty resize says what it changed from; a run of them is one record (f2a636b9)', () => {
+        let now = Date.parse('2026-10-25T00:00:00Z')
+        const bus = new EventEmitter()
+        const log = new TerminalEventLog({ events: bus } as unknown as TerminalManager, () => now)
+
+        bus.emit('created', 's1', 80, 30)
+        // A view that re-sends its current size (the visibility effect does on every show) is not a change.
+        bus.emit('resized', 's1', 80, 30)
+        // A window drag: many sizes within a few seconds.
+        for (const [cols, rows] of [[90, 32], [100, 36], [111, 43]]) {
+            now += 200
+            bus.emit('resized', 's1', cols, rows)
+        }
+        now += 60_000
+        log.record('s1', 'scrollback-erased')
+        now += 1000
+        bus.emit('resized', 's1', 111, 50)
+
+        const events = log.events('s1')
+        expect(events.map((e) => e.kind)).toEqual(['started', 'resized', 'scrollback-erased', 'resized'])
+        expect(events[1]).toMatchObject({ detail: '80x30→111x43', count: 3 })
+        // The later one starts from where the drag ended, not from the start size.
+        expect(events[3].detail).toBe('111x43→111x50')
+        expect(events[3].count).toBeUndefined()
+
+        // A deleted session forgets its size too: a new pty under the same id starts fresh.
+        log.forget('s1')
+        bus.emit('resized', 's1', 120, 40)
+        expect(log.events('s1')).toEqual([expect.objectContaining({ kind: 'resized', detail: '120x40' })])
+        // With no known start, the next change is its own record rather than "120x40→…" posing as a run.
+        now += 200
+        bus.emit('resized', 's1', 130, 40)
+        expect(log.events('s1').map((e) => e.detail)).toEqual(['120x40', '120x40→130x40'])
     })
 
     test('context: unknown or malformed ids carry window events only; known ones are masked', async () => {
@@ -316,6 +351,24 @@ test.describe('T32 app', () => {
         expect(kinds.indexOf('started')).toBeGreaterThanOrEqual(0)
         expect(kinds.indexOf('cleared')).toBeGreaterThan(kinds.indexOf('started'))
         expect(kinds.indexOf('scrollback-erased')).toBeGreaterThan(kinds.indexOf('cleared'))
+
+        // A window resize reaches the shown pty and is logged as a size change ending at the new size.
+        // (Hidden terminals hold their pty size, so the session is shown first; showing it may resize
+        // too, and a resize that close joins the same run — so only the end of the run is pinned.)
+        await page.locator(`[data-session-item="${SESSION}"]`).click()
+        await expect.poll(() => page.locator(`[data-session-id="${SESSION}"]`).evaluate((el) => getComputedStyle(el).visibility))
+            .toBe('visible')
+        await page.waitForTimeout(800)
+        const before = (await terminalContext(page, SESSION)).terminal!.size!
+        await resizeMainWindow(ctx.app, 1000, 650)
+        await expect.poll(async () => (await terminalContext(page, SESSION)).terminal?.size, { timeout: 10_000 })
+            .not.toEqual(before)
+        await page.waitForTimeout(500)
+        const resized = (await terminalContext(page, SESSION)).terminal!
+        const last = resized.events.at(-1)
+        expect(last?.kind).toBe('resized')
+        expect(last?.detail).toMatch(/^\d+x\d+→\d+x\d+$/)
+        expect(last?.detail?.endsWith(`→${resized.size!.cols}x${resized.size!.rows}`)).toBe(true)
 
         await writeToTerminal(page, SESSION, 'exit 3\r')
         await expect.poll(async () => (await terminalContext(page, SESSION)).terminal?.events.at(-1), { timeout: 10_000 })
