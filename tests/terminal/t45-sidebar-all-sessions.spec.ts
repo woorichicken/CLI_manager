@@ -109,8 +109,11 @@ test.describe('T45 sidebar all sessions', () => {
         const toggle = page.getByTestId('sidebar-view-toggle')
         const more = page.getByTestId('sidebar-more')
 
+        const toggleX = async (): Promise<number> => (await toggle.boundingBox())!.x
+
         // Folder view: Collapse All and New Folder live in the "…" menu.
         await expect(more).toBeVisible()
+        const folderViewX = await toggleX()
 
         // All view: nothing there to collapse or file into a folder, so the menu is gone.
         await toggle.click()
@@ -119,10 +122,14 @@ test.describe('T45 sidebar all sessions', () => {
         // The view-independent buttons stay.
         await expect(page.getByTestId('sidebar-search-toggle')).toBeVisible()
         await expect(page.getByTitle('Add Workspace')).toBeVisible()
+        // The toggle does not move, so a second press under the same pointer switches back
+        // (a shifted row put the search button there).
+        expect(await toggleX()).toBe(folderViewX)
 
         // Back to folders: the menu returns and still works.
         await toggle.click()
         await expect(more).toBeVisible()
+        expect(await toggleX()).toBe(folderViewX)
         await more.click()
         await expect(page.getByTestId('sidebar-collapse-all')).toHaveText('Collapse All')
         await page.keyboard.press('Escape')
