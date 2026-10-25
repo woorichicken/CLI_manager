@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import {
     AgentStatusUpdate,
     ControlApiMasters,
+    InboxRequest,
     ControlApiSessionEvent,
     DEFAULT_CONTROL_API,
     OrchestratorInfo,
@@ -17,6 +18,7 @@ import {
 import { TerminalManager } from './TerminalManager'
 import { TerminalMirror } from './TerminalMirror'
 import { SessionRelations } from './SessionRelations'
+import { checkInboxInput, InboxStore } from './InboxStore'
 
 /**
  * What the Control API can do, independent of transport. The HTTP routes and
@@ -274,6 +276,27 @@ export interface WaitInput {
     caller?: string
 }
 
+export interface NotifyInboxInput {
+    kind?: unknown
+    text?: unknown
+    url?: unknown
+    /** The session asking. Falls back to `caller` (X-Caller-Session). */
+    sessionId?: string
+    client: string
+    caller?: string
+}
+
+/** An inbox request as the API returns it: the stored record plus where it leads. */
+export interface ApiInboxRequest extends Omit<InboxRequest, 'at' | 'createdAt' | 'readAt'> {
+    sessionName: string
+    workspaceName: string
+    read: boolean
+    /** ISO times. `at` moves forward when the same unread request is sent again. */
+    at: string
+    createdAt: string
+    readAt: string | null
+}
+
 export interface ControlApiDeps {
     // electron-store has no usable generic type in this codebase (see index.ts)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -284,6 +307,8 @@ export interface ControlApiDeps {
     hookStatus: (terminalId: string) => AgentStatusUpdate | null
     /** Persistent "related sessions" — which session opened or first worked in which. */
     relations: SessionRelations
+    /** Requests sessions send for the user's hands (sign in, review, answer). */
+    inbox: InboxStore
     /** A session is gone for good (closed or deleted): drop what was kept for it elsewhere. */
     onSessionForgotten?: (sessionId: string) => void
 }
@@ -718,6 +743,68 @@ export class ControlApiService {
             throw new ControlApiError(409, 'has_worktrees', 'Worktree workspaces are registered under this one. Remove them first.')
         }
         this.removeWorkspace(workspaceId)
+    }
+
+    // ------------------------------------------------------------------
+    // Inbox — a session asks for the user's hands
+    // ------------------------------------------------------------------
+
+    /**
+     * Puts a request in the app's inbox. The session is the one named in the
+     * body, else the caller's own (X-Caller-Session) — a request has to lead
+     * somewhere, so one without an open session is refused. Sending does not
+     * mark the session as AI-driven: the sender is the session itself.
+     */
+    notifyInbox(input: NotifyInboxInput): { request: ApiInboxRequest; created: boolean } {
+        const check = checkInboxInput(input)
+        if (!check.ok) throw new ControlApiError(400, 'bad_request', check.message)
+        const sessionId = input.sessionId?.trim() || input.caller
+        if (!sessionId) {
+            throw new ControlApiError(
+                400,
+                'session_required',
+                'Say which session is asking: pass sessionId, or send X-Caller-Session (the CLIMANAGER_SESSION_ID of the terminal you run in).'
+            )
+        }
+        this.requireSession(sessionId)
+        const { request, created } = this.deps.inbox.add({
+            sessionId,
+            kind: check.kind,
+            text: check.text,
+            ...(check.url ? { url: check.url } : {}),
+            client: input.client
+        })
+        return { request: this.describeInbox(request), created }
+    }
+
+    listInbox(options: { unreadOnly?: boolean } = {}): { unreadCount: number; requests: ApiInboxRequest[] } {
+        return {
+            unreadCount: this.deps.inbox.unreadCount(),
+            requests: this.deps.inbox.list(options).map((r) => this.describeInbox(r))
+        }
+    }
+
+    /** The sender resolved it itself (the login finished, the question was answered elsewhere). */
+    readInbox(requestId: string): ApiInboxRequest {
+        const request = this.deps.inbox.markRead(requestId)
+        if (!request) throw new ControlApiError(404, 'not_found', `No inbox request with id ${requestId}.`)
+        return this.describeInbox(request)
+    }
+
+    private describeInbox(request: InboxRequest): ApiInboxRequest {
+        const { at, createdAt, readAt, ...rest } = request
+        const found = this.workspaces()
+            .flatMap((workspace) => workspace.sessions.map((session) => ({ workspace, session })))
+            .find(({ session }) => session.id === request.sessionId)
+        return {
+            ...rest,
+            sessionName: found?.session.name ?? '',
+            workspaceName: found?.workspace.name ?? '',
+            read: Boolean(readAt),
+            at: new Date(at).toISOString(),
+            createdAt: new Date(createdAt).toISOString(),
+            readAt: readAt ? new Date(readAt).toISOString() : null
+        }
     }
 
     // ------------------------------------------------------------------
