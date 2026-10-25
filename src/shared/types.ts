@@ -813,6 +813,12 @@ export type TerminalEventKind =
     | 'attach-timeout'
     /** The user cleared the terminal (Cmd+K). */
     | 'cleared'
+    /**
+     * The pty changed size, as `80x30→111x43`. A run of them (a window drag) is one
+     * record from its first size to its last. Rows that grow pull scrollback lines
+     * onto the screen, where a TUI's next repaint erases them.
+     */
+    | 'resized'
     /** The program sent CSI 3 J, which deletes the scrollback — earlier conversation is gone. */
     | 'scrollback-erased'
     /** The program in the pty exited by itself. */

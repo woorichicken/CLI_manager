@@ -26,6 +26,7 @@ const EVENT_LEVELS: Record<TerminalEventKind, DiagLogEntry['level']> = {
     started: 'log',
     restored: 'log',
     cleared: 'log',
+    resized: 'log',
     closed: 'log'
 }
 
