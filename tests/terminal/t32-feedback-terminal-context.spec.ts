@@ -151,6 +151,10 @@ test.describe('T32 units', () => {
         log.forget('s1')
         bus.emit('resized', 's1', 120, 40)
         expect(log.events('s1')).toEqual([expect.objectContaining({ kind: 'resized', detail: '120x40' })])
+        // With no known start, the next change is its own record rather than "120x40→…" posing as a run.
+        now += 200
+        bus.emit('resized', 's1', 130, 40)
+        expect(log.events('s1').map((e) => e.detail)).toEqual(['120x40', '120x40→130x40'])
     })
 
     test('context: unknown or malformed ids carry window events only; known ones are masked', async () => {

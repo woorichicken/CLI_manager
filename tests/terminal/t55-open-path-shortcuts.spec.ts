@@ -52,9 +52,12 @@ test.describe('T55 open path shortcuts', () => {
         const fakeEditor = path.join(dir, 'fake-editor.sh')
         fs.writeFileSync(fakeEditor, `#!/bin/sh\necho "$PWD|$*" >> "${editorLog}"\n`)
         fs.chmodSync(fakeEditor, 0o755)
+        const workspaceDir = path.join(dir, 'workspace')
+        fs.mkdirSync(workspaceDir)
 
         ctx = await launchAppWithWorkspaces(
-            [{ id: 'ws-t55', name: 'T55WS', path: dir, sessions: [{ id: SESSION, name: 'T55SESS', cwd: dir }] }],
+            // The workspace folder differs from the session's, so "the session folder" is what is checked.
+            [{ id: 'ws-t55', name: 'T55WS', path: workspaceDir, sessions: [{ id: SESSION, name: 'T55SESS', cwd: dir }] }],
             { settings: { defaultEditor: 'custom', customEditorPath: fakeEditor, showHomeWorkspace: false } }
         )
         const { app, page } = ctx

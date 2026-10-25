@@ -86,9 +86,11 @@ export class TerminalEventLog {
         const events = this.touch(id)
         const last = events[events.length - 1]
         const at = this.now()
-        if (last && last.kind === 'resized' && at - last.at <= COALESCE_WINDOW_MS) {
-            const runStart = last.detail?.split(RESIZE_ARROW)[0]
-            last.detail = runStart ? `${runStart}${RESIZE_ARROW}${to}` : to
+        // A record without a start size (the pty's first size was never seen) stays on its own:
+        // joining it would present its first size as where the run started.
+        if (last && last.kind === 'resized' && last.detail?.includes(RESIZE_ARROW) && at - last.at <= COALESCE_WINDOW_MS) {
+            const runStart = last.detail.split(RESIZE_ARROW)[0]
+            last.detail = `${runStart}${RESIZE_ARROW}${to}`
             last.count++
             last.at = at
             return
