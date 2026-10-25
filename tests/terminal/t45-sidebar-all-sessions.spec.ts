@@ -103,6 +103,32 @@ test.describe('T45 sidebar all sessions', () => {
         await expect(page.locator('[data-session-item="s-a1"]')).toHaveCount(0)
     })
 
+    test('the header drops the folder-only menu in the All view and brings it back in the folder view', async () => {
+        ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
+        const { page } = ctx
+        const toggle = page.getByTestId('sidebar-view-toggle')
+        const more = page.getByTestId('sidebar-more')
+
+        // Folder view: Collapse All and New Folder live in the "…" menu.
+        await expect(more).toBeVisible()
+
+        // All view: nothing there to collapse or file into a folder, so the menu is gone.
+        await toggle.click()
+        await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
+        await expect(more).toHaveCount(0)
+        // The view-independent buttons stay.
+        await expect(page.getByTestId('sidebar-search-toggle')).toBeVisible()
+        await expect(page.getByTitle('Add Workspace')).toBeVisible()
+
+        // Back to folders: the menu returns and still works.
+        await toggle.click()
+        await expect(more).toBeVisible()
+        await more.click()
+        await expect(page.getByTestId('sidebar-collapse-all')).toHaveText('Collapse All')
+        await page.keyboard.press('Escape')
+        await expect(page.getByTestId('sidebar-more-menu')).toHaveCount(0)
+    })
+
     test('rows are ordered by what was viewed last, then the sessions never viewed in sidebar order', async () => {
         ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
         const { page } = ctx
