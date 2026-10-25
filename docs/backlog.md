@@ -19,12 +19,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
-### T26 — 「사이드바에서 지운 세션을 Cmd+] 가 건너뛴다」가 긴 묶음 실행에서 한 번 4.5분 멈췄다
+### 사이드바 「Delete session」 버튼 클릭 — 긴 묶음 실행에서 30초 타임아웃으로 멈춘다(T26 · T40)
 - Discovered: 2026-10-25 fb-1025, PR #58·#59 를 main 과 합친 트리에서 관련 스펙 13개를 한 번에(`--workers=1`) 돌리다가.
 - Evidence: `t26-session-navigation.spec.ts:129` 이 `deleteFromSidebar` 의 `getByTitle('Delete session').click()` 에서 「visible, enabled and stable」을 30초 기다리다 실패(버튼은 `opacity-0 group-hover:opacity-100`). 같은 트리에서 그 시험만 3/3, T26 파일 전체 11/11 통과. 47건 중 1건.
-- Why deferred: 바꾼 코드(TerminalView 글꼴·단축키·메모·사건 기록)는 사이드바 삭제 버튼을 건드리지 않는다. 간헐이라 원인 실측이 먼저다.
+- Evidence: 2026-10-25 1.18.0 릴리스 빌드 1회차 사전 점검 — `t40-session-tree.spec.ts:204` 「T40 recent tab follows what you looked at and survives a restart」가 전체 실행(17.1m) 중 같은 버튼 `rowInSidebar.getByTitle('Delete session').click()` 에서 30초 타임아웃(이번엔 hover 뒤 「performing click action」에서 멈춤) + worker teardown 240초 초과로 1회 실패. 단독 `--repeat-each=5` 20/20, 같은 커밋 `--check` 268 통과(로그 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1792931888745.log`). teardown 까지 막힌 것은 클릭 뒤 앱이 응답하지 않았다는 뜻일 수 있다.
+- Why deferred: 두 번 다 그 시험이 바꾼 코드와 무관한 사이드바 삭제 버튼에서 났고, 단독으로는 재현되지 않는다. 간헐이라 원인 실측이 먼저다.
 - Trigger: 사전 점검·묶음 실행에서 같은 줄이 다시 실패할 때.
-- Fix direction: 행에 `hover()` 를 먼저 하고 버튼이 보일 때까지 기다리거나, 시험 도우미가 우클릭 메뉴의 삭제를 쓰게 바꾼다 — 먼저 실패 때 화면(error-context)을 남겨 hover 가 빠졌는지 본다.
+- Fix direction: 먼저 실패 때 화면과 main 쪽 상태를 남긴다(삭제가 pty 종료·히스토리 파일 삭제·관계 정리를 하는 동안 렌더러/main 이 막히는지). 그다음 공용 도우미 하나로 「행 hover → 버튼 보임 대기 → 클릭 → 행 사라짐 대기」를 묶어 T26·T40 이 같이 쓰게 한다.
 - Owner: 없음
 
 ### T26 — 「macOS 에서 Ctrl 키는 터미널로」 시험이 셸 시작 스크립트와 경주한다
