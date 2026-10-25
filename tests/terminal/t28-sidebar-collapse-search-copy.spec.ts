@@ -60,17 +60,33 @@ test.describe('T28 sidebar collapse all / search / copy', () => {
         )
         const { page, userDataDir } = ctx
         const SEEDED = ['s-infolder', 's-loose']
-        const button = page.getByTestId('sidebar-collapse-all')
+        // Collapse all lives in the header's "…" menu (it folded away to make room for the inbox bell).
+        const more = page.getByTestId('sidebar-more')
+        const menu = page.getByTestId('sidebar-more-menu')
+        const item = page.getByTestId('sidebar-collapse-all')
+        const collapseState = async (): Promise<string | null> => {
+            await more.click()
+            await expect(menu).toBeVisible()
+            const state = await item.getAttribute('data-state')
+            await more.click()
+            await expect(menu).toHaveCount(0)
+            return state
+        }
+        const pressCollapseAll = async (): Promise<void> => {
+            await more.click()
+            await item.click()
+            await expect(menu).toHaveCount(0)
+        }
 
         await expect.poll(() => visibleSessionRows(page, SEEDED)).toEqual(['s-infolder', 's-loose'])
-        await expect(button).toHaveAttribute('data-state', 'expanded')
+        expect(await collapseState()).toBe('expanded')
 
         // Collapse: no session rows, the folder's workspace hidden, folder state saved.
-        await button.click()
+        await pressCollapseAll()
         await expect.poll(() => visibleSessionRows(page, SEEDED)).toEqual([])
         await expect(page.locator('[data-workspace-item="ws-infolder"]')).toHaveCount(0)
         await expect(page.locator('[data-workspace-item="ws-loose"]')).toBeVisible()
-        await expect(button).toHaveAttribute('data-state', 'collapsed')
+        expect(await collapseState()).toBe('collapsed')
         await expect.poll(() => folderExpandedOnDisk(userDataDir, 'f-open')).toBe(false)
 
         // Collapsing ends no session — "close" here means fold, not terminate.
@@ -79,7 +95,7 @@ test.describe('T28 sidebar collapse all / search / copy', () => {
         )).toEqual(expect.arrayContaining(SEEDED))
 
         // Restore: exactly what was open comes back — the closed folder stays closed.
-        await button.click()
+        await pressCollapseAll()
         await expect.poll(() => visibleSessionRows(page, SEEDED)).toEqual(['s-infolder', 's-loose'])
         await expect.poll(() => folderExpandedOnDisk(userDataDir, 'f-open')).toBe(true)
         expect(folderExpandedOnDisk(userDataDir, 'f-closed')).toBe(false)
@@ -88,8 +104,8 @@ test.describe('T28 sidebar collapse all / search / copy', () => {
         await page.getByTestId('folder-header-f-open').click()
         await page.locator('[data-workspace-item="ws-loose"] > div').first().click()
         await expect.poll(() => visibleSessionRows(page, SEEDED)).toEqual([])
-        await expect(button).toHaveAttribute('data-state', 'collapsed')
-        await button.click()
+        expect(await collapseState()).toBe('collapsed')
+        await pressCollapseAll()
         await expect.poll(() => visibleSessionRows(page, SEEDED)).toEqual(['s-infolder', 's-loose'])
         await expect.poll(() => folderExpandedOnDisk(userDataDir, 'f-closed')).toBe(true)
     })

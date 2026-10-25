@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion'
 import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/types'
 import { useControlApiMasters } from '../../hooks/useControlApiMasters'
+import { InboxDot } from '../Inbox/InboxDot'
 
 // Session status colors (claude-squad 방식)
 const SESSION_STATUS_COLORS: Record<SessionStatus, string> = {
@@ -345,6 +346,7 @@ export function SessionItem({
                         </span>
                     )}
                     {getSessionStatusBadge()}
+                    <InboxDot sessionId={session.id} />
                 </div>
                 {!isRenaming && (
                     <button

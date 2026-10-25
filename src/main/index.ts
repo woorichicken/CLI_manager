@@ -34,6 +34,7 @@ import { ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
 import { RecentSessions } from './RecentSessions'
+import { INBOX_CHANNEL, InboxStore } from './InboxStore'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
@@ -323,6 +324,17 @@ async function saveHistoryBeforeQuit(): Promise<void> {
 const sessionRelations = new SessionRelations(store, (visible) => broadcast(SESSION_RELATIONS_CHANNEL, visible))
 const recentSessions = new RecentSessions(store)
 
+/** Unread inbox requests on the Dock icon, so a request is seen from the browser the user is signing in with. */
+function updateInboxBadge(unread: number): void {
+    if (process.platform !== 'darwin' || !app.dock) return
+    app.dock.setBadge(unread > 0 ? String(unread) : '')
+}
+
+const inbox = new InboxStore(store, (requests) => {
+    broadcast(INBOX_CHANNEL, requests)
+    updateInboxBadge(requests.filter((r) => !r.readAt).length)
+})
+
 const controlApiService = new ControlApiService({
     store,
     terminals: terminalManager,
@@ -330,10 +342,12 @@ const controlApiService = new ControlApiService({
     broadcast,
     hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId),
     relations: sessionRelations,
+    inbox,
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)
         recentSessions.forget(sessionId)
+        inbox.forget(sessionId)
     }
 })
 const controlApiServer = new ControlApiServer({
@@ -3191,6 +3205,18 @@ app.whenReady().then(async () => {
     ipcMain.handle('push-recent-session', (_e, sessionId: string): void => {
         if (typeof sessionId === 'string' && sessionId) recentSessions.push(sessionId)
     })
+    // Inbox: requests sessions sent through the Control API (InboxStore). The renderer reads
+    // them here and marks them read when the user opens a request or looks at its session.
+    ipcMain.handle('get-inbox', () => inbox.list())
+    ipcMain.handle('mark-inbox-read', (_e, id: string): void => {
+        if (typeof id === 'string') inbox.markRead(id)
+    })
+    ipcMain.handle('mark-inbox-sessions-read', (_e, sessionIds: string[]): void => {
+        if (Array.isArray(sessionIds)) inbox.markSessionsRead(sessionIds.filter((id) => typeof id === 'string'))
+    })
+    ipcMain.handle('mark-inbox-all-read', (): void => {
+        inbox.markAllRead()
+    })
     ipcMain.handle('peek-sessions', (_e, sessionIds: string[]) =>
         controlApiService.peekSessions(Array.isArray(sessionIds) ? sessionIds.filter((id) => typeof id === 'string') : [])
     )
@@ -3237,6 +3263,9 @@ app.whenReady().then(async () => {
     )
     sessionRelations.prune(existingSessionIds)
     recentSessions.prune(existingSessionIds)
+    inbox.prune(existingSessionIds)
+    // prune() only announces a change; the badge must show what survived the restart either way.
+    updateInboxBadge(inbox.unreadCount())
 
     // apply() never throws; a port conflict shows up in Settings instead of blocking boot.
     void controlApiServer.apply(getControlApiSettings()).then((state) => {

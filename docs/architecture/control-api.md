@@ -3,7 +3,7 @@ description: When calling, extending, or debugging the AI Control API (REST unde
 authority: Endpoint, tool, and state contract of the AI Control API
 status: active
 owner: maintainer
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-24
 ---
 
 # AI Control API
@@ -96,6 +96,28 @@ For MCP, set the header in the client config, e.g. Claude Code `.mcp.json`:
 `"headers": { "X-Caller-Session": "${CLIMANAGER_SESSION_ID}" }`. With curl:
 `-H "X-Caller-Session: $CLIMANAGER_SESSION_ID"`.
 
+## Inbox
+
+A session that needs the user's hands — sign in somewhere (often a browser login an agent cannot do),
+look at a result, answer a question — sends a request. The app keeps it in an inbox until the user
+looks at that session. Code: `src/main/InboxStore.ts` (store, checks) · `ControlApiService.notifyInbox`
+· renderer `hooks/useInbox.ts`, `components/Inbox/`. Tests: `t52-inbox.spec.ts`, `t53-inbox-unit.spec.ts`.
+
+| Piece | Contract |
+|---|---|
+| Kind | `login` (key, orange) · `review` (eye, blue) · `question` (speech bubble, purple) · `other` (bell, gray). Omitted → `other`; anything else → `400` |
+| Text | Required. Whitespace and newlines fold into single spaces; cut (not refused) at **200** characters |
+| Link (`url`) | Optional. Must be an absolute URL, ≤ **2000** characters, and not `javascript:` `data:` `vbscript:` `blob:` `about:` → else `400`. Whether a click may open it is decided **when clicked**, by the same rule as a terminal link (`utils/terminalLinks.ts`: http/https/file/editor schemes + Settings > Terminal app schemes). A disallowed link is shown greyed, with how to allow it |
+| Which session | `sessionId` in the body, else `X-Caller-Session`. Neither → `400 session_required`; an id that names no open session → `404 not_found`. A request without a session has nowhere to lead |
+| AI mark | Sending does **not** set `aiControl` — the sender is the session itself |
+| Repeats | The same session + kind + text while still unread is not added again: it moves to the top with the new time (and the new link, if one was sent). `created: false` says so |
+| Read | (1) The session is **shown** — active tab, a split pane or a Grid window pane — while that window has focus. (2) The user clicks the request (shows the session) or its link. (3) **Mark all read**. (4) `POST /v1/inbox/:id/read` — the sender solved it itself |
+| Kept | electron-store `inbox`, owned by main (survives restarts; every window sees the same list). At most **200** — the oldest read ones go first. Read ones older than **7 days** are dropped at startup. A session closed (API or sidebar) takes its requests with it |
+| Shown | Bell at the front of the sidebar header with the unread count in red; the main header carries the same bell while the sidebar is closed. Orange dot on the session's row (tree, All sessions, search). macOS Dock badge = unread count |
+
+No OS notification or sound in this version: twenty sessions asking at once would be noise. With the API
+switched off nothing can be sent (the inbox still shows what is kept).
+
 ## Session state
 
 | `state` | Meaning |
@@ -161,6 +183,9 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/sessions/:id/rename` | `name` (trimmed, ≤80 chars) | session — renames it in the sidebar; does not set the AI mark |
 | POST | `/v1/sessions/:id/release` | | hands it to the user; clears the AI mark |
 | DELETE | `/v1/sessions/:id` | | kills the pty and removes the session — any session, including the user's |
+| POST | `/v1/inbox` | `kind`, `text`, `url`; `sessionId` or the `X-Caller-Session` header | `{ request, created }` — see [Inbox](#inbox). `400 session_required`, `404 not_found` |
+| GET | `/v1/inbox` | `?unread=1` | `{ unreadCount, requests[] }`, newest first. A request carries `id`, `sessionId`, `sessionName`, `workspaceName`, `kind`, `text`, `url?`, `client`, `read`, `at`, `createdAt`, `readAt` (ISO) |
+| POST | `/v1/inbox/:id/read` | | the request, marked read. `404 not_found` |
 
 A session carries `aiControlled`, `controlledBy`, `connectedAt` (both `''` when unmarked),
 `screenPartial`, `orchestrator` and `openedBy` (see [Master sessions](#master-sessions-orchestrators)).
@@ -206,7 +231,8 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 `POST /mcp`, JSON-RPC 2.0, stateless, `application/json` responses; `GET` → 405. Protocol versions
 2024-11-05 … 2025-11-25 are echoed. Tools: `list_workspaces`, `list_templates`, `list_sessions`,
 `open_session` (with `folder`, `ephemeral`), `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
-`focus_session`, `rename_session`, `release_session`, `close_session`, `unregister_workspace`. Domain errors come back as tool results with
+`focus_session`, `rename_session`, `release_session`, `close_session`, `unregister_workspace`, `inbox_notify`
+(`kind`, `text`, `url`, `session_id` — or the caller header), `inbox_list` (`unread_only`). Domain errors come back as tool results with
 `isError: true` so the model can read them; screen results are plain text, not JSON.
 
 ## MCP 없이 쓰기 (REST + 셸)
@@ -225,6 +251,9 @@ curl -s "${H[@]}" -d '{"timeoutMs":300000}' "$URL/v1/sessions/$ID/wait"    # 끝
 curl -s "${H[@]}" -d '{"keys":["down","enter"]}' "$URL/v1/sessions/$ID/input"   # 질문에 답하기
 curl -s "${H[@]}" -X DELETE "$URL/v1/sessions/$ID"                        # 닫기
 curl -s "${H[@]}" -X DELETE "$URL/v1/workspaces/$WS"                      # API 가 등록한 폴더를 사이드바에서 해제
+curl -s "${H[@]}" -H "X-Caller-Session: $CLIMANAGER_SESSION_ID" \
+     -d '{"kind":"login","text":"Sign in to Aside, then tell me","url":"https://example.com/login"}' \
+     "$URL/v1/inbox"                                                      # 사람 손이 필요할 때 — 앱 인박스로
 ```
 
 `/tmp`·워크트리처럼 한 번 쓰고 버릴 폴더는 열 때 `"ephemeral": true` 를 주면 마지막 세션이
@@ -292,3 +321,6 @@ It also broadcasts `control-api-masters` (`ControlApiMasters`, the whole snapsho
 without its own IPC listener.
 IPC: `get-control-api-state`, `set-control-api`, `regenerate-control-api-token`,
 `control-api-release-session`, `get-control-api-masters`.
+The inbox has its own channel `inbox` (the whole list on every change) and `get-inbox`, `mark-inbox-read`,
+`mark-inbox-sessions-read`, `mark-inbox-all-read`; `hooks/useInbox.ts` holds it in one module-level store
+like the masters.
