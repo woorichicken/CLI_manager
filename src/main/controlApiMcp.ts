@@ -33,6 +33,8 @@ Folders you open that are not registered yet are added to the user's sidebar (in
 
 You can also work in sessions the user opened: list_sessions with scope "all" (use query — there can be hundreds) finds them, and the same tools apply. Do this only when the user's request points at that session. A session's screen may be missing older output when screenPartial is true.
 
+When you need the user's hands — sign in to something in a browser, review a page or a diff, answer a question you cannot decide — call inbox_notify. The request shows in CLI Manager's inbox with your session, and it is marked read when the user opens your session. Keep the text to one line saying what to do; put the page in url.
+
 Rules: the first time you read, type into, wait on or focus a session it is marked as AI-driven and highlighted in green, so the user can see where you are working. They may type into it or disconnect it at any time — re-read the screen before acting. If a call reports "disconnected", the user took the session back: stop working in it unless they ask you to continue. Closing a session kills whatever runs in it; never close one you did not open unless the user asked. If a screen shows a question (awaitingInput: true) — a permission prompt, or Claude Code asking whether to trust a new folder — read the options and answer with send_input keys (e.g. ["down","enter"], ["1"]); text is refused until the question is gone. Trusting a folder or approving an action is the user's call: only accept when the user's request clearly covers it.`
 
 interface JsonRpcRequest {
@@ -199,6 +201,32 @@ const TOOLS: ToolDefinition[] = [
         inputSchema: { type: 'object', properties: { ...sessionIdProperty }, required: ['session_id'] }
     },
     {
+        name: 'inbox_notify',
+        description:
+            "Ask the user for something only they can do — sign in (login), look at a result (review), answer a question (question), or anything else (other). It appears in CLI Manager's inbox with a count and a Dock badge; clicking it opens your session, and opening your session marks it read. Repeating the same unread request does not add a second one. The session is session_id, or the one in your X-Caller-Session header.",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                kind: { type: 'string', enum: ['login', 'review', 'question', 'other'], description: 'Default "other".' },
+                text: { type: 'string', description: 'One line saying what you need (cut at 200 characters).' },
+                url: { type: 'string', description: 'Page to open: the login page, the review page. Optional.' },
+                session_id: {
+                    type: 'string',
+                    description: 'The session asking. Omit when your MCP config sends X-Caller-Session.'
+                }
+            },
+            required: ['text']
+        }
+    },
+    {
+        name: 'inbox_list',
+        description: "List the requests in CLI Manager's inbox, newest first, with whether the user has read each one.",
+        inputSchema: {
+            type: 'object',
+            properties: { unread_only: { type: 'boolean', description: 'Only unread requests. Default false.' } }
+        }
+    },
+    {
         name: 'close_session',
         description:
             'Stop a session and remove it from CLI Manager. Whatever runs in it is killed. Works on any session, so only close one you did not open when the user asked for it.',
@@ -340,6 +368,21 @@ async function callTool(
         case 'close_session':
             service.closeSession(str(args, 'session_id', true)!)
             return 'Closed.'
+        case 'inbox_notify':
+            return JSON.stringify(
+                service.notifyInbox({
+                    kind: args.kind,
+                    text: str(args, 'text', true),
+                    url: args.url,
+                    sessionId: str(args, 'session_id'),
+                    client,
+                    caller
+                }),
+                null,
+                1
+            )
+        case 'inbox_list':
+            return JSON.stringify(service.listInbox({ unreadOnly: bool(args, 'unread_only') }), null, 1)
         default:
             throw new InvalidParams(`Unknown tool: ${name}`)
     }
