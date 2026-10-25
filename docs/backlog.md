@@ -326,14 +326,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: rows·cols 를 한 번의 PTY resize 로 묶는다. 묶은 뒤 T4(리사이즈 폭풍)·T38(스트리밍 중 리사이즈)·T41 을 돌린다.
 - Owner: 없음
 
-### `src/main/TerminalEventLog.ts` — 제보 사건 기록에 PTY 크기 변경이 없다
-- Discovered: 2026-10-23 day-1023, 982d348d 를 가르다가.
-- Evidence: 제보에 실리는 사건(시작·복원·다시 붙음·Cmd+K·스크롤백 삭제·종료·크래시)에 PTY resize 가 없어, 경계 직전에 크기 변경이 있었는지 제보만으로 못 가른다. 같은 제보의 미러 줄·크기·appVersion 이 원인을 가른 결정적 근거였다.
-- Why deferred: 본론(숨김 터미널 크기)과 별개의 진단 기능이다.
-- Trigger: 터미널 렌더링 제보를 다시 가를 때 「그 전에 크기가 바뀌었나」가 필요해지면.
-- Fix direction: `resized 80x30→111x43` 사건을 `TerminalManager` 의 resize 경로에서 남긴다(짧은 시간에 몰리면 묶어 한 줄).
-- Owner: 없음
-
 ### 렌더러·미러 공용 — 높이만 바뀌는 resize 를 「화면 아래 기준」으로 맞출지 (모듈화 사람 컨펌)
 - Discovered: 2026-10-23 day-1023, 982d348d 재현. 시제품 `~/Downloads/_batches/day-1023/review/climanager/terminal/evidence/anchor-replay.cjs`.
 - Evidence: 실제 Claude 녹화 재생에서 높이만 바뀐 resize 3건이 xterm 기본 동작으로는 답 첫 줄 사라짐·배너 중복을 냈고, 「화면 아래 기준」으로 맞추면 0건이었다(폭+높이 표 이상 1→0, resize 없는 녹화는 동일).
