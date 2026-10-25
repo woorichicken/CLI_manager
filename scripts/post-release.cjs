@@ -81,6 +81,22 @@ const dmgNames = (version) => [`cli-manager-${version}-arm64.dmg`, `cli-manager-
 // Preflight
 // ---------------------------------------------------------------------------
 
+/**
+ * A link commit made on a stale main is rejected at push — after R2 was uploaded
+ * and the site files were rewritten (v1.11.0: 14 commits behind, `COMPLETED WITH
+ * FAILURES`). The stale-link check would also read an old tree. Only fetches.
+ */
+function checkWebsiteUpToDate() {
+    const fetched = run('git', ['fetch', '-q', 'origin', 'main'], { cwd: SITE_DIR })
+    if (!fetched.ok) {
+        warn('could not fetch website origin', fetched.out.split('\n')[0])
+        return
+    }
+    const behind = run('git', ['rev-list', '--count', 'HEAD..origin/main'], { cwd: SITE_DIR }).out.trim()
+    if (behind === '0') pass('website up to date with origin/main')
+    else fail('website behind origin/main', `${behind} commit(s)`, `git -C ${SITE_DIR} pull --ff-only origin main`)
+}
+
 function preflight(version, { skipChangelog }) {
     section('Preflight')
 
@@ -112,6 +128,8 @@ function preflight(version, { skipChangelog }) {
         const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: SITE_DIR }).out.trim()
         if (branch === 'main') pass('website on main')
         else fail('website not on main', branch)
+
+        checkWebsiteUpToDate()
     } else {
         fail('website repo not found', SITE_DIR)
     }
@@ -359,4 +377,6 @@ function main() {
     return failed ? 1 : 0
 }
 
-process.exit(main())
+if (require.main === module) process.exit(main())
+
+module.exports = { checkWebsiteUpToDate, hasFailed: () => failed }
