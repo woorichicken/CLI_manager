@@ -102,6 +102,14 @@ rules stay in the root; this file is the inventory.
 - 모달(묶음 이름은 위와 같음): 「Opened from this session」 / 「Opened this session」 / 「Added by hand」 · 상태(Working/Waiting for you/Idle — main 의 화면 사본 기준) · 마지막 줄(길면 **앞을** 잘라 끝 — 보통 지금 폴더 — 이 보인다) · 메모 · 이름이 `대화:` 로 시작하면 「Talk」 배지. 누르면 사이드바 클릭과 같게 이동. 「Open side by side」는 **지금 세션을 첫 칸**에 두고 고른 세션(최대 3)을 뒤에 — 세션 링크와 같은 경로
 - 어느 쪽이든 세션이 닫히면(API·사이드바·워크스페이스 삭제) 그 관계는 저장소에서도 지워진다. 시작 때 없는 세션을 가리키는 관계를 정리한다
 - 코드: `src/main/SessionRelations.ts`(저장) · `ControlApiService`(자동 등록·`peekSessions`) · `src/renderer/src/utils/relatedSessions.ts`(묶음·나무 계산) · `components/RelatedSessions/`(`RelationTree.tsx` = 관계 탭)
+- **끌어서 넣기**(1.20, 제보 269168e4): 사이드바 세션 줄을 다른 세션 줄 위에 놓으면 둘을 Related 에 넣는다 — 창의 손으로 추가와 같은 `add-session-relation` 이라 × 로 뺀 쌍도 사람이 끌어 넣으면 되살아난다(자동 등록은 여전히 못 살린다). 폴더 보기·All sessions·검색 결과의 줄이 모두 같다(`SessionItem`). 놓을 줄에 초록 테두리 + 「Relate」, 놓은 뒤 사이드바 아래 「Related: A ↔ B」/「Already related: …」. 자기 줄 위에서는 아무것도 안 뜬다. 끄는 id 는 `Sidebar/sessionDrop.tsx` 컨텍스트로 준다 — dragover 는 끌기 데이터를 못 읽는다. Control API 경로는 그대로(928ba6b5)
+
+#### 14-1. 세션 폴더 (All sessions 보기)
+- 1.20(제보 078ee766): 세션은 워크스페이스 소속을 그대로 두고 **세션 폴더 하나**에 더 들어갈 수 있다. 세션 폴더는 All sessions 보기에만 보인다 — 폴더(접기·개수) 먼저, 그 안은 목록과 같은 순서(고정 → 최근 본 순), 그 아래 「No folder」와 나머지
+- 만들기: All 보기 「…」 → New Session Folder(`sidebar-new-session-folder`). 같은 메뉴의 Collapse/Expand All(`sidebar-collapse-session-folders`)은 세션 폴더가 있을 때만. 폴더 보기의 「…」(워크스페이스 폴더)와 같은 자리 — 메뉴가 보기를 따른다(afbc3546)
+- 넣기·빼기: 세션 줄을 폴더 줄에 끌어 놓기 / 「No folder」 줄에 놓기. 세션 줄 위에 놓으면 폴더가 아니라 관계(위 14). 이름 바꾸기·지우기는 폴더 줄 우클릭(워크스페이스 폴더와 같은 `FolderContextMenu`). 지워도 세션은 그대로 — 「No folder」로
+- 없는 폴더를 가리키는 `sessionFolderId` 는 폴더 없음으로 읽는다(옛 판·다른 창에서 지운 경우). 1.19 이전 앱은 두 칸 모두 모른다 — 세션은 예전처럼 평평하게
+- 코드: `src/main/SessionFolders.ts`(저장 · T57) · `hooks/useSessionFolders.ts`(렌더러 상태 — 바로 바꾸고 뒤에서 저장) · `Sidebar/SidebarAllSessions.tsx`(목록·폴더 줄·놓기)
 
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
@@ -163,6 +171,7 @@ User Action (Renderer)
           cliSessionId?: string,      // Claude: --session-id we injected · Codex: id found in its rollout (CodexSessionLocator)
           cliToolName?: string,       // 'claude' (resume: <cmd> --resume <id>) · 'codex' (resume: <cmd> resume <id>)
           cliCommand?: string,        // What started it (`cldy`) — resume repeats this, not `claude`
+          sessionFolderId?: string,   // All sessions view folder it also sits in (SessionFolders); a missing folder = none
           aiControl?: { client: string, since: number }  // Mark: an AI works in this session (Control API)
         }
       ],
@@ -176,6 +185,9 @@ User Action (Renderer)
   customTemplates: TerminalTemplate[],
   settings: UserSettings,           // settings.controlApi = { enabled, port }
   controlApiToken?: string,         // Kept outside settings so a stale save-settings cannot rotate it
+  sessionFolders?: [                // All sessions view folders (SessionFolders) — membership is on the session
+    { id: string, name: string, isExpanded?: boolean, createdAt: number }
+  ],
   sessionRelations?: [              // Related sessions — one record per pair, either direction
     { from: string, to: string, kind: 'opened' | 'connected' | 'manual', at: number, dismissed?: boolean }
   ],
@@ -202,6 +214,7 @@ User Action (Renderer)
 - `set-folders-expanded`: 여러 폴더의 펼침 상태를 한 번에 저장 — 전체 접기/복원용
 - `update-session-memo`: 세션 메모 저장
 - `toggle-pin-session`: 세션 고정(All sessions 맨 위) 켜기/끄기 — 새 값을 돌려준다
+- `get-session-folders` · `create-session-folder` · `rename-session-folder` · `remove-session-folder`(세션은 그대로) · `set-session-folders-expanded` · `move-session-to-session-folder`(`null` = 폴더에서 뺌): All sessions 세션 폴더(`SessionFolders`). 이 창만 바꾸므로 방송하지 않고 렌더러가 제 사본을 고친다
 
 #### Git Operations
 - `git-list-branches`: 브랜치 목록 조회

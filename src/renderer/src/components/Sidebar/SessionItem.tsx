@@ -6,6 +6,7 @@ import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion
 import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/types'
 import { useControlApiMasters } from '../../hooks/useControlApiMasters'
 import { InboxDot } from '../Inbox/InboxDot'
+import { SESSION_DRAG_TYPE, isSessionDrag, useDropHighlight, useSessionDrop } from './sessionDrop'
 
 // Session status colors (claude-squad 방식)
 const SESSION_STATUS_COLORS: Record<SessionStatus, string> = {
@@ -121,6 +122,18 @@ export function SessionItem({
     const orchestrator = useControlApiMasters().masters[session.id]
     const role: SessionRole = orchestrator ? 'master' : session.aiControl ? 'ai' : 'user'
     const rowClasses = ROW_CLASSES[role]
+    // Another session dropped on this row joins its Related sessions (report 269168e4).
+    const drop = useSessionDrop()
+    const takesDrop = !!drop?.draggingId && drop.draggingId !== session.id
+    const relateTarget = useDropHighlight(takesDrop)
+    // dragenter and dragover both accept: the browser fires dragover on a timer, and a drop
+    // goes only to the element that accepted the last one of them.
+    const acceptRelate = (e: React.DragEvent): void => {
+        if (!takesDrop || !isSessionDrag(e)) return
+        e.preventDefault()
+        e.stopPropagation()
+        relateTarget.enter()
+    }
 
     React.useEffect(() => {
         if (isRenaming && inputRef.current) {
@@ -237,16 +250,37 @@ export function SessionItem({
             ref={itemRef}
             draggable
             onDragStart={(e) => {
-                // HTML5 drag for split view (entire item can be dragged to terminal area)
-                e.dataTransfer.setData('application/x-session-id', session.id)
+                // HTML5 drag of the whole row: onto the terminal area for split view, onto another
+                // row to relate the two, onto a session folder in the All sessions view to file it
+                e.dataTransfer.setData(SESSION_DRAG_TYPE, session.id)
                 e.dataTransfer.setData('application/x-workspace-id', workspace.id)
                 e.dataTransfer.effectAllowed = 'move'
+                drop?.beginDrag(session.id)
                 onDragStartSession?.(session.id)
             }}
             onDragEnd={() => {
+                drop?.endDrag()
                 onDragEndSession?.()
             }}
+            onDragEnter={acceptRelate}
+            onDragOver={acceptRelate}
+            onDragLeave={relateTarget.leave}
+            onDrop={(e) => {
+                if (!takesDrop || !isSessionDrag(e)) return
+                e.preventDefault()
+                e.stopPropagation()
+                relateTarget.clear()
+                drop?.onRelate(session.id, e.dataTransfer.getData(SESSION_DRAG_TYPE) || drop.draggingId!)
+            }}
         >
+            {relateTarget.over && (
+                <div
+                    data-session-relate-target={session.id}
+                    className="pointer-events-none absolute inset-0 z-10 rounded ring-1 ring-inset ring-emerald-400/70 bg-emerald-500/10"
+                >
+                    <span className="absolute right-1 top-1/2 -translate-y-1/2 px-1.5 py-px rounded bg-emerald-600/90 text-[10px] text-white">Relate</span>
+                </div>
+            )}
             <Reorder.Item
                 value={session}
                 dragListener={false}

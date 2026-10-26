@@ -33,6 +33,7 @@ import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
+import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
 import { relayFeedbackRequest } from './FeedbackRelay'
@@ -322,6 +323,7 @@ async function saveHistoryBeforeQuit(): Promise<void> {
 }
 
 const sessionRelations = new SessionRelations(store, (visible) => broadcast(SESSION_RELATIONS_CHANNEL, visible))
+const sessionFolders = new SessionFolders(store)
 const recentSessions = new RecentSessions(store)
 
 /** Unread inbox requests on the Dock icon, so a request is seen from the browser the user is signing in with. */
@@ -3199,6 +3201,17 @@ app.whenReady().then(async () => {
     ipcMain.handle('control-api-release-session', (_e, sessionId: string): boolean =>
         controlApiService.clearAiControl(sessionId)
     )
+
+    // Session folders of the sidebar's All sessions view (SessionFolders). Only this window changes them,
+    // so the renderer updates its own copy instead of waiting for a broadcast.
+    ipcMain.handle('get-session-folders', () => sessionFolders.list())
+    ipcMain.handle('create-session-folder', (_e, name: string) => sessionFolders.create(name))
+    ipcMain.handle('rename-session-folder', (_e, folderId: string, name: string): boolean => sessionFolders.rename(folderId, name))
+    ipcMain.handle('remove-session-folder', (_e, folderId: string): boolean => sessionFolders.remove(folderId))
+    ipcMain.handle('set-session-folders-expanded', (_e, folderIds: unknown, expanded: boolean): boolean =>
+        Array.isArray(folderIds) && sessionFolders.setExpanded(folderIds.filter((id): id is string => typeof id === 'string'), expanded === true))
+    ipcMain.handle('move-session-to-session-folder', (_e, sessionId: string, folderId: string | null): boolean =>
+        sessionFolders.moveSession(sessionId, typeof folderId === 'string' ? folderId : null))
 
     // Session header "Related sessions". Recorded automatically by the Control API
     // (ControlApiService), added and removed by hand here.

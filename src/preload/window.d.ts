@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
 
 declare global {
     interface Window {
@@ -210,6 +210,13 @@ declare global {
             onSessionRelations: (callback: (relations: SessionRelation[]) => void) => () => void
             addSessionRelation: (from: string, to: string) => Promise<boolean>
             removeSessionRelation: (a: string, b: string) => Promise<boolean>
+            // Sidebar "All sessions" session folders
+            getSessionFolders: () => Promise<SessionFolder[]>
+            createSessionFolder: (name: string) => Promise<SessionFolder | null>
+            renameSessionFolder: (folderId: string, name: string) => Promise<boolean>
+            removeSessionFolder: (folderId: string) => Promise<boolean>
+            setSessionFoldersExpanded: (folderIds: string[], expanded: boolean) => Promise<boolean>
+            moveSessionToSessionFolder: (sessionId: string, folderId: string | null) => Promise<boolean>
             getRecentSessions: () => Promise<string[]>
             pushRecentSession: (sessionId: string) => Promise<void>
             getInbox: () => Promise<InboxRequest[]>

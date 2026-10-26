@@ -12,6 +12,13 @@ interface SidebarMoreMenuProps {
     anyExpanded: boolean
     onToggleCollapseAll: () => void
     onNewFolder: () => void
+    /**
+     * Which folders the items act on. The folder view's are workspace folders; the All sessions
+     * view's are session folders, so the menu follows the view (reports afbc3546, 078ee766).
+     */
+    folderKind?: 'workspace' | 'session'
+    /** Hide "Collapse/Expand All" when there is nothing it could fold. */
+    showCollapseAll?: boolean
 }
 
 /**
@@ -19,7 +26,8 @@ interface SidebarMoreMenuProps {
  * Folding them keeps the header at the button count it had before the inbox
  * bell, so the "Workspaces" title is not cut at the default width.
  */
-export function SidebarMoreMenu({ anyExpanded, onToggleCollapseAll, onNewFolder }: SidebarMoreMenuProps) {
+export function SidebarMoreMenu({ anyExpanded, onToggleCollapseAll, onNewFolder, folderKind = 'workspace', showCollapseAll = true }: SidebarMoreMenuProps) {
+    const sessionFolders = folderKind === 'session'
     const buttonRef = useRef<HTMLButtonElement>(null)
     const menuRef = useRef<HTMLDivElement>(null)
     const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
@@ -78,20 +86,26 @@ export function SidebarMoreMenu({ anyExpanded, onToggleCollapseAll, onNewFolder 
                         className="fixed bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 backdrop-blur-md"
                         style={{ top: position.top, left: position.left, width: MENU_WIDTH_PX, zIndex: MENU_Z_INDEX }}
                     >
+                        {showCollapseAll && (
+                            <button
+                                data-testid={sessionFolders ? 'sidebar-collapse-session-folders' : 'sidebar-collapse-all'}
+                                data-state={anyExpanded ? 'expanded' : 'collapsed'}
+                                className={itemClass}
+                                onClick={run(onToggleCollapseAll)}
+                            >
+                                {anyExpanded
+                                    ? <ChevronsDownUp size={12} className="text-gray-400 shrink-0" />
+                                    : <ChevronsUpDown size={12} className="text-gray-400 shrink-0" />}
+                                <span className="truncate">{anyExpanded ? 'Collapse All' : 'Expand All'}</span>
+                            </button>
+                        )}
                         <button
-                            data-testid="sidebar-collapse-all"
-                            data-state={anyExpanded ? 'expanded' : 'collapsed'}
+                            data-testid={sessionFolders ? 'sidebar-new-session-folder' : 'sidebar-new-folder'}
                             className={itemClass}
-                            onClick={run(onToggleCollapseAll)}
+                            onClick={run(onNewFolder)}
                         >
-                            {anyExpanded
-                                ? <ChevronsDownUp size={12} className="text-gray-400 shrink-0" />
-                                : <ChevronsUpDown size={12} className="text-gray-400 shrink-0" />}
-                            <span className="truncate">{anyExpanded ? 'Collapse All' : 'Expand All'}</span>
-                        </button>
-                        <button data-testid="sidebar-new-folder" className={itemClass} onClick={run(onNewFolder)}>
                             <FolderPlus size={12} className="text-gray-400 shrink-0" />
-                            <span className="truncate">New Folder</span>
+                            <span className="truncate">{sessionFolders ? 'New Session Folder' : 'New Folder'}</span>
                         </button>
                     </div>,
                     document.body

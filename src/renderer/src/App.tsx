@@ -30,6 +30,7 @@ import { mostRecentOtherSession, neighborSession, sidebarWorkspaceOrder, type Se
 import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
+import { useSessionFolders } from './hooks/useSessionFolders'
 import { useInboxReadOnView } from './hooks/useInbox'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
@@ -53,6 +54,8 @@ const SESSION_LINK_NOTICE_MS = 4000
 function App() {
     const [workspaces, setWorkspaces] = useState<Workspace[]>([])
     const [folders, setFolders] = useState<WorkspaceFolder[]>([])
+    // Folders of the sidebar's All sessions view; a session's membership is on the session itself
+    const { sessionFolders, actions: sessionFolderActions } = useSessionFolders(setWorkspaces)
     // Workspace display order (only affects Sidebar, not terminal rendering)
     const [workspaceOrder, setWorkspaceOrder] = useState<string[]>([])
     // Session display order per workspace (only affects Sidebar, not terminal rendering)
@@ -1483,6 +1486,8 @@ function App() {
                     splitLayout={splitLayout}
                     onDragStartSession={handleSidebarDragStart}
                     onDragEndSession={handleSidebarDragEnd}
+                    sessionFolders={sessionFolders}
+                    sessionFolderActions={sessionFolderActions}
                     inboxSlot={
                         <InboxButton
                             placement="sidebar"

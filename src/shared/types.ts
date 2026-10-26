@@ -50,6 +50,11 @@ export interface TerminalSession {
     /** Kept at the top of the sidebar's "All sessions" list, above the recently viewed ones. */
     isPinned?: boolean
     /**
+     * The session folder it sits in, in the sidebar's "All sessions" view — on top
+     * of its workspace, not instead of it. Unset (or naming a deleted folder): no folder.
+     */
+    sessionFolderId?: string
+    /**
      * Set while an external AI works in this session through the Control API:
      * when the API opens it, or the first time the API reads, types into, waits
      * on or focuses it. A visible mark, not a permission — the API reaches every
@@ -104,9 +109,18 @@ export interface WorkspaceFolder {
     createdAt: number
 }
 
+/** A folder of sessions in the sidebar's "All sessions" view (see TerminalSession.sessionFolderId). */
+export interface SessionFolder {
+    id: string
+    name: string
+    isExpanded?: boolean
+    createdAt: number
+}
+
 export interface AppConfig {
     workspaces: Workspace[]
     folders?: WorkspaceFolder[]
+    sessionFolders?: SessionFolder[]   // "All sessions" view folders (see SessionFolder)
     playgroundPath: string
     settings?: UserSettings
     customTemplates?: TerminalTemplate[]
