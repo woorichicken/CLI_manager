@@ -3197,11 +3197,6 @@ app.whenReady().then(async () => {
         controlApiService.clearAiControl(sessionId)
     )
 
-    // Session header "Related sessions". Recorded automatically by the Control API
-    // (ControlApiService), added and removed by hand here.
-    ipcMain.handle('get-session-relations', () => sessionRelations.list())
-    ipcMain.handle('add-session-relation', (_e, from: string, to: string): boolean => sessionRelations.add(from, to))
-    ipcMain.handle('remove-session-relation', (_e, a: string, b: string): boolean => sessionRelations.remove(a, b))
     // Session folders of the sidebar's All sessions view (SessionFolders). Only this window changes them,
     // so the renderer updates its own copy instead of waiting for a broadcast.
     ipcMain.handle('get-session-folders', () => sessionFolders.list())
@@ -3212,6 +3207,12 @@ app.whenReady().then(async () => {
         Array.isArray(folderIds) && sessionFolders.setExpanded(folderIds.filter((id): id is string => typeof id === 'string'), expanded === true))
     ipcMain.handle('move-session-to-session-folder', (_e, sessionId: string, folderId: string | null): boolean =>
         sessionFolders.moveSession(sessionId, typeof folderId === 'string' ? folderId : null))
+
+    // Session header "Related sessions". Recorded automatically by the Control API
+    // (ControlApiService), added and removed by hand here.
+    ipcMain.handle('get-session-relations', () => sessionRelations.list())
+    ipcMain.handle('add-session-relation', (_e, from: string, to: string): boolean => sessionRelations.add(from, to))
+    ipcMain.handle('remove-session-relation', (_e, a: string, b: string): boolean => sessionRelations.remove(a, b))
     // The Related dialog's Recent tab: the renderer reports each session the user switches to.
     ipcMain.handle('get-recent-sessions', () => recentSessions.list())
     ipcMain.handle('push-recent-session', (_e, sessionId: string): void => {
