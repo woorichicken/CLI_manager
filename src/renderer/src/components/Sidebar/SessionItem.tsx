@@ -126,6 +126,14 @@ export function SessionItem({
     const drop = useSessionDrop()
     const takesDrop = !!drop?.draggingId && drop.draggingId !== session.id
     const relateTarget = useDropHighlight(takesDrop)
+    // dragenter and dragover both accept: the browser fires dragover on a timer, and a drop
+    // goes only to the element that accepted the last one of them.
+    const acceptRelate = (e: React.DragEvent): void => {
+        if (!takesDrop || !isSessionDrag(e)) return
+        e.preventDefault()
+        e.stopPropagation()
+        relateTarget.enter()
+    }
 
     React.useEffect(() => {
         if (isRenaming && inputRef.current) {
@@ -254,12 +262,8 @@ export function SessionItem({
                 drop?.endDrag()
                 onDragEndSession?.()
             }}
-            onDragOver={(e) => {
-                if (!takesDrop || !isSessionDrag(e)) return
-                e.preventDefault()
-                e.stopPropagation()
-                relateTarget.enter()
-            }}
+            onDragEnter={acceptRelate}
+            onDragOver={acceptRelate}
             onDragLeave={relateTarget.leave}
             onDrop={(e) => {
                 if (!takesDrop || !isSessionDrag(e)) return

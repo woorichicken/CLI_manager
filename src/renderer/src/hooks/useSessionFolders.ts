@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useCallback, useEffect, useState } from 'react'
+import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
 import { SessionFolder, Workspace } from '../../../shared/types'
 
 export interface SessionFolderActions {
@@ -36,6 +36,9 @@ function withSessionFolders(
  */
 export function useSessionFolders(setWorkspaces: Dispatch<SetStateAction<Workspace[]>>) {
     const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>([])
+    // Two quick clicks on a heading come before a re-render: read the latest list, not the render's.
+    const foldersRef = useRef(sessionFolders)
+    foldersRef.current = sessionFolders
 
     useEffect(() => {
         window.api.getSessionFolders().then(setSessionFolders).catch(() => {})
@@ -67,9 +70,11 @@ export function useSessionFolders(setWorkspaces: Dispatch<SetStateAction<Workspa
     }, [])
 
     const toggleExpanded = useCallback(async (folderId: string) => {
-        const folder = sessionFolders.find(f => f.id === folderId)
-        if (folder) await setExpanded([folderId], !folder.isExpanded)
-    }, [sessionFolders, setExpanded])
+        const folder = foldersRef.current.find(f => f.id === folderId)
+        if (!folder) return
+        foldersRef.current = foldersRef.current.map(f => f.id === folderId ? { ...f, isExpanded: !folder.isExpanded } : f)
+        await setExpanded([folderId], !folder.isExpanded)
+    }, [setExpanded])
 
     const moveSession = useCallback(async (sessionId: string, folderId: string | null) => {
         setWorkspaces(prev => withSessionFolders(prev, (current, id) => id === sessionId ? (folderId ?? undefined) : current))

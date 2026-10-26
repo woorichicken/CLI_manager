@@ -38,11 +38,14 @@ export class SessionFolders {
         return this.update(folderId, folder => ({ ...folder, name: trimmed }))
     }
 
-    /** Deletes the folder only: its sessions stay open and go back to "No folder". */
+    /**
+     * Deletes the folder only: its sessions stay open and go back to "No folder". Sessions still
+     * naming it are cleared even when the folder itself is already gone (another window, an old build).
+     */
     remove(folderId: string): boolean {
         const folders = this.list()
-        if (!folders.some(f => f.id === folderId)) return false
-        this.store.set(SESSION_FOLDERS_KEY, folders.filter(f => f.id !== folderId))
+        const listed = folders.some(f => f.id === folderId)
+        if (listed) this.store.set(SESSION_FOLDERS_KEY, folders.filter(f => f.id !== folderId))
         const workspaces = this.workspaces()
         let changed = false
         for (const workspace of workspaces) {
@@ -54,7 +57,7 @@ export class SessionFolders {
             }
         }
         if (changed) this.store.set('workspaces', workspaces)
-        return true
+        return listed || changed
     }
 
     setExpanded(folderIds: string[], expanded: boolean): boolean {

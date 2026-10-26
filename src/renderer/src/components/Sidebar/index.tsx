@@ -257,10 +257,15 @@ export function Sidebar({
             }).catch(() => showDropNotice('Could not relate the sessions'))
         }
     }), [draggingSessionId, showDropNotice])
-    // A drag that ends outside every row (or is cancelled) still has to clear the dragged id.
+    // A drag that ends outside every row (or is cancelled) still has to clear the dragged id. A drop on
+    // a session folder moves the row to another list, so its own dragend never comes: end the split
+    // view's drag too, or its drop zone stays over the terminals until App's safety timer.
     useEffect(() => {
         if (!draggingSessionId) return
-        const clear = (): void => setDraggingSessionId(null)
+        const clear = (): void => {
+            setDraggingSessionId(null)
+            onDragEndSession?.()
+        }
         // Bubble phase: a row's own drop handler runs first and still sees the id.
         window.addEventListener('dragend', clear)
         window.addEventListener('drop', clear)
@@ -268,7 +273,7 @@ export function Sidebar({
             window.removeEventListener('dragend', clear)
             window.removeEventListener('drop', clear)
         }
-    }, [draggingSessionId])
+    }, [draggingSessionId, onDragEndSession])
 
     // Resizing logic (horizontal - sidebar width)
     const isResizing = useRef(false)

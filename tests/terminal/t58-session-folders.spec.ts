@@ -84,6 +84,9 @@ test.describe('T58 session folders', () => {
         await page.mouse.up()
         await expect(body.locator('[data-session-item="s-b1"]')).toBeVisible()
         await expect(page.locator(`[data-session-folder-count="${folderId}"]`)).toHaveText('(1)')
+        // The row moved to another list, so its own dragend never came: the split view's drop zone must still go.
+        // Well inside App's 3-second safety timer, which would otherwise be what removes it.
+        await expect.poll(() => page.evaluate(() => document.querySelectorAll('div.absolute.inset-0.z-30').length), { timeout: 1500 }).toBe(0)
         await expect.poll(() => storedSession(userDataDir, 's-b1')?.sessionFolderId).toBe(folderId)
         // It is still that workspace's session: the row keeps its workspace label, the tree keeps the row.
         await expect(body.locator('[data-session-item="s-b1"] [data-testid="session-workspace-label"]')).toHaveText('T58WSTWO')
@@ -132,6 +135,15 @@ test.describe('T58 session folders', () => {
         await expect(page.getByTestId('sidebar-all-sessions').locator('[data-session-item="s-a2"]')).toBeVisible()
 
         const heading = page.getByTestId('session-folder-header-sf-old')
+        // Esc throws the typed name away, even though leaving the box also blurs it.
+        await heading.click({ button: 'right' })
+        await page.getByRole('button', { name: 'Rename' }).click()
+        await page.getByTestId('session-folder-rename').fill('T58 Thrown away')
+        await page.getByTestId('session-folder-rename').press('Escape')
+        await expect(heading).toContainText('T58 Old')
+        await page.waitForTimeout(300)
+        expect(storedFolders(userDataDir).map(f => f.name)).toEqual(['T58 Old'])
+
         await heading.click({ button: 'right' })
         await page.getByRole('button', { name: 'Rename' }).click()
         await page.getByTestId('session-folder-rename').fill('T58 New')

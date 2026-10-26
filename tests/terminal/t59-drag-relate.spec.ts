@@ -77,6 +77,8 @@ test.describe('T59 drag to relate', () => {
         await expect(dialog).toHaveCount(0)
 
         // The user dragging it in again is a choice the user made: the removed pair is restored.
+        // (Wait out the first notice, so the next one is the second drop's.)
+        await expect(page.getByTestId('sidebar-drop-notice')).toHaveCount(0)
         await page.mouse.move(900, 500)
         await dragRowOver(page, 's-b1', list.locator('[data-session-item="s-a1"]'))
         await page.mouse.up()
@@ -87,6 +89,7 @@ test.describe('T59 drag to relate', () => {
         await page.keyboard.press('Escape')
 
         // Once more: already there, nothing changes.
+        await expect(page.getByTestId('sidebar-drop-notice')).toHaveCount(0)
         await page.mouse.move(900, 500)
         await dragRowOver(page, 's-b1', list.locator('[data-session-item="s-a1"]'))
         await page.mouse.up()

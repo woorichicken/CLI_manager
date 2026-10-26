@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, FolderOpen, Folder } from 'lucide-react'
 import { SessionFolder } from '../../../../shared/types'
 import type { SessionEntry } from '../../utils/sessionNavigation'
@@ -34,6 +34,8 @@ export function sessionFolderOf(entry: SessionEntry, folderIds: Set<string>): st
 export function SidebarAllSessions({ entries, sessionFolders, folderActions, listProps, fontSize = 14, showSessionCount = true }: SidebarAllSessionsProps) {
     const [menu, setMenu] = useState<{ x: number; y: number; folderId: string } | null>(null)
     const [renamingId, setRenamingId] = useState<string | null>(null)
+    // Esc unmounts the input, which may blur it: that blur must not save what Esc threw away.
+    const renameCancelledRef = useRef(false)
     const folderIds = new Set(sessionFolders.map(f => f.id))
     const unfiled = entries.filter(entry => sessionFolderOf(entry, folderIds) === null)
 
@@ -72,14 +74,15 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
                                     style={{ fontSize: `${fontSize}px` }}
                                     onClick={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            void folderActions.rename(folder.id, (e.target as HTMLInputElement).value)
+                                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                                        if (e.key === 'Escape') {
+                                            renameCancelledRef.current = true
                                             setRenamingId(null)
                                         }
-                                        if (e.key === 'Escape') setRenamingId(null)
                                     }}
                                     onBlur={(e) => {
-                                        void folderActions.rename(folder.id, e.target.value)
+                                        if (!renameCancelledRef.current) void folderActions.rename(folder.id, e.target.value)
+                                        renameCancelledRef.current = false
                                         setRenamingId(null)
                                     }}
                                 />
@@ -120,6 +123,8 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
                     x={menu.x}
                     y={menu.y}
                     onRename={() => {
+                        // Esc may have left the flag set: a removed input gets no blur to clear it.
+                        renameCancelledRef.current = false
                         setRenamingId(menu.folderId)
                         setMenu(null)
                     }}
@@ -154,6 +159,13 @@ function FolderDropRow({ folderId, entries, folderIds, onDropSession, className,
     const dragged = drop?.draggingId ? entries.find(entry => entry.session.id === drop.draggingId) : undefined
     const takesDrop = !!dragged && sessionFolderOf(dragged, folderIds) !== folderId
     const highlight = useDropHighlight(takesDrop)
+    // dragenter and dragover both accept: the browser fires dragover on a timer, and a drop
+    // goes only to the element that accepted the last one of them.
+    const accept = (e: React.DragEvent): void => {
+        if (!takesDrop || !isSessionDrag(e)) return
+        e.preventDefault()
+        highlight.enter()
+    }
 
     return (
         <div
@@ -162,11 +174,8 @@ function FolderDropRow({ folderId, entries, folderIds, onDropSession, className,
             className={`${className} ${highlight.over ? 'ring-1 ring-inset ring-sky-400/70 bg-sky-500/10' : ''}`}
             onClick={onClick}
             onContextMenu={onContextMenu}
-            onDragOver={(e) => {
-                if (!takesDrop || !isSessionDrag(e)) return
-                e.preventDefault()
-                highlight.enter()
-            }}
+            onDragEnter={accept}
+            onDragOver={accept}
             onDragLeave={highlight.leave}
             onDrop={(e) => {
                 if (!takesDrop || !isSessionDrag(e)) return
