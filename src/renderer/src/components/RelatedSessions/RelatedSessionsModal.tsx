@@ -5,7 +5,6 @@ import { RELATED_ORDERS, RelatedEntry, RelatedOrder, sessionTreeFor } from '../.
 import { MAX_LINKED_SESSIONS } from '../../utils/sessionLink'
 import { useSessionPeeks } from '../../hooks/useSessionPeeks'
 import { RelationTree } from './RelationTree'
-import { AllList, RecentList, recentSessionRows } from './SessionListTabs'
 import { CopyNotice, useCopyWithNotice } from '../Sidebar/CopyNotice'
 import { AddRelatedSession } from './AddRelatedSession'
 import { NewRelatedSession } from './NewRelatedSession'
@@ -26,9 +25,7 @@ interface RelatedSessionsModalProps {
 /** "Open side by side" puts this session in the first pane, so the others get the rest of the split view. */
 const MAX_PICKED = MAX_LINKED_SESSIONS - 1
 
-type RelatedTab = 'tree' | 'recent' | 'all'
-
-/** The Relations tab's order is a preference: it outlives the dialog and a restart. */
+/** The dialog's order is a preference: it outlives the dialog and a restart. */
 const ORDER_STORAGE_KEY = 'climanager.related.order'
 
 function storedOrder(): RelatedOrder {
@@ -59,12 +56,6 @@ const HELP_LINES: Array<[string, string]> = [
     ['×', 'remove it from this list (the session keeps running)']
 ]
 
-const TABS: Array<{ key: RelatedTab; label: string }> = [
-    { key: 'tree', label: 'Relations' },
-    { key: 'recent', label: 'Recent' },
-    { key: 'all', label: 'All' }
-]
-
 /**
  * The sessions that belong with this one, at a glance: state, last line and
  * memo of each, one click to go there, or several side by side.
@@ -85,20 +76,10 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     )
     const { notice, copy } = useCopyWithNotice()
     const relatedIds = useMemo(() => new Set(entries.map(entry => entry.session.id)), [entries])
-    const [tab, setTab] = useState<RelatedTab>('tree')
-    const recentRows = useMemo(() => recentSessionRows(recentIds, workspaces, sessionId), [recentIds, workspaces, sessionId])
-    const allIds = useMemo(
-        () => workspaces.flatMap(workspace => (workspace.sessions ?? []).map(s => s.id)).filter(id => id !== sessionId),
-        [workspaces, sessionId]
-    )
-    // What the open tab lists. Only those rows are polled for state: the All tab can hold every session.
-    const visibleIds = useMemo(
-        () => tab === 'tree' ? entries.map(entry => entry.session.id)
-            : tab === 'recent' ? recentRows.map(row => row.session.id)
-            : allIds,
-        [tab, entries, recentRows, allIds]
-    )
-    const peeks = useSessionPeeks(tab === 'all' ? [] : visibleIds)
+    // Only the related sessions are listed — every session is one click away in the sidebar's
+    // All sessions view, so this dialog no longer repeats that list (reports c17aa9c4, 33f92744).
+    const visibleIds = useMemo(() => entries.map(entry => entry.session.id), [entries])
+    const peeks = useSessionPeeks(visibleIds)
     const [selected, setSelected] = useState<string[]>([])
     const panelRef = useRef<HTMLDivElement>(null)
 
@@ -113,13 +94,13 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     // A selected session that closed (or was removed) cannot be opened any more.
     const liveSelection = selected.filter(id => visibleIds.includes(id))
 
-    // Read when the tab (or the order that needs it) opens, not before: it is what the user looked at up to now.
+    // Read when the order that needs it is picked, not before: it is what the user looked at up to now.
     useEffect(() => {
-        if (tab !== 'recent' && order !== 'viewed') return
+        if (order !== 'viewed') return
         let cancelled = false
         window.api.getRecentSessions().then(ids => { if (!cancelled) setRecentIds(ids) }).catch(() => {})
         return () => { cancelled = true }
-    }, [tab, order])
+    }, [order])
 
     // Take focus from the terminal: keys typed while the dialog is open must not reach the shell.
     useEffect(() => {
@@ -159,10 +140,6 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
 
     const toggle = (id: string): void => {
         setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id].slice(0, MAX_PICKED))
-    }
-    const openTab = (next: RelatedTab): void => {
-        setTab(next)
-        setSelected([])
     }
     const show = (ids: string[]): void => {
         onShowSessions(ids)
@@ -234,21 +211,9 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     )}
                 </div>
 
-                <div className="flex items-end gap-1 px-4 pt-2 border-b border-white/10" role="tablist">
-                    {TABS.map(item => (
-                        <button
-                            key={item.key}
-                            role="tab"
-                            aria-selected={item.key === tab}
-                            onClick={() => openTab(item.key)}
-                            className={`px-3 py-1.5 text-xs border-b-2 -mb-px transition-colors ${item.key === tab ? 'border-blue-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-                            data-related-tab={item.key}
-                        >
-                            {item.label}
-                        </button>
-                    ))}
-                    {tab === 'tree' && (
-                        <label className="ml-auto mb-1 flex items-center gap-1.5 text-[11px] text-gray-500">
+                {entries.length > 0 && (
+                    <div className="flex items-center px-4 py-1.5 border-b border-white/10" data-related-toolbar>
+                        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-gray-500">
                             Sort
                             <select
                                 value={order}
@@ -262,51 +227,27 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                                 ))}
                             </select>
                         </label>
-                    )}
-                </div>
+                    </div>
+                )}
 
                 <div className="max-h-[50vh] overflow-y-auto py-1">
-                    {tab === 'tree' && entries.length === 0 && (
+                    {entries.length === 0 && (
                         <div className="px-4 py-6 text-center text-xs text-gray-500" data-related-empty>
                             No related sessions yet. Sessions an agent here opens or works in through the
                             Control API show up on their own; add one by hand below.
                         </div>
                     )}
-                    {tab === 'tree' && (
-                        <RelationTree
-                            tree={tree}
-                            ownerName={owner.name}
-                            peeks={peeks}
-                            selected={liveSelection}
-                            selectionFull={liveSelection.length >= MAX_PICKED}
-                            onToggle={toggle}
-                            onShow={id => show([id])}
-                            onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
-                            onCopyId={id => void copy(id, 'session ID')}
-                        />
-                    )}
-                    {tab === 'recent' && (
-                        <RecentList
-                            rows={recentRows}
-                            peeks={peeks}
-                            selected={liveSelection}
-                            selectionFull={liveSelection.length >= MAX_PICKED}
-                            onToggle={toggle}
-                            onShow={id => show([id])}
-                            onCopyId={id => void copy(id, 'session ID')}
-                        />
-                    )}
-                    {tab === 'all' && (
-                        <AllList
-                            workspaces={workspaces}
-                            ownerId={sessionId}
-                            selected={liveSelection}
-                            selectionFull={liveSelection.length >= MAX_PICKED}
-                            onToggle={toggle}
-                            onShow={id => show([id])}
-                            onCopyId={id => void copy(id, 'session ID')}
-                        />
-                    )}
+                    <RelationTree
+                        tree={tree}
+                        ownerName={owner.name}
+                        peeks={peeks}
+                        selected={liveSelection}
+                        selectionFull={liveSelection.length >= MAX_PICKED}
+                        onToggle={toggle}
+                        onShow={id => show([id])}
+                        onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
+                        onCopyId={id => void copy(id, 'session ID')}
+                    />
                 </div>
 
                 {visibleIds.length > 0 && (
@@ -328,14 +269,12 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     </div>
                 )}
 
-                {tab === 'tree' && (
-                    <AddRelatedSession
-                        sessionId={sessionId}
-                        workspaces={workspaces}
-                        relatedIds={relatedIds}
-                        onAdd={id => void window.api.addSessionRelation(sessionId, id)}
-                    />
-                )}
+                <AddRelatedSession
+                    sessionId={sessionId}
+                    workspaces={workspaces}
+                    relatedIds={relatedIds}
+                    onAdd={id => void window.api.addSessionRelation(sessionId, id)}
+                />
                 <CopyNotice notice={notice} />
             </div>
             {creating && (
