@@ -23,9 +23,12 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Discovered: 2026-10-25 fb-1025, PR #58·#59 를 main 과 합친 트리에서 관련 스펙 13개를 한 번에(`--workers=1`) 돌리다가.
 - Evidence: `t26-session-navigation.spec.ts:129` 이 `deleteFromSidebar` 의 `getByTitle('Delete session').click()` 에서 「visible, enabled and stable」을 30초 기다리다 실패(버튼은 `opacity-0 group-hover:opacity-100`). 같은 트리에서 그 시험만 3/3, T26 파일 전체 11/11 통과. 47건 중 1건.
 - Evidence: 2026-10-25 1.18.0 릴리스 빌드 1회차 사전 점검 — `t40-session-tree.spec.ts:204` 「T40 recent tab follows what you looked at and survives a restart」가 전체 실행(17.1m) 중 같은 버튼 `rowInSidebar.getByTitle('Delete session').click()` 에서 30초 타임아웃(이번엔 hover 뒤 「performing click action」에서 멈춤) + worker teardown 240초 초과로 1회 실패. 단독 `--repeat-each=5` 20/20, 같은 커밋 `--check` 268 통과(로그 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1792931888745.log`). teardown 까지 막힌 것은 클릭 뒤 앱이 응답하지 않았다는 뜻일 수 있다.
+- Evidence: 2026-10-26 1.19.0 릴리스 빌드 1회차 사전 점검 — 같은 T40 시험(`t40-session-tree.spec.ts:155`)이 이번엔 클릭은 지나가고 `expect(rowInSidebar).toHaveCount(0)` 에서 5초 동안 줄이 그대로(Received 1) 실패. 272 passed · 1 failed(9.3m), 단독 3회 12/12(총괄). 로그 `/tmp/climanager-release-119-build-try1.log` → 전체 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1792991734321.log`.
+- Cause(코드로 확인한 경로, 재현은 아직): 삭제 처리 `App.tsx` `handleRemoveSession` 은 `hasRunningProcess`(`TerminalManager.ts` — 셸 pid 에 `pgrep -P`)가 참이면 네이티브 확인 상자(`showMessageBox` 「Terminate Session」)를 띄우고 답을 기다린다. 숨긴 시험 창에서는 아무도 답하지 않으니 줄이 남고(1.19.0 모양), 상자가 열린 채로는 앱 종료도 막힌다(1.18.0 의 teardown 240초). 부하로 셸 시작(mise 훅 등 — 아래 T26 두 항목)이 늦을 때만 자식 프로세스가 있어 간헐이다. 2026-10-09 아래 「"Ctrl keys" · "split view 삭제"」 항목이 같은 원인을 추정으로 적었다.
+- 2026-10-26 fb-1026b: T40(이 시험은 c17aa9c4 로 「본 순서가 사이드바에 남는다」로 바뀜)과 T26 `deleteFromSidebar` 가 삭제 전에 `window.api.hasRunningProcess(id) === false` 를 기다리게 했다(PR #62). 다음 릴리스 사전 점검에서 이 줄이 다시 안 나면 닫는다.
 - Why deferred: 두 번 다 그 시험이 바꾼 코드와 무관한 사이드바 삭제 버튼에서 났고, 단독으로는 재현되지 않는다. 간헐이라 원인 실측이 먼저다.
 - Trigger: 사전 점검·묶음 실행에서 같은 줄이 다시 실패할 때.
-- Fix direction: 먼저 실패 때 화면과 main 쪽 상태를 남긴다(삭제가 pty 종료·히스토리 파일 삭제·관계 정리를 하는 동안 렌더러/main 이 막히는지). 그다음 공용 도우미 하나로 「행 hover → 버튼 보임 대기 → 클릭 → 행 사라짐 대기」를 묶어 T26·T40 이 같이 쓰게 한다.
+- Fix direction: 위 대기로 안 닫히면 실패 때 화면(확인 상자가 떠 있는지)과 main 상태를 남긴다. 다른 시험의 사이드바 삭제(T45·T52 등)도 같은 대기가 필요하면 공용 도우미 하나로 「셸 자식 없음 대기 → hover → 클릭 → 행 사라짐 대기」를 묶는다(공용 도우미는 사람 컨펌).
 - Owner: 없음
 
 ### T26 — 「macOS 에서 Ctrl 키는 터미널로」 시험이 셸 시작 스크립트와 경주한다
@@ -323,6 +326,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Discovered: 2026-09-29, API 응답에 `memo`(읽기 전용)를 추가하면서
 - Why deferred: 쓰기는 AI 가 사용자가 적은 메모를 바꾸게 되는 일이라 허용 여부가 사람 결정이다.
 - Trigger: AI 가 작업 인계 노트·진행 상황을 메모에 남기게 하고 싶을 때
+- Evidence: 2026-10-26 fb-1026b(PR #62)로 메모가 여러 쪽이 됐다 — 1쪽 `memo`, 2쪽부터 `memoPages`. API 의 `memo` 는 지금 1쪽만 싣는다. 읽기에 `memoPages` 를 더할지도 같이 정한다.
 - Evidence: 읽기는 `describe()` 가 `session.memo` 를 돌려준다. 쓰기 경로는 renderer IPC `update-session-memo`
   (`src/main/index.ts` 1385행 부근)뿐이다. 열 때 고를 것: 덮어쓰기 vs 덧붙이기, 사용자가 메모를 편집 중일 때의 충돌,
   `aiControl` 세션만 허용(기존 경계 유지).
