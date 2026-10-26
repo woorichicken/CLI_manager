@@ -2,12 +2,13 @@ import type { RelationStore } from './SessionRelations'
 
 export const RECENT_SESSIONS_KEY = 'recentSessions'
 
-/** How many sessions the Related dialog's Recent tab remembers. Twenty is a recommendation: change only this. */
+/** How many recently viewed sessions are remembered. Twenty is a recommendation: change only this. */
 export const RECENT_SESSIONS_MAX = 20
 
 /**
- * The sessions the user looked at last, newest first, for the Related dialog's
- * Recent tab. Kept in electron-store so the list is still there after a restart.
+ * The sessions the user looked at last, newest first, for the sidebar's All
+ * sessions order and the Related dialog's "Recently viewed" sort. Kept in
+ * electron-store so the list is still there after a restart.
  *
  * Only ids are stored; the renderer shows the ones that still exist.
  */

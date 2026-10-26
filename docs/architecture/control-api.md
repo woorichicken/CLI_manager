@@ -135,7 +135,8 @@ Code's next-prompt suggestion or placeholder. It also appears in `lines`, but no
 read it as the user's instruction. `null` when there is none. MCP `read_output` prints it as a footer.
 
 `memo` — the text of the session's memo pad (Cmd+J), `''` when empty. Read-only: the API has no way to
-write it.
+write it. Since 1.20 the memo has pages; `memo` is page 1 only (pages 2..n are `memoPages` in the store
+and are not in the response yet).
 
 ## Workspace registration
 

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { shortenUrl, splitMemoLinks } from '../../src/renderer/src/components/SessionMemo'
+import { deleteMemoPage, memoPagesOf, shortenUrl, splitMemoLinks, turnMemoPage } from '../../src/renderer/src/components/SessionMemo'
 
 /**
  * T48 — memo link detection and shortening, pure logic (no Electron).
@@ -50,5 +50,31 @@ test.describe('T48 memo links', () => {
 
         // A last piece too long for the room is cut as well.
         expect(shortenUrl('https://example.com/a/' + 'y'.repeat(80)).length).toBe(40)
+    })
+})
+
+test.describe('T48 memo pages', () => {
+    test('page 1 is the memo field and the rest follow it; a memo never written is one empty page', () => {
+        expect(memoPagesOf('one', ['two', 'three'])).toEqual(['one', 'two', 'three'])
+        expect(memoPagesOf('only')).toEqual(['only'])
+        expect(memoPagesOf(undefined, undefined)).toEqual([''])
+        // A "-----" line is text: the old one-sheet memo stays one page.
+        expect(memoPagesOf('a\n-----\nb')).toEqual(['a\n-----\nb'])
+    })
+
+    test('turning past either end wraps round', () => {
+        expect(turnMemoPage(0, 1, 3)).toBe(1)
+        expect(turnMemoPage(2, 1, 3)).toBe(0)
+        expect(turnMemoPage(0, -1, 3)).toBe(2)
+        expect(turnMemoPage(0, 1, 1)).toBe(0)
+        expect(turnMemoPage(0, -1, 0)).toBe(0)
+    })
+
+    test('deleting a page shows the one that took its place, or the new last one', () => {
+        expect(deleteMemoPage(['a', 'b', 'c'], 1)).toEqual({ pages: ['a', 'c'], index: 1 })
+        expect(deleteMemoPage(['a', 'b', 'c'], 2)).toEqual({ pages: ['a', 'b'], index: 1 })
+        expect(deleteMemoPage(['a', 'b'], 0)).toEqual({ pages: ['b'], index: 0 })
+        // The last page left is cleared rather than removed: there is always a page to type on.
+        expect(deleteMemoPage(['a'], 0)).toEqual({ pages: [''], index: 0 })
     })
 })

@@ -70,6 +70,9 @@ async function dropIntoSplit(page: Page, sessionId: string): Promise<void> {
 }
 
 async function deleteFromSidebar(page: Page, sessionId: string): Promise<void> {
+    // With a child process in the shell (its startup, under load) the app asks "terminate running
+    // processes?" in a native box no one answers in the hidden test window — the click then hangs.
+    await expect.poll(() => page.evaluate((id) => window.api.hasRunningProcess(id), sessionId), { timeout: 30_000 }).toBe(false)
     const row = page.locator(`[data-session-item="${sessionId}"]`)
     await row.hover()
     await row.getByTitle('Delete session').click()
