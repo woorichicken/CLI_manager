@@ -56,7 +56,8 @@ const HELP_LINES: Array<[string, string]> = [
     ['Idle / Working / Waiting for you / Starting / Exited', 'what the session is doing right now'],
     ['Dot', 'grey = idle · blue, pulsing = working · amber, pulsing = waiting for you · red = exited'],
     ['#', 'copy the session ID'],
-    ['×', 'remove it from this list (the session keeps running)']
+    ['×', 'remove it from this list (the session keeps running)'],
+    ['Drag', 'drop a session row onto another in the sidebar to list them here']
 ]
 
 const TABS: Array<{ key: RelatedTab; label: string }> = [

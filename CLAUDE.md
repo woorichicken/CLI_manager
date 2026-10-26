@@ -104,6 +104,7 @@ pnpm build && pnpm test:term
    - `TerminalMirror.ts`: 모든 터미널 출력을 headless xterm으로 재생 — Control API 가 "사용자가 보는 화면"을 읽고, 새 창·재시작 때 히스토리를 다시 그리는 원본 ([`docs/decisions/0008`](docs/decisions/0008-terminal-history-lives-in-main.md))
    - `ScrollbackStore.ts`: 미러 스냅샷을 30초마다(출력이 있던 세션만) `userData/scrollback/<id>.ans` 에 저장 — 강제종료 뒤 복원용
    - `SessionRelations.ts`: 세션 헤더 「관련 세션」 저장(`sessionRelations`) — API 가 열거나 처음 읽은·입력한 세션, 손으로 추가한 세션. 한 쌍에 한 줄, 어느 쪽이든 닫히면 지운다 ([`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) 14)
+   - `SessionFolders.ts`: All sessions 보기의 세션 폴더 저장(`sessionFolders`) — 소속은 세션의 `sessionFolderId`(세션 하나에 폴더 하나), 폴더를 지워도 세션은 그대로 ([`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) 14-1)
    - `InboxStore.ts`: 앱 인박스 저장(`inbox`) — 세션이 Control API 로 보낸 「사람 손 필요」 요청(login·review·question·other · 한 줄 · 링크). 같은 안 읽은 요청은 하나로, 최대 200 · 읽은 것 7일 · 세션이 닫히면 지움. 바뀔 때마다 렌더러에 알리고 Dock 배지를 고친다 ([`docs/architecture/control-api.md`](docs/architecture/control-api.md) 「Inbox」)
    - `screenLines.ts`: 화면 줄에서 읽을 것 고르기(입력 상자 규칙선, 「마지막 줄」) — pty 없이 테스트하려고 `TerminalMirror` 밖에 둔다
    - `ClaudeSessionSync.ts`: Claude 의 실행 중 세션 레지스트리(`~/.claude/sessions/<pid>.json`)를 읽어 저장된 대화 id 를 실제 대화로 맞춤 — Claude 안에서 `/resume` 하면 id 가 바뀐다
@@ -121,8 +122,10 @@ pnpm build && pnpm test:term
      - `ContextMenus.tsx`: 컨텍스트 메뉴 컴포넌트들
      - `Modals.tsx`: 모달 컴포넌트들
      - `SidebarSearch.tsx`: 프로젝트 검색 입력 + 매칭(`findMatchingProjects`). 검색 중엔 드래그 목록 대신 평평한 결과 목록을 쓴다 — 재정렬 핸들러는 받은 목록 순서를 그대로 저장해서, 걸러진 목록을 주면 행이 빠진다
-     - `SidebarMoreMenu.tsx`: 머리 줄 「…」 메뉴 — 전체 접기(`sidebar-collapse-all`)·새 폴더(`sidebar-new-folder`). 인박스 종이 들어가며 버튼 수를 예전과 같게 두려고 접었다(기본 폭 256 에서 제목이 안 잘리게). All sessions 보기에서는 숨긴다 — 두 항목 모두 폴더 트리에만 작용해 평평한 목록에서 눌러도 화면이 안 바뀐다(제보 afbc3546). 보기 전환 버튼 왼쪽에 둔다 — 버튼 줄이 오른쪽 정렬이라 「…」가 빠져도 전환 버튼이 제자리에 있다(오른쪽에 두면 빠질 때 검색 버튼이 전환 버튼 자리로 밀려 온다)
+     - `SidebarMoreMenu.tsx`: 머리 줄 「…」 메뉴 — 전체 접기(`sidebar-collapse-all`)·새 폴더(`sidebar-new-folder`). 인박스 종이 들어가며 버튼 수를 예전과 같게 두려고 접었다(기본 폭 256 에서 제목이 안 잘리게). 메뉴는 보기를 따른다 — All sessions 보기에서는 같은 자리에 세션 폴더용 항목(New Session Folder `sidebar-new-session-folder` · 세션 폴더가 있을 때만 Collapse/Expand All `sidebar-collapse-session-folders`)이 뜬다(제보 afbc3546 · 078ee766, `folderKind`). 보기 전환 버튼 왼쪽에 둔다 — 버튼 줄이 오른쪽 정렬이라 「…」가 빠져도 전환 버튼이 제자리에 있다(오른쪽에 두면 빠질 때 검색 버튼이 전환 버튼 자리로 밀려 온다)
      - `CopyNotice.tsx`: 메뉴의 Copy 항목이 쓰는 클립보드 복사 + "Copied …" 알림
+     - `SidebarAllSessions.tsx`: All sessions 보기 — 세션 폴더 줄(접기·개수·우클릭 이름 바꾸기/지우기) 밑에 그 폴더 세션, 그 아래 「No folder」 줄과 나머지. 세션 줄을 폴더 줄·「No folder」 줄에 끌어 놓으면 넣고 뺀다
+     - `sessionDrop.tsx`: 세션 줄 끌기 컨텍스트 — 끌고 있는 id(dragover 는 끌기 데이터를 못 읽는다)와 「다른 세션 줄 위에 놓음 = Related 에 넣기」(제보 269168e4), 놓은 뒤 사이드바 아래 알림
      - `SidebarSessionList.tsx`: 세션을 작업 영역 이름(흐리게)과 함께 평평하게 그리는 목록 — 헤더 「All sessions」 토글(`sidebar-view-toggle`, localStorage `sidebar-view-mode`)과 검색의 「Sessions」 묶음이 같이 쓴다. 행은 트리와 같은 `SessionItem`. 순서는 최근 본 순(`getRecentSessions`) 뒤에 안 본 세션을 사이드바 순서로(`utils/sessionNavigation.ts` 의 `orderByRecent`)
    - `components/Feedback/`: feedback-kit 위젯 — `FeedbackGate`(비밀번호 관문·마운트), `FeedbackWidget`(배선, 통과한 뒤에만 lazy import), `FeedbackModeSetting`(Settings > Feedback 토글), `terminalContext`(제보가 어느 터미널 얘기인지 정하고 main 의 터미널 정보를 싣는다). 판정·상수는 `utils/feedbackGate.ts`
    - `components/SessionBreadcrumb.tsx` · `utils/sessionBreadcrumb.ts`: 세션 헤더 `폴더 > 프로젝트 > 세션` 경로(단일 헤더·분할 칸·Grid 창이 같이 쓴다). 폴더가 없거나 Playground 면 그 칸을 뺀다, 워크트리는 부모 폴더를 따른다, 좁으면 폴더·프로젝트부터 줄인다
@@ -137,6 +140,7 @@ pnpm build && pnpm test:term
      - `useWorkspaceBranches.ts`: 워크스페이스별 브랜치 정보 관리
      - `useTemplates.ts`: 커스텀 터미널 템플릿 관리
      - `useSidebarCollapseAll.ts`: 사이드바 전체 접기 — 접기 직전 펼침 상태를 기억했다가 다음 누름에 그대로 복원
+     - `useSessionFolders.ts`: All sessions 세션 폴더 목록과 동작(만들기·이름·지우기·펼침·세션 넣고 빼기) — 화면을 먼저 바꾸고 뒤에서 저장
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
    - `components/RelatedSessions/` · `utils/relatedSessions.ts`: 세션 헤더 「Related」 버튼과 모달 — 세 묶음(연 세션·이 세션을 연 세션·손으로 추가), 상태·마지막 줄·메모, 「대화:」 세션 배지. 이동·나란히 열기는 세션 링크와 같은 `showSessions`(App.tsx)
@@ -432,7 +436,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T41 숨김 터미널 크기 — 숨긴 세션 B 의 전경 프로그램이 자기 tty 크기를 시작 때와 SIGWINCH 마다 파일에 적는다. B 의 PTY 가 보이는 터미널과 같은 크기로 시작하는지, 처음 볼 때 SIGWINCH 가 0번인지, 숨긴 동안 B 의 xterm 크기 = PTY 크기인지, 앱 시작 뒤 **첫** 창 크기 변경이 보이는 터미널에 반영되는지(ResizeObserver 의 첫 콜백이 초기화 전에 와서 버려지고 그다음 실제 변경이 「기준값」으로 삼켜졌다). 옛 TerminalView 에서 80×30 ↔ 103×43 · 80×24 ↔ 80×30 · 43줄 그대로로 3건 실패. 판정 프로그램은 `trap … WINCH` 셸 루프가 아니라 node 다 — SIGWINCH 는 전경 프로세스 그룹(`sleep`)으로 가서 셸 트랩은 resize 를 놓친다(헛통과)
   - T54 줌은 보이는 터미널만(f800638c) — Cmd+- 세 번(main 의 `before-input-event` 를 거치게 `webContents.sendInputEvent` 로 — Playwright `page.keyboard` 는 그 처리기에 안 닿는다)에 숨긴 세션 4개가 글꼴을 안 바꾸고(`__termDebug.fontSize`) SIGWINCH 0, 보일 때 새 글꼴로 PTY resize 정확히 1번인지. 옛 TerminalView 에서 「숨긴 세션 글꼴 14 → 11」로 실패한다. 글꼴을 바꾸면 xterm 이 셀을 다시 재고 모든 줄을 다시 그린다 — `visibility: hidden` 이어도 줄지 않아 세션 39개에서 한 번 누를 때 렌더러 긴 작업 1,084ms 였다
   - T42 PTY 크기 검사 유닛 — Electron 없이. `terminal-create`·`terminal-resize` 가 렌더러 값을 그대로 node-pty 에 넘기지 않게 하는 `clampPtySize`(TerminalManager.ts): 정수로 내림 · 하한 2×1 · 상한 1000×500 · 숫자가 아니면 80×30. TerminalManager 는 불러올 때 Electron ABI 의 node-pty 를 require 하므로 시험은 그 require 만 빈 객체로 바꿔 불러온다
-  - T45 사이드바 All sessions — 토글이 닫힌 폴더·워크트리까지 모든 세션을 평평하게 보이는지(DOM), 줄 라벨이 작업 영역 이름인지, 클릭·우클릭이 트리와 같은지, 최근 본 순서, 재시작 뒤에도 유지되는지, 포인터가 올라간 채 검색이 목록을 대신했다 돌아오면 최신 순서로 다시 읽는지, 우클릭 「Pin to Top」이 그 세션을 맨 위에 두고 config.json 에 `isPinned` 로 남는지(Unpin 이면 빠짐), 목록에서 보던 세션을 닫으면 같은 작업 영역 이웃이 아니라 그 전에 본 세션(다른 작업 영역이어도)으로 가는지, All 보기에서 폴더 전용 「…」 메뉴가 사라지고 폴더 보기로 돌아오면 다시 뜨는지(보기 전환 버튼 x 좌표가 두 보기에서 같은지). 워크트리 시드는 평범한 폴더 경로여야 한다(저장소 루트면 시작 때 워크트리 스캔이 지운다)
+  - T45 사이드바 All sessions — 토글이 닫힌 폴더·워크트리까지 모든 세션을 평평하게 보이는지(DOM), 줄 라벨이 작업 영역 이름인지, 클릭·우클릭이 트리와 같은지, 최근 본 순서, 재시작 뒤에도 유지되는지, 포인터가 올라간 채 검색이 목록을 대신했다 돌아오면 최신 순서로 다시 읽는지, 우클릭 「Pin to Top」이 그 세션을 맨 위에 두고 config.json 에 `isPinned` 로 남는지(Unpin 이면 빠짐), 목록에서 보던 세션을 닫으면 같은 작업 영역 이웃이 아니라 그 전에 본 세션(다른 작업 영역이어도)으로 가는지, 「…」 메뉴가 보기를 따르는지 — All 보기에서는 New Session Folder 만(워크스페이스 폴더 항목·세션 폴더 없을 때의 Collapse All 없음), 폴더 보기로 돌아오면 Collapse All·New Folder(보기 전환 버튼 x 좌표가 두 보기에서 같은지). 워크트리 시드는 평범한 폴더 경로여야 한다(저장소 루트면 시작 때 워크트리 스캔이 지운다)
   - T46 사이드바 세션 검색 — 세션 이름으로 찾고(닫힌 폴더 안도), 「Sessions」 묶음이 프로젝트 묶음 뒤에 오고, Enter 가 프로젝트가 있으면 기존 동작·없으면 첫 세션을 여는지
   - T47 세션 순서 유닛 — Electron 없이. `sessionsInSidebarOrder`·`orderByRecent`·`orderForAllSessions`(고정 먼저 · 사이드바 순)·`mostRecentOtherSession`·`findMatchingSessions`
   - T50 Related 창·헤더(day-1023) — 입력 상자가 있는 「Claude」 화면(셸 스크립트가 그린 가짜)이 Related 줄에 `※ recap` 을 통째로(「(disable recaps in /config)」 없이) 보이고 recap 이 없으면 줄이 없는지, Relations 탭 Sort(Newest first·Oldest first·Name·Recently viewed — 화면 시험은 Newest·Name·Oldest, Recently viewed 는 T39 유닛)가 같은 층 순서만 바꾸고 다시 열어도 기억되는지,
@@ -443,6 +447,9 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T33 세션 링크 — Electron 없이 도는 순수 유닛. 감지는 터미널이 싣는 것과 같은 WebLinksAddon 을 headless xterm 버퍼에 붙여 본다(자동 줄바꿈은 한 링크, Claude Code 식 들여쓴 줄바꿈은 앞부분만). 해석: 짧은 id·전체 id·닫힌 세션·겹치는 짧은 id·4개 상한
   - T48 메모 링크 유닛 — Electron 없이. `splitMemoLinks`(http(s)만 링크, 문장부호·짝 없는 닫는 괄호 제외, 글자 보존)·`shortenUrl`(호스트 + …/마지막 조각, 40자)
   - T49 메모 링크 — 포커스 밖 메모가 읽기 보기로 바뀌어 링크가 짧게(툴팁에 전체 URL) 보이고, 누르면 `shell.openExternal`(main 에서 가로챔)에 전체 URL 이 가는지, 링크 아닌 곳을 누르면 textarea 로 돌아가는지, 저장된 메모(config.json)는 입력한 글 그대로인지, 빈 메모는 textarea 그대로인지, 끌어 선택한 뒤의 클릭·링크 위 Enter 가 편집으로 바꾸지 않는지, 머리 줄 복사 버튼이 메모 전체(줄바꿈·전체 URL)를 시스템 클립보드에 넣고 편집·읽기 보기를 그대로 두는지(빈 메모는 비활성)
+  - T57 세션 폴더 유닛 — Electron 없이. `SessionFolders`(가짜 store): 빈 이름 거부·앞뒤 공백 정리·펼친 채 저장·목록이 아닌 저장값은 빈 목록, 세션 하나에 폴더 하나(옮기면 바뀜 · `null` 은 뺌 · 없는 폴더/세션은 안 씀), 폴더를 지우면 그 소속만 지우고 세션·다른 폴더는 그대로, 펼침 한 번에 쓰기
+  - T58 세션 폴더 화면(078ee766) — All 보기 「…」 → New Session Folder → 폴더 줄·`(0)`·「Drag sessions here」·config.json, 세션 줄을 **실제 마우스로** 폴더 줄에 끌면 줄이 `data-drop-state=over` 로 밝아지고 놓으면 들어가는지(개수 `(1)` · `sessionFolderId` · 워크스페이스 이름표·폴더 보기의 줄은 그대로), 「No folder」에 놓으면 빠지는지, 폴더 줄 눌러 접기·「…」 Expand All, 우클릭 이름 바꾸기·지우기(세션은 남고 소속만 지워짐), 없는 폴더를 가리키는 세션은 폴더 없음으로. 옛 코드는 All 보기에 「…」가 없어 실패
+  - T59 끌어서 관계(269168e4) — **실제 마우스로** 세션 줄을 다른 줄에 끌면 「Relate」 표시 → 놓으면 사이드바 알림 「Related: B ↔ A」 · config.json `sessionRelations` 에 `manual`, 그 세션 Related 창의 「Added by hand」에 보이는지, × 로 뺀 뒤 다시 끌면 되살아나는지(`dismissed` 풀림), 한 번 더 끌면 「Already related」·기록 하나, 자기 줄 위는 표시 없음·기록 없음, 폴더 보기에서 워크스페이스를 건너 끌어도 같은지. 옛 코드는 「Relate」 표시가 없어 실패
   - T55 경로 열기 단축키(7d7abfff) — Cmd+Shift+O(`revealInFinder`)·Cmd+Shift+E(`openInEditor`)가 터미널에서 고른 경로(우클릭 메뉴와 같은 `file:line` 처리)를, 고른 게 없으면 세션 폴더를 여는지. 판정은 끝단 — main 의 `shell.showItemInFolder` 를 바꿔 기록하고, 에디터는 `$PWD` 와 인자를 적는 스크립트. 선택은 실제 더블클릭으로 하고 `__termDebug.selection` 으로 확인한다. 단축키는 App 이 맞추고, 선택은 그 세션의 TerminalView 가 창 이벤트(`requestOpenTerminalPath`)로 받아 읽는다
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)

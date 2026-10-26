@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Plus, PanelLeftClose, GripVertical, Folder, ChevronDown, ChevronRight, Search, List, FolderTree } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
-import { Workspace, WorkspaceFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
+import { Workspace, WorkspaceFolder, SessionFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
+import type { SessionFolderActions } from '../../hooks/useSessionFolders'
 import { useWorkspaceBranches } from '../../hooks/useWorkspaceBranches'
 import { useTemplates } from '../../hooks/useTemplates'
 import { useSidebarCollapseAll } from '../../hooks/useSidebarCollapseAll'
@@ -11,6 +12,8 @@ import { BranchPromptModal } from './Modals'
 import { SidebarMoreMenu } from './SidebarMoreMenu'
 import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatchingProjects, findMatchingSessions } from './SidebarSearch'
 import { SidebarSessionList } from './SidebarSessionList'
+import { SidebarAllSessions } from './SidebarAllSessions'
+import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 
@@ -113,6 +116,9 @@ interface SidebarProps {
     onDragEndSession?: () => void
     /** The inbox bell (App builds it: it needs the session navigation and link settings). Drawn first in the header. */
     inboxSlot?: React.ReactNode
+    /** Folders of the All sessions view (useSessionFolders). */
+    sessionFolders?: SessionFolder[]
+    sessionFolderActions?: SessionFolderActions
 }
 
 /**
@@ -164,7 +170,9 @@ export function Sidebar({
     splitLayout,
     onDragStartSession,
     onDragEndSession,
-    inboxSlot
+    inboxSlot,
+    sessionFolders = [],
+    sessionFolderActions
 }: SidebarProps) {
     // 커스텀 훅으로 상태 관리
     const customTemplates = useTemplates(settingsOpen)
@@ -180,7 +188,8 @@ export function Sidebar({
     const [showPrompt, setShowPrompt] = useState<{ workspaceId: string } | null>(null)
     const [branchLoading, setBranchLoading] = useState(false)
     const [folderMenuOpen, setFolderMenuOpen] = useState<{ x: number, y: number, folderId: string } | null>(null)
-    const [showFolderPrompt, setShowFolderPrompt] = useState(false)
+    // The one "new folder" box serves both views: a workspace folder, or a session folder in All sessions.
+    const [showFolderPrompt, setShowFolderPrompt] = useState<false | 'workspace' | 'session'>(false)
     const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null)
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
@@ -221,6 +230,45 @@ export function Sidebar({
         showWorktrees
     })
     const { notice: copyNotice, copy } = useCopyWithNotice()
+    const anySessionFolderExpanded = sessionFolders.some(f => f.isExpanded)
+
+    // A session row dragged onto another row relates the two (report 269168e4). Rows read the
+    // dragged id from context, since dragover cannot read the drag's data.
+    const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
+    const { text: dropNotice, show: showDropNotice } = useDropNotice()
+    const sessionNameRef = useRef<(id: string) => string>(() => '')
+    sessionNameRef.current = (id: string) => {
+        for (const workspace of workspaces) {
+            const found = workspace.sessions?.find(s => s.id === id)
+            if (found) return found.name
+        }
+        return id.slice(0, 8)
+    }
+    const sessionDrop = useMemo<SessionDropContextValue>(() => ({
+        draggingId: draggingSessionId,
+        beginDrag: setDraggingSessionId,
+        endDrag: () => setDraggingSessionId(null),
+        onRelate: (targetId, draggedId) => {
+            setDraggingSessionId(null)
+            // The same call as the Related dialog's "Add by hand": a pair removed there comes back.
+            window.api.addSessionRelation(targetId, draggedId).then(added => {
+                const pair = `${sessionNameRef.current(draggedId)} ↔ ${sessionNameRef.current(targetId)}`
+                showDropNotice(added ? `Related: ${pair}` : `Already related: ${pair}`)
+            }).catch(() => showDropNotice('Could not relate the sessions'))
+        }
+    }), [draggingSessionId, showDropNotice])
+    // A drag that ends outside every row (or is cancelled) still has to clear the dragged id.
+    useEffect(() => {
+        if (!draggingSessionId) return
+        const clear = (): void => setDraggingSessionId(null)
+        // Bubble phase: a row's own drop handler runs first and still sees the id.
+        window.addEventListener('dragend', clear)
+        window.addEventListener('drop', clear)
+        return () => {
+            window.removeEventListener('dragend', clear)
+            window.removeEventListener('drop', clear)
+        }
+    }, [draggingSessionId])
 
     // Resizing logic (horizontal - sidebar width)
     const isResizing = useRef(false)
@@ -705,7 +753,7 @@ export function Sidebar({
     }
 
     return (
-        <>
+        <SessionDropContext.Provider value={sessionDrop}>
             {/* Context Menus */}
             {menuOpen && (() => {
                 const workspace = workspaces.find(w => w.id === menuOpen.workspaceId)
@@ -883,7 +931,7 @@ export function Sidebar({
             {showFolderPrompt && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowFolderPrompt(false)}>
                     <div className="bg-[#1e1e20] border border-white/10 rounded-lg p-4 w-72" onClick={e => e.stopPropagation()}>
-                        <div className="text-sm font-medium text-gray-200 mb-3">New Folder</div>
+                        <div className="text-sm font-medium text-gray-200 mb-3">{showFolderPrompt === 'session' ? 'New Session Folder' : 'New Folder'}</div>
                         <input
                             autoFocus
                             className="w-full bg-transparent border border-white/20 rounded px-3 py-2 text-sm outline-none focus:border-blue-500 text-gray-200"
@@ -892,7 +940,8 @@ export function Sidebar({
                                 if (e.key === 'Enter') {
                                     const value = (e.target as HTMLInputElement).value.trim()
                                     if (value) {
-                                        onCreateFolder(value)
+                                        if (showFolderPrompt === 'session') void sessionFolderActions?.create(value)
+                                        else onCreateFolder(value)
                                     }
                                     setShowFolderPrompt(false)
                                 }
@@ -929,15 +978,23 @@ export function Sidebar({
                         >
                             <Search size={14} className={searchOpen ? 'text-blue-400' : 'text-gray-400'} />
                         </button>
-                        {/* Both menu items act on the folder tree. The flat All sessions list has no
-                            folders to collapse or create, so pressing them there changed nothing on screen.
-                            It sits left of the view toggle: the buttons are right-aligned, so dropping it
-                            shifts only what is left of it and the toggle stays under the pointer. */}
-                        {!isAllSessionsView && (
+                        {/* The menu follows the view: workspace folders in the folder tree, session folders
+                            in All sessions (afbc3546 · 078ee766). With no way to add session folders the All
+                            view drops it, as 1.19 did. It sits left of the view toggle: the buttons are
+                            right-aligned, so dropping it shifts only what is left of it. */}
+                        {!isAllSessionsView ? (
                             <SidebarMoreMenu
                                 anyExpanded={anyExpanded}
                                 onToggleCollapseAll={toggleCollapseAll}
-                                onNewFolder={() => setShowFolderPrompt(true)}
+                                onNewFolder={() => setShowFolderPrompt('workspace')}
+                            />
+                        ) : sessionFolderActions && (
+                            <SidebarMoreMenu
+                                folderKind="session"
+                                anyExpanded={anySessionFolderExpanded}
+                                showCollapseAll={sessionFolders.length > 0}
+                                onToggleCollapseAll={() => void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), !anySessionFolderExpanded)}
+                                onNewFolder={() => setShowFolderPrompt('session')}
                             />
                         )}
                         <button
@@ -1040,6 +1097,15 @@ export function Sidebar({
                     >
                         {allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
+                        ) : sessionFolderActions ? (
+                            <SidebarAllSessions
+                                entries={orderForAllSessions(allSessionEntries, recentIds)}
+                                sessionFolders={sessionFolders}
+                                folderActions={sessionFolderActions}
+                                listProps={sessionListProps}
+                                fontSize={fontSize}
+                                showSessionCount={showSessionCount}
+                            />
                         ) : (
                             <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} {...sessionListProps} />
                         )}
@@ -1380,6 +1446,7 @@ export function Sidebar({
                 )}
 
                 <CopyNotice notice={copyNotice} />
+                <DropNotice text={dropNotice} />
 
                 {/* Resize Handle */}
                 <div
@@ -1387,6 +1454,6 @@ export function Sidebar({
                     onMouseDown={startResizing}
                 />
             </div>
-        </>
+        </SessionDropContext.Provider>
     )
 }

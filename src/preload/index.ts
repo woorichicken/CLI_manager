@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -301,6 +301,12 @@ const api = {
     },
     addSessionRelation: (from: string, to: string): Promise<boolean> => ipcRenderer.invoke('add-session-relation', from, to),
     removeSessionRelation: (a: string, b: string): Promise<boolean> => ipcRenderer.invoke('remove-session-relation', a, b),
+    getSessionFolders: (): Promise<SessionFolder[]> => ipcRenderer.invoke('get-session-folders'),
+    createSessionFolder: (name: string): Promise<SessionFolder | null> => ipcRenderer.invoke('create-session-folder', name),
+    renameSessionFolder: (folderId: string, name: string): Promise<boolean> => ipcRenderer.invoke('rename-session-folder', folderId, name),
+    removeSessionFolder: (folderId: string): Promise<boolean> => ipcRenderer.invoke('remove-session-folder', folderId),
+    setSessionFoldersExpanded: (folderIds: string[], expanded: boolean): Promise<boolean> => ipcRenderer.invoke('set-session-folders-expanded', folderIds, expanded),
+    moveSessionToSessionFolder: (sessionId: string, folderId: string | null): Promise<boolean> => ipcRenderer.invoke('move-session-to-session-folder', sessionId, folderId),
     getRecentSessions: (): Promise<string[]> => ipcRenderer.invoke('get-recent-sessions'),
     pushRecentSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('push-recent-session', sessionId),
     getInbox: (): Promise<InboxRequest[]> => ipcRenderer.invoke('get-inbox'),

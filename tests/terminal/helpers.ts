@@ -21,6 +21,8 @@ export interface SeedSession {
     id: string
     name: string
     cwd?: string
+    /** The All sessions view's session folder it sits in (seed `sessionFolders` through `config`). */
+    sessionFolderId?: string
     /** Typed into the terminal once it exists — what a template session carries. */
     initialCommand?: string
     /** Set together to seed a session that should resume instead of restarting. */
@@ -101,6 +103,7 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
                 name: s.name,
                 cwd: s.cwd ?? workspace.path ?? REPO_ROOT,
                 type: 'regular',
+                ...(s.sessionFolderId ? { sessionFolderId: s.sessionFolderId } : {}),
                 ...(s.initialCommand ? { initialCommand: s.initialCommand } : {}),
                 ...(s.cliSessionId ? { cliSessionId: s.cliSessionId } : {}),
                 ...(s.cliToolName ? { cliToolName: s.cliToolName } : {}),

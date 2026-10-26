@@ -103,7 +103,7 @@ test.describe('T45 sidebar all sessions', () => {
         await expect(page.locator('[data-session-item="s-a1"]')).toHaveCount(0)
     })
 
-    test('the header drops the folder-only menu in the All view and brings it back in the folder view', async () => {
+    test('the header menu follows the view: workspace folders in the tree, session folders in All sessions', async () => {
         ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
         const { page } = ctx
         const toggle = page.getByTestId('sidebar-view-toggle')
@@ -115,10 +115,16 @@ test.describe('T45 sidebar all sessions', () => {
         await expect(more).toBeVisible()
         const folderViewX = await toggleX()
 
-        // All view: nothing there to collapse or file into a folder, so the menu is gone.
+        // All view: the menu holds the All view's own folders (078ee766) — no workspace items, and
+        // no Collapse All while there is no session folder to fold (afbc3546).
         await toggle.click()
         await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
-        await expect(more).toHaveCount(0)
+        await more.click()
+        await expect(page.getByTestId('sidebar-new-session-folder')).toHaveText('New Session Folder')
+        await expect(page.getByTestId('sidebar-new-folder')).toHaveCount(0)
+        await expect(page.getByTestId('sidebar-collapse-all')).toHaveCount(0)
+        await expect(page.getByTestId('sidebar-collapse-session-folders')).toHaveCount(0)
+        await page.keyboard.press('Escape')
         // The view-independent buttons stay.
         await expect(page.getByTestId('sidebar-search-toggle')).toBeVisible()
         await expect(page.getByTitle('Add Workspace')).toBeVisible()
