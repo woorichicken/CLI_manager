@@ -114,6 +114,10 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   action」에서 30초 멈췄고 afterEach 의 앱 종료까지 막혔다. 삭제 경로(`App.tsx` handleRemoveSession)는 셸에 자식
   프로세스가 있으면 네이티브 확인창(`show-message-box`)을 띄운다 — 부하로 셸 시작이 늦어 그 창이 숨김 창을 막은 것으로
   본다(확인창 캡처는 없음, 추정). 같은 날 `--build` 의 preflight 재실행에서 127/127 통과.
+- Evidence: **2026-10-26 v1.20.0 릴리스 빌드 1회차** — 285 passed · 1 failed, 실패는 이 파일의 「Ctrl keys reach the terminal」
+  하나(게시 없음). 원인이 위와 같다: `T26READY` 를 입력 메아리에서 잡아 zsh 가 뜨기 전에 키를 보냄(부하 6.38). 단독 3/3 통과,
+  2회차 빌드 286 통과로 공개. 로그 `/tmp/climanager-release-120-build-try1.log` · `/tmp/climanager-release-120-t26.log`.
+  10-09 · 10-21(아래 「T26 — … 셸 시작 스크립트와 경주」) · 10-26 세 번째 트리거 — **고칠 차례**. 걸릴 때마다 실패한 빌드 한 번(이번엔 17:05→17:16, 11분)과 단독 재확인이 더 든다.
 - Fix direction: 에코에 없는 문자열을 기다린다 — 예: `echo T26$((1+1))READY` 를 보내고 `T262READY` 를 기다린다.
   삭제 테스트는 셸 준비(프롬프트 출력)를 기다린 뒤 지우거나, 테스트 모드에서 확인창을 건너뛰는 경로를 쓴다.
 - Owner: 없음
@@ -415,6 +419,23 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: `SITE_DIR = ~/Downloads/solhun-web-page` 에서 `git add`·`commit`·`push origin main` 을 한다 — 주 체크아웃은 main 그대로 두고 커밋하지 않는 운영 규칙과 충돌(2026-09-30 확인).
 - Fix direction: 임시 워크트리(`git worktree add … origin/main`)에서 링크를 고치고 커밋·push 한 뒤 워크트리를 지운다.
 - Owner: Maintainer
+
+### `src/main/SessionRelations.ts` — 세션을 닫으면 그 세션의 Related 짝이 전부 사라진다(총괄을 바꿀 때 넘길 길이 없다)
+- Discovered: 2026-10-26, 사람 질문 「새 총괄을 만들 때를 대비해 Related 를 옮기는 게 있나」에 답하다가.
+- Evidence: 닫기(`ControlApiService.ts` 의 `relations.forget` 두 곳)가 그 세션이 낀 짝을 모두 지운다. 짝을 다른 세션으로
+  옮기는 함수·API·`clim` 명령은 없다. 2026-10-26 실측(앱 `config.json` `sessionRelations`): 옛 총괄 d1023 짝 17
+  (opened 14 · connected 2 · manual 1, 그중 「대화:」 세션 14) · 새 총괄 d1026 짝 1(d1023 → d1026 opened).
+- 지금은 손실 없음: 옛 총괄이 새 총괄을 `clim open` 으로 열었으면 새 총괄 Related 나무(`RelationTree.tsx`)에 옛 총괄이 위,
+  옛 총괄이 연 세션이 옆(같은 부모)으로 보인다 — 옛 총괄을 열어 두는 동안만. 컨텍스트 자동 압축은 세션 id 를 바꾸지 않아
+  짝이 그대로다(d1023 은 압축 뒤에도 17개).
+- Why deferred: 사람 결정(2026-10-26 「일단 백로그까지만」). 옛 총괄을 열어 두면 지금은 잃는 것이 없다.
+- Trigger: 옛 총괄 세션을 닫으려 할 때(메모리 정리 · 48시간 유휴 정리에 총괄이 들 때), 또는 Related 에서 「대화:」 세션이
+  안 보인다는 말이 나올 때.
+- Fix direction: `SessionRelations.inherit(from, to)` — `from` 의 숨기지 않은 짝을 `to` 로 복사(자기 자신 · 이미 있는 짝 ·
+  사람이 뺀 짝은 건너뜀) → 닫기 API 에 `handTo` 옵션 → `clim close <옛> --hand-to <새>`. 어림 2~3시간 + 릴리스, 화면에서
+  「넘기기」를 고르는 것까지면 반나절 더. 위 「Control API — 관련 세션을 API 로 내보이지 않는다」와 같은 배치에 묶으면
+  응답 모양을 한 번에 고친다.
+- Owner: 없음
 
 ## Blocked
 
