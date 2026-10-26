@@ -127,11 +127,14 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
 
         // Sync with external memo changes (e.g., session switch). Compared by value: the pages
         // array is a new object on every workspace refresh, and that must not reset the page shown.
+        // While a save is still waiting, what is on screen is newer than any stored copy: keep it.
         const storedPagesKey = JSON.stringify(memoPagesOf(initialMemo, initialMemoPages))
         useEffect(() => {
+            if (saveTimerRef.current) return
             const stored = JSON.parse(storedPagesKey) as string[]
             setPages(stored)
             setPageIndex(index => Math.min(index, stored.length - 1))
+            setConfirmingDelete(false)
         }, [storedPagesKey, sessionId])
 
         // Auto-save memo with debounce. Every save sends all pages, so the last one written wins whole.
@@ -140,6 +143,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                 clearTimeout(saveTimerRef.current)
             }
             saveTimerRef.current = setTimeout(() => {
+                saveTimerRef.current = null
                 window.api.updateSessionMemo(workspaceId, sessionId, next[0] ?? '', next.slice(1))
             }, SAVE_DEBOUNCE_MS)
         }, [workspaceId, sessionId])
@@ -205,6 +209,8 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
         }), [handleToggle])
 
         const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+            // An empty page shows the textarea even outside editing; the first letter must not swap it for the reading view.
+            setIsEditing(true)
             const next = pages.map((page, i) => i === pageIndex ? e.target.value : page)
             setPages(next)
             savePages(next)

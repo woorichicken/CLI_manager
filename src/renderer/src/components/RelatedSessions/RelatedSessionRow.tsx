@@ -26,7 +26,7 @@ function peekState(peek: SessionPeek | undefined): PeekState | null {
     return peek.awaitingInput ? 'awaiting' : peek.state
 }
 
-/** A row needs no relation: the Recent and All tabs list sessions that merely exist. */
+/** A row of the relation tree; `kind` is left out for rows that have no relation of their own. */
 export interface RowEntry {
     session: TerminalSession
     workspace: Workspace
@@ -41,10 +41,8 @@ interface RelatedSessionRowProps {
     selectionFull: boolean
     onToggle: (sessionId: string) => void
     onShow: (sessionId: string) => void
-    /** Left out where "remove from related" means nothing (Recent, All). */
+    /** Left out where "remove from related" means nothing. */
     onRemove?: (sessionId: string) => void
-    /** No state dot or label: the All tab does not poll every session. */
-    hideState?: boolean
     /** Copies the session id (what the AI Control API calls it). */
     onCopyId: (sessionId: string) => void
     /** Levels of indentation in the relation tree; 0 for a flat list. */
@@ -56,7 +54,7 @@ const INDENT_STEP_PX = 12
 const MAX_INDENT_LEVELS = 3
 const BASE_PADDING_PX = 16
 
-export function RelatedSessionRow({ entry, peek, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, indent = 0, hideState = false }: RelatedSessionRowProps) {
+export function RelatedSessionRow({ entry, peek, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, indent = 0 }: RelatedSessionRowProps) {
     const { session, workspace, kind } = entry
     const state = peekState(peek)
     // The first line written on any memo page (page 1 may be empty while a later one is not).
@@ -85,11 +83,9 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                 data-related-open={session.id}
             >
                 <div className="flex items-center gap-2 min-w-0">
-                    {!hideState && (
-                        <span
-                            className={`w-2 h-2 rounded-full shrink-0 ${state ? STATE_DOTS[state] : 'bg-gray-700'}`}
-                        />
-                    )}
+                    <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${state ? STATE_DOTS[state] : 'bg-gray-700'}`}
+                    />
                     <span className="text-sm text-gray-200 truncate">{session.name}</span>
                     {isTalkSession(session.name) && (
                         <span
@@ -108,15 +104,13 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                             connected
                         </span>
                     )}
-                    <span className={`hidden min-[480px]:inline text-xs text-gray-500 truncate ${hideState ? 'ml-auto' : ''}`} title={`Project: ${workspace.name}`}>{workspace.name}</span>
-                    {!hideState && (
-                        <span
-                            className="ml-auto shrink-0 text-[11px] text-gray-400"
-                            data-related-state={state ?? ''}
-                        >
-                            {state ? STATE_LABELS[state] : ''}
-                        </span>
-                    )}
+                    <span className="hidden min-[480px]:inline text-xs text-gray-500 truncate" title={`Project: ${workspace.name}`}>{workspace.name}</span>
+                    <span
+                        className="ml-auto shrink-0 text-[11px] text-gray-400"
+                        data-related-state={state ?? ''}
+                    >
+                        {state ? STATE_LABELS[state] : ''}
+                    </span>
                 </div>
                 {peek?.lastLine && peek.lastLineIsRecap && (
                     // The agent's own summary is a sentence: read from its start, over two lines at most.

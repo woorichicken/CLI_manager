@@ -128,5 +128,15 @@ test.describe('T56 memo pages', () => {
         await expect(page.getByTestId('session-memo-page')).toHaveText('4 / 4')
         await page.getByTestId('session-memo-delete-page').click()
         await expect(page.getByTestId('session-memo-page')).toHaveText('3 / 3')
+
+        // An empty page keeps its textarea after focus leaves; typing into it again stays in the textarea.
+        await page.getByTestId('session-memo-new-page').click()
+        await page.getByText('Memo', { exact: true }).click()
+        await expect(textarea).toHaveValue('')
+        await textarea.click()
+        await textarea.pressSequentially('ab')
+        await expect(textarea).toHaveValue('ab')
+        await expect(textarea).toBeFocused()
+        await expect(page.getByTestId('session-memo-read')).toHaveCount(0)
     })
 })

@@ -82,7 +82,7 @@ test.describe('T40 session tree', () => {
 
         await activateSession(page, LEAD_A_NAME)
         await button(page, LEAD_A).click()
-        await expect(dialog(page).locator('[data-related-tab="tree"]')).toHaveAttribute('aria-selected', 'true')
+        await expect(dialog(page).locator('[data-related-toolbar]')).toBeVisible()
 
         await expect(rowIn(page, 'up', CHIEF)).toBeVisible()
         await expect(rowIn(page, 'side', LEAD_B)).toBeVisible()
@@ -185,7 +185,10 @@ test.describe('T40 session tree', () => {
         await page2.locator(`[data-session-item="${HELPER}"]`).waitFor({ timeout: 30_000 })
         await expect.poll(() => sidebarOrder(page2, [WORKER, LEAD_C, LEAD_B])).toEqual([WORKER, LEAD_C, LEAD_B])
 
-        // A deleted session leaves the list, on screen and on disk.
+        // A deleted session leaves the list, on screen and on disk. Deleting while the shell still has a
+        // child process (its startup under load) asks "terminate running processes?" in a native box no
+        // one answers here — the 1.18.0/1.19.0 release runs stopped on that click. Wait the shell out first.
+        await expect.poll(() => page2.evaluate((id) => window.api.hasRunningProcess(id), LEAD_B), { timeout: 30_000 }).toBe(false)
         const rowInSidebar = page2.locator(`[data-session-item="${LEAD_B}"]`)
         await rowInSidebar.hover()
         await rowInSidebar.getByTitle('Delete session').click()
