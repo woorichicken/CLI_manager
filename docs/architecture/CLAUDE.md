@@ -84,6 +84,10 @@ rules stay in the root; this file is the inventory.
 - 메모가 있으면 아이콘이 노란색으로 변경되어 내용 존재를 표시
 - Escape 키로 즉시 닫기
 - 세션 삭제 시 메모도 자동 삭제 (TerminalSession.memo 필드)
+- **페이지**(1.20, 제보 533a22ba): 머리 줄 「새 페이지」(맨 끝에 빈 쪽) · ‹ ›(양 끝에서 돌아 감) · `n / N` · 쪽 지우기(글이 있는 쪽은 두 번 눌러야). 쪽이 하나면 넘김·지우기 버튼은 숨는다. 복사는 **보고 있는 쪽**만
+  - 저장: 1쪽은 그대로 `memo`, 2쪽부터 `memoPages`. 1.19 이전 앱은 `memo` 만 읽고 쓰므로 그 판으로 열어도 1쪽은 그대로 보이고, 옛 판이 1쪽을 고쳐도 `memoPages` 는 남는다(옛 main 은 세션 객체의 모르는 칸을 지우지 않는다). `update-session-memo` 는 네 번째 인자(2쪽부터)를 보낼 때만 `memoPages` 를 바꾼다
+  - 예전 한 장 메모의 `-----` 구분선은 자동으로 쪼개지 않는다 — 1쪽에 그대로
+  - Related 줄의 메모 미리보기는 모든 쪽에서 첫 줄. Control API 의 `memo` 는 아직 1쪽만 싣는다([`docs/backlog.md`](../backlog.md))
 
 #### 12. AI Control API (NEW)
 - 다른 AI(Claude Code 등)가 폴더를 골라 세션을 열고, 템플릿 실행·프롬프트 입력·완료 대기·화면 읽기를 한다
@@ -94,7 +98,7 @@ rules stay in the root; this file is the inventory.
 - 세션 헤더(단일 화면 오른쪽 「Related」, 분할 칸 헤더의 아이콘)에서 그 세션과 관련된 세션을 모달로 본다 — 0개여도 버튼은 보인다(손으로 추가하는 곳이라서)
 - 자동 등록: 에이전트가 `X-Caller-Session` 을 붙여 세션을 **열 때**(`opened`)와 다른 세션을 **처음 읽거나 입력할 때**(`connected`). 터미널 출력(링크 글자)으로는 등록하지 않는다
 - 손으로 추가·빼기. 뺀 쌍은 표시(`dismissed`)를 남겨 에이전트의 다음 호출이 다시 넣지 않게 하고, 손으로 다시 넣으면 풀린다
-- 모달 탭 줄(Relations / Recent / All) — 지금은 **Relations 만** 동작하고 나머지는 흐리게 둔다(이후 단계에서 채움). Relations 는 `sessionTreeFor`(`relatedSessions.ts`)가 `from` 을 부모로 삼아(`opened`·`connected` 둘 다) 위(나를 연 쪽, 여러 겹 · 뿌리가 맨 위)·옆(같은 부모가 연 형제)·아래(내가 연 것, 손자까지 들여쓰기)를 한 나무로 그린다. 방향 없는 `manual` 은 나무 밖 「Added by hand」. 고리는 한 번 놓은 세션을 건너뛰어 끊고(아래 → 위 → 옆 순으로 놓음), 깊이는 `MAX_TREE_DEPTH = 6`. 중간 세션이 닫히면 그 아래는 안 보인다(알려진 한계). 구역 속성 `data-related-tree="up|side|down|manual"` 에 옛 묶음 이름 `data-related-group="toHere|side|fromHere|manual"` 을 함께 둔다 — T35 가 그걸로 본다. 줄 끝 「#」는 세션 ID 복사
+- 모달은 **관계만** 보인다(1.20 에서 Recent·All 탭을 뺐다 — 제보 c17aa9c4 · 모든 세션 목록은 사이드바 All sessions 에 있다). 탭 자리에는 Sort 만 남고, 관계가 하나도 없으면 그 줄도 없다. 「Recently viewed」 정렬은 그대로 `getRecentSessions` 를 읽는다. 관계 나무는 `sessionTreeFor`(`relatedSessions.ts`)가 `from` 을 부모로 삼아(`opened`·`connected` 둘 다) 위(나를 연 쪽, 여러 겹 · 뿌리가 맨 위)·옆(같은 부모가 연 형제)·아래(내가 연 것, 손자까지 들여쓰기)를 한 나무로 그린다. 방향 없는 `manual` 은 나무 밖 「Added by hand」. 고리는 한 번 놓은 세션을 건너뛰어 끊고(아래 → 위 → 옆 순으로 놓음), 깊이는 `MAX_TREE_DEPTH = 6`. 중간 세션이 닫히면 그 아래는 안 보인다(알려진 한계). 구역 속성 `data-related-tree="up|side|down|manual"` 에 옛 묶음 이름 `data-related-group="toHere|side|fromHere|manual"` 을 함께 둔다 — T35 가 그걸로 본다. 줄 끝 「#」는 세션 ID 복사
 - 모달(묶음 이름은 위와 같음): 「Opened from this session」 / 「Opened this session」 / 「Added by hand」 · 상태(Working/Waiting for you/Idle — main 의 화면 사본 기준) · 마지막 줄(길면 **앞을** 잘라 끝 — 보통 지금 폴더 — 이 보인다) · 메모 · 이름이 `대화:` 로 시작하면 「Talk」 배지. 누르면 사이드바 클릭과 같게 이동. 「Open side by side」는 **지금 세션을 첫 칸**에 두고 고른 세션(최대 3)을 뒤에 — 세션 링크와 같은 경로
 - 어느 쪽이든 세션이 닫히면(API·사이드바·워크스페이스 삭제) 그 관계는 저장소에서도 지워진다. 시작 때 없는 세션을 가리키는 관계를 정리한다
 - 코드: `src/main/SessionRelations.ts`(저장) · `ControlApiService`(자동 등록·`peekSessions`) · `src/renderer/src/utils/relatedSessions.ts`(묶음·나무 계산) · `components/RelatedSessions/`(`RelationTree.tsx` = 관계 탭)
@@ -153,7 +157,8 @@ User Action (Renderer)
           name: string,
           cwd: string,
           type: 'regular' | 'worktree',
-          memo?: string,              // Session memo text
+          memo?: string,              // Session memo text — page 1
+          memoPages?: string[],       // Memo pages 2..n (older builds ignore it)
           isPinned?: boolean,         // Kept at the top of the sidebar's All sessions list (unpinned = no field)
           cliSessionId?: string,      // Claude: --session-id we injected · Codex: id found in its rollout (CodexSessionLocator)
           cliToolName?: string,       // 'claude' (resume: <cmd> --resume <id>) · 'codex' (resume: <cmd> resume <id>)

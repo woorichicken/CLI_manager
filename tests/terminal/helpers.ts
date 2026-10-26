@@ -27,8 +27,10 @@ export interface SeedSession {
     cliSessionId?: string
     cliToolName?: string
     cliCommand?: string
-    /** The session's memo pad (Cmd+J). */
+    /** The session's memo pad (Cmd+J) — page 1. */
     memo?: string
+    /** Memo pages after the first. */
+    memoPages?: string[]
 }
 
 export interface SeedWorkspace {
@@ -105,7 +107,8 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
                 ...(s.cliSessionId ? { cliSessionId: s.cliSessionId } : {}),
                 ...(s.cliToolName ? { cliToolName: s.cliToolName } : {}),
                 ...(s.cliCommand ? { cliCommand: s.cliCommand } : {}),
-                ...(s.memo ? { memo: s.memo } : {})
+                ...(s.memo ? { memo: s.memo } : {}),
+                ...(s.memoPages ? { memoPages: s.memoPages } : {})
             })),
             // get-workspaces sorts by createdAt, so seeded order has to be encoded here
             createdAt: 1700000000000 + index,

@@ -1889,6 +1889,7 @@ function App() {
                                             sessionId={session.id}
                                             workspaceId={workspace.id}
                                             initialMemo={session.memo}
+                                            initialMemoPages={session.memoPages}
                                             visible={isVisible && !isInGridView}
                                         />
                                         {/* AI Control API: a green edge marks a terminal something else may type into */}

@@ -41,7 +41,12 @@ export interface TerminalSession {
      * `claude`). Resuming repeats it so an alias keeps whatever it carried.
      */
     cliCommand?: string
-    memo?: string  // Quick notepad text per session
+    memo?: string  // Quick notepad text per session — page 1 of the memo
+    /**
+     * Memo pages after the first. Page 1 stays in `memo`, the only field an app
+     * before 1.20 reads, so opening this config in an older build keeps that page.
+     */
+    memoPages?: string[]
     /** Kept at the top of the sidebar's "All sessions" list, above the recently viewed ones. */
     isPinned?: boolean
     /**

@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
-import { Check, Copy, StickyNote, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Copy, FilePlus, StickyNote, Trash2, X } from 'lucide-react'
 
 interface SessionMemoProps {
     sessionId: string
     workspaceId: string
+    /** Page 1 of the memo. */
     initialMemo?: string
+    /** Pages 2..n (`TerminalSession.memoPages`). */
+    initialMemoPages?: string[]
     visible: boolean
 }
 
@@ -17,6 +20,9 @@ const SAVE_DEBOUNCE_MS = 500
 
 // How long the copy button shows its check mark after copying (ms).
 const COPIED_FEEDBACK_MS = 1500
+
+// The delete-page button asks for a second click this long before it resets (ms).
+const DELETE_CONFIRM_MS = 3000
 
 // A link in the reading view is shown at about this many characters; the tooltip has the whole URL.
 const LINK_DISPLAY_MAX_CHARS = 40
@@ -77,6 +83,24 @@ export function shortenUrl(url: string, maxChars = LINK_DISPLAY_MAX_CHARS): stri
     return short.length <= maxChars ? short : `${short.slice(0, maxChars - 1)}…`
 }
 
+/** A session's memo as pages: page 1 is the `memo` field, the rest come from `memoPages`. */
+export function memoPagesOf(memo?: string, morePages?: string[]): string[] {
+    return [memo ?? '', ...(morePages ?? [])]
+}
+
+/** The page shown after moving `step` pages from `index`. Going past either end wraps around. */
+export function turnMemoPage(index: number, step: number, pageCount: number): number {
+    if (pageCount <= 0) return 0
+    return ((index + step) % pageCount + pageCount) % pageCount
+}
+
+/** Pages left after deleting one, and the page to show next: the one that took its place, or the new last one. */
+export function deleteMemoPage(pages: string[], index: number): { pages: string[]; index: number } {
+    if (pages.length <= 1) return { pages: [''], index: 0 }
+    const rest = pages.filter((_, i) => i !== index)
+    return { pages: rest, index: Math.min(index, rest.length - 1) }
+}
+
 // Focus the xterm terminal in the same container
 function focusTerminal(sessionId: string): void {
     const xtermEl = document.querySelector(`[data-session-id="${sessionId}"] .xterm textarea`) as HTMLElement | null
@@ -84,9 +108,15 @@ function focusTerminal(sessionId: string): void {
 }
 
 export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
-    function SessionMemo({ sessionId, workspaceId, initialMemo, visible }, ref) {
+    function SessionMemo({ sessionId, workspaceId, initialMemo, initialMemoPages, visible }, ref) {
         const [isOpen, setIsOpen] = useState(false)
-        const [memo, setMemo] = useState(initialMemo || '')
+        // Pages instead of one sheet split by "-----" lines (report 533a22ba). Page 1 is what older builds show.
+        const [pages, setPages] = useState<string[]>(() => memoPagesOf(initialMemo, initialMemoPages))
+        const [pageIndex, setPageIndex] = useState(0)
+        const [confirmingDelete, setConfirmingDelete] = useState(false)
+        const confirmTimerRef = useRef<NodeJS.Timeout | null>(null)
+        const memo = pages[pageIndex] ?? ''
+        const hasAnyText = pages.some(page => page.length > 0)
         // Typing happens in the textarea; while the memo is not being edited it is shown as text
         // so its links can be clicked. An empty memo has nothing to read, so it stays the textarea.
         const [isEditing, setIsEditing] = useState(true)
@@ -95,18 +125,22 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
         const [copied, setCopied] = useState(false)
         const copiedTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-        // Sync with external initialMemo changes (e.g., session switch)
+        // Sync with external memo changes (e.g., session switch). Compared by value: the pages
+        // array is a new object on every workspace refresh, and that must not reset the page shown.
+        const storedPagesKey = JSON.stringify(memoPagesOf(initialMemo, initialMemoPages))
         useEffect(() => {
-            setMemo(initialMemo || '')
-        }, [initialMemo, sessionId])
+            const stored = JSON.parse(storedPagesKey) as string[]
+            setPages(stored)
+            setPageIndex(index => Math.min(index, stored.length - 1))
+        }, [storedPagesKey, sessionId])
 
-        // Auto-save memo with debounce
-        const saveMemo = useCallback((text: string) => {
+        // Auto-save memo with debounce. Every save sends all pages, so the last one written wins whole.
+        const savePages = useCallback((next: string[]) => {
             if (saveTimerRef.current) {
                 clearTimeout(saveTimerRef.current)
             }
             saveTimerRef.current = setTimeout(() => {
-                window.api.updateSessionMemo(workspaceId, sessionId, text)
+                window.api.updateSessionMemo(workspaceId, sessionId, next[0] ?? '', next.slice(1))
             }, SAVE_DEBOUNCE_MS)
         }, [workspaceId, sessionId])
 
@@ -119,10 +153,13 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                 if (copiedTimerRef.current) {
                     clearTimeout(copiedTimerRef.current)
                 }
+                if (confirmTimerRef.current) {
+                    clearTimeout(confirmTimerRef.current)
+                }
             }
         }, [])
 
-        // Copies the whole memo, so it can be pasted to an agent without selecting it first (report 533a22ba).
+        // Copies the page on screen, so it can be pasted to an agent without selecting it first (report 533a22ba).
         const copyMemo = useCallback(async () => {
             if (!memo) return
             try {
@@ -168,9 +205,45 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
         }), [handleToggle])
 
         const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-            const newText = e.target.value
-            setMemo(newText)
-            saveMemo(newText)
+            const next = pages.map((page, i) => i === pageIndex ? e.target.value : page)
+            setPages(next)
+            savePages(next)
+        }
+
+        const cancelDeleteConfirm = () => {
+            setConfirmingDelete(false)
+            if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+        }
+
+        const turnPage = (step: number) => {
+            cancelDeleteConfirm()
+            setPageIndex(index => turnMemoPage(index, step, pages.length))
+        }
+
+        // A new page goes at the end and opens for typing.
+        const addPage = () => {
+            cancelDeleteConfirm()
+            const next = [...pages, '']
+            setPages(next)
+            setPageIndex(next.length - 1)
+            setIsEditing(true)
+            savePages(next)
+            setTimeout(() => textareaRef.current?.focus(), 0)
+        }
+
+        // An empty page goes at once; a page with text asks for a second click, since there is no undo.
+        const deletePage = () => {
+            if (memo.length > 0 && !confirmingDelete) {
+                setConfirmingDelete(true)
+                if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+                confirmTimerRef.current = setTimeout(() => setConfirmingDelete(false), DELETE_CONFIRM_MS)
+                return
+            }
+            cancelDeleteConfirm()
+            const next = deleteMemoPage(pages, pageIndex)
+            setPages(next.pages)
+            setPageIndex(next.index)
+            savePages(next.pages)
         }
 
         // Entering the edit mode mounts a fresh textarea: put the caret at the end like openMemo does.
@@ -222,7 +295,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                     className={`absolute top-2 right-14 z-30 w-7 h-7 flex items-center justify-center rounded-md transition-all duration-200 ${
                         isOpen
                             ? 'bg-yellow-500/30 text-yellow-300'
-                            : memo
+                            : hasAnyText
                                 ? 'bg-yellow-500/20 text-yellow-400 opacity-60 hover:opacity-100'
                                 : 'bg-white/5 text-gray-500 opacity-40 hover:opacity-100'
                     }`}
@@ -238,6 +311,57 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50">
                             <span className="text-xs text-gray-400 font-medium">Memo</span>
                             <div className="flex items-center gap-2">
+                                {/* Header buttons keep the textarea focused (mousedown is cancelled): a blur would switch it to the reading view. */}
+                                {pages.length > 1 && (
+                                    <div className="flex items-center gap-0.5" data-testid="session-memo-pager">
+                                        <button
+                                            data-testid="session-memo-prev"
+                                            onClick={() => turnPage(-1)}
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            className="text-gray-500 hover:text-gray-300 transition-colors"
+                                            title="Previous page"
+                                            aria-label="Previous page"
+                                        >
+                                            <ChevronLeft size={12} />
+                                        </button>
+                                        <span data-testid="session-memo-page" className="text-[10px] text-gray-400 tabular-nums min-w-[2.25rem] text-center">
+                                            {pageIndex + 1} / {pages.length}
+                                        </span>
+                                        <button
+                                            data-testid="session-memo-next"
+                                            onClick={() => turnPage(1)}
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            className="text-gray-500 hover:text-gray-300 transition-colors"
+                                            title="Next page"
+                                            aria-label="Next page"
+                                        >
+                                            <ChevronRight size={12} />
+                                        </button>
+                                    </div>
+                                )}
+                                <button
+                                    data-testid="session-memo-new-page"
+                                    onClick={addPage}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    className="text-gray-500 hover:text-gray-300 transition-colors"
+                                    title="New page"
+                                    aria-label="New page"
+                                >
+                                    <FilePlus size={12} />
+                                </button>
+                                {pages.length > 1 && (
+                                    <button
+                                        data-testid="session-memo-delete-page"
+                                        data-state={confirmingDelete ? 'confirm' : 'idle'}
+                                        onClick={deletePage}
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        className={`transition-colors ${confirmingDelete ? 'text-red-400' : 'text-gray-500 hover:text-gray-300'}`}
+                                        title={confirmingDelete ? 'Click again to delete this page' : 'Delete this page'}
+                                        aria-label={confirmingDelete ? 'Click again to delete this page' : 'Delete this page'}
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                )}
                                 <button
                                     data-testid="session-memo-copy"
                                     onClick={copyMemo}
@@ -247,8 +371,8 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                                     className={`transition-colors disabled:opacity-30 disabled:cursor-default ${
                                         copied ? 'text-emerald-400' : 'text-gray-500 hover:text-gray-300'
                                     }`}
-                                    title={copied ? 'Copied' : 'Copy memo'}
-                                    aria-label={copied ? 'Copied' : 'Copy memo'}
+                                    title={copied ? 'Copied' : pages.length > 1 ? 'Copy this page' : 'Copy memo'}
+                                    aria-label={copied ? 'Copied' : pages.length > 1 ? 'Copy this page' : 'Copy memo'}
                                 >
                                     {copied ? <Check size={12} /> : <Copy size={12} />}
                                 </button>

@@ -1576,8 +1576,8 @@ app.whenReady().then(async () => {
         return true
     })
 
-    // Save session memo
-    ipcMain.handle('update-session-memo', (_, workspaceId: string, sessionId: string, memo: string) => {
+    // Save session memo. `morePages` (pages 2..n) is left as stored when the caller does not send it.
+    ipcMain.handle('update-session-memo', (_, workspaceId: string, sessionId: string, memo: string, morePages?: unknown) => {
         const workspaces = store.get('workspaces') as Workspace[]
         const workspace = workspaces.find((w: Workspace) => w.id === workspaceId)
         if (!workspace) return false
@@ -1586,6 +1586,11 @@ app.whenReady().then(async () => {
         if (!session) return false
 
         session.memo = memo
+        if (Array.isArray(morePages)) {
+            const pages = morePages.filter((page): page is string => typeof page === 'string')
+            if (pages.length > 0) session.memoPages = pages
+            else delete session.memoPages
+        }
 
         store.set('workspaces', workspaces.map(w =>
             w.id === workspaceId ? workspace : w
@@ -3200,7 +3205,7 @@ app.whenReady().then(async () => {
     ipcMain.handle('get-session-relations', () => sessionRelations.list())
     ipcMain.handle('add-session-relation', (_e, from: string, to: string): boolean => sessionRelations.add(from, to))
     ipcMain.handle('remove-session-relation', (_e, a: string, b: string): boolean => sessionRelations.remove(a, b))
-    // The Related dialog's Recent tab: the renderer reports each session the user switches to.
+    // Recently viewed sessions (sidebar All sessions order, the Related dialog's sort): the renderer reports each session the user switches to.
     ipcMain.handle('get-recent-sessions', () => recentSessions.list())
     ipcMain.handle('push-recent-session', (_e, sessionId: string): void => {
         if (typeof sessionId === 'string' && sessionId) recentSessions.push(sessionId)

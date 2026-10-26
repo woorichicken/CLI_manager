@@ -59,7 +59,8 @@ const BASE_PADDING_PX = 16
 export function RelatedSessionRow({ entry, peek, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, indent = 0, hideState = false }: RelatedSessionRowProps) {
     const { session, workspace, kind } = entry
     const state = peekState(peek)
-    const memo = session.memo?.split('\n').find(line => line.trim())?.trim()
+    // The first line written on any memo page (page 1 may be empty while a later one is not).
+    const memo = [session.memo ?? '', ...(session.memoPages ?? [])].join('\n').split('\n').find(line => line.trim())?.trim()
 
     return (
         <div
