@@ -19,34 +19,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
-### 사이드바 「Delete session」 버튼 클릭 — 긴 묶음 실행에서 30초 타임아웃으로 멈춘다(T26 · T40)
-- Discovered: 2026-10-25 fb-1025, PR #58·#59 를 main 과 합친 트리에서 관련 스펙 13개를 한 번에(`--workers=1`) 돌리다가.
-- Evidence: `t26-session-navigation.spec.ts:129` 이 `deleteFromSidebar` 의 `getByTitle('Delete session').click()` 에서 「visible, enabled and stable」을 30초 기다리다 실패(버튼은 `opacity-0 group-hover:opacity-100`). 같은 트리에서 그 시험만 3/3, T26 파일 전체 11/11 통과. 47건 중 1건.
-- Evidence: 2026-10-25 1.18.0 릴리스 빌드 1회차 사전 점검 — `t40-session-tree.spec.ts:204` 「T40 recent tab follows what you looked at and survives a restart」가 전체 실행(17.1m) 중 같은 버튼 `rowInSidebar.getByTitle('Delete session').click()` 에서 30초 타임아웃(이번엔 hover 뒤 「performing click action」에서 멈춤) + worker teardown 240초 초과로 1회 실패. 단독 `--repeat-each=5` 20/20, 같은 커밋 `--check` 268 통과(로그 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1792931888745.log`). teardown 까지 막힌 것은 클릭 뒤 앱이 응답하지 않았다는 뜻일 수 있다.
-- Evidence: 2026-10-26 1.19.0 릴리스 빌드 1회차 사전 점검 — 같은 T40 시험(`t40-session-tree.spec.ts:155`)이 이번엔 클릭은 지나가고 `expect(rowInSidebar).toHaveCount(0)` 에서 5초 동안 줄이 그대로(Received 1) 실패. 272 passed · 1 failed(9.3m), 단독 3회 12/12(총괄). 로그 `/tmp/climanager-release-119-build-try1.log` → 전체 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1792991734321.log`.
-- Cause(코드로 확인한 경로, 재현은 아직): 삭제 처리 `App.tsx` `handleRemoveSession` 은 `hasRunningProcess`(`TerminalManager.ts` — 셸 pid 에 `pgrep -P`)가 참이면 네이티브 확인 상자(`showMessageBox` 「Terminate Session」)를 띄우고 답을 기다린다. 숨긴 시험 창에서는 아무도 답하지 않으니 줄이 남고(1.19.0 모양), 상자가 열린 채로는 앱 종료도 막힌다(1.18.0 의 teardown 240초). 부하로 셸 시작(mise 훅 등 — 아래 T26 두 항목)이 늦을 때만 자식 프로세스가 있어 간헐이다. 2026-10-09 아래 「"Ctrl keys" · "split view 삭제"」 항목이 같은 원인을 추정으로 적었다.
-- 2026-10-26 fb-1026b: T40(이 시험은 c17aa9c4 로 「본 순서가 사이드바에 남는다」로 바뀜)과 T26 `deleteFromSidebar` 가 삭제 전에 `window.api.hasRunningProcess(id) === false` 를 기다리게 했다(PR #62). 다음 릴리스 사전 점검에서 이 줄이 다시 안 나면 닫는다.
-- Why deferred: 두 번 다 그 시험이 바꾼 코드와 무관한 사이드바 삭제 버튼에서 났고, 단독으로는 재현되지 않는다. 간헐이라 원인 실측이 먼저다.
-- Trigger: 사전 점검·묶음 실행에서 같은 줄이 다시 실패할 때.
-- Fix direction: 위 대기로 안 닫히면 실패 때 화면(확인 상자가 떠 있는지)과 main 상태를 남긴다. 다른 시험의 사이드바 삭제(T45·T52 등)도 같은 대기가 필요하면 공용 도우미 하나로 「셸 자식 없음 대기 → hover → 클릭 → 행 사라짐 대기」를 묶는다(공용 도우미는 사람 컨펌).
-- Owner: 없음
-
-### T26 — 「macOS 에서 Ctrl 키는 터미널로」 시험이 셸 시작 스크립트와 경주한다
-- Discovered: 2026-10-21 v1.15.0 릴리즈 사전 점검. 새 빌드에서 `t26-session-navigation.spec.ts:270` 이 3번 중 1번 실패, 나머지 두 번은 11/11 통과.
-- Evidence: 실패 화면에 `stty -icanon …; echo T26READY; cat -v` 가 두 번 찍히고 그 사이에 `load: 5.31 cmd: mise … running` — 개발자 셸 프로필(mise 훅)이 아직 도는 중에 명령·키가 들어가 `^W^R^T` 가 셸에 먹혔다(`^T` 는 SIGINFO 로 부하 줄을 찍음).
-- Why deferred: 릴리즈 도중 발견. 관련 세션 변경과 무관(키 처리·PTY 를 건드리지 않음).
-- Trigger: 사전 점검·CI 에서 t26 이 다시 실패할 때.
-- Fix direction: 시험 셸을 `zsh -f`(프로필 없이)로 띄우거나, `T26READY` 가 찍힌 **뒤에만** 키를 보내도록 기다림을 고친다.
-- Owner: 없음
-
-### Control API — 관련 세션(`sessionRelations`)을 API 로 내보이지 않는다
-- Discovered: 2026-10-21, 세션 헤더 「관련 세션」(PR #37) 리뷰. 관계는 저장되지만 API 응답에는 메모리 전용 `openedBy` 만 있다.
-- Evidence: `src/main/ControlApiService.ts` `describe()` 는 `openedBy`(재시작 때 사라짐)만 싣고, `SessionRelations.list()` 를 부르는 길은 IPC(`get-session-relations`)뿐이다.
-- Why deferred: 리뷰에서 「이번엔 안 함, 다음 단계」로 정했다(2026-10-21). 응답 모양을 바꾸면 `t22` 계약과 `docs/architecture/control-api.md` 를 같이 고쳐야 한다.
-- Trigger: 에이전트가 「내 관련 세션」을 API 로 찾아야 하는 작업이 생길 때(예: 재시작 뒤 오케스트레이터가 자기 워커를 다시 찾기).
-- Fix direction: 세션 객체에 `relations: [{ sessionId, kind, direction }]` 를 더하거나 `GET /v1/sessions/:id/relations` — `openedBy` 는 호환을 위해 남긴다.
-- Owner: 없음
-
 ### xterm 리사이즈 — 창이 커질 때 커서가 맨 아래면 스크롤백 줄이 화면으로 내려와 Claude 리페인트에 지워진다
 - Discovered: 2026-10-13, T29 에 「에이전트 리페인트 뒤에도 구분선이 남는가」 검사를 넣다가.
 - Evidence: 30줄 → 43줄 맞춤 리사이즈가 지우기와 겹치자, 스크롤백 맨 아래였던 구분선(305행, 화면 시작 306)이 화면으로 내려와
@@ -101,25 +73,11 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 복원을 몇 개씩 나눠 띄운다(예: 4개씩, 앞 묶음의 에이전트가 프롬프트를 띄운 뒤 다음). 오래 쉰 세션은 탭만 복원하고 프로세스는 첫 포커스 때 띄우는 선택지.
 - Owner: 없음
 
-### `tests/terminal/t26-session-navigation.spec.ts` — "Ctrl keys" · "split view 삭제" 가 부하에서 간헐 실패
-- Discovered: 2026-10-09, 사이드바 접기·검색·복사 작업의 회귀 실행(T12·T13·T18·T26)
-- Why deferred: 이번 변경과 무관한 테스트 대기 조건 문제이고, 재실행 2/2 통과했다.
-- Trigger: 릴리즈 preflight(전체 스위트)나 CI 에서 이 테스트가 다시 빨갛게 뜰 때 — 아래
-  「프리플라이트 테스트가 간헐적으로 실패하는데 원인을 못 잡았다」의 후보 하나다.
-- Evidence: 실패 로그 tail 에 `stty …; echo T26READY; cat -v` 명령줄과 `load: 9.90 cmd: zsh`(^T 의 SIGINFO)가
-  찍혔다. `waitForBufferText('T26READY')` 가 **입력한 명령줄의 에코**에 먼저 걸려, `stty` 가 적용되기 전에
-  Ctrl 키가 zsh 줄 편집기로 들어갔다(^W·^R·^T 가 셸에 먹힘). 부하 1분값 약 11 에서 1/1 실패, 직후 2/2 통과.
-  **2026-10-09 v1.13.0 릴리즈 preflight**: 전체 127건 중 이 파일 2건만 ✘ — 위 Ctrl 키 테스트와
-  "deleting a session shown in split view removes its pane"(4.5m). 후자는 `Delete session` 클릭이 「performing click
-  action」에서 30초 멈췄고 afterEach 의 앱 종료까지 막혔다. 삭제 경로(`App.tsx` handleRemoveSession)는 셸에 자식
-  프로세스가 있으면 네이티브 확인창(`show-message-box`)을 띄운다 — 부하로 셸 시작이 늦어 그 창이 숨김 창을 막은 것으로
-  본다(확인창 캡처는 없음, 추정). 같은 날 `--build` 의 preflight 재실행에서 127/127 통과.
-- Evidence: **2026-10-26 v1.20.0 릴리스 빌드 1회차** — 285 passed · 1 failed, 실패는 이 파일의 「Ctrl keys reach the terminal」
-  하나(게시 없음). 원인이 위와 같다: `T26READY` 를 입력 메아리에서 잡아 zsh 가 뜨기 전에 키를 보냄(부하 6.38). 단독 3/3 통과,
-  2회차 빌드 286 통과로 공개. 로그 `/tmp/climanager-release-120-build-try1.log` · `/tmp/climanager-release-120-t26.log`.
-  10-09 · 10-21(아래 「T26 — … 셸 시작 스크립트와 경주」) · 10-26 세 번째 트리거 — **고칠 차례**. 걸릴 때마다 실패한 빌드 한 번(이번엔 17:05→17:16, 11분)과 단독 재확인이 더 든다.
-- Fix direction: 에코에 없는 문자열을 기다린다 — 예: `echo T26$((1+1))READY` 를 보내고 `T262READY` 를 기다린다.
-  삭제 테스트는 셸 준비(프롬프트 출력)를 기다린 뒤 지우거나, 테스트 모드에서 확인창을 건너뛰는 경로를 쓴다.
+### `tests/terminal/t26-session-navigation.spec.ts` — "Ctrl keys" 간헐 실패: 고쳤다, 사전 점검 통과를 보면 지운다
+- Discovered: 2026-10-09 회귀 실행 · 2026-10-21 v1.15.0 사전 점검 · 2026-10-26 v1.20.0 릴리스 빌드 1회차(285 passed · 1 failed) — 세 번 같은 시험.
+- Cause: `waitForBufferText('T26READY')` 가 입력한 명령줄의 메아리에 먼저 걸려, `stty` 가 적용되기 전에 Ctrl 키가 zsh 줄 편집기로 들어갔다(실패 화면에 `load: … cmd: mise`·`zsh` — ^T 의 SIGINFO).
+- 2026-10-27 day-1027: 셸이 계산한 표지(`echo T26$((1+1))READY` → `T262READY`)를 기다리게 했다(PR #66, 단독 `--repeat-each=5` 5/5). 같은 파일의 「split view 삭제」는 2026-10-26 PR #62 의 셸 자식 대기로 덮였다(1.20.0 사전 점검에서 그 시험은 통과).
+- Trigger: 1.21.0 릴리스 사전 점검에서 t26 이 통과하면 이 줄을 지운다. 다시 실패하면 실패 화면을 붙여 연다.
 - Owner: 없음
 
 ### CI `Terminal + agent tests` — 앱을 띄우는 테스트가 CI 에서 전부 3분 타임아웃
@@ -330,7 +288,8 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Discovered: 2026-09-29, API 응답에 `memo`(읽기 전용)를 추가하면서
 - Why deferred: 쓰기는 AI 가 사용자가 적은 메모를 바꾸게 되는 일이라 허용 여부가 사람 결정이다.
 - Trigger: AI 가 작업 인계 노트·진행 상황을 메모에 남기게 하고 싶을 때
-- Evidence: 2026-10-26 fb-1026b(PR #62)로 메모가 여러 쪽이 됐다 — 1쪽 `memo`, 2쪽부터 `memoPages`. API 의 `memo` 는 지금 1쪽만 싣는다. 읽기에 `memoPages` 를 더할지도 같이 정한다.
+- Evidence: 2026-10-26 fb-1026b(PR #62)로 메모가 여러 쪽이 됐다 — 1쪽 `memo`, 2쪽부터 `memoPages`. **읽기는 2026-10-27 day-1027(PR #67)에 넣었다** — API 세션 응답 `memoPages` 는 1쪽부터 모든 쪽(저장소 배열과 뜻이 다르다, `docs/architecture/control-api.md`). 남은 것은 쓰기뿐이다.
+- 2026-10-27 사람 답: 「쓰기는 보류하고 싶어. 읽기 관련해서는 좋아.」 — 쓰기는 다시 물을 때까지 그대로 둔다.
 - Evidence: 읽기는 `describe()` 가 `session.memo` 를 돌려준다. 쓰기 경로는 renderer IPC `update-session-memo`
   (`src/main/index.ts` 1385행 부근)뿐이다. 열 때 고를 것: 덮어쓰기 vs 덧붙이기, 사용자가 메모를 편집 중일 때의 충돌,
   `aiControl` 세션만 허용(기존 경계 유지).
@@ -420,21 +379,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 임시 워크트리(`git worktree add … origin/main`)에서 링크를 고치고 커밋·push 한 뒤 워크트리를 지운다.
 - Owner: Maintainer
 
-### `src/main/SessionRelations.ts` — 세션을 닫으면 그 세션의 Related 짝이 전부 사라진다(총괄을 바꿀 때 넘길 길이 없다)
+### 사이드바로 세션을 닫을 때 Related 짝을 넘길 길이 없다(API 는 1.21 `handTo` 로 된다)
 - Discovered: 2026-10-26, 사람 질문 「새 총괄을 만들 때를 대비해 Related 를 옮기는 게 있나」에 답하다가.
-- Evidence: 닫기(`ControlApiService.ts` 의 `relations.forget` 두 곳)가 그 세션이 낀 짝을 모두 지운다. 짝을 다른 세션으로
-  옮기는 함수·API·`clim` 명령은 없다. 2026-10-26 실측(앱 `config.json` `sessionRelations`): 옛 총괄 d1023 짝 17
-  (opened 14 · connected 2 · manual 1, 그중 「대화:」 세션 14) · 새 총괄 d1026 짝 1(d1023 → d1026 opened).
-- 지금은 손실 없음: 옛 총괄이 새 총괄을 `clim open` 으로 열었으면 새 총괄 Related 나무(`RelationTree.tsx`)에 옛 총괄이 위,
-  옛 총괄이 연 세션이 옆(같은 부모)으로 보인다 — 옛 총괄을 열어 두는 동안만. 컨텍스트 자동 압축은 세션 id 를 바꾸지 않아
-  짝이 그대로다(d1023 은 압축 뒤에도 17개).
-- Why deferred: 사람 결정(2026-10-26 「일단 백로그까지만」). 옛 총괄을 열어 두면 지금은 잃는 것이 없다.
-- Trigger: 옛 총괄 세션을 닫으려 할 때(메모리 정리 · 48시간 유휴 정리에 총괄이 들 때), 또는 Related 에서 「대화:」 세션이
-  안 보인다는 말이 나올 때.
-- Fix direction: `SessionRelations.inherit(from, to)` — `from` 의 숨기지 않은 짝을 `to` 로 복사(자기 자신 · 이미 있는 짝 ·
-  사람이 뺀 짝은 건너뜀) → 닫기 API 에 `handTo` 옵션 → `clim close <옛> --hand-to <새>`. 어림 2~3시간 + 릴리스, 화면에서
-  「넘기기」를 고르는 것까지면 반나절 더. 위 「Control API — 관련 세션을 API 로 내보이지 않는다」와 같은 배치에 묶으면
-  응답 모양을 한 번에 고친다.
+- 2026-10-27 day-1027(PR #67): `SessionRelations.inherit(from, to)` + `DELETE /v1/sessions/:id?handTo=<id>` + MCP `close_session` 의 `hand_to` + 스킬 `clim close <옛> --hand-to <새>`(스킬은 1.21.0 공개 뒤 원본에 반영). 자기 자신 · 이미 있는 짝 · 사람이 뺀 짝은 건너뛴다. 총괄 교대는 이것으로 된다.
+- 남은 것: 사람이 사이드바에서 닫을 때(`forgetSession`)는 여전히 짝이 전부 사라진다 — 화면에서 「넘기기」 대상을 고르는 흐름이 없다(day-1027 범위 밖으로 정함).
+- Why deferred: 사람 결정(2026-10-27 지시문 「화면의 「넘기기」 고르기는 범위 밖」).
+- Trigger: 사람이 손으로 닫은 세션의 Related 가 사라졌다는 말이 나올 때.
+- Fix direction: 닫기 확인 상자(또는 Related 창)에 「Hand relations to…」 세션 고르기 → 같은 `inherit`. 반나절.
 - Owner: 없음
 
 ## Blocked
