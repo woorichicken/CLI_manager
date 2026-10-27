@@ -131,4 +131,82 @@ test.describe('T63 All sessions tree', () => {
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible({ timeout: 15_000 })
         await expect(page.getByTestId('all-sessions-layout-tree')).toHaveAttribute('aria-pressed', 'true')
     })
+
+    // Batch sessions share a long prefix and differ at the end ("…CLI-Manager api" / "…CLI-Manager ui"):
+    // the name has to win the row, or a lead and its workers look the same (총괄 되돌림 1, 2026-10-27).
+    test('names that differ only at the end stay apart at depth 3, the path giving way first', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t63-names-'))
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t63-names-home-'))
+        temps.push(root, home)
+        const deep = path.join(root, 'Users', 'someone', 'Downloads', 'CLImanger-worktrees', 'd1027-api')
+        fs.mkdirSync(deep, { recursive: true })
+        const names: Record<string, string> = {
+            [CHIEF]: 'AI: d1027 총괄',
+            [LEAD_A]: 'AI: d1027 팀장 CLI-Manager',
+            [WORKER]: 'AI: d1027 CLI-Manager api',
+            [HELPER]: 'AI: d1027 CLI-Manager ui'
+        }
+        ctx = await launchAppWithWorkspaces([
+            { id: 'ws-names', name: 'CLImanger', path: deep, sessions: Object.entries(names).map(([id, name]) => ({ id, name })) }
+        ], {
+            settings: { showHomeWorkspace: false },
+            config: { sessionRelations: [
+                { from: CHIEF, to: LEAD_A, kind: 'opened', at: 1 },
+                { from: LEAD_A, to: WORKER, kind: 'opened', at: 2 },
+                { from: WORKER, to: HELPER, kind: 'opened', at: 3 }
+            ] },
+            env: { CLIMANAGER_HOME: home }
+        })
+        const { page } = ctx
+        await resizeMainWindow(ctx.app, 1280, 800)
+        await page.getByTestId('sidebar-view-toggle').click()
+        await page.getByTestId('all-sessions-layout-tree').click()
+        await expect.poll(() => treeDepths(page)).toEqual([0, 1, 2, 3])
+
+        // The three share "AI: d1027 " and differ at the end (…CLI-Manager / …Manager api / …Manager ui):
+        // the last letter has to be on screen.
+        const telling: Array<[string, number]> = [LEAD_A, WORKER, HELPER].map(id => [id, names[id].length - 1])
+        for (const [id, index] of telling) {
+            // Found by text and the label's test id, which the earlier layout had too: the check runs on both.
+            const row = await page.locator(`[data-session-item="${id}"]`).evaluate((item, [at, name]) => {
+                // The innermost element holding the whole name (it may split it into pieces).
+                const nameEl = Array.from(item.querySelectorAll('span')).filter(el => el.textContent === name).pop() as HTMLElement
+                const label = item.querySelector('[data-testid="session-workspace-label"]') as HTMLElement
+                // On screen = not clipped away by any ancestor up to the row (a wrapped label sits below its clip).
+                const shown = (el: HTMLElement): boolean => {
+                    const r = el.getBoundingClientRect()
+                    if (r.width < 1 || r.height < 1) return false
+                    for (let a = el.parentElement; a && a !== item.parentElement; a = a.parentElement) {
+                        const style = getComputedStyle(a)
+                        if (style.overflowX === 'visible' && style.overflowY === 'visible') continue
+                        const b = a.getBoundingClientRect()
+                        if (r.top >= b.bottom - 1 || r.bottom <= b.top + 1 || r.left >= b.right - 1 || r.right <= b.left + 1) return false
+                    }
+                    return true
+                }
+                // The letter at `at`, in whichever text piece holds it, must end inside that piece's box.
+                const walker = document.createTreeWalker(nameEl, NodeFilter.SHOW_TEXT)
+                let offset = at
+                let node = walker.nextNode() as Text | null
+                while (node && offset >= node.length) {
+                    offset -= node.length
+                    node = walker.nextNode() as Text | null
+                }
+                const range = document.createRange()
+                range.setStart(node!, offset)
+                range.setEnd(node!, offset + 1)
+                const pieces = [nameEl, ...Array.from(nameEl.querySelectorAll('span'))]
+                return {
+                    tellingVisible: range.getBoundingClientRect().right <= node!.parentElement!.getBoundingClientRect().right + 0.5,
+                    nameCut: pieces.some(el => el.scrollWidth > el.clientWidth),
+                    pathShown: shown(label),
+                    title: item.querySelector('[data-testid="session-name-with-path"]')?.getAttribute('title') ?? null
+                }
+            }, [index, names[id]] as const)
+            expect(row.tellingVisible, `${names[id]}: the end that tells it apart is cut off`).toBe(true)
+            // The name is only cut once the path is gone.
+            if (row.nameCut) expect(row.pathShown, `${names[id]}: name cut while its path still shows`).toBe(false)
+            expect(row.title).toBe(`${names[id]}\n${deep}`)
+        }
+    })
 })

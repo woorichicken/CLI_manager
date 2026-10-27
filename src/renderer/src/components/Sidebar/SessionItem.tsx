@@ -88,8 +88,46 @@ interface SessionItemProps {
     treeDepth?: number
 }
 
-// Indent per tree level in the All sessions tree (px).
-const TREE_INDENT_PX = 14
+// Indent per tree level in the All sessions tree (px). Small: a deep row still needs room for its name.
+const TREE_INDENT_PX = 10
+// A path label gets onto the name's line only with room for about its last folder (in `ch`, capped).
+const PATH_LABEL_MIN_CH = 16
+// A tree row's name is cut in the middle: this many last characters always stay.
+const NAME_TAIL_CHARS = 12
+
+/**
+ * A tree row's name and path. The path is cut at the front and yields to the name: it takes only the
+ * room the name leaves, down to about its last folder, and below that it wraps onto a clipped second
+ * line — hidden — so the name gets the whole width. A name that still does not fit is cut in the
+ * middle, keeping its end: sessions named alike differ there, not in the path.
+ */
+function NameWithPath({ name, path, fontSize }: { name: string; path: string; fontSize: number }) {
+    const lastFolder = path.split(/[\\/]/).filter(Boolean).pop() ?? path
+    const lineHeight = Math.round(fontSize * 1.5)
+    const tailLength = Math.min(NAME_TAIL_CHARS, Math.floor(name.length / 2))
+    return (
+        <span
+            data-testid="session-name-with-path"
+            className="flex flex-wrap items-baseline gap-x-1.5 flex-1 min-w-0 overflow-hidden"
+            style={{ height: lineHeight, lineHeight: `${lineHeight}px` }}
+            title={`${name}\n${path}`}
+        >
+            {/* Cut in the middle: the end is where batch names differ ("…CLI-Manager api" / "…CLI-Manager ui"). */}
+            <span data-testid="session-name" className="flex min-w-0 max-w-full" style={{ fontSize: `${fontSize}px` }}>
+                <span className="truncate min-w-0" style={{ whiteSpace: 'pre' }}>{name.slice(0, name.length - tailLength)}</span>
+                <span className="shrink-0" style={{ whiteSpace: 'pre' }}>{name.slice(name.length - tailLength)}</span>
+            </span>
+            <span
+                data-testid="session-workspace-label"
+                // rtl box cuts at the front; the bdi keeps the text itself left-to-right.
+                className="min-w-0 truncate text-[10px] text-gray-500 text-left [direction:rtl]"
+                style={{ flex: `1 1000 ${Math.min(lastFolder.length + 2, PATH_LABEL_MIN_CH)}ch` }}
+            >
+                <bdi dir="ltr">{path}</bdi>
+            </span>
+        </span>
+    )
+}
 
 /**
  * 터미널 세션 항목 컴포넌트
@@ -374,6 +412,8 @@ export function SessionItem({
                             className="flex-1 bg-black/50 border border-blue-500/50 rounded px-1 py-0.5 text-xs text-white focus:outline-none min-w-0"
                             onClick={(e) => e.stopPropagation()}
                         />
+                    ) : workspaceLabel && workspaceLabelFromEnd ? (
+                        <NameWithPath name={session.name} path={workspaceLabel} fontSize={fontSize} />
                     ) : (
                         <span className={workspaceLabel ? 'truncate min-w-0' : 'truncate flex-1'} style={{ fontSize: `${fontSize}px` }}>{session.name}</span>
                     )}
@@ -382,15 +422,13 @@ export function SessionItem({
                             <Pin size={10} className="text-blue-400" />
                         </span>
                     )}
-                    {workspaceLabel && !isRenaming && (
+                    {workspaceLabel && !workspaceLabelFromEnd && !isRenaming && (
                         <span
                             data-testid="session-workspace-label"
-                            // rtl box cuts at the front; the bdi keeps the text itself left-to-right.
-                            // A path keeps a few characters even next to a long name: its last folder is the point of it.
-                            className={clsx('flex-1 min-w-0 truncate text-[10px] text-gray-500', workspaceLabelFromEnd && 'min-w-[4rem] max-w-[60%] text-left [direction:rtl]')}
+                            className="flex-1 min-w-0 truncate text-[10px] text-gray-500"
                             title={workspaceLabel}
                         >
-                            {workspaceLabelFromEnd ? <bdi dir="ltr">{workspaceLabel}</bdi> : workspaceLabel}
+                            {workspaceLabel}
                         </span>
                     )}
                     {getSessionStatusBadge()}
