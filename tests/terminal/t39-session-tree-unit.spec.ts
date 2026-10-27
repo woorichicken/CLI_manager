@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { MAX_TREE_DEPTH, sessionTreeFor } from '../../src/renderer/src/utils/relatedSessions'
+import { MAX_TREE_DEPTH, sessionTreeFor, sessionForestFor } from '../../src/renderer/src/utils/relatedSessions'
 import { RecentSessions, RECENT_SESSIONS_KEY, RECENT_SESSIONS_MAX } from '../../src/main/RecentSessions'
 import type { RelationStore } from '../../src/main/SessionRelations'
 import type { SessionRelation, TerminalSession, Workspace } from '../../src/shared/types'
@@ -160,5 +160,58 @@ test.describe('T39 recent sessions', () => {
         recent.push('b')
         recent.forget('a')
         expect(recent.list()).toEqual(['b'])
+    })
+})
+
+/** The listed sessions of `workspaces(ids)`, in list order — what the sidebar hands the forest. */
+function entries(list: string[]): Array<{ session: TerminalSession; workspace: Workspace }> {
+    const [ws] = workspaces(list)
+    return ws.sessions.map(s => ({ session: s, workspace: ws }))
+}
+
+const forestRows = (forest: ReturnType<typeof sessionForestFor>) => forest.rows.map(r => `${r.session.id}@${r.depth}`)
+
+// The All sessions Tree layout (day-1027): one tree per root, built by sessionTreeFor.
+test.describe('T39 session forest', () => {
+    test('T39 forest: roots in list order, children under their parent, the rest unlinked', () => {
+        const relations = [
+            rel('chief', 'A', 'opened', 1), rel('chief', 'B', 'opened', 2), rel('A', 'w', 'opened', 3),
+            rel('solo', 'x', 'manual', 4), rel('B', 'gone', 'opened', 5), { ...rel('B', 'y', 'opened', 6), dismissed: true }
+        ]
+        // 'gone' is not listed (a hidden worktree's session): the relation to it draws nothing.
+        const forest = sessionForestFor(relations, entries(['y', 'x', 'w', 'solo', 'chief', 'B', 'A']))
+        expect(forestRows(forest)).toEqual(['chief@0', 'B@1', 'A@1', 'w@2'])
+        // Hand-added and removed pairs have no place in a tree; list order is kept.
+        expect(ids(forest.unlinked)).toEqual(['y', 'x', 'solo'])
+    })
+
+    test('T39 forest: a ring shows each session once, rooted at the first in the list', () => {
+        const relations = [rel('A', 'B', 'connected', 1), rel('B', 'C', 'connected', 2), rel('C', 'A', 'connected', 3)]
+        const forest = sessionForestFor(relations, entries(['B', 'A', 'C']))
+        expect(forestRows(forest)).toEqual(['B@0', 'C@1', 'A@2'])
+        expect(forest.unlinked).toEqual([])
+    })
+
+    test('T39 forest: a session with two parents shows once, with what hangs under it', () => {
+        const relations = [rel('P1', 'X', 'opened', 1), rel('P2', 'X', 'connected', 2), rel('X', 'Y', 'opened', 3)]
+        const forest = sessionForestFor(relations, entries(['P2', 'P1', 'X', 'Y']))
+        // P2 is first in the list, so X and Y go under it; P1 is left a root of nothing.
+        expect(forestRows(forest)).toEqual(['P2@0', 'X@1', 'Y@2', 'P1@0'])
+    })
+
+    test('T39 forest: a chain past the depth limit continues as a tree of its own', () => {
+        const chain = Array.from({ length: MAX_TREE_DEPTH + 3 }, (_, i) => `n${i}`)
+        const relations = chain.slice(1).map((id, i) => rel(chain[i], id, 'opened', i))
+        const forest = sessionForestFor(relations, entries(chain))
+        const rows = forestRows(forest)
+        expect(rows.slice(0, MAX_TREE_DEPTH + 1)).toEqual(chain.slice(0, MAX_TREE_DEPTH + 1).map((id, depth) => `${id}@${depth}`))
+        expect(rows[MAX_TREE_DEPTH + 1]).toBe(`n${MAX_TREE_DEPTH + 1}@0`)
+        expect(new Set(forest.rows.map(r => r.session.id)).size).toBe(chain.length)
+    })
+
+    test('T39 forest: each level follows the viewed order, like the list', () => {
+        const relations = [rel('root', 'old', 'opened', 1), rel('root', 'new', 'opened', 2)]
+        expect(forestRows(sessionForestFor(relations, entries(['root', 'old', 'new'])))).toEqual(['root@0', 'new@1', 'old@1'])
+        expect(forestRows(sessionForestFor(relations, entries(['root', 'old', 'new']), ['old']))).toEqual(['root@0', 'old@1', 'new@1'])
     })
 })

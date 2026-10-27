@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Plus, PanelLeftClose, GripVertical, Folder, ChevronDown, ChevronRight, Search, List, FolderTree } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
-import { Workspace, WorkspaceFolder, SessionFolder, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
+import { Workspace, WorkspaceFolder, SessionFolder, SessionRelation, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import type { SessionFolderActions } from '../../hooks/useSessionFolders'
 import { useWorkspaceBranches } from '../../hooks/useWorkspaceBranches'
 import { useTemplates } from '../../hooks/useTemplates'
@@ -13,6 +13,8 @@ import { SidebarMoreMenu } from './SidebarMoreMenu'
 import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatchingProjects, findMatchingSessions } from './SidebarSearch'
 import { SidebarSessionList } from './SidebarSessionList'
 import { SidebarAllSessions } from './SidebarAllSessions'
+import { SidebarSessionTree } from './SidebarSessionTree'
+import { sessionForestFor } from '../../utils/relatedSessions'
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
@@ -65,6 +67,18 @@ function ReorderableRow<T>({ value, title, children, onDragStart, onDragEnd }: R
 type SidebarViewMode = 'folders' | 'all'
 const VIEW_MODE_STORAGE_KEY = 'sidebar-view-mode'
 
+// List or Tree inside the All sessions view; a per-machine view choice like the view mode.
+type AllSessionsLayout = 'list' | 'tree'
+const ALL_SESSIONS_LAYOUT_STORAGE_KEY = 'sidebar-all-sessions-layout'
+
+function readSavedAllSessionsLayout(): AllSessionsLayout {
+    try {
+        return localStorage.getItem(ALL_SESSIONS_LAYOUT_STORAGE_KEY) === 'tree' ? 'tree' : 'list'
+    } catch {
+        return 'list'
+    }
+}
+
 function readSavedViewMode(): SidebarViewMode {
     try {
         return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'all' ? 'all' : 'folders'
@@ -110,6 +124,10 @@ interface SidebarProps {
     showSessionCount?: boolean  // Show session count next to workspace names
     showWorktrees?: boolean  // Show worktree workspaces and their menu entries
     showPlayground?: boolean  // Show the Playground section below the workspace list
+    /** Offer the Tree layout in All sessions (Settings). Off: the list only, and no List/Tree switch. */
+    showSessionTree?: boolean
+    /** Session relations (who opened whom), for the Tree layout. */
+    sessionRelations?: SessionRelation[]
     // Split view props
     splitLayout?: SplitTerminalLayout | null
     onDragStartSession?: (sessionId: string) => void
@@ -167,6 +185,8 @@ export function Sidebar({
     showSessionCount = false,
     showWorktrees = true,
     showPlayground = true,
+    showSessionTree = true,
+    sessionRelations = [],
     splitLayout,
     onDragStartSession,
     onDragEndSession,
@@ -197,6 +217,9 @@ export function Sidebar({
     // "All sessions" swaps the workspace tree for one flat list of every session. Kept in
     // localStorage like the Playground height: a per-machine view choice, not workspace data.
     const [viewMode, setViewMode] = useState<SidebarViewMode>(readSavedViewMode)
+    const [savedLayout, setSavedLayout] = useState<AllSessionsLayout>(readSavedAllSessionsLayout)
+    // Turning the tree off in Settings shows the list but keeps the saved choice for when it comes back.
+    const allSessionsLayout: AllSessionsLayout = showSessionTree ? savedLayout : 'list'
     const [recentIds, setRecentIds] = useState<string[]>([])
     // A click inside the list changes the active session; reordering the rows under the pointer
     // at that moment would move what the user is about to click next.
@@ -703,6 +726,13 @@ export function Sidebar({
         : []
 
     const allSessionEntries = sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground)
+    // One sessionTreeFor per root: kept between the renders status updates cause.
+    const sessionForest = useMemo(
+        () => allSessionsLayout === 'tree'
+            ? sessionForestFor(sessionRelations, orderForAllSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), recentIds), recentIds)
+            : null,
+        [allSessionsLayout, sessionRelations, workspaces, folders, showWorktrees, showPlayground, recentIds]
+    )
     const sessionResults = isSearching ? findMatchingSessions(allSessionEntries, searchQuery) : []
     const isAllSessionsView = viewMode === 'all'
 
@@ -711,6 +741,13 @@ export function Sidebar({
         setViewMode(next)
         try {
             localStorage.setItem(VIEW_MODE_STORAGE_KEY, next)
+        } catch { /* storage blocked: the choice just won't survive a restart */ }
+    }
+
+    const chooseAllSessionsLayout = (next: AllSessionsLayout) => {
+        setSavedLayout(next)
+        try {
+            localStorage.setItem(ALL_SESSIONS_LAYOUT_STORAGE_KEY, next)
         } catch { /* storage blocked: the choice just won't survive a restart */ }
     }
 
@@ -1100,8 +1137,30 @@ export function Sidebar({
                             refreshRecentIds()
                         }}
                     >
+                        {showSessionTree && allSessionEntries.length > 0 && (
+                            <div className="flex items-center gap-1 px-1 pb-1.5" role="group" aria-label="All sessions layout">
+                                {(['list', 'tree'] as const).map(layout => (
+                                    <button
+                                        key={layout}
+                                        data-testid={`all-sessions-layout-${layout}`}
+                                        aria-pressed={allSessionsLayout === layout}
+                                        onClick={() => chooseAllSessionsLayout(layout)}
+                                        className={`px-2 py-0.5 rounded text-[11px] border transition-colors ${
+                                            allSessionsLayout === layout
+                                                ? 'border-blue-500/50 bg-blue-500/15 text-blue-200'
+                                                : 'border-white/10 text-gray-400 hover:bg-white/5'
+                                        }`}
+                                        title={layout === 'tree' ? 'Each session under the session that opened it' : 'Session folders, then the rest'}
+                                    >
+                                        {layout === 'tree' ? 'Tree' : 'List'}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         {allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
+                        ) : sessionForest ? (
+                            <SidebarSessionTree forest={sessionForest} listProps={sessionListProps} />
                         ) : sessionFolderActions ? (
                             <SidebarAllSessions
                                 entries={orderForAllSessions(allSessionEntries, recentIds)}

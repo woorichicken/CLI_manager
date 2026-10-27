@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { Check, ChevronLeft, ChevronRight, Copy, FilePlus, StickyNote, Trash2, X } from 'lucide-react'
+import type { MemoShortcutAction } from '../../../shared/types'
 
 interface SessionMemoProps {
     sessionId: string
@@ -13,6 +14,8 @@ interface SessionMemoProps {
 
 export interface SessionMemoHandle {
     toggle: () => void
+    /** A header button by keyboard. Opens the memo first, so what it did is on screen. */
+    run: (action: MemoShortcutAction) => void
 }
 
 // Debounce delay for auto-saving memo (ms)
@@ -110,6 +113,9 @@ function focusTerminal(sessionId: string): void {
 export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
     function SessionMemo({ sessionId, workspaceId, initialMemo, initialMemoPages, visible }, ref) {
         const [isOpen, setIsOpen] = useState(false)
+        // Read by closeMemo's delayed terminal focus: a memo reopened meanwhile keeps the focus.
+        const isOpenRef = useRef(isOpen)
+        isOpenRef.current = isOpen
         // Pages instead of one sheet split by "-----" lines (report 533a22ba). Page 1 is what older builds show.
         const [pages, setPages] = useState<string[]>(() => memoPagesOf(initialMemo, initialMemoPages))
         const [pageIndex, setPageIndex] = useState(0)
@@ -191,8 +197,8 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
 
         const closeMemo = useCallback(() => {
             setIsOpen(false)
-            // Return focus to terminal
-            setTimeout(() => focusTerminal(sessionId), 50)
+            // Return focus to terminal — unless a shortcut opened the memo again in the meantime.
+            setTimeout(() => { if (!isOpenRef.current) focusTerminal(sessionId) }, 50)
         }, [sessionId])
 
         const handleToggle = useCallback(() => {
@@ -203,10 +209,6 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
             }
         }, [isOpen, openMemo, closeMemo])
 
-        // Expose toggle method for keyboard shortcut
-        useImperativeHandle(ref, () => ({
-            toggle: handleToggle,
-        }), [handleToggle])
 
         const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
             // An empty page shows the textarea even outside editing; the first letter must not swap it for the reading view.
@@ -251,6 +253,26 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
             setPageIndex(next.index)
             savePages(next.pages)
         }
+
+        // Each shortcut does what its button does, and nothing when that button is hidden:
+        // turning and deleting need a second page (deleting the only page would blank it).
+        const runShortcut = (action: MemoShortcutAction) => {
+            // Hidden (grid view): a page added, deleted or copied there would happen out of sight.
+            if (!visible) return
+            if (!isOpen) openMemo()
+            const hasPages = pages.length > 1
+            if (action === 'memoNewPage') addPage()
+            else if (action === 'memoPrevPage' && hasPages) turnPage(-1)
+            else if (action === 'memoNextPage' && hasPages) turnPage(1)
+            else if (action === 'memoDeletePage' && hasPages) deletePage()
+            else if (action === 'memoCopyPage') void copyMemo()
+        }
+
+        // Expose the memo to keyboard shortcuts. No deps: the page handlers are new every render.
+        useImperativeHandle(ref, () => ({
+            toggle: handleToggle,
+            run: runShortcut,
+        }))
 
         // Entering the edit mode mounts a fresh textarea: put the caret at the end like openMemo does.
         useEffect(() => {

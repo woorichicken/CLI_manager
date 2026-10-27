@@ -261,3 +261,78 @@ export function parentSessionsOf(relations: SessionRelation[], sessionId: string
     }
     return [...parents.values()].sort((a, b) => b.at - a.at)
 }
+
+export interface ForestRow {
+    session: TerminalSession
+    workspace: Workspace
+    /** 0 for a root; 1 for what it opened, and so on. */
+    depth: number
+}
+
+export interface SessionForest {
+    /** Every tree, root first and each session under the one that opened it. */
+    rows: ForestRow[]
+    /** Sessions with no parent or child: no relation, or only hand-added ones (they have no direction). */
+    unlinked: Array<{ session: TerminalSession; workspace: Workspace }>
+}
+
+/**
+ * Every listed session as trees, for the sidebar's All sessions view. Each tree
+ * is `sessionTreeFor` of its root, so the rules are the Related dialog's: the
+ * same parents, the depth limit, removed pairs left out, manual pairs not in it.
+ *
+ * Roots are taken in list order. A session shows once: met again under a later
+ * root, it is skipped with what hangs under it there. What no root reaches — a
+ * ring has no root, the depth limit cuts a long chain — starts a tree of its own.
+ */
+export function sessionForestFor(
+    relations: SessionRelation[],
+    entries: Array<{ session: TerminalSession; workspace: Workspace }>,
+    /** Session ids the user looked at, newest first: orders each level like the list. */
+    viewedIds: string[] = []
+): SessionForest {
+    const listed = new Map(entries.map(entry => [entry.session.id, entry]))
+    // The tree sees only listed sessions: a hidden worktree's session must not appear in it.
+    const visible = new Map<string, Workspace>()
+    for (const { workspace, session } of entries) {
+        const holder = visible.get(workspace.id) ?? { ...workspace, sessions: [] }
+        holder.sessions = [...holder.sessions, session]
+        visible.set(workspace.id, holder)
+    }
+    const workspaces = [...visible.values()]
+
+    const linked = new Set<string>()
+    const hasParent = new Set<string>()
+    for (const relation of relations) {
+        if (relation.dismissed || relation.kind === 'manual' || relation.from === relation.to) continue
+        if (!listed.has(relation.from) || !listed.has(relation.to)) continue
+        linked.add(relation.from)
+        linked.add(relation.to)
+        hasParent.add(relation.to)
+    }
+
+    const rows: ForestRow[] = []
+    const placed = new Set<string>()
+    const plant = (rootId: string): void => {
+        placed.add(rootId)
+        rows.push({ ...listed.get(rootId)!, depth: 0 })
+        let skipBelow = Number.POSITIVE_INFINITY
+        for (const entry of sessionTreeFor(relations, rootId, workspaces, 'viewed', viewedIds).descendants) {
+            if (entry.depth > skipBelow) continue
+            skipBelow = Number.POSITIVE_INFINITY
+            if (placed.has(entry.session.id)) {
+                skipBelow = entry.depth
+                continue
+            }
+            placed.add(entry.session.id)
+            rows.push({ ...listed.get(entry.session.id)!, depth: entry.depth })
+        }
+    }
+    for (const { session } of entries) {
+        if (linked.has(session.id) && !hasParent.has(session.id) && !placed.has(session.id)) plant(session.id)
+    }
+    for (const { session } of entries) {
+        if (linked.has(session.id) && !placed.has(session.id)) plant(session.id)
+    }
+    return { rows, unlinked: entries.filter(entry => !placed.has(entry.session.id)) }
+}

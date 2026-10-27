@@ -190,6 +190,8 @@ export interface UserSettings {
     showWorktrees?: boolean
     /** Show the Playground section at the bottom of the sidebar (default: true). Off only hides it; running sessions are left alone. */
     showPlayground?: boolean
+    /** Offer the Tree layout (sessions under the session that opened them) in the sidebar's All sessions view (default: true). Off shows the list only. */
+    showSessionTree?: boolean
     hasCompletedOnboarding?: boolean
     // Home Workspace 설정
     showHomeWorkspace?: boolean  // 홈 워크스페이스 표시 여부 (기본값: true)
@@ -321,6 +323,10 @@ export type ShortcutAction =
     | 'newSession' | 'closeSession' | 'clearSession' | 'renameSession'
     | 'toggleMemo' | 'toggleRelated'
     | 'revealInFinder' | 'openInEditor'
+    | 'memoNewPage' | 'memoPrevPage' | 'memoNextPage' | 'memoDeletePage' | 'memoCopyPage'
+
+/** The memo actions a shortcut runs on the active session's memo (its header buttons). */
+export type MemoShortcutAction = Extract<ShortcutAction, `memo${string}`>
 
 export interface KeyBinding {
     key: string                          // Display key label (e.g., ']', '[', '`')
@@ -349,9 +355,15 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     toggleRelated:   { key: 'L', modifiers: ['mod', 'shift'], code: 'l' },
     revealInFinder:  { key: 'O', modifiers: ['mod', 'shift'], code: 'o' },
     openInEditor:    { key: 'E', modifiers: ['mod', 'shift'], code: 'e' },
+    // Memo pages share ⌥⌘: free in the app, its menu and macOS, and typing in the memo never uses it.
+    memoNewPage:     { key: 'N', modifiers: ['mod', 'alt'], code: 'n' },
+    memoPrevPage:    { key: 'ArrowLeft', modifiers: ['mod', 'alt'], code: 'ArrowLeft' },
+    memoNextPage:    { key: 'ArrowRight', modifiers: ['mod', 'alt'], code: 'ArrowRight' },
+    memoDeletePage:  { key: 'Backspace', modifiers: ['mod', 'alt'], code: 'Backspace' },
+    memoCopyPage:    { key: 'C', modifiers: ['mod', 'alt'], code: 'c' },
 }
 
-export type ShortcutGroup = 'navigation' | 'splitView' | 'search' | 'ui' | 'actions'
+export type ShortcutGroup = 'navigation' | 'splitView' | 'search' | 'ui' | 'actions' | 'memo'
 
 export interface ShortcutInfo {
     label: string
@@ -374,10 +386,15 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
     closeSession:    { label: 'Close Tab',           description: 'Close current tab and go to previous',     group: 'actions' },
     clearSession:    { label: 'Clear Terminal',      description: 'Clear terminal scrollback buffer',         group: 'actions' },
     renameSession:   { label: 'Rename Tab',          description: 'Rename the current tab',                   group: 'actions' },
-    toggleMemo:      { label: 'Toggle Memo',         description: 'Open or close session memo',               group: 'actions' },
+    toggleMemo:      { label: 'Toggle Memo',         description: 'Open or close session memo',               group: 'memo' },
     toggleRelated:   { label: 'Related Sessions',    description: 'Open or close the Related sessions dialog', group: 'actions' },
     revealInFinder:  { label: 'Reveal in Finder',    description: 'Show the selected path in Finder, or the session folder', group: 'actions' },
     openInEditor:    { label: 'Open in Editor',      description: 'Open the selected path in the editor, or the session folder', group: 'actions' },
+    memoNewPage:     { label: 'New Memo Page',       description: 'Add a page to the memo (opens it if closed)', group: 'memo' },
+    memoPrevPage:    { label: 'Previous Memo Page',  description: 'Show the previous memo page',              group: 'memo' },
+    memoNextPage:    { label: 'Next Memo Page',      description: 'Show the next memo page',                  group: 'memo' },
+    memoDeletePage:  { label: 'Delete Memo Page',    description: 'Delete the page shown — press twice when it has text', group: 'memo' },
+    memoCopyPage:    { label: 'Copy Memo Page',      description: 'Copy the page shown to the clipboard',     group: 'memo' },
 }
 
 export const SHORTCUT_GROUP_NAMES: Record<ShortcutGroup, string> = {
@@ -386,6 +403,7 @@ export const SHORTCUT_GROUP_NAMES: Record<ShortcutGroup, string> = {
     search: 'Search',
     ui: 'UI',
     actions: 'Actions',
+    memo: 'Memo',
 }
 
 // ============================================

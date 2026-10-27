@@ -82,7 +82,14 @@ interface SessionItemProps {
     workspaceLabel?: string
     /** Reordering means nothing in a flat list that mixes workspaces. */
     hideDragHandle?: boolean
+    /** Cut a long `workspaceLabel` at the front, so a path keeps its last folder in view. */
+    workspaceLabelFromEnd?: boolean
+    /** Levels below the tree root in the All sessions tree; drawn as indent and a └. */
+    treeDepth?: number
 }
+
+// Indent per tree level in the All sessions tree (px).
+const TREE_INDENT_PX = 14
 
 /**
  * 터미널 세션 항목 컴포넌트
@@ -109,7 +116,9 @@ export function SessionItem({
     onDragStartSession,
     onDragEndSession,
     workspaceLabel,
-    hideDragHandle = false
+    hideDragHandle = false,
+    workspaceLabelFromEnd = false,
+    treeDepth = 0
 }: SessionItemProps) {
     const [tempName, setTempName] = useState(session.name)
     const [previewLines, setPreviewLines] = useState<string[] | null>(null)
@@ -288,6 +297,8 @@ export function SessionItem({
                 transition={{ layout: { duration: 0 } }}
                 data-session-item={session.id}
                 data-session-role={role}
+                data-tree-depth={treeDepth > 0 ? treeDepth : undefined}
+                style={treeDepth > 0 ? { paddingLeft: treeDepth * TREE_INDENT_PX } : undefined}
                 className={clsx(
                     "flex items-center gap-1 py-1 px-1.5 rounded transition-colors text-sm group",
                     isActive ? rowClasses.active : rowClasses.idle
@@ -301,6 +312,7 @@ export function SessionItem({
                     // Note: backgroundColor 제거 - 드래그 종료 후에도 색상이 유지되는 버그 방지
                 }}
             >
+                {treeDepth > 0 && <span aria-hidden className="text-gray-600 text-xs shrink-0">└</span>}
                 {/* Split indicator */}
                 {isInSplit && (
                     <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" title="In split view" />
@@ -373,10 +385,12 @@ export function SessionItem({
                     {workspaceLabel && !isRenaming && (
                         <span
                             data-testid="session-workspace-label"
-                            className="flex-1 min-w-0 truncate text-[10px] text-gray-500"
+                            // rtl box cuts at the front; the bdi keeps the text itself left-to-right.
+                            // A path keeps a few characters even next to a long name: its last folder is the point of it.
+                            className={clsx('flex-1 min-w-0 truncate text-[10px] text-gray-500', workspaceLabelFromEnd && 'min-w-[4rem] max-w-[60%] text-left [direction:rtl]')}
                             title={workspaceLabel}
                         >
-                            {workspaceLabel}
+                            {workspaceLabelFromEnd ? <bdi dir="ltr">{workspaceLabel}</bdi> : workspaceLabel}
                         </span>
                     )}
                     {getSessionStatusBadge()}

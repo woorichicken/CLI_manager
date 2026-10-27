@@ -11,6 +11,13 @@ import {
 } from '../../../shared/types'
 import { RotateCcw } from 'lucide-react'
 import { isMac, hasPrimaryModifier, hasTerminalOnlyModifier } from '../utils/platform'
+import { keyFromCode } from '../hooks/useKeyboardShortcuts'
+
+// Keys a binding stores by name (`KeyboardEvent.key`), shown as their key-cap symbol.
+const KEY_SYMBOLS: Record<string, string> = {
+    ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
+    Backspace: isMac ? '⌫' : 'Backspace', Delete: isMac ? '⌦' : 'Delete', Enter: isMac ? '↩' : 'Enter',
+}
 
 interface KeyboardSettingsProps {
     settings: UserSettings
@@ -27,7 +34,7 @@ function formatModifier(mod: string): string {
 
 function formatBinding(binding: KeyBinding): string {
     const mods = binding.modifiers.map(formatModifier)
-    const key = binding.key === '`' ? '`' : binding.key
+    const key = KEY_SYMBOLS[binding.key] ?? binding.key
     if (isMac) {
         return [...mods, key].join('')
     }
@@ -46,7 +53,7 @@ function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
     return { ...DEFAULT_SHORTCUTS, ...settings.keyboard?.shortcuts }
 }
 
-const GROUP_ORDER: ShortcutGroup[] = ['navigation', 'splitView', 'search', 'ui', 'actions']
+const GROUP_ORDER: ShortcutGroup[] = ['navigation', 'splitView', 'search', 'ui', 'actions', 'memo']
 
 function ShortcutRow({
     action,
@@ -146,8 +153,10 @@ export function KeyboardSettings({ settings, setSettings }: KeyboardSettingsProp
             if (hasShift) modifiers.push('shift')
             if (hasAlt) modifiers.push('alt')
 
-            // Determine display key
-            let displayKey = e.key
+            // With ⌥ held macOS reports what the key types ('ç' for C, 'Dead' for N), not the key:
+            // record the physical key then, as the default ⌥⌘ bindings are stored.
+            const pressed = (hasAlt && keyFromCode(e.code)) || e.key
+            let displayKey = pressed
             if (displayKey.length === 1) {
                 displayKey = displayKey.toUpperCase()
             }
@@ -155,7 +164,7 @@ export function KeyboardSettings({ settings, setSettings }: KeyboardSettingsProp
             const newBinding: KeyBinding = {
                 key: displayKey,
                 modifiers,
-                code: e.key,
+                code: pressed,
             }
 
             // Check for conflicts
