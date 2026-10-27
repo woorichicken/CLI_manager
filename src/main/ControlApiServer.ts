@@ -50,6 +50,12 @@ interface Route {
     handler: JsonHandler
 }
 
+/** A handler returns this to answer 201 instead of 200. */
+class Created {
+    constructor(readonly value: unknown) {}
+}
+const created = (value: unknown): Created => new Created(value)
+
 function route(method: string, template: string, handler: JsonHandler): Route {
     const keys: string[] = []
     const pattern = new RegExp(
@@ -334,6 +340,7 @@ export class ControlApiServer {
                     signal: abort.signal,
                     caller
                 })
+                if (result instanceof Created) return send(201, result.value)
                 return send(200, result ?? { ok: true })
             }
 
@@ -390,6 +397,7 @@ export class ControlApiServer {
                     prompt: optionalString(body, 'prompt'),
                     focus: optionalBoolean(body, 'focus'),
                     folder: optionalString(body, 'folder'),
+                    sessionFolder: optionalString(body, 'sessionFolder'),
                     ephemeral: optionalBoolean(body, 'ephemeral'),
                     client,
                     caller
@@ -437,10 +445,31 @@ export class ControlApiServer {
                 service.releaseSession(params.id)
                 return { ok: true }
             }),
-            route('DELETE', '/v1/sessions/:id', ({ params }) => {
-                service.closeSession(params.id)
-                return { ok: true }
+            route('DELETE', '/v1/sessions/:id', ({ params, query }) => {
+                const handTo = query.get('handTo') ?? undefined
+                return { ok: true, ...service.closeSession(params.id, handTo) }
             }),
+            route('GET', '/v1/sessions/:id/relations', ({ params }) => service.sessionRelations(params.id)),
+            route('POST', '/v1/sessions/:id/session-folder', ({ params, body }) => {
+                const folder = body.folder
+                if (folder !== null && typeof folder !== 'string') {
+                    throw new ControlApiError(400, 'bad_request', 'folder must be a folder id or name, or null to take the session out.')
+                }
+                return service.moveSessionToFolder(params.id, folder)
+            }),
+            route('GET', '/v1/session-folders', () => ({ folders: service.listSessionFolders() })),
+            route('POST', '/v1/session-folders', ({ body }) => {
+                const name = optionalString(body, 'name')
+                if (name === undefined) throw new ControlApiError(400, 'bad_request', 'name is required')
+                const result = service.createSessionFolder(name)
+                return result.created ? created(result) : result
+            }),
+            route('POST', '/v1/session-folders/:folder/rename', ({ params, body }) => {
+                const name = optionalString(body, 'name')
+                if (name === undefined) throw new ControlApiError(400, 'bad_request', 'name is required')
+                return service.renameSessionFolder(params.folder, name)
+            }),
+            route('DELETE', '/v1/session-folders/:folder', ({ params }) => service.deleteSessionFolder(params.folder)),
             route('POST', '/v1/inbox', ({ body, client, caller }) =>
                 service.notifyInbox({
                     kind: body.kind,

@@ -79,6 +79,15 @@ API fields: `orchestrator: { since, lastSeen, client, openedCount } | null` (ISO
 `openedCount` counts opened sessions still open) and `openedBy: <master session id> | null`, on every
 session object — `GET /v1/sessions`, `GET /v1/sessions/:id`, MCP `list_sessions`, open results.
 
+### Session folders
+
+`:folder` (and `folder`/`sessionFolder` in bodies) is an id first, then a name (case-insensitive); a name two
+folders share is `409 ambiguous_folder` — the window lets the user make such a pair. `POST /v1/sessions`
+takes `sessionFolder` (id or name; a name no folder has creates it). Folder changes made here are announced
+to the windows on the `session-folders` channel (the new list) and, for membership, as a normal session
+`updated` event, so the sidebar follows without a reload. Window-made changes are not echoed. Expanded/
+collapsed is view state and is not in the API. Access follows [Access rule](#access-rule): every folder and session.
+
 ### Related sessions
 
 The session header's **Related** dialog lists the sessions that belong with a session. The API fills
@@ -135,8 +144,11 @@ Code's next-prompt suggestion or placeholder. It also appears in `lines`, but no
 read it as the user's instruction. `null` when there is none. MCP `read_output` prints it as a footer.
 
 `memo` — the text of the session's memo pad (Cmd+J), `''` when empty. Read-only: the API has no way to
-write it. Since 1.20 the memo has pages; `memo` is page 1 only (pages 2..n are `memoPages` in the store
-and are not in the response yet).
+write it. `memoPages` — every page, first page first, always at least one: `memoPages[0] === memo`. The
+store keeps pages 2..n in `memoPages`; the API field counts from page 1 (like the renderer's `memoPages`
+helper), so the two are not the same array.
+
+`sessionFolder` — `{ id, name }` of the All-sessions folder the session sits in, or `null`.
 
 ## Workspace registration
 
@@ -182,8 +194,14 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/sessions/:id/wait` | `timeoutMs` (≤600000), `quietMs`, `lines` | output + `{ timedOut, waitedMs, sleptMs }` — time the machine slept is not counted against `timeoutMs` |
 | POST | `/v1/sessions/:id/focus` | | session (the app switches to it; the window is never raised) |
 | POST | `/v1/sessions/:id/rename` | `name` (trimmed, ≤80 chars) | session — renames it in the sidebar; does not set the AI mark |
+| POST | `/v1/sessions/:id/session-folder` | `folder`: id or name, or `null` to take it out | session. `404 folder_not_found`, `409 ambiguous_folder`; a label change — no AI mark, no relation |
+| GET | `/v1/sessions/:id/relations` | | `{ sessionId, relations: [{ sessionId, name, workspaceName, kind: opened\|connected\|manual, direction: outgoing\|incoming, at }] }` — `outgoing` = this session is the `from` of the pair. Pairs the user removed are left out. Not a field of the session so the list (100+ sessions) stays small |
+| GET | `/v1/session-folders` | | `{ folders: [{ id, name, createdAt, sessions: [{ id, name, workspaceName }] }] }`, stored order |
+| POST | `/v1/session-folders` | `name` | `201 { folder, created: true }`; a folder of that name (trimmed, case-insensitive) exists → `200 { folder, created: false }`. `400` for an empty name |
+| POST | `/v1/session-folders/:folder/rename` | `name` | folder. `409 name_taken`, `409 ambiguous_folder`, `404 folder_not_found` |
+| DELETE | `/v1/session-folders/:folder` | | `{ removed: true, releasedSessions }` — sessions stay open, only their membership goes |
 | POST | `/v1/sessions/:id/release` | | hands it to the user; clears the AI mark |
-| DELETE | `/v1/sessions/:id` | | kills the pty and removes the session — any session, including the user's |
+| DELETE | `/v1/sessions/:id` | `?handTo=<session id>` | kills the pty and removes the session — any session, including the user's. `{ ok, handedOver }`: with `handTo`, the closing session's shown Related pairs are first copied to that session (same kind, direction and time; skipped: the pair with `handTo` itself and any partner `handTo` already has a record with, removed ones included). `handTo` equal to the id → `400`, unknown → `404`, and nothing is closed in either case |
 | POST | `/v1/inbox` | `kind`, `text`, `url`; `sessionId` or the `X-Caller-Session` header | `{ request, created }` — see [Inbox](#inbox). `400 session_required`, `404 not_found` |
 | GET | `/v1/inbox` | `?unread=1` | `{ unreadCount, requests[] }`, newest first. A request carries `id`, `sessionId`, `sessionName`, `workspaceName`, `kind`, `text`, `url?`, `client`, `read`, `at`, `createdAt`, `readAt` (ISO) |
 | POST | `/v1/inbox/:id/read` | | the request, marked read. `404 not_found` |
@@ -231,8 +249,8 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 
 `POST /mcp`, JSON-RPC 2.0, stateless, `application/json` responses; `GET` → 405. Protocol versions
 2024-11-05 … 2025-11-25 are echoed. Tools: `list_workspaces`, `list_templates`, `list_sessions`,
-`open_session` (with `folder`, `ephemeral`), `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
-`focus_session`, `rename_session`, `release_session`, `close_session`, `unregister_workspace`, `inbox_notify`
+`open_session` (with `folder`, `session_folder`, `ephemeral`), `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
+`focus_session`, `rename_session`, `release_session`, `close_session` (with `hand_to`), `list_session_folders`, `create_session_folder`, `rename_session_folder`, `delete_session_folder`, `move_session_to_folder` (`session_id`, `folder`: string or null), `list_session_relations`, `unregister_workspace`, `inbox_notify`
 (`kind`, `text`, `url`, `session_id` — or the caller header), `inbox_list` (`unread_only`). Domain errors come back as tool results with
 `isError: true` so the model can read them; screen results are plain text, not JSON.
 

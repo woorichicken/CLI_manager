@@ -107,6 +107,11 @@ const TOOLS: ToolDefinition[] = [
                     description:
                         'Sidebar folder (group) to file a newly registered workspace under: an existing folder id or name, or a new name to create. "" = top level. Default: the folder set in CLI Manager settings. Ignored when the path is already registered.'
                 },
+                session_folder: {
+                    type: 'string',
+                    description:
+                        'Session folder (id or name) of the sidebar\'s All sessions view to put the new session in. A name no folder has creates that folder.'
+                },
                 ephemeral: {
                     type: 'boolean',
                     description:
@@ -229,7 +234,56 @@ const TOOLS: ToolDefinition[] = [
     {
         name: 'close_session',
         description:
-            'Stop a session and remove it from CLI Manager. Whatever runs in it is killed. Works on any session, so only close one you did not open when the user asked for it.',
+            'Stop a session and remove it from CLI Manager. Whatever runs in it is killed. Works on any session, so only close one you did not open when the user asked for it. Pass hand_to when another session takes this one\'s place: its Related pairs are copied to that session first.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                ...sessionIdProperty,
+                hand_to: { type: 'string', description: 'Id of the session that takes over this session\'s Related pairs. Refused (nothing closed) when it does not exist.' }
+            },
+            required: ['session_id']
+        }
+    },
+    {
+        name: 'list_session_folders',
+        description: 'List the session folders of the sidebar\'s All sessions view, with the sessions in each.',
+        inputSchema: { type: 'object', properties: {} }
+    },
+    {
+        name: 'create_session_folder',
+        description: 'Create a session folder. A folder with that name (case-insensitive) is returned instead when it exists, so repeating the call adds none.',
+        inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Folder name.' } }, required: ['name'] }
+    },
+    {
+        name: 'rename_session_folder',
+        description: 'Rename a session folder. Refused when another folder already has the name.',
+        inputSchema: {
+            type: 'object',
+            properties: { folder: { type: 'string', description: 'Folder id or name.' }, name: { type: 'string', description: 'The new name.' } },
+            required: ['folder', 'name']
+        }
+    },
+    {
+        name: 'delete_session_folder',
+        description: 'Delete a session folder. Its sessions stay open; they just leave the folder.',
+        inputSchema: { type: 'object', properties: { folder: { type: 'string', description: 'Folder id or name.' } }, required: ['folder'] }
+    },
+    {
+        name: 'move_session_to_folder',
+        description: 'Put a session in a session folder, or take it out with folder: null.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                ...sessionIdProperty,
+                folder: { type: ['string', 'null'], description: 'Folder id or name, or null to take the session out.' }
+            },
+            required: ['session_id', 'folder']
+        }
+    },
+    {
+        name: 'list_session_relations',
+        description:
+            'The sessions related to this one (shown in its Related dialog): which it opened, which opened it, which were added by hand. Pairs the user removed are not listed.',
         inputSchema: { type: 'object', properties: { ...sessionIdProperty }, required: ['session_id'] }
     }
 ]
@@ -317,6 +371,7 @@ async function callTool(
                 prompt: str(args, 'prompt'),
                 focus: bool(args, 'focus'),
                 folder: str(args, 'folder'),
+                sessionFolder: str(args, 'session_folder'),
                 ephemeral: bool(args, 'ephemeral'),
                 client,
                 caller
@@ -365,9 +420,26 @@ async function callTool(
         case 'unregister_workspace':
             service.unregisterWorkspace(str(args, 'workspace_id', true)!)
             return 'Unregistered. The folder on disk is untouched.'
-        case 'close_session':
-            service.closeSession(str(args, 'session_id', true)!)
-            return 'Closed.'
+        case 'close_session': {
+            const { handedOver } = service.closeSession(str(args, 'session_id', true)!, str(args, 'hand_to'))
+            return handedOver > 0 ? `Closed. ${handedOver} Related pair(s) went to the other session.` : 'Closed.'
+        }
+        case 'list_session_folders':
+            return JSON.stringify({ folders: service.listSessionFolders() }, null, 1)
+        case 'create_session_folder':
+            return JSON.stringify(service.createSessionFolder(str(args, 'name', true)!), null, 1)
+        case 'rename_session_folder':
+            return JSON.stringify(service.renameSessionFolder(str(args, 'folder', true)!, str(args, 'name', true)!), null, 1)
+        case 'delete_session_folder':
+            return JSON.stringify(service.deleteSessionFolder(str(args, 'folder', true)!), null, 1)
+        case 'move_session_to_folder': {
+            if (args.folder === undefined || (args.folder !== null && typeof args.folder !== 'string')) {
+                throw new InvalidParams('folder must be a folder id or name, or null')
+            }
+            return JSON.stringify(service.moveSessionToFolder(str(args, 'session_id', true)!, args.folder as string | null), null, 1)
+        }
+        case 'list_session_relations':
+            return JSON.stringify(service.sessionRelations(str(args, 'session_id', true)!), null, 1)
         case 'inbox_notify':
             return JSON.stringify(
                 service.notifyInbox({

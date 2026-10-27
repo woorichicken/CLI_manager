@@ -212,6 +212,7 @@ declare global {
             removeSessionRelation: (a: string, b: string) => Promise<boolean>
             // Sidebar "All sessions" session folders
             getSessionFolders: () => Promise<SessionFolder[]>
+            onSessionFolders: (callback: (folders: SessionFolder[]) => void) => () => void
             createSessionFolder: (name: string) => Promise<SessionFolder | null>
             renameSessionFolder: (folderId: string, name: string) => Promise<boolean>
             removeSessionFolder: (folderId: string) => Promise<boolean>
