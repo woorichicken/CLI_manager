@@ -122,6 +122,44 @@ test.describe('SessionRelations (main)', () => {
     })
 })
 
+test.describe('SessionRelations.inherit (main)', () => {
+    test('copies every shown pair of the closing session to the heir, keeping kind, direction and time', () => {
+        const store = new MemoryStore()
+        const relations = new SessionRelations(store)
+        relations.recordOpened('up', 'old', 10)
+        relations.recordOpened('old', 'down', 20)
+        relations.add('old', 'side', 30)
+        expect(relations.inherit('old', 'heir')).toBe(3)
+        const pairs = relations.list().filter(r => r.from === 'heir' || r.to === 'heir')
+        expect(pairs.map(r => `${r.from}>${r.to}:${r.kind}@${r.at}`).sort()).toEqual(
+            ['heir>down:opened@20', 'heir>side:manual@30', 'up>heir:opened@10'].sort()
+        )
+    })
+
+    test('skips the pair with the heir, a partner the heir already has a record with (removed ones too), and hidden pairs', () => {
+        const store = new MemoryStore()
+        const changes: number[] = []
+        const relations = new SessionRelations(store, visible => changes.push(visible.length))
+        relations.recordOpened('old', 'heir', 1)
+        relations.recordOpened('old', 'known', 2)
+        relations.recordOpened('heir', 'known', 3)
+        relations.recordOpened('old', 'gone', 4)
+        relations.recordOpened('heir', 'gone', 5)
+        relations.remove('heir', 'gone')
+        relations.recordOpened('old', 'hidden', 6)
+        relations.remove('old', 'hidden')
+        relations.recordOpened('old', 'fresh', 7)
+        const before = changes.length
+        expect(relations.inherit('old', 'heir')).toBe(1)
+        expect(changes.length).toBe(before + 1)
+        expect(relations.list().some(r => r.from === 'heir' && r.to === 'fresh' && r.at === 7)).toBe(true)
+        // Nothing left to copy: no write, no announcement.
+        expect(relations.inherit('old', 'heir')).toBe(0)
+        expect(relations.inherit('old', 'old')).toBe(0)
+        expect(changes.length).toBe(before + 1)
+    })
+})
+
 test.describe('relatedSessionsFor (renderer)', () => {
     const WORKSPACES = [
         workspace('w1', [session('lead'), session('worker'), session('talk', '대화: 설계 논의', 'ask about the API')]),

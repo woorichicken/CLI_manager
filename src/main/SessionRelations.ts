@@ -67,6 +67,26 @@ export class SessionRelations {
         return changed
     }
 
+    /**
+     * `from` is closing and `to` takes its place: every shown pair `from` is in is copied to `to`
+     * with the same kind, direction and time. Skipped: the pair with `to` itself, and any partner
+     * `to` already has a record with (a pair the user removed stays removed). Returns how many were added.
+     */
+    inherit(from: string, to: string): number {
+        if (from === to) return 0
+        const all = this.all()
+        const added: SessionRelation[] = []
+        for (const r of all) {
+            if (r.dismissed || (r.from !== from && r.to !== from)) continue
+            const other = r.from === from ? r.to : r.from
+            if (other === to) continue
+            if (all.some((x) => samePair(x, to, other)) || added.some((x) => samePair(x, to, other))) continue
+            added.push(r.from === from ? { ...r, from: to } : { ...r, to })
+        }
+        if (added.length > 0) this.save([...all, ...added])
+        return added.length
+    }
+
     /** A session closed or was deleted: every relation it was part of goes with it. */
     forget(sessionId: string): void {
         const all = this.all()

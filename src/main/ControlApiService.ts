@@ -8,6 +8,7 @@ import {
     ControlApiSessionEvent,
     DEFAULT_CONTROL_API,
     OrchestratorInfo,
+    SessionFolder,
     SessionPeek,
     TerminalSession,
     TerminalTemplate,
@@ -18,6 +19,7 @@ import {
 import { TerminalManager } from './TerminalManager'
 import { TerminalMirror } from './TerminalMirror'
 import { SessionRelations } from './SessionRelations'
+import { SessionFolders, SESSION_FOLDERS_CHANNEL } from './SessionFolders'
 import { checkInboxInput, InboxStore } from './InboxStore'
 
 /**
@@ -194,6 +196,33 @@ export interface ApiSession {
     orchestrator: { since: string; lastSeen: string; client: string; openedCount: number } | null
     /** Id of the orchestrator session that opened this one, or null. */
     openedBy: string | null
+    /** Session folder of the sidebar's All sessions view it sits in, or null. */
+    sessionFolder: { id: string; name: string } | null
+    /**
+     * Every page of the memo pad, first page first — always at least one. `memoPages[0]` is `memo`.
+     * (The store keeps pages from the second on in `memoPages`; this field counts from the first,
+     * like the app's own page list.)
+     */
+    memoPages: string[]
+}
+
+export interface ApiSessionFolder {
+    id: string
+    name: string
+    /** ISO time. */
+    createdAt: string
+    sessions: Array<{ id: string; name: string; workspaceName: string }>
+}
+
+export interface ApiRelation {
+    sessionId: string
+    name: string
+    workspaceName: string
+    kind: 'opened' | 'connected' | 'manual'
+    /** 'outgoing': this session is the `from` of the pair (it opened or first used the other one). */
+    direction: 'outgoing' | 'incoming'
+    /** ISO time the pair was recorded. */
+    at: string
 }
 
 export interface ApiOutput {
@@ -237,6 +266,8 @@ export interface OpenSessionInput {
      * folder named in Settings. Ignored when the workspace already exists.
      */
     folder?: string
+    /** Session folder (id or name; made when no folder has the name) to put the new session in. */
+    sessionFolder?: string
     /** Unregister the new workspace when its last session closes. Ignored when it already exists. */
     ephemeral?: boolean
     client: string
@@ -307,6 +338,8 @@ export interface ControlApiDeps {
     hookStatus: (terminalId: string) => AgentStatusUpdate | null
     /** Persistent "related sessions" — which session opened or first worked in which. */
     relations: SessionRelations
+    /** Folders of sessions in the sidebar's All sessions view. */
+    sessionFolders: SessionFolders
     /** Requests sessions send for the user's hands (sign in, review, answer). */
     inbox: InboxStore
     /** A session is gone for good (closed or deleted): drop what was kept for it elsewhere. */
@@ -434,6 +467,21 @@ export class ControlApiService {
             notes.push('The folder was already registered, so folder and ephemeral were ignored.')
         }
 
+        let sessionFolder: SessionFolder | undefined
+        let madeSessionFolder = false
+        if (input.sessionFolder !== undefined && input.sessionFolder.trim()) {
+            const found = this.deps.sessionFolders.resolve(input.sessionFolder)
+            if (found === 'ambiguous') throw this.ambiguousFolder(input.sessionFolder)
+            if (found) sessionFolder = found
+            else {
+                const made = this.deps.sessionFolders.createOrGet(input.sessionFolder)
+                if (made) {
+                    sessionFolder = made.folder
+                    madeSessionFolder = made.created
+                }
+            }
+        }
+
         const templateName = input.template ? this.findTemplate(input.template)?.name : undefined
         const session: TerminalSession = {
             id: uuidv4(),
@@ -441,8 +489,10 @@ export class ControlApiService {
             cwd: workspace.path,
             type: 'regular',
             ...(command ? { initialCommand: command } : {}),
-            aiControl: { client: input.client, since: Date.now() }
+            aiControl: { client: input.client, since: Date.now() },
+            ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {})
         }
+        if (madeSessionFolder) this.deps.broadcast(SESSION_FOLDERS_CHANNEL, this.deps.sessionFolders.list())
         const caller = input.caller && this.hasSession(input.caller) ? input.caller : undefined
 
         // Mirror first so the very first bytes the shell prints are captured.
@@ -699,8 +749,14 @@ export class ControlApiService {
     }
 
     /** Works on any session, including ones the user opened. */
-    closeSession(sessionId: string): void {
+    closeSession(sessionId: string, handTo?: string): { handedOver: number } {
         const { workspace } = this.requireSession(sessionId)
+        // Check the heir before anything is killed: a refused call must leave the session running.
+        if (handTo !== undefined) {
+            if (handTo === sessionId) throw new ControlApiError(400, 'bad_request', 'handTo must be a different session.')
+            this.requireSession(handTo)
+        }
+        const handedOver = handTo !== undefined ? this.deps.relations.inherit(sessionId, handTo) : 0
         this.deps.terminals.killTerminal(sessionId)
         this.deps.mirror.detach(sessionId)
         this.deps.onSessionForgotten?.(sessionId)
@@ -715,6 +771,84 @@ export class ControlApiService {
 
         this.emit({ type: 'closed', workspaceId: workspace.id, sessionId })
         this.removeIfSpentEphemeral(workspace.id)
+        return { handedOver }
+    }
+
+    // ------------------------------------------------------------------
+    // Session folders and relations
+    // ------------------------------------------------------------------
+
+    listSessionFolders(): ApiSessionFolder[] {
+        const workspaces = this.workspaces()
+        return this.deps.sessionFolders.list().map((f) => ({
+            id: f.id,
+            name: f.name,
+            createdAt: new Date(f.createdAt).toISOString(),
+            sessions: workspaces.flatMap((w) =>
+                (w.sessions ?? []).filter((s) => s.sessionFolderId === f.id).map((s) => ({ id: s.id, name: s.name, workspaceName: w.name }))
+            )
+        }))
+    }
+
+    /** The same name twice gives back the folder that exists, so an agent repeating the call adds none. */
+    createSessionFolder(name: string): { folder: ApiSessionFolder; created: boolean } {
+        const made = this.deps.sessionFolders.createOrGet(name.slice(0, MAX_NAME_LENGTH))
+        if (!made) throw new ControlApiError(400, 'bad_request', 'name must not be empty.')
+        if (made.created) this.broadcastFolders()
+        return { folder: this.describeFolder(made.folder.id), created: made.created }
+    }
+
+    renameSessionFolder(ref: string, name: string): ApiSessionFolder {
+        const folder = this.requireSessionFolder(ref)
+        const trimmed = name.trim().slice(0, MAX_NAME_LENGTH)
+        if (!trimmed) throw new ControlApiError(400, 'bad_request', 'name must not be empty.')
+        if (this.deps.sessionFolders.findByName(trimmed).some((f) => f.id !== folder.id)) {
+            throw new ControlApiError(409, 'name_taken', `Another session folder is already named "${trimmed}".`)
+        }
+        this.deps.sessionFolders.rename(folder.id, trimmed)
+        this.broadcastFolders()
+        return this.describeFolder(folder.id)
+    }
+
+    /** Removes the folder only; its sessions stay open and go back to "No folder". */
+    deleteSessionFolder(ref: string): { removed: true; releasedSessions: number } {
+        const folder = this.requireSessionFolder(ref)
+        const members = this.deps.sessionFolders.sessionIdsIn(folder.id)
+        this.deps.sessionFolders.remove(folder.id)
+        this.broadcastFolders()
+        for (const id of members) this.emitUpdated(id)
+        return { removed: true, releasedSessions: members.length }
+    }
+
+    /** `null` takes the session out of its folder. A label change, so no AI mark and no relation. */
+    moveSessionToFolder(sessionId: string, ref: string | null): ApiSession {
+        const { workspace, session } = this.requireSession(sessionId)
+        const folder = ref === null ? null : this.requireSessionFolder(ref)
+        this.deps.sessionFolders.moveSession(sessionId, folder ? folder.id : null)
+        this.emitUpdated(sessionId)
+        return this.describe(workspace, this.requireSession(sessionId).session)
+    }
+
+    /** Pairs shown in the session's Related dialog; the ones the user removed are left out. */
+    sessionRelations(sessionId: string): { sessionId: string; relations: ApiRelation[] } {
+        this.requireSession(sessionId)
+        const relations: ApiRelation[] = []
+        for (const r of this.deps.relations.list()) {
+            if (r.from !== sessionId && r.to !== sessionId) continue
+            const outgoing = r.from === sessionId
+            const otherId = outgoing ? r.to : r.from
+            const other = this.findSession(otherId)
+            if (!other) continue
+            relations.push({
+                sessionId: otherId,
+                name: other.session.name,
+                workspaceName: other.workspace.name,
+                kind: r.kind,
+                direction: outgoing ? 'outgoing' : 'incoming',
+                at: new Date(r.at).toISOString()
+            })
+        }
+        return { sessionId, relations }
     }
 
     /**
@@ -967,6 +1101,39 @@ export class ControlApiService {
     // Internals
     // ------------------------------------------------------------------
 
+    private broadcastFolders(): void {
+        this.deps.broadcast(SESSION_FOLDERS_CHANNEL, this.deps.sessionFolders.list())
+    }
+
+    private ambiguousFolder(ref: string): ControlApiError {
+        return new ControlApiError(409, 'ambiguous_folder', `More than one session folder is named "${ref}". Use its id (list the folders).`)
+    }
+
+    private requireSessionFolder(ref: string): SessionFolder {
+        const found = this.deps.sessionFolders.resolve(ref)
+        if (found === 'ambiguous') throw this.ambiguousFolder(ref)
+        if (!found) throw new ControlApiError(404, 'folder_not_found', `No session folder "${ref}".`)
+        return found
+    }
+
+    private describeFolder(folderId: string): ApiSessionFolder {
+        return this.listSessionFolders().find((f) => f.id === folderId)!
+    }
+
+    private findSession(sessionId: string): { workspace: Workspace; session: TerminalSession } | undefined {
+        for (const workspace of this.workspaces()) {
+            const session = (workspace.sessions ?? []).find((s) => s.id === sessionId)
+            if (session) return { workspace, session }
+        }
+        return undefined
+    }
+
+    /** Tells the windows the session changed (a replace, so a dropped field disappears). */
+    private emitUpdated(sessionId: string): void {
+        const found = this.findSession(sessionId)
+        if (found) this.emit({ type: 'updated', workspaceId: found.workspace.id, sessionId, session: { ...found.session } })
+    }
+
     private folders(): WorkspaceFolder[] {
         return (this.deps.store.get('folders') as WorkspaceFolder[] | undefined) ?? []
     }
@@ -1150,8 +1317,16 @@ export class ControlApiService {
             screenPartial: this.deps.mirror.isPartial(session.id),
             memo: session.memo ?? '',
             orchestrator: this.describeOrchestrator(session.id),
-            openedBy: this.openedBy.get(session.id) ?? null
+            openedBy: this.openedBy.get(session.id) ?? null,
+            sessionFolder: this.sessionFolderOf(session),
+            memoPages: [session.memo ?? '', ...(session.memoPages ?? [])]
         }
+    }
+
+    private sessionFolderOf(session: TerminalSession): ApiSession['sessionFolder'] {
+        if (!session.sessionFolderId) return null
+        const folder = this.deps.sessionFolders.list().find((f) => f.id === session.sessionFolderId)
+        return folder ? { id: folder.id, name: folder.name } : null
     }
 
     private describeOrchestrator(sessionId: string): ApiSession['orchestrator'] {

@@ -44,6 +44,9 @@ export function useSessionFolders(setWorkspaces: Dispatch<SetStateAction<Workspa
         window.api.getSessionFolders().then(setSessionFolders).catch(() => {})
     }, [])
 
+    // The Control API changes the list from main; the window's own changes are not echoed back.
+    useEffect(() => window.api.onSessionFolders(setSessionFolders), [])
+
     const create = useCallback(async (name: string) => {
         const folder = await window.api.createSessionFolder(name)
         if (folder) setSessionFolders(prev => [...prev, folder])

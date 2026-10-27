@@ -88,4 +88,37 @@ test.describe('T57 session folders', () => {
         expect(folders.list().map(f => f.isExpanded)).toEqual([false, true])
         expect(folders.setExpanded(['nope'], true)).toBe(false)
     })
+
+    test('resolve takes an id before a name, ignores case and spaces, and calls a shared name ambiguous', () => {
+        const store = fakeStore({ workspaces: [workspace('w1', ['a', 'b'])] })
+        const folders = new SessionFolders(store)
+        const ship = folders.create('Ship')!
+        folders.create('Dup')
+        folders.create('dup')
+        expect(folders.resolve(ship.id)).toMatchObject({ id: ship.id })
+        expect(folders.resolve('  sHiP ')).toMatchObject({ id: ship.id })
+        expect(folders.resolve('Dup')).toBe('ambiguous')
+        expect(folders.resolve('nothing')).toBeNull()
+        expect(folders.resolve('')).toBeNull()
+    })
+
+    test('createOrGet returns the folder of that name instead of adding a second', () => {
+        const folders = new SessionFolders(fakeStore())
+        const first = folders.createOrGet(' Release ')!
+        expect(first.created).toBe(true)
+        const again = folders.createOrGet('release')!
+        expect(again).toMatchObject({ created: false, folder: { id: first.folder.id } })
+        expect(folders.list()).toHaveLength(1)
+        expect(folders.createOrGet('  ')).toBeNull()
+    })
+
+    test('sessionIdsIn lists the members of one folder across workspaces', () => {
+        const store = fakeStore({ workspaces: [workspace('w1', ['a', 'b']), workspace('w2', ['c'])] })
+        const folders = new SessionFolders(store)
+        const f = folders.create('f')!
+        folders.moveSession('a', f.id)
+        folders.moveSession('c', f.id)
+        expect(folders.sessionIdsIn(f.id).sort()).toEqual(['a', 'c'])
+        expect(folders.sessionIdsIn('nope')).toEqual([])
+    })
 })

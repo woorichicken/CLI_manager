@@ -302,6 +302,11 @@ const api = {
     addSessionRelation: (from: string, to: string): Promise<boolean> => ipcRenderer.invoke('add-session-relation', from, to),
     removeSessionRelation: (a: string, b: string): Promise<boolean> => ipcRenderer.invoke('remove-session-relation', a, b),
     getSessionFolders: (): Promise<SessionFolder[]> => ipcRenderer.invoke('get-session-folders'),
+    onSessionFolders: (callback: (folders: SessionFolder[]) => void) => {
+        const listener = (_e: unknown, folders: SessionFolder[]) => callback(folders)
+        ipcRenderer.on('session-folders', listener)
+        return () => ipcRenderer.removeListener('session-folders', listener)
+    },
     createSessionFolder: (name: string): Promise<SessionFolder | null> => ipcRenderer.invoke('create-session-folder', name),
     renameSessionFolder: (folderId: string, name: string): Promise<boolean> => ipcRenderer.invoke('rename-session-folder', folderId, name),
     removeSessionFolder: (folderId: string): Promise<boolean> => ipcRenderer.invoke('remove-session-folder', folderId),

@@ -344,6 +344,7 @@ const controlApiService = new ControlApiService({
     broadcast,
     hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId),
     relations: sessionRelations,
+    sessionFolders,
     inbox,
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
@@ -3202,8 +3203,9 @@ app.whenReady().then(async () => {
         controlApiService.clearAiControl(sessionId)
     )
 
-    // Session folders of the sidebar's All sessions view (SessionFolders). Only this window changes them,
-    // so the renderer updates its own copy instead of waiting for a broadcast.
+    // Session folders of the sidebar's All sessions view (SessionFolders). The windows change them here;
+    // the Control API changes them in ControlApiService and announces it on SESSION_FOLDERS_CHANNEL
+    // (window-made changes are not echoed back).
     ipcMain.handle('get-session-folders', () => sessionFolders.list())
     ipcMain.handle('create-session-folder', (_e, name: string) => sessionFolders.create(name))
     ipcMain.handle('rename-session-folder', (_e, folderId: string, name: string): boolean => sessionFolders.rename(folderId, name))
