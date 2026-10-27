@@ -87,7 +87,7 @@ rules stay in the root; this file is the inventory.
 - **페이지**(1.20, 제보 533a22ba): 머리 줄 「새 페이지」(맨 끝에 빈 쪽) · ‹ ›(양 끝에서 돌아 감) · `n / N` · 쪽 지우기(글이 있는 쪽은 두 번 눌러야). 쪽이 하나면 넘김·지우기 버튼은 숨는다. 복사는 **보고 있는 쪽**만
   - 저장: 1쪽은 그대로 `memo`, 2쪽부터 `memoPages`. 1.19 이전 앱은 `memo` 만 읽고 쓰므로 그 판으로 열어도 1쪽은 그대로 보이고, 옛 판이 1쪽을 고쳐도 `memoPages` 는 남는다(옛 main 은 세션 객체의 모르는 칸을 지우지 않는다). `update-session-memo` 는 네 번째 인자(2쪽부터)를 보낼 때만 `memoPages` 를 바꾼다
   - 예전 한 장 메모의 `-----` 구분선은 자동으로 쪼개지 않는다 — 1쪽에 그대로
-  - Related 줄의 메모 미리보기는 모든 쪽에서 첫 줄. Control API 의 `memo` 는 아직 1쪽만 싣는다([`docs/backlog.md`](../backlog.md))
+  - Related 줄의 메모 미리보기는 모든 쪽에서 첫 줄. Control API 는 `memo`(1쪽)와 `memoPages`(전체, 1쪽부터)를 싣는다
 
 #### 12. AI Control API (NEW)
 - 다른 AI(Claude Code 등)가 폴더를 골라 세션을 열고, 템플릿 실행·프롬프트 입력·완료 대기·화면 읽기를 한다
@@ -214,7 +214,7 @@ User Action (Renderer)
 - `set-folders-expanded`: 여러 폴더의 펼침 상태를 한 번에 저장 — 전체 접기/복원용
 - `update-session-memo`: 세션 메모 저장
 - `toggle-pin-session`: 세션 고정(All sessions 맨 위) 켜기/끄기 — 새 값을 돌려준다
-- `get-session-folders` · `create-session-folder` · `rename-session-folder` · `remove-session-folder`(세션은 그대로) · `set-session-folders-expanded` · `move-session-to-session-folder`(`null` = 폴더에서 뺌): All sessions 세션 폴더(`SessionFolders`). 이 창만 바꾸므로 방송하지 않고 렌더러가 제 사본을 고친다
+- `get-session-folders` · `create-session-folder` · `rename-session-folder` · `remove-session-folder`(세션은 그대로) · `set-session-folders-expanded` · `move-session-to-session-folder`(`null` = 폴더에서 뺌): All sessions 세션 폴더(`SessionFolders`). 창이 바꾼 것은 방송하지 않고 렌더러가 제 사본을 고친다. Control API 가 바꾼 목록은 `session-folders`(main → renderer, 새 목록)로 알린다(`useSessionFolders` 가 구독)
 
 #### Git Operations
 - `git-list-branches`: 브랜치 목록 조회
