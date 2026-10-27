@@ -276,8 +276,11 @@ test.describe('T26 session navigation', () => {
         await activateSession(page, 'T26ONE')
         // Raw-ish tty so the line discipline does not eat ^W/^R/^T itself; cat -v
         // prints each control byte it receives, and ^J ends the line and flushes it.
-        await writeToTerminal(page, 's-1', 'stty -icanon -iexten -isig -echo; echo T26READY; cat -v\r')
-        await waitForBufferText(page, 's-1', 'T26READY', 15_000)
+        // The marker is computed by the shell: the echo of the typed line shows `T26$((1+1))READY`,
+        // so only the command's output matches. Matching the echo sent the keys before stty ran,
+        // and a slow shell profile then ate them (backlog: three failures 10-09 · 10-21 · 10-26).
+        await writeToTerminal(page, 's-1', 'stty -icanon -iexten -isig -echo; echo T26$((1+1))READY; cat -v\r')
+        await waitForBufferText(page, 's-1', 'T262READY', 15_000)
         await page.locator('[data-session-id="s-1"] .xterm-helper-textarea').focus()
         const tabsBefore = await page.locator('[data-session-item]').count()
 
