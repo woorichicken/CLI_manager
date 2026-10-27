@@ -73,11 +73,12 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 복원을 몇 개씩 나눠 띄운다(예: 4개씩, 앞 묶음의 에이전트가 프롬프트를 띄운 뒤 다음). 오래 쉰 세션은 탭만 복원하고 프로세스는 첫 포커스 때 띄우는 선택지.
 - Owner: 없음
 
-### `tests/terminal/t26-session-navigation.spec.ts` — "Ctrl keys" 간헐 실패: 고쳤다, 사전 점검 통과를 보면 지운다
-- Discovered: 2026-10-09 회귀 실행 · 2026-10-21 v1.15.0 사전 점검 · 2026-10-26 v1.20.0 릴리스 빌드 1회차(285 passed · 1 failed) — 세 번 같은 시험.
-- Cause: `waitForBufferText('T26READY')` 가 입력한 명령줄의 메아리에 먼저 걸려, `stty` 가 적용되기 전에 Ctrl 키가 zsh 줄 편집기로 들어갔다(실패 화면에 `load: … cmd: mise`·`zsh` — ^T 의 SIGINFO).
-- 2026-10-27 day-1027: 셸이 계산한 표지(`echo T26$((1+1))READY` → `T262READY`)를 기다리게 했다(PR #66, 단독 `--repeat-each=5` 5/5). 같은 파일의 「split view 삭제」는 2026-10-26 PR #62 의 셸 자식 대기로 덮였다(1.20.0 사전 점검에서 그 시험은 통과).
-- Trigger: 1.21.0 릴리스 사전 점검에서 t26 이 통과하면 이 줄을 지운다. 다시 실패하면 실패 화면을 붙여 연다.
+### `tests/terminal/t26-session-navigation.spec.ts` — 「split view 삭제」가 셸 자식 대기 뒤에도 간헐로 남는다
+- Discovered: 2026-10-27 v1.21.0 릴리스 빌드 1회차 사전 점검 — `t26-session-navigation.spec.ts:187` 「deleting a session shown in split view removes its pane」이 `deleteFromSidebar` 의 `expect(row).toHaveCount(0, { timeout: 10_000 })` 에서 실패(Received 1, 24회 확인). 302 passed · 1 failed(12.3m), 게시 없음. 부하 1분 값 38(배치 밖 헤드리스 크롬 4개). 단독 `--repeat-each=3` 3/3, 2회차 빌드 303 passed 로 공개. 로그 `/tmp/climanager-release-121-build-try1.log` → 전체 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1793070940740.log` · `/tmp/climanager-release-121-t26split.log`.
+- 앞 이력: 10-09 v1.13.0 · 10-25 1.18.0(T40) · 10-26 1.19.0(T40) 에 같은 사이드바 삭제 버튼에서 났다. 원인 경로(코드로 확인): `App.tsx` `handleRemoveSession` 이 `hasRunningProcess` 참이면 네이티브 확인 상자를 띄운다 — 숨긴 시험 창에서는 아무도 답하지 않는다. 2026-10-26 PR #62 가 클릭 전에 `hasRunningProcess === false` 를 기다리게 했고 day-1027 #69 가 이 줄을 닫았지만, **대기를 지난 뒤에도 줄이 남았다** — 대기와 클릭 사이에 자식이 생겼는지, 클릭이 hover 전환 중에 빗나갔는지는 아직 모른다.
+- 「Ctrl keys」(같은 파일)는 PR #66 뒤 1.21.0 사전 점검 두 번 모두 통과 — 그 줄의 트리거대로 지웠다.
+- Trigger: 사전 점검·묶음 실행에서 사이드바 삭제 시험이 다시 실패할 때.
+- Fix direction: 실패 때 화면(확인 상자 여부)과 `hasRunningProcess` 값을 남긴다 → 원인이 상자면 시험 모드에서 확인을 건너뛰는 길, 빗나간 클릭이면 「hover → 버튼 보임 대기 → 클릭 → 행 사라짐」 재시도. 여러 시험(T26·T40·T45·T52)의 사이드바 삭제를 공용 도우미로 묶는 것은 사람 컨펌.
 - Owner: 없음
 
 ### CI `Terminal + agent tests` — 앱을 띄우는 테스트가 CI 에서 전부 3분 타임아웃
