@@ -1180,6 +1180,12 @@ function App() {
                 memoRefsMap.current.get(activeSession.id)?.toggle()
             }
         },
+        // Same target as Toggle Memo: the memo ⌘J would open.
+        onMemoAction: (action) => {
+            if (activeSession) {
+                memoRefsMap.current.get(activeSession.id)?.run(action)
+            }
+        },
         onOpenSessionPath: requestOpenTerminalPath,
     })
 
@@ -1483,6 +1489,8 @@ function App() {
                     showSessionCount={settings.showSessionCount}
                     showWorktrees={settings.showWorktrees ?? true}
                     showPlayground={settings.showPlayground ?? true}
+                    showSessionTree={settings.showSessionTree ?? true}
+                    sessionRelations={sessionRelations}
                     splitLayout={splitLayout}
                     onDragStartSession={handleSidebarDragStart}
                     onDragEndSession={handleSidebarDragEnd}

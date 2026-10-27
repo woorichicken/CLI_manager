@@ -7,6 +7,7 @@ import {
     KeyBinding,
     KeyboardShortcutMap,
     ShortcutAction,
+    MemoShortcutAction,
     DEFAULT_SHORTCUTS,
     TerminalTemplate,
 } from '../../../shared/types'
@@ -35,6 +36,8 @@ interface UseKeyboardShortcutsConfig {
     onClearSession: (sessionId: string) => void
     onRenameSession: (sessionId: string) => void
     onToggleMemo: () => void
+    /** A memo header button by keyboard, on the active session's memo. */
+    onMemoAction: (action: MemoShortcutAction) => void
     /** The selected path in that session's terminal, or its folder, in Finder or the editor. */
     onOpenSessionPath: (sessionId: string, target: 'finder' | 'editor') => void
 }
@@ -46,12 +49,14 @@ function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
 // Unshifted character for the physical keys bindings use. `e.key` reports what
 // the key types — '}' for Shift+], 'ㅅ' for T under a Korean input source — so a
 // binding stored as ']' or 't' would never match those presses on its own.
+const MEMO_ACTIONS: MemoShortcutAction[] = ['memoNewPage', 'memoPrevPage', 'memoNextPage', 'memoDeletePage', 'memoCopyPage']
+
 const PUNCTUATION_BY_CODE: Record<string, string> = {
     BracketLeft: '[', BracketRight: ']', Backquote: '`', Comma: ',', Period: '.',
     Slash: '/', Backslash: '\\', Semicolon: ';', Quote: "'", Minus: '-', Equal: '=',
 }
 
-function keyFromCode(code: string): string | null {
+export function keyFromCode(code: string): string | null {
     const letter = /^Key([A-Z])$/.exec(code)
     if (letter) return letter[1].toLowerCase()
     const digit = /^Digit([0-9])$/.exec(code)
@@ -112,6 +117,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onClearSession,
         onRenameSession,
         onToggleMemo,
+        onMemoAction,
         onOpenSessionPath,
     } = config
 
@@ -279,6 +285,21 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                 return
             }
 
+            // Memo pages, also while typing in the memo: ⌥⌘ never types a character there. AltGr reports
+            // Ctrl+Alt off macOS and types characters, so it is left alone. A held key's repeats are not
+            // presses: a held delete would confirm its own first press.
+            if (!settingsOpen && !fileSearchOpen && !e.getModifierState?.('AltGraph')) {
+                for (const action of MEMO_ACTIONS) {
+                    if (!matchShortcut(e, shortcuts[action])) continue
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (e.repeat) return
+                    console.log(`[Shortcuts] matched: ${action}`)
+                    onMemoAction(action)
+                    return
+                }
+            }
+
             // Cmd+W is claimed before the input/modal checks below. Anything this
             // handler lets through reaches the app menu, whose Close Window owns
             // the same key — so pressing it in the rename field or the memo closed
@@ -427,6 +448,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onClearSession,
         onRenameSession,
         onToggleMemo,
+        onMemoAction,
         onOpenSessionPath,
         cancelChordMode,
         createSessionWithTemplateIndex,

@@ -630,6 +630,36 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 </button>
                                             </div>
 
+                                            {/* All sessions tree toggle */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Show Session Tree</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Offers a Tree layout in the sidebar's All sessions view: each session under the session that opened it.
+                                                        Off shows the list only.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    data-testid="settings-show-session-tree"
+                                                    aria-pressed={settings.showSessionTree ?? true}
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        showSessionTree: !(prev.showSessionTree ?? true)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
+                                                        (settings.showSessionTree ?? true)
+                                                            ? 'bg-emerald-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.showSessionTree ?? true)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
                                             {/* Custom Path */}
                                             {(settings.showHomeWorkspace ?? true) && (
                                                 <div>
