@@ -393,6 +393,30 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 닫기 확인 상자(또는 Related 창)에 「Hand relations to…」 세션 고르기 → 같은 `inherit`. 반나절.
 - Owner: 없음
 
+### 헤더 「상위 세션」 바로가기는 끌어 넣은(손 짝) 부모를 따르지 않는다
+- Discovered: 2026-10-29 fb-1028, 제보 9fa825e7(끌어 넣은 자리 = 부모) 작업 세션 B.
+- Evidence: 1.22.0 부터 사이드바 Tree·Related 창은 손으로 끌어 넣은 짝을 부모→자식으로 그리고 손 짝이 연 세션을 이긴다(`splitTreeRelations`). 헤더 ↑ 바로가기(`parentSessionsOf`, `SessionNavButtons.tsx`)는 여전히 `manual` 을 빼고 「이 세션을 연 세션」만 본다 — 끌어 옮긴 세션에서 트리 부모와 ↑ 가 다른 곳을 가리킨다. 버튼 글도 "the session that opened this one" 이라 의미로는 맞다.
+- Why deferred: 그 파일들(App.tsx·SessionNavButtons)이 이번 브랜치 몫이 아니었고, 제보가 사이드바·Related 창만 말했다.
+- Trigger: 끌어 옮긴 세션에서 ↑ 가 트리와 다른 세션으로 간다는 제보.
+- Fix direction: `parentSessionsOf` 가 `splitTreeRelations` 의 부모를 쓰고 버튼 글을 「위 세션」으로. T50 갱신.
+- Owner: 없음
+
+### `relatedSessionsFor` · `RelatedGroups.manual` 을 아무도 안 부른다
+- Discovered: 2026-10-29 fb-1028, PR #73 독립 리뷰.
+- Evidence: `src/renderer/src/utils/relatedSessions.ts` 의 `relatedSessionsFor` 는 export 만 있고 src 에 호출이 없다(Related 창은 `sessionTreeFor` 로 바뀜). 그 안의 `manual` 묶음은 1.22.0 의 「손 짝은 트리 안」 모델과 다르다 — 누가 다시 쓰면 손 짝이 따로 빠진다.
+- Why deferred: 이번 범위는 제보 5건이었고 지워도 동작은 같다.
+- Trigger: `relatedSessions.ts` 를 다음에 고칠 때.
+- Fix direction: 함수와 `RelatedGroups` 타입을 지우고 T34 의 해당 줄을 정리.
+- Owner: 없음
+
+### 터미널 ⌘-클릭 링크는 한글 파일명·이미지 확장자·끊긴 경로를 잡지 않는다
+- Discovered: 2026-10-29 fb-1028, 제보 09eff960 · 85703148 작업 세션 A(`A-30-options.md`).
+- Evidence: `src/renderer/src/utils/filePathLinkProvider.ts` 정규식은 `\w`·코드 확장자만 본다 — `/private/tmp/…/1-비교표-시안.jpg` 는 링크가 아니다. 1.22.0 은 **선택**(우클릭·⌘⇧O/E·⌘C)만 고쳤다(`terminalPathSelection.ts`).
+- Why deferred: 확장자 목록·문자 집합과 URL 오탐 가드를 같이 손봐야 해서 별도 작업.
+- Trigger: 한글 경로·사진 경로를 ⌘-클릭해도 안 열린다는 제보.
+- Fix direction: 「한글 포함 절대경로 + 이미지·문서 확장자」만 더하고, 들여쓴 이어짐은 `terminalPathSelection` 의 잇기 규칙을 같이 쓴다. T14 에 한글·jpg 경우.
+- Owner: 없음
+
 ## Blocked
 
 없음.
