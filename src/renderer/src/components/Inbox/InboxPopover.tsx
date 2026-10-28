@@ -168,6 +168,7 @@ function MarkReadButton({ onMark }: { onMark: () => void }) {
         <button
             data-testid="inbox-mark-read"
             onClick={handleClick}
+            // Enter/Space on the button click it natively; the row's own Enter handler must not also open the session.
             onKeyDown={(e) => e.stopPropagation()}
             className="shrink-0 -my-0.5 p-0.5 rounded text-gray-500 hover:bg-white/10 hover:text-green-400"
             title="Mark as read"
