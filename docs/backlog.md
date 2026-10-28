@@ -28,6 +28,10 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 창 크기를 키운 뒤 대화 몇 줄이 사라졌다는 제보가 나올 때.
 - Trigger hit: 2026-10-25 fb-1025 — 제보 f2a636b9(오랜만에 돌아오면 마지막 표 앞이 잘림, 1.17.0). 제보에 실린 미러 줄에도 같은 줄이 빠져 있고(124→125행) 스크롤백 삭제(CSI 3 J) 사건은 0 — 렌더러만의 문제가 아니다. 이 항목과 idle 압축 때 다시 그리기 둘 중 무엇인지는 크기 변경 사건이 없어 못 갈랐다 → PR #59 가 제보에 `resized` 사건을 싣는다. 고칠 방향은 아래 「높이만 바뀌는 resize」 공용 모듈 컨펌과 같이 정한다.
 - Fix direction: 행이 늘 때 스크롤백을 끌어내리지 않게 xterm 리사이즈 전에 빈 줄로 커서를 올려 두는 식의 보정 — 먼저 실제 Claude 로 재현을 잰다.
+- Trigger hit 2 (크기 변경 **없이**): 2026-10-29 fb-1028 — 제보 477ecebd(1.21.0). 「(페이지 검사」 줄 뒤 약 10줄(표 머리·첫 줄)이 빠졌고 미러 줄에도 똑같이 없다.
+  그 세션의 사건 기록은 `restored`·`started` 뿐(`resized` 0 · `scrollback-erased` 0 — PR #59 뒤라 크기 변경이 있었으면 남는다). 빠진 줄은 그 답이 화면 맨 위에 있던
+  부분이고 바로 뒤에 Claude Code 의 「Compacted while idle」이 찍혀 있다 → 이 경우는 이 항목(리사이즈)이 아니라 **Claude Code 가 쉬는 동안 압축하며 다시 그릴 때**로 본다(재현 못 함 — 압축을 일부러 일으키기 어렵다).
+  제보는 needs_review 로 「idleCompaction 끄기」(사용자 Claude 설정)를 추천했다. f2a636b9 도 「오랜만에 돌아오면」이라 같은 원인일 수 있다 — 그러면 아래 보정은 둘 중 리사이즈 쪽만 덮는다.
 - Owner: 없음
 
 ### `electron-vite.config.ts` — 이 설정 파일은 읽히지 않는다
