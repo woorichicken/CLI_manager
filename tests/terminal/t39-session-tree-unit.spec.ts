@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { MAX_TREE_DEPTH, sessionTreeFor, sessionForestFor, splitTreeRelations, wouldMakeLoop, handParentsInTheWay } from '../../src/renderer/src/utils/relatedSessions'
+import { MAX_TREE_DEPTH, sessionTreeFor, sessionForestFor, splitTreeRelations, wouldMakeLoop, handParentsInTheWay, treeGuidesFor } from '../../src/renderer/src/utils/relatedSessions'
 import { RecentSessions, RECENT_SESSIONS_KEY, RECENT_SESSIONS_MAX } from '../../src/main/RecentSessions'
 import type { RelationStore } from '../../src/main/SessionRelations'
 import type { SessionRelation, TerminalSession, Workspace } from '../../src/shared/types'
@@ -307,5 +307,35 @@ test.describe('T39 session forest', () => {
             .toEqual(['root@0', 'old@1', 'new@1', 'root2@0', 'kid@1'])
         expect(forestRows(sessionForestFor(relations, entries(['root2', 'new', 'kid', 'root', 'old']))))
             .toEqual(['root2@0', 'kid@1', 'root@0', 'old@1', 'new@1'])
+    })
+})
+
+// The Tree's guide lines (a35f1aa1): ├ │ └ worked out from the depths of the rows on screen.
+test.describe('T39 tree guides', () => {
+    // One string per row: connector (├ / └ / · for a root), the levels whose line runs past it, ↓ when a child follows.
+    const drawn = (depths: number[]): string[] => treeGuidesFor(depths).map((guide, i) =>
+        `${depths[i] === 0 ? '·' : guide.continues ? '├' : '└'}${guide.through.length ? `|${guide.through.join(',')}` : ''}${guide.opensDown ? '↓' : ''}`)
+
+    test('T39 guides: siblings join with ├ and the last one ends with └; an ancestor\'s line runs past deeper rows', () => {
+        // chief > lead > (worker > loose), w2 · lead B · root2 > x
+        expect(drawn([0, 1, 2, 3, 2, 1, 0, 1])).toEqual(['·↓', '├↓', '├|1↓', '└|1,2', '└|1', '└', '·↓', '└'])
+    })
+
+    test('T39 guides: a line stops where its level ends, and another root starts fresh', () => {
+        // The lead's line does not run on into the next tree: nothing at depth 1 follows before the next root.
+        expect(drawn([0, 1, 2, 2, 0, 1, 1])).toEqual(['·↓', '└↓', '├', '└', '·↓', '├', '└'])
+        expect(drawn([0, 1, 2, 1])).toEqual(['·↓', '├↓', '└|1', '└'])
+    })
+
+    test('T39 guides: a folded row has nothing shown under it, so no line runs down from it', () => {
+        // The worker folded: its child is gone from the rows, and it reads as a plain sibling.
+        expect(drawn([0, 1, 2, 2, 1])).toEqual(['·↓', '├↓', '├|1', '└|1', '└'])
+        // Everything under the chief folded.
+        expect(drawn([0, 0, 1])).toEqual(['·', '·↓', '└'])
+    })
+
+    test('T39 guides: rows of roots alone draw nothing', () => {
+        expect(drawn([0, 0, 0])).toEqual(['·', '·', '·'])
+        expect(treeGuidesFor([])).toEqual([])
     })
 })
