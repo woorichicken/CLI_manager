@@ -28,6 +28,10 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 창 크기를 키운 뒤 대화 몇 줄이 사라졌다는 제보가 나올 때.
 - Trigger hit: 2026-10-25 fb-1025 — 제보 f2a636b9(오랜만에 돌아오면 마지막 표 앞이 잘림, 1.17.0). 제보에 실린 미러 줄에도 같은 줄이 빠져 있고(124→125행) 스크롤백 삭제(CSI 3 J) 사건은 0 — 렌더러만의 문제가 아니다. 이 항목과 idle 압축 때 다시 그리기 둘 중 무엇인지는 크기 변경 사건이 없어 못 갈랐다 → PR #59 가 제보에 `resized` 사건을 싣는다. 고칠 방향은 아래 「높이만 바뀌는 resize」 공용 모듈 컨펌과 같이 정한다.
 - Fix direction: 행이 늘 때 스크롤백을 끌어내리지 않게 xterm 리사이즈 전에 빈 줄로 커서를 올려 두는 식의 보정 — 먼저 실제 Claude 로 재현을 잰다.
+- Trigger hit 2 (크기 변경 **없이**): 2026-10-29 fb-1028 — 제보 477ecebd(1.21.0). 「(페이지 검사」 줄 뒤 약 10줄(표 머리·첫 줄)이 빠졌고 미러 줄에도 똑같이 없다.
+  그 세션의 사건 기록은 `restored`·`started` 뿐(`resized` 0 · `scrollback-erased` 0 — PR #59 뒤라 크기 변경이 있었으면 남는다). 빠진 줄은 그 답이 화면 맨 위에 있던
+  부분이고 바로 뒤에 Claude Code 의 「Compacted while idle」이 찍혀 있다 → 이 경우는 이 항목(리사이즈)이 아니라 **Claude Code 가 쉬는 동안 압축하며 다시 그릴 때**로 본다(재현 못 함 — 압축을 일부러 일으키기 어렵다).
+  제보는 needs_review 로 「idleCompaction 끄기」(사용자 Claude 설정)를 추천했다. f2a636b9 도 「오랜만에 돌아오면」이라 같은 원인일 수 있다 — 그러면 아래 보정은 둘 중 리사이즈 쪽만 덮는다.
 - Owner: 없음
 
 ### `electron-vite.config.ts` — 이 설정 파일은 읽히지 않는다
@@ -387,6 +391,30 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 사람 결정(2026-10-27 지시문 「화면의 「넘기기」 고르기는 범위 밖」).
 - Trigger: 사람이 손으로 닫은 세션의 Related 가 사라졌다는 말이 나올 때.
 - Fix direction: 닫기 확인 상자(또는 Related 창)에 「Hand relations to…」 세션 고르기 → 같은 `inherit`. 반나절.
+- Owner: 없음
+
+### 헤더 「상위 세션」 바로가기는 끌어 넣은(손 짝) 부모를 따르지 않는다
+- Discovered: 2026-10-29 fb-1028, 제보 9fa825e7(끌어 넣은 자리 = 부모) 작업 세션 B.
+- Evidence: 1.22.0 부터 사이드바 Tree·Related 창은 손으로 끌어 넣은 짝을 부모→자식으로 그리고 손 짝이 연 세션을 이긴다(`splitTreeRelations`). 헤더 ↑ 바로가기(`parentSessionsOf`, `SessionNavButtons.tsx`)는 여전히 `manual` 을 빼고 「이 세션을 연 세션」만 본다 — 끌어 옮긴 세션에서 트리 부모와 ↑ 가 다른 곳을 가리킨다. 버튼 글도 "the session that opened this one" 이라 의미로는 맞다.
+- Why deferred: 그 파일들(App.tsx·SessionNavButtons)이 이번 브랜치 몫이 아니었고, 제보가 사이드바·Related 창만 말했다.
+- Trigger: 끌어 옮긴 세션에서 ↑ 가 트리와 다른 세션으로 간다는 제보.
+- Fix direction: `parentSessionsOf` 가 `splitTreeRelations` 의 부모를 쓰고 버튼 글을 「위 세션」으로. T50 갱신.
+- Owner: 없음
+
+### `relatedSessionsFor` · `RelatedGroups.manual` 을 아무도 안 부른다
+- Discovered: 2026-10-29 fb-1028, PR #73 독립 리뷰.
+- Evidence: `src/renderer/src/utils/relatedSessions.ts` 의 `relatedSessionsFor` 는 export 만 있고 src 에 호출이 없다(Related 창은 `sessionTreeFor` 로 바뀜). 그 안의 `manual` 묶음은 1.22.0 의 「손 짝은 트리 안」 모델과 다르다 — 누가 다시 쓰면 손 짝이 따로 빠진다.
+- Why deferred: 이번 범위는 제보 5건이었고 지워도 동작은 같다.
+- Trigger: `relatedSessions.ts` 를 다음에 고칠 때.
+- Fix direction: 함수와 `RelatedGroups` 타입을 지우고 T34 의 해당 줄을 정리.
+- Owner: 없음
+
+### 터미널 ⌘-클릭 링크는 한글 파일명·이미지 확장자·끊긴 경로를 잡지 않는다
+- Discovered: 2026-10-29 fb-1028, 제보 09eff960 · 85703148 작업 세션 A(`A-30-options.md`).
+- Evidence: `src/renderer/src/utils/filePathLinkProvider.ts` 정규식은 `\w`·코드 확장자만 본다 — `/private/tmp/…/1-비교표-시안.jpg` 는 링크가 아니다. 1.22.0 은 **선택**(우클릭·⌘⇧O/E·⌘C)만 고쳤다(`terminalPathSelection.ts`).
+- Why deferred: 확장자 목록·문자 집합과 URL 오탐 가드를 같이 손봐야 해서 별도 작업.
+- Trigger: 한글 경로·사진 경로를 ⌘-클릭해도 안 열린다는 제보.
+- Fix direction: 「한글 포함 절대경로 + 이미지·문서 확장자」만 더하고, 들여쓴 이어짐은 `terminalPathSelection` 의 잇기 규칙을 같이 쓴다. T14 에 한글·jpg 경우.
 - Owner: 없음
 
 ## Blocked
