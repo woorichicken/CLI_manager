@@ -7,9 +7,10 @@ import { launchAppWithWorkspaces, closeApp, activateSession, LaunchResult, SeedW
 /**
  * T59 — drag a sidebar session row onto another to relate them (report 269168e4).
  *
- * The drop is the Related dialog's "Add by hand": the pair shows up under
- * "Added by hand", and a pair the user removed with × comes back when the user
- * drags it in again. A real mouse drag, judged in the DOM, the Related dialog
+ * The drop is the Related dialog's "Add by hand": the dragged session goes
+ * under the one it was dropped on (9fa825e7) — below it in that session's
+ * Related dialog, marked "by hand" — and a pair the user removed with × comes
+ * back when the user drags it in again. A real mouse drag, judged in the DOM, the Related dialog
  * and config.json `sessionRelations`.
  */
 
@@ -60,15 +61,17 @@ test.describe('T59 drag to relate', () => {
         await expect(page.locator('[data-session-relate-target="s-a1"]')).toBeVisible()
         await page.mouse.up()
         await expect(page.locator('[data-session-relate-target]')).toHaveCount(0)
-        await expect(page.getByTestId('sidebar-drop-notice')).toHaveText('Related: T59B1 ↔ T59A1')
-        await expect.poll(() => pairOf(userDataDir, 's-a1', 's-b1')).toMatchObject({ kind: 'manual' })
+        await expect(page.getByTestId('sidebar-drop-notice')).toHaveText('T59B1 is now under T59A1')
+        // Stored "dropped on → dragged": the drop target is the parent.
+        await expect.poll(() => pairOf(userDataDir, 's-a1', 's-b1')).toMatchObject({ kind: 'manual', from: 's-a1', to: 's-b1' })
         expect(pairOf(userDataDir, 's-a1', 's-b1')?.dismissed).toBeFalsy()
 
-        // The Related dialog of either session lists the other under "Added by hand".
+        // The dropped-on session's Related dialog lists the dragged one below it, marked "by hand".
         await activateSession(page, 'T59A1')
         await page.locator('[data-related-button="s-a1"]').click()
         const dialog = page.locator('[data-related-modal]')
-        const manualRow = dialog.locator('[data-related-tree="manual"] [data-related-row="s-b1"]')
+        const manualRow = dialog.locator('[data-related-tree="down"] [data-related-row="s-b1"]')
+        await expect(manualRow.locator('[data-related-by-hand]')).toBeVisible()
         await expect(manualRow).toBeVisible()
         await manualRow.locator('[data-related-remove]').click()
         await expect(manualRow).toHaveCount(0)
@@ -82,7 +85,7 @@ test.describe('T59 drag to relate', () => {
         await page.mouse.move(900, 500)
         await dragRowOver(page, 's-b1', list.locator('[data-session-item="s-a1"]'))
         await page.mouse.up()
-        await expect(page.getByTestId('sidebar-drop-notice')).toHaveText('Related: T59B1 ↔ T59A1')
+        await expect(page.getByTestId('sidebar-drop-notice')).toHaveText('T59B1 is now under T59A1')
         await expect.poll(() => pairOf(userDataDir, 's-a1', 's-b1')?.dismissed).toBeFalsy()
         await page.locator('[data-related-button="s-a1"]').click()
         await expect(manualRow).toBeVisible()
@@ -117,7 +120,7 @@ test.describe('T59 drag to relate', () => {
         await dragRowOver(page, 's-a2', b1)
         await expect(page.locator('[data-session-relate-target="s-b1"]')).toBeVisible()
         await page.mouse.up()
-        await expect(page.getByTestId('sidebar-drop-notice')).toHaveText('Related: T59A2 ↔ T59B1')
+        await expect(page.getByTestId('sidebar-drop-notice')).toHaveText('T59A2 is now under T59B1')
         await expect.poll(() => pairOf(userDataDir, 's-a2', 's-b1')).toMatchObject({ kind: 'manual' })
     })
 })

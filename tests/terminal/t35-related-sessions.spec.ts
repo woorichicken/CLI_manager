@@ -143,10 +143,10 @@ test.describe('T35 related sessions', () => {
         await expect(row(page, TALK).locator('[data-related-memo]')).toContainText(TALK_MEMO)
         await expect(row(page, worker).locator('[data-related-last-line]')).not.toHaveText('', { timeout: 10_000 })
 
-        // --- Added by hand ----------------------------------------------------
+        // --- Added by hand: it goes below the session whose dialog it was added in ---
         await dialog(page).locator('[data-related-add-input]').fill('solhun')
         await dialog(page).locator(`[data-related-candidate="${SITE}"]`).click()
-        await expect(inGroup(page, 'manual', SITE)).toBeVisible()
+        await expect(inGroup(page, 'fromHere', SITE)).toBeVisible()
         await expect(button(page, LEAD)).toHaveAttribute('data-related-count', '3')
         // A prompt longer than the terminal wraps; the line reads whole, not as its last fragment.
         await expect(row(page, SITE).locator('[data-related-last-line]')).toContainText(path.basename(folder), { timeout: 10_000 })
@@ -177,7 +177,7 @@ test.describe('T35 related sessions', () => {
         // A fourth related session, so the cap of three picks has something to stop.
         await dialog(page).locator('[data-related-add-input]').fill('zsh')
         await dialog(page).locator(`[data-related-candidate="${SHELL}"]`).click()
-        await expect(inGroup(page, 'manual', SHELL)).toBeVisible()
+        await expect(inGroup(page, 'fromHere', SHELL)).toBeVisible()
         const openSplit = dialog(page).locator('[data-related-open-split]')
         await expect(openSplit).toBeDisabled()
         for (const id of [TALK, SITE, worker]) await row(page, id).locator('[data-related-select]').check()
@@ -232,8 +232,8 @@ test.describe('T35 related sessions', () => {
         await activateSession(page2, LEAD_NAME)
         await expect(button(page2, LEAD)).toHaveAttribute('data-related-count', '2', { timeout: 10_000 })
         await button(page2, LEAD).click()
-        await expect(inGroup(page2, 'manual', SITE)).toBeVisible()
-        await expect(inGroup(page2, 'manual', SHELL)).toBeVisible()
+        await expect(inGroup(page2, 'fromHere', SITE)).toBeVisible()
+        await expect(inGroup(page2, 'fromHere', SHELL)).toBeVisible()
         await page2.keyboard.press('Escape')
 
         // --- The user deletes the other one from the sidebar: gone at once ----

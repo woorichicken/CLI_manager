@@ -222,7 +222,8 @@ test.describe('T50 related dialog and header (day-1023)', () => {
         , { timeout: 10_000 }).toBe(true)
         await activateSession(page, NAMES[LEAD])
         await button(page, LEAD).click()
-        await expect(dialog(page).locator(`[data-related-tree="manual"] [data-related-row="${createdId}"]`)).toBeVisible()
+        // Started from LEAD, so it hangs below LEAD, marked as added by hand.
+        await expect(dialog(page).locator(`[data-related-tree="down"] [data-related-row="${createdId}"] [data-related-by-hand]`)).toBeVisible()
     })
 
     test('T50 New session is a small dialog over the Related one; Esc closes only it (report d2b01912)', async () => {

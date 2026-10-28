@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { Reorder } from 'framer-motion'
 import { TerminalSession, Workspace, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import type { SessionEntry } from '../../utils/sessionNavigation'
@@ -5,6 +6,8 @@ import { SessionItem } from './SessionItem'
 
 interface SidebarSessionListProps {
     entries: SessionEntry[]
+    /** `entries` come pinned first (All sessions): a line goes between them and the rest (f44ebd21). */
+    dividePinned?: boolean
     activeSessionId?: string
     sessionStatuses?: Map<string, { status: SessionStatus, isClaudeCode: boolean, source?: AgentStatusSource, awaitingInput?: boolean }>
     hooksSettings?: HooksSettings
@@ -27,7 +30,9 @@ interface SidebarSessionListProps {
  * SessionItem the workspace tree draws, so status colours, the AI mark, click
  * and right-click behave identically.
  */
-export function SidebarSessionList({ entries, activeSessionId, sessionStatuses, hooksSettings, ...rest }: SidebarSessionListProps) {
+export function SidebarSessionList({ entries, dividePinned = false, activeSessionId, sessionStatuses, hooksSettings, ...rest }: SidebarSessionListProps) {
+    // Only between two parts: no line when every row, or none, is pinned.
+    const pinnedCount = dividePinned ? entries.findIndex(entry => !entry.session.isPinned) : -1
     return (
         // SessionItem is a Reorder.Item and needs a group around it. Order here is
         // computed (recent first), so a drop is ignored: the handle is hidden anyway.
@@ -37,11 +42,14 @@ export function SidebarSessionList({ entries, activeSessionId, sessionStatuses, 
             onReorder={() => {}}
             className="space-y-0.5"
         >
-            {entries.map(({ workspace, session }) => {
+            {entries.map(({ workspace, session }, index) => {
                 const statusInfo = sessionStatuses?.get(session.id)
                 return (
+                    <Fragment key={session.id}>
+                    {index === pinnedCount && pinnedCount > 0 && (
+                        <div role="separator" data-testid="session-list-pinned-divider" className="mx-1.5 !my-1.5 border-t border-white/10" />
+                    )}
                     <SessionItem
-                        key={session.id}
                         session={session}
                         workspace={workspace}
                         workspaceLabel={workspace.name}
@@ -63,6 +71,7 @@ export function SidebarSessionList({ entries, activeSessionId, sessionStatuses, 
                         onDragStartSession={rest.onDragStartSession}
                         onDragEndSession={rest.onDragEndSession}
                     />
+                    </Fragment>
                 )
             })}
         </Reorder.Group>
