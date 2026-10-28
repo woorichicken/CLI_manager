@@ -17,18 +17,18 @@ interface RelationTreeProps {
 
 type Section = {
     /** `data-related-tree`: where in the tree. */
-    tree: 'up' | 'side' | 'down' | 'manual'
+    tree: 'up' | 'side' | 'down' | 'other'
     /** `data-related-group`: the name the flat list used, so what already looks for it keeps working. */
-    group: 'toHere' | 'side' | 'fromHere' | 'manual'
+    group: 'toHere' | 'side' | 'fromHere' | 'other'
     title: string
     hint: string
     entries: Array<RelatedEntry & { indent: number }>
 }
 
 /**
- * The relation tab: who opened this session above it, who shares its parent
- * beside it, what it opened below it, then whatever was added by hand.
- * Only for the Related dialog, hence not a shared component.
+ * The relation tab: its parents above this session, who shares its parent
+ * beside it, its children below it, then the related sessions the tree places
+ * elsewhere. Only for the Related dialog, hence not a shared component.
  */
 export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, onToggle, onShow, onRemove, onCopyId }: RelationTreeProps) {
     const deepestAbove = tree.ancestors.reduce((max, entry) => Math.max(max, entry.depth), 0)
@@ -37,25 +37,25 @@ export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, 
 
     const sections: Section[] = [
         {
-            tree: 'up', group: 'toHere', title: 'Opened this session',
-            hint: 'An agent there opened this session, or started working in it. Farthest first.',
+            tree: 'up', group: 'toHere', title: 'Above this session',
+            hint: 'An agent there opened this session or started working in it, or this session was dragged onto it by hand. Farthest first.',
             // The root sits at the edge, each step down moves in toward this session.
             entries: withIndent(tree.ancestors, entry => deepestAbove - entry.depth)
         },
         {
             tree: 'side', group: 'side', title: 'Beside this session',
-            hint: 'Opened by the same session as this one.',
+            hint: 'Under the same session as this one.',
             entries: withIndent(tree.siblings, () => 0)
         },
         {
-            tree: 'down', group: 'fromHere', title: 'Opened from this session',
-            hint: 'Its agent opened them, or started working in them, through the Control API. Their own children follow, indented.',
+            tree: 'down', group: 'fromHere', title: 'Below this session',
+            hint: 'Its agent opened them or started working in them, or they were dragged onto it or added here by hand. Their own children follow, indented.',
             entries: withIndent(tree.descendants, entry => entry.depth - 1)
         },
         {
-            tree: 'manual', group: 'manual', title: 'Added by hand',
-            hint: 'Added in this dialog, here or in the other session. Not part of the tree: it has no direction.',
-            entries: tree.manual.map(entry => ({ ...entry, indent: 0 }))
+            tree: 'other', group: 'other', title: 'Also related',
+            hint: 'Related to this session, but the tree places them under another session: a session dragged onto a row by hand sits only there.',
+            entries: tree.other.map(entry => ({ ...entry, indent: 0 }))
         }
     ]
 

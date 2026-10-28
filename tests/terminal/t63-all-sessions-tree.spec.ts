@@ -10,9 +10,10 @@ import type { SessionRelation } from '../../src/shared/types'
  * 정상적으로 구현 … 설정에서 껐다가 킬 수 있었으면」).
  *
  * Seeded like a batch: a chief opened two leads and talked in a third session,
- * one lead opened a worker that worked in a helper. Tree shows each session
- * under its parent with its workspace path cut at the front; sessions without
- * a parent or child sit under "Not in a tree". A row click goes to that
+ * one lead opened a worker that worked in a helper, and the user dragged one
+ * session onto another. Tree shows each session under its parent — the dropped-on
+ * session for a hand-added pair — oldest first, with its workspace path cut at the
+ * front; sessions without a parent or child sit under "Not in a tree". A row click goes to that
  * session. Settings › General turns the layout off (list only, no switch) and
  * back on (the tree returns). Judged in the DOM and the computed visibility.
  */
@@ -25,6 +26,7 @@ const HELPER = 't63-helper-0-4000-8000-000000000005'
 const TALK = 't63-talk-000-4000-8000-000000000006'
 const LOOSE = 't63-loose-00-4000-8000-000000000007'
 const HAND = 't63-hand-000-4000-8000-000000000008'
+const SOLO = 't63-solo-000-4000-8000-000000000009'
 
 const RELATIONS: SessionRelation[] = [
     { from: CHIEF, to: LEAD_A, kind: 'opened', at: 1 },
@@ -32,10 +34,10 @@ const RELATIONS: SessionRelation[] = [
     { from: LEAD_A, to: WORKER, kind: 'opened', at: 3 },
     { from: WORKER, to: HELPER, kind: 'connected', at: 4 },
     { from: CHIEF, to: TALK, kind: 'connected', at: 5 },
-    // Added by hand: no direction, so not a tree edge.
+    // Added by hand (HAND dropped on LOOSE): HAND hangs under LOOSE (9fa825e7).
     { from: LOOSE, to: HAND, kind: 'manual', at: 6 },
     // Removed by the user: not shown anywhere.
-    { from: LEAD_B, to: LOOSE, kind: 'opened', at: 7, dismissed: true }
+    { from: LEAD_B, to: SOLO, kind: 'opened', at: 7, dismissed: true }
 ]
 
 const treeIds = (page: Page, group: string) =>
@@ -68,7 +70,8 @@ test.describe('T63 All sessions tree', () => {
         for (const dir of [deep, chief]) fs.mkdirSync(dir, { recursive: true })
         return launchAppWithWorkspaces([
             { id: 'ws-chief', name: 'chief', path: chief, sessions: [
-                { id: CHIEF, name: 'T63 chief' }, { id: TALK, name: 'T63 talk' }, { id: LOOSE, name: 'T63 loose' }
+                { id: CHIEF, name: 'T63 chief' }, { id: TALK, name: 'T63 talk' }, { id: LOOSE, name: 'T63 loose' },
+                { id: SOLO, name: 'T63 solo' }
             ] },
             { id: 'ws-deep', name: 'CLImanger', path: deep, sessions: [
                 { id: LEAD_A, name: 'T63 lead A' }, { id: LEAD_B, name: 'T63 lead B' },
@@ -85,11 +88,11 @@ test.describe('T63 All sessions tree', () => {
         await expect(page.getByTestId('all-sessions-layout-list')).toHaveAttribute('aria-pressed', 'true')
         await page.getByTestId('all-sessions-layout-tree').click()
 
-        // Nothing viewed yet, so each level is newest relation first; a child sits right under its parent.
-        await expect.poll(() => treeIds(page, 'session-tree-rows')).toEqual([CHIEF, TALK, LEAD_B, LEAD_A, WORKER, HELPER])
-        expect(await treeDepths(page)).toEqual([0, 1, 1, 1, 2, 3])
-        // A hand-added pair and a removed pair do not make a tree.
-        expect((await treeIds(page, 'session-tree-unlinked-rows'))!.sort()).toEqual([HAND, LOOSE].sort())
+        // Roots in sidebar order, each level oldest relation first; a child sits right under its parent.
+        await expect.poll(() => treeIds(page, 'session-tree-rows')).toEqual([CHIEF, LEAD_A, WORKER, HELPER, LEAD_B, TALK, LOOSE, HAND])
+        expect(await treeDepths(page)).toEqual([0, 1, 2, 3, 1, 1, 0, 1])
+        // A removed pair does not make a tree.
+        expect(await treeIds(page, 'session-tree-unlinked-rows')).toEqual([SOLO])
 
         // The path label of a deep row is cut, and what is cut is the front: its last character is in view.
         const label = await page.locator(`[data-session-item="${WORKER}"] [data-testid="session-workspace-label"]`).evaluate(el => {

@@ -104,6 +104,15 @@ export function RelatedSessionRow({ entry, peek, selected, selectionFull, onTogg
                             connected
                         </span>
                     )}
+                    {kind === 'manual' && (
+                        <span
+                            className="shrink-0 px-1.5 py-px rounded-full bg-white/5 text-[10px] text-gray-400"
+                            title="Added by hand: dragged onto a session in the sidebar, or added in this dialog."
+                            data-related-by-hand
+                        >
+                            by hand
+                        </span>
+                    )}
                     <span className="hidden min-[480px]:inline text-xs text-gray-500 truncate" title={`Project: ${workspace.name}`}>{workspace.name}</span>
                     <span
                         className="ml-auto shrink-0 text-[11px] text-gray-400"

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, Trash2, GripVertical, Bot, Crown, Pin } from 'lucide-react'
+import { Terminal, Trash2, GripVertical, Bot, Crown, Pin, ChevronDown, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion'
 import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/types'
@@ -86,6 +86,21 @@ interface SessionItemProps {
     workspaceLabelFromEnd?: boolean
     /** Levels below the tree root in the All sessions tree; drawn as indent and a └. */
     treeDepth?: number
+    /**
+     * A Tree row's fold button (report dca55fd6), drawn where a child's └ goes. `null` for a tree
+     * row with nothing under it — its └ (or, for a root, a blank) gets the button's width so the
+     * icons stay in line; left out everywhere else.
+     */
+    treeBranch?: TreeBranch | null
+}
+
+export interface TreeBranch {
+    collapsed: boolean
+    /** Every session under this row, at any depth. */
+    hiddenCount: number
+    /** The active session is in the folded part: this row stands in for it. */
+    holdsActive: boolean
+    onToggle: () => void
 }
 
 // Indent per tree level in the All sessions tree (px). Small: a deep row still needs room for its name.
@@ -156,7 +171,8 @@ export function SessionItem({
     workspaceLabel,
     hideDragHandle = false,
     workspaceLabelFromEnd = false,
-    treeDepth = 0
+    treeDepth = 0,
+    treeBranch
 }: SessionItemProps) {
     const [tempName, setTempName] = useState(session.name)
     const [previewLines, setPreviewLines] = useState<string[] | null>(null)
@@ -336,10 +352,12 @@ export function SessionItem({
                 data-session-item={session.id}
                 data-session-role={role}
                 data-tree-depth={treeDepth > 0 ? treeDepth : undefined}
+                data-tree-holds-active={treeBranch?.holdsActive ? session.id : undefined}
                 style={treeDepth > 0 ? { paddingLeft: treeDepth * TREE_INDENT_PX } : undefined}
                 className={clsx(
                     "flex items-center gap-1 py-1 px-1.5 rounded transition-colors text-sm group",
-                    isActive ? rowClasses.active : rowClasses.idle
+                    isActive ? rowClasses.active : rowClasses.idle,
+                    treeBranch?.holdsActive && 'shadow-[inset_2px_0_0_0_rgba(96,165,250,0.9)] bg-blue-500/5'
                 )}
                 onContextMenu={(e) => onContextMenu(e, workspace.id, session.id)}
                 onMouseEnter={handleMouseEnter}
@@ -350,7 +368,27 @@ export function SessionItem({
                     // Note: backgroundColor 제거 - 드래그 종료 후에도 색상이 유지되는 버그 방지
                 }}
             >
-                {treeDepth > 0 && <span aria-hidden className="text-gray-600 text-xs shrink-0">└</span>}
+                {/* One slot ahead of the icon: the fold button where there is something under the row, else the └
+                    of a child (a blank for a root). The button takes the └'s place so a row loses little width. */}
+                {treeBranch ? (
+                    <button
+                        type="button"
+                        data-tree-toggle={session.id}
+                        aria-expanded={!treeBranch.collapsed}
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            treeBranch.onToggle()
+                        }}
+                        className="shrink-0 w-3 flex justify-center rounded text-gray-500 hover:text-white hover:bg-white/10"
+                        title={treeBranch.collapsed ? `Show the ${treeBranch.hiddenCount} below` : 'Fold what is below'}
+                    >
+                        {treeBranch.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                ) : treeDepth > 0 ? (
+                    <span aria-hidden className={clsx('text-gray-600 text-xs shrink-0', treeBranch === null && 'w-3 text-center')}>└</span>
+                ) : treeBranch === null && (
+                    <span aria-hidden className="shrink-0 w-3" />
+                )}
                 {/* Split indicator */}
                 {isInSplit && (
                     <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" title="In split view" />
@@ -420,6 +458,15 @@ export function SessionItem({
                     {session.isPinned && !isRenaming && (
                         <span title="Pinned to the top of All sessions" data-session-pinned={session.id} className="shrink-0">
                             <Pin size={10} className="text-blue-400" />
+                        </span>
+                    )}
+                    {treeBranch?.collapsed && !isRenaming && (
+                        <span
+                            data-tree-hidden-count={session.id}
+                            className="shrink-0 px-1 rounded bg-white/5 text-[10px] text-gray-500"
+                            title={`${treeBranch.hiddenCount} folded below`}
+                        >
+                            +{treeBranch.hiddenCount}
                         </span>
                     )}
                     {workspaceLabel && !workspaceLabelFromEnd && !isRenaming && (

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { MAX_TREE_DEPTH, sessionTreeFor, sessionForestFor } from '../../src/renderer/src/utils/relatedSessions'
+import { MAX_TREE_DEPTH, sessionTreeFor, sessionForestFor, splitTreeRelations, wouldMakeLoop, handParentsInTheWay } from '../../src/renderer/src/utils/relatedSessions'
 import { RecentSessions, RECENT_SESSIONS_KEY, RECENT_SESSIONS_MAX } from '../../src/main/RecentSessions'
 import type { RelationStore } from '../../src/main/SessionRelations'
 import type { SessionRelation, TerminalSession, Workspace } from '../../src/shared/types'
@@ -48,16 +48,101 @@ test.describe('T39 session tree', () => {
         expect(all.sort()).toEqual(['B', 'C'])
     })
 
-    test('T39 tree: dismissed pairs and manual pairs stay out of the tree', () => {
+    test('T39 tree: dismissed pairs stay out; a hand-added pair hangs under the session it was dropped on', () => {
+        // Stored as SessionRelations.add(dropped on, dragged) writes it: from = parent.
         const relations: SessionRelation[] = [
-            rel('A', 'gone', 'opened'), { ...rel('A', 'hidden', 'opened'), dismissed: true },
-            rel('A', 'hand', 'manual')
+            rel('A', 'gone', 'opened', 1), { ...rel('A', 'hidden', 'opened', 2), dismissed: true },
+            rel('A', 'hand', 'manual', 3)
         ]
-        const tree = sessionTreeFor(relations, 'A', workspaces(['A', 'gone', 'hidden', 'hand']))
-        expect(ids(tree.descendants)).toEqual(['gone'])
-        expect(ids(tree.manual)).toEqual(['hand'])
+        const tree = sessionTreeFor(relations, 'A', workspaces(['A', 'gone', 'hidden', 'hand']), 'oldest')
+        expect(ids(tree.descendants)).toEqual(['gone', 'hand'])
+        expect(tree.descendants.find(e => e.session.id === 'hand')?.kind).toBe('manual')
+        expect(tree.other).toEqual([])
         expect(tree.ancestors).toEqual([])
         expect(tree.siblings).toEqual([])
+        // From the dragged session's side the drop target is its parent.
+        expect(ids(sessionTreeFor(relations, 'hand', workspaces(['A', 'gone', 'hand'])).ancestors)).toEqual(['A'])
+    })
+
+    test('T39 tree: two parents — the hand-added one wins, the opener is kept under Also related (9fa825e7)', () => {
+        // P opened S; the user then dragged S onto H.
+        const relations = [rel('P', 'S', 'opened', 1), rel('P', 'X', 'opened', 2), rel('H', 'S', 'manual', 3), rel('H', 'Y', 'opened', 4)]
+        const all = workspaces(['P', 'H', 'S', 'X', 'Y'])
+        const tree = sessionTreeFor(relations, 'S', all)
+        expect(ids(tree.ancestors)).toEqual(['H'])
+        // Siblings follow the winning parent only.
+        expect(ids(tree.siblings)).toEqual(['Y'])
+        expect(ids(tree.other)).toEqual(['P'])
+        // The opener's dialog no longer has S below it, but still lists it.
+        const opener = sessionTreeFor(relations, 'P', all)
+        expect(ids(opener.descendants)).toEqual(['X'])
+        expect(ids(opener.other)).toEqual(['S'])
+        expect(ids(sessionTreeFor(relations, 'H', all, 'oldest').descendants)).toEqual(['S', 'Y'])
+    })
+
+    test('T39 tree: dragged twice, the newest drop is its place; a removed drop gives the place back', () => {
+        const relations: SessionRelation[] = [rel('P', 'S', 'opened', 1), rel('H1', 'S', 'manual', 2), rel('H2', 'S', 'manual', 3)]
+        const all = workspaces(['P', 'H1', 'H2', 'S'])
+        expect(ids(sessionTreeFor(relations, 'S', all).ancestors)).toEqual(['H2'])
+        expect(ids(sessionTreeFor(relations, 'S', all, 'oldest').other)).toEqual(['P', 'H1'])
+        const removed = relations.map(r => r.from === 'H2' ? { ...r, dismissed: true } : r)
+        expect(ids(sessionTreeFor(removed, 'S', all).ancestors)).toEqual(['H1'])
+        // A closed drop target does not hold the place either: back to the opener.
+        expect(ids(sessionTreeFor(relations.filter(r => r.kind !== 'manual'), 'S', workspaces(['P', 'S'])).ancestors)).toEqual(['P'])
+        expect(ids(sessionTreeFor(relations, 'S', workspaces(['P', 'S'])).ancestors)).toEqual(['P'])
+    })
+
+    test('T39 tree: splitTreeRelations keeps the winning pair and sets the others aside', () => {
+        const relations: SessionRelation[] = [
+            rel('P', 'S', 'opened', 1), rel('H', 'S', 'manual', 2), rel('S', 'K', 'opened', 3),
+            { ...rel('Z', 'S', 'manual', 9), dismissed: true }, rel('gone', 'S', 'manual', 10)
+        ]
+        const split = splitTreeRelations(relations, id => id !== 'gone')
+        expect(split.tree.map(r => `${r.from}>${r.to}`)).toEqual(['H>S', 'S>K'])
+        expect(split.aside.map(r => `${r.from}>${r.to}`)).toEqual(['P>S'])
+    })
+
+    test('T39 loop: a session cannot go under itself or under anything below it', () => {
+        // chief -> lead -> worker, and helper hung under worker by hand.
+        const relations = [rel('chief', 'lead', 'opened', 1), rel('lead', 'worker', 'opened', 2), rel('worker', 'helper', 'manual', 3)]
+        const all = workspaces(['chief', 'lead', 'worker', 'helper', 'loose'])
+        expect(wouldMakeLoop(relations, 'worker', 'chief', all)).toBe(true)
+        expect(wouldMakeLoop(relations, 'helper', 'lead', all)).toBe(true)
+        expect(wouldMakeLoop(relations, 'lead', 'lead', all)).toBe(true)
+        // Down or sideways is fine, and so is moving a child to another branch.
+        expect(wouldMakeLoop(relations, 'chief', 'helper', all)).toBe(false)
+        expect(wouldMakeLoop(relations, 'loose', 'lead', all)).toBe(false)
+        expect(wouldMakeLoop(relations, 'helper', 'loose', all)).toBe(false)
+        // A pair that lost its place does not count: P opened S, S was dragged onto H, so P is not above S.
+        const moved = [rel('P', 'S', 'opened', 1), rel('H', 'S', 'manual', 2)]
+        expect(wouldMakeLoop(moved, 'S', 'P', workspaces(['P', 'H', 'S']))).toBe(false)
+        expect(wouldMakeLoop(moved, 'S', 'H', workspaces(['P', 'H', 'S']))).toBe(true)
+    })
+
+    test('T39 drop back: the hand-added pairs keeping a session from a parent it already has are the ones in the way', () => {
+        // P opened S; S was dragged onto H1, then onto H2. Dropping it back on P: both drops are in the way.
+        const relations: SessionRelation[] = [rel('P', 'S', 'opened', 1), rel('H1', 'S', 'manual', 2), rel('H2', 'S', 'manual', 3), rel('P', 'K', 'opened', 4)]
+        const all = workspaces(['P', 'H1', 'H2', 'S', 'K'])
+        expect(handParentsInTheWay(relations, 'P', 'S', all).map(r => r.from)).toEqual(['H1', 'H2'])
+        // Back on H1 (itself a drop): only the newer drop is in the way.
+        expect(handParentsInTheWay(relations, 'H1', 'S', all).map(r => r.from)).toEqual(['H2'])
+        // Already where it is shown, a pair not stored yet, or reversed: nothing to remove.
+        expect(handParentsInTheWay(relations, 'H2', 'S', all)).toEqual([])
+        expect(handParentsInTheWay(relations, 'K', 'S', all)).toEqual([])
+        expect(handParentsInTheWay(relations, 'S', 'P', all)).toEqual([])
+        // With those removed, the tree puts S back under P.
+        const removed = relations.map(r => r.to === 'S' && r.kind === 'manual' ? { ...r, dismissed: true } : r)
+        expect(ids(sessionTreeFor(removed, 'S', all).ancestors)).toEqual(['P'])
+    })
+
+    test('T39 tree: an old hand-added loop (stored before drops were checked) still shows each session once', () => {
+        const relations = [rel('A', 'B', 'opened', 1), rel('B', 'C', 'opened', 2), rel('C', 'A', 'manual', 3)]
+        const tree = sessionTreeFor(relations, 'A', workspaces(['A', 'B', 'C']))
+        const all = [...ids(tree.ancestors), ...ids(tree.siblings), ...ids(tree.descendants), ...ids(tree.other)]
+        expect(all.sort()).toEqual(['B', 'C'])
+        const forest = sessionForestFor(relations, entries(['A', 'B', 'C']))
+        expect(new Set(forest.rows.map(r => r.session.id)).size).toBe(3)
+        expect(forest.unlinked).toEqual([])
     })
 
     test('T39 tree: two parents show both above, siblings are not repeated', () => {
@@ -173,16 +258,22 @@ const forestRows = (forest: ReturnType<typeof sessionForestFor>) => forest.rows.
 
 // The All sessions Tree layout (day-1027): one tree per root, built by sessionTreeFor.
 test.describe('T39 session forest', () => {
-    test('T39 forest: roots in list order, children under their parent, the rest unlinked', () => {
+    test('T39 forest: roots in list order, children oldest first under their parent, the rest unlinked', () => {
         const relations = [
             rel('chief', 'A', 'opened', 1), rel('chief', 'B', 'opened', 2), rel('A', 'w', 'opened', 3),
             rel('solo', 'x', 'manual', 4), rel('B', 'gone', 'opened', 5), { ...rel('B', 'y', 'opened', 6), dismissed: true }
         ]
         // 'gone' is not listed (a hidden worktree's session): the relation to it draws nothing.
         const forest = sessionForestFor(relations, entries(['y', 'x', 'w', 'solo', 'chief', 'B', 'A']))
-        expect(forestRows(forest)).toEqual(['chief@0', 'B@1', 'A@1', 'w@2'])
-        // Hand-added and removed pairs have no place in a tree; list order is kept.
-        expect(ids(forest.unlinked)).toEqual(['y', 'x', 'solo'])
+        // x was dragged onto solo: solo is its parent. A removed pair has no place; list order is kept.
+        expect(forestRows(forest)).toEqual(['solo@0', 'x@1', 'chief@0', 'A@1', 'w@2', 'B@1'])
+        expect(ids(forest.unlinked)).toEqual(['y'])
+    })
+
+    test('T39 forest: a session dragged onto another moves there, out from under its opener', () => {
+        const relations = [rel('chief', 'lead', 'opened', 1), rel('lead', 'w1', 'opened', 2), rel('lead', 'w2', 'opened', 3), rel('other', 'w1', 'manual', 4)]
+        const forest = sessionForestFor(relations, entries(['chief', 'lead', 'w1', 'w2', 'other']))
+        expect(forestRows(forest)).toEqual(['chief@0', 'lead@1', 'w2@2', 'other@0', 'w1@1'])
     })
 
     test('T39 forest: a ring shows each session once, rooted at the first in the list', () => {
@@ -209,9 +300,12 @@ test.describe('T39 session forest', () => {
         expect(new Set(forest.rows.map(r => r.session.id)).size).toBe(chain.length)
     })
 
-    test('T39 forest: each level follows the viewed order, like the list', () => {
-        const relations = [rel('root', 'old', 'opened', 1), rel('root', 'new', 'opened', 2)]
-        expect(forestRows(sessionForestFor(relations, entries(['root', 'old', 'new'])))).toEqual(['root@0', 'new@1', 'old@1'])
-        expect(forestRows(sessionForestFor(relations, entries(['root', 'old', 'new']), ['old']))).toEqual(['root@0', 'old@1', 'new@1'])
+    test('T39 forest: the order is fixed — oldest relation first, roots in the order given (d44191ed)', () => {
+        const relations = [rel('root', 'old', 'opened', 1), rel('root', 'new', 'opened', 2), rel('root2', 'kid', 'opened', 3)]
+        // However the list is shuffled by viewing, the sidebar hands the tree the same sidebar order.
+        expect(forestRows(sessionForestFor(relations, entries(['root', 'old', 'new', 'root2', 'kid']))))
+            .toEqual(['root@0', 'old@1', 'new@1', 'root2@0', 'kid@1'])
+        expect(forestRows(sessionForestFor(relations, entries(['root2', 'new', 'kid', 'root', 'old']))))
+            .toEqual(['root2@0', 'kid@1', 'root@0', 'old@1', 'new@1'])
     })
 })

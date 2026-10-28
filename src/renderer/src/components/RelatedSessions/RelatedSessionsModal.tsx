@@ -49,12 +49,13 @@ function storeOrder(order: RelatedOrder): void {
 const HELP_LINES: Array<[string, string]> = [
     ['Talk', 'a session opened for you to talk in (named "대화: …")'],
     ['connected', 'not opened by the API: the agent started working in a session that already existed'],
+    ['by hand', 'dragged onto a session in the sidebar, or added in this dialog — it goes under the session it was dropped on'],
     ['Grey text', "the session's project (workspace) name"],
     ['Idle / Working / Waiting for you / Starting / Exited', 'what the session is doing right now'],
     ['Dot', 'grey = idle · blue, pulsing = working · amber, pulsing = waiting for you · red = exited'],
     ['#', 'copy the session ID'],
     ['×', 'remove it from this list (the session keeps running)'],
-    ['Drag', 'drop a session row onto another in the sidebar to list them here']
+    ['Drag', 'drop a session row onto another in the sidebar to put it under that one']
 ]
 
 /**
@@ -72,7 +73,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
         [relations, sessionId, workspaces, order, recentIds]
     )
     const entries: RelatedEntry[] = useMemo(
-        () => [...tree.descendants, ...tree.ancestors, ...tree.siblings, ...tree.manual],
+        () => [...tree.descendants, ...tree.ancestors, ...tree.siblings, ...tree.other],
         [tree]
     )
     const { notice, copy } = useCopyWithNotice()

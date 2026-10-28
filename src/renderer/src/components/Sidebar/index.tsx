@@ -14,7 +14,7 @@ import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatch
 import { SidebarSessionList } from './SidebarSessionList'
 import { SidebarAllSessions } from './SidebarAllSessions'
 import { SidebarSessionTree } from './SidebarSessionTree'
-import { sessionForestFor } from '../../utils/relatedSessions'
+import { sessionForestFor, wouldMakeLoop, handParentsInTheWay } from '../../utils/relatedSessions'
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
@@ -267,16 +267,40 @@ export function Sidebar({
         }
         return id.slice(0, 8)
     }
+    // Read at drop time, so the context value does not change with every relation update.
+    const treeRulesRef = useRef({
+        makesLoop: (_parentId: string, _childId: string): boolean => false,
+        inTheWay: (_parentId: string, _childId: string): SessionRelation[] => []
+    })
+    treeRulesRef.current = {
+        makesLoop: (parentId, childId) => wouldMakeLoop(sessionRelations, parentId, childId, workspaces),
+        inTheWay: (parentId, childId) => handParentsInTheWay(sessionRelations, parentId, childId, workspaces)
+    }
     const sessionDrop = useMemo<SessionDropContextValue>(() => ({
         draggingId: draggingSessionId,
         beginDrag: setDraggingSessionId,
         endDrag: () => setDraggingSessionId(null),
         onRelate: (targetId, draggedId) => {
             setDraggingSessionId(null)
+            const dragged = sessionNameRef.current(draggedId)
+            const target = sessionNameRef.current(targetId)
+            // The dropped-on row becomes the parent (9fa825e7): a row cannot go under its own child.
+            if (treeRulesRef.current.makesLoop(targetId, draggedId)) {
+                showDropNotice(`Can't put ${dragged} under ${target}: ${target} is below it`)
+                return
+            }
+            // Already its parent once, but dragged elsewhere since: the latest drop wins, so the
+            // hand-added pairs holding it there go (a later drag there brings them back).
+            const inTheWay = treeRulesRef.current.inTheWay(targetId, draggedId)
+            if (inTheWay.length > 0) {
+                Promise.all(inTheWay.map(relation => window.api.removeSessionRelation(relation.from, draggedId)))
+                    .then(() => showDropNotice(`${dragged} is back under ${target}`))
+                    .catch(() => showDropNotice('Could not move the session'))
+                return
+            }
             // The same call as the Related dialog's "Add by hand": a pair removed there comes back.
             window.api.addSessionRelation(targetId, draggedId).then(added => {
-                const pair = `${sessionNameRef.current(draggedId)} ↔ ${sessionNameRef.current(targetId)}`
-                showDropNotice(added ? `Related: ${pair}` : `Already related: ${pair}`)
+                showDropNotice(added ? `${dragged} is now under ${target}` : `Already related: ${dragged} ↔ ${target}`)
             }).catch(() => showDropNotice('Could not relate the sessions'))
         }
     }), [draggingSessionId, showDropNotice])
@@ -726,12 +750,14 @@ export function Sidebar({
         : []
 
     const allSessionEntries = sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground)
-    // One sessionTreeFor per root: kept between the renders status updates cause.
+    // One sessionTreeFor per root: kept between the renders status updates cause. No recently viewed
+    // order here: the tree stays put while the user clicks through it (d44191ed) — pinned roots
+    // first, then sidebar order.
     const sessionForest = useMemo(
         () => allSessionsLayout === 'tree'
-            ? sessionForestFor(sessionRelations, orderForAllSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), recentIds), recentIds)
+            ? sessionForestFor(sessionRelations, orderForAllSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), []))
             : null,
-        [allSessionsLayout, sessionRelations, workspaces, folders, showWorktrees, showPlayground, recentIds]
+        [allSessionsLayout, sessionRelations, workspaces, folders, showWorktrees, showPlayground]
     )
     const sessionResults = isSearching ? findMatchingSessions(allSessionEntries, searchQuery) : []
     const isAllSessionsView = viewMode === 'all'
@@ -1178,7 +1204,7 @@ export function Sidebar({
                                 showSessionCount={showSessionCount}
                             />
                         ) : (
-                            <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} {...sessionListProps} />
+                            <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} dividePinned {...sessionListProps} />
                         )}
                     </div>
                 ) : (

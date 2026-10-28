@@ -96,7 +96,7 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
                         {folder.isExpanded && (
                             <div data-session-folder-body={folder.id} className="ml-3 pl-2 border-l border-white/5">
                                 {rows.length > 0
-                                    ? <SidebarSessionList entries={rows} {...listProps} />
+                                    ? <SidebarSessionList entries={rows} dividePinned {...listProps} />
                                     : <div className="px-1.5 py-1 text-[11px] text-gray-600">Drag sessions here</div>}
                             </div>
                         )}
@@ -116,7 +116,7 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
                     No folder
                 </FolderDropRow>
             )}
-            {unfiled.length > 0 && <SidebarSessionList entries={unfiled} {...listProps} />}
+            {unfiled.length > 0 && <SidebarSessionList entries={unfiled} dividePinned {...listProps} />}
 
             {menu && (
                 <FolderContextMenu

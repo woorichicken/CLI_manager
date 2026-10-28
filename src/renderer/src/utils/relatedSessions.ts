@@ -143,13 +143,86 @@ export interface SessionTree {
     siblings: TreeEntry[]
     /** What this session opened, children before their own children. */
     descendants: TreeEntry[]
-    /** Added by hand: no direction, so no place in the tree. */
-    manual: RelatedEntry[]
+    /** Related to this session, but placed under another parent in the tree (see `splitTreeRelations`). */
+    other: RelatedEntry[]
+}
+
+export interface TreeRelations {
+    /** The pairs the tree is made of: `from` is the parent. */
+    tree: SessionRelation[]
+    /** Shown pairs that lost their place in the tree to a hand-added parent. */
+    aside: SessionRelation[]
 }
 
 /**
- * The relations around `sessionId` as one tree. `from` is the parent for both
- * `opened` and `connected`; `manual` has no direction and is kept apart.
+ * Which of the shown relations between `present` sessions make the tree. `from` is the parent for
+ * every kind; a hand-added pair is stored as "dropped on → dragged", so the session it was dropped
+ * on (or whose dialog it was added in) is the parent.
+ *
+ * A session with a hand-added parent sits only there: the newest hand-added pair wins over who
+ * opened it and over older hand-added ones (report 9fa825e7). The pairs that lose stay related —
+ * they are returned in `aside` rather than dropped.
+ */
+export function splitTreeRelations(relations: SessionRelation[], present: (sessionId: string) => boolean): TreeRelations {
+    const shown = relations.filter(r => !r.dismissed && r.from !== r.to && present(r.from) && present(r.to))
+    const handParent = new Map<string, SessionRelation>()
+    for (const relation of shown) {
+        if (relation.kind !== 'manual') continue
+        const known = handParent.get(relation.to)
+        if (!known || known.at < relation.at) handParent.set(relation.to, relation)
+    }
+    const split: TreeRelations = { tree: [], aside: [] }
+    for (const relation of shown) {
+        const winner = handParent.get(relation.to)
+        if (!winner || winner === relation) split.tree.push(relation)
+        else split.aside.push(relation)
+    }
+    return split
+}
+
+/**
+ * Whether putting `childId` under `parentId` would close a loop: `parentId` is `childId` itself or
+ * already sits below it in the tree. A drop like that is refused rather than stored.
+ */
+export function wouldMakeLoop(relations: SessionRelation[], parentId: string, childId: string, workspaces: Workspace[]): boolean {
+    if (parentId === childId) return true
+    const index = sessionIndex(workspaces)
+    const parentsOf = new Map<string, string[]>()
+    for (const relation of splitTreeRelations(relations, id => index.has(id)).tree) {
+        parentsOf.set(relation.to, [...(parentsOf.get(relation.to) ?? []), relation.from])
+    }
+    const seen = new Set<string>([parentId])
+    const queue = [parentId]
+    while (queue.length > 0) {
+        for (const above of parentsOf.get(queue.shift()!) ?? []) {
+            if (above === childId) return true
+            if (seen.has(above)) continue
+            seen.add(above)
+            queue.push(above)
+        }
+    }
+    return false
+}
+
+/**
+ * `childId` dropped on `parentId` when that pair is already stored, but a newer hand-added parent
+ * holds `childId` elsewhere — dragged back onto the session that opened it, say. These are the
+ * hand-added pairs in the way: removing them puts `childId` back under `parentId`. Empty when the
+ * pair is not stored or nothing is in the way.
+ */
+export function handParentsInTheWay(relations: SessionRelation[], parentId: string, childId: string, workspaces: Workspace[]): SessionRelation[] {
+    const index = sessionIndex(workspaces)
+    const shown = relations.filter(r => !r.dismissed && index.has(r.from) && index.has(r.to))
+    const own = shown.find(r => r.from === parentId && r.to === childId)
+    if (!own) return []
+    // Any hand-added parent beats an opener; among hand-added ones the newest wins.
+    return shown.filter(r => r !== own && r.kind === 'manual' && r.to === childId && (own.kind !== 'manual' || r.at > own.at))
+}
+
+/**
+ * The relations around `sessionId` as one tree, built from `splitTreeRelations`: `from` is the
+ * parent, a hand-added pair included. A pair that lost its place to a hand-added parent is listed
+ * apart in `other`.
  *
  * A session shows once: `connected` can point both ways (A→B, B→C, C→A), so
  * the walk marks what it has placed. Below is placed first, then above, then
@@ -180,24 +253,16 @@ export function sessionTreeFor(
         }
         return bAt - aAt
     }
-    const tree: SessionTree = { ancestors: [], siblings: [], descendants: [], manual: [] }
+    const tree: SessionTree = { ancestors: [], siblings: [], descendants: [], other: [] }
     if (!index.has(sessionId)) return tree
 
+    const split = splitTreeRelations(relations, id => index.has(id))
     const children = new Map<string, SessionRelation[]>()
     const parents = new Map<string, SessionRelation[]>()
-    for (const relation of relations) {
-        if (relation.dismissed || relation.from === relation.to) continue
-        if (!index.has(relation.from) || !index.has(relation.to)) continue
-        if (relation.kind === 'manual') {
-            if (relation.from !== sessionId && relation.to !== sessionId) continue
-            const other = index.get(relation.from === sessionId ? relation.to : relation.from)!
-            tree.manual.push({ ...other, kind: relation.kind, at: relation.at })
-            continue
-        }
+    for (const relation of split.tree) {
         children.set(relation.from, [...(children.get(relation.from) ?? []), relation])
         parents.set(relation.to, [...(parents.get(relation.to) ?? []), relation])
     }
-    tree.manual.sort((a, b) => compare(a.session.id, a.at, b.session.id, b.at))
 
     const placed = new Set<string>([sessionId])
     const entryOf = (relation: SessionRelation, otherId: string, depth: number): TreeEntry => ({
@@ -242,12 +307,22 @@ export function sessionTreeFor(
             tree.siblings.push(entryOf(relation, relation.to, 1))
         }
     }
+
+    // What lost its place to a hand-added parent, unless the tree already shows that session.
+    for (const relation of split.aside) {
+        if (relation.from !== sessionId && relation.to !== sessionId) continue
+        const otherId = relation.from === sessionId ? relation.to : relation.from
+        if (placed.has(otherId)) continue
+        placed.add(otherId)
+        tree.other.push({ ...index.get(otherId)!, kind: relation.kind, at: relation.at })
+    }
+    tree.other.sort((a, b) => compare(a.session.id, a.at, b.session.id, b.at))
     return tree
 }
 
 /**
- * The sessions that opened `sessionId`, or first worked in it — its parents in
- * the tree, newest first. Hand-added pairs have no direction and are left out.
+ * The sessions that opened `sessionId`, or first worked in it, newest first. Hand-added pairs are
+ * left out: the header's shortcut says "the session that opened this one", which they are not.
  */
 export function parentSessionsOf(relations: SessionRelation[], sessionId: string, workspaces: Workspace[]): RelatedEntry[] {
     const index = sessionIndex(workspaces)
@@ -270,26 +345,26 @@ export interface ForestRow {
 }
 
 export interface SessionForest {
-    /** Every tree, root first and each session under the one that opened it. */
+    /** Every tree, root first and each session under its parent. */
     rows: ForestRow[]
-    /** Sessions with no parent or child: no relation, or only hand-added ones (they have no direction). */
+    /** Sessions with no parent or child in the tree. */
     unlinked: Array<{ session: TerminalSession; workspace: Workspace }>
 }
 
 /**
  * Every listed session as trees, for the sidebar's All sessions view. Each tree
  * is `sessionTreeFor` of its root, so the rules are the Related dialog's: the
- * same parents, the depth limit, removed pairs left out, manual pairs not in it.
+ * same parents (a hand-added one winning), the depth limit, removed pairs left out.
  *
- * Roots are taken in list order. A session shows once: met again under a later
- * root, it is skipped with what hangs under it there. What no root reaches — a
- * ring has no root, the depth limit cuts a long chain — starts a tree of its own.
+ * The order does not follow what the user looks at, so a click never moves rows (report d44191ed):
+ * roots and the unlinked rows keep the order of `entries`, children come oldest relation first.
+ * A session shows once: met again under a later root, it is skipped with what hangs under it
+ * there. What no root reaches — a ring has no root, the depth limit cuts a long chain — starts a
+ * tree of its own.
  */
 export function sessionForestFor(
     relations: SessionRelation[],
-    entries: Array<{ session: TerminalSession; workspace: Workspace }>,
-    /** Session ids the user looked at, newest first: orders each level like the list. */
-    viewedIds: string[] = []
+    entries: Array<{ session: TerminalSession; workspace: Workspace }>
 ): SessionForest {
     const listed = new Map(entries.map(entry => [entry.session.id, entry]))
     // The tree sees only listed sessions: a hidden worktree's session must not appear in it.
@@ -303,9 +378,7 @@ export function sessionForestFor(
 
     const linked = new Set<string>()
     const hasParent = new Set<string>()
-    for (const relation of relations) {
-        if (relation.dismissed || relation.kind === 'manual' || relation.from === relation.to) continue
-        if (!listed.has(relation.from) || !listed.has(relation.to)) continue
+    for (const relation of splitTreeRelations(relations, id => listed.has(id)).tree) {
         linked.add(relation.from)
         linked.add(relation.to)
         hasParent.add(relation.to)
@@ -317,7 +390,7 @@ export function sessionForestFor(
         placed.add(rootId)
         rows.push({ ...listed.get(rootId)!, depth: 0 })
         let skipBelow = Number.POSITIVE_INFINITY
-        for (const entry of sessionTreeFor(relations, rootId, workspaces, 'viewed', viewedIds).descendants) {
+        for (const entry of sessionTreeFor(relations, rootId, workspaces, 'oldest').descendants) {
             if (entry.depth > skipBelow) continue
             skipBelow = Number.POSITIVE_INFINITY
             if (placed.has(entry.session.id)) {

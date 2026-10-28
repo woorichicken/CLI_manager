@@ -1,9 +1,40 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { getTemplateIcon } from '../../constants/icons'
 import { MENU_Z_INDEX } from '../../constants/styles'
+
+/**
+ * Closes the menu on a press anywhere outside it, and on Esc (report 540ceb60). A window `click`
+ * listener was not enough: a right-click on another row sends no click, and the session folder menu
+ * had no listener at all. Both listen in the capture phase on window, so nothing under the pointer —
+ * the terminal, a drag handle that cancels its pointerdown — sees the event first.
+ */
+function useCloseOnOutside(onClose: () => void): React.RefObject<HTMLDivElement | null> {
+    const menuRef = useRef<HTMLDivElement>(null)
+    const closeRef = useRef(onClose)
+    closeRef.current = onClose
+    useEffect(() => {
+        const onPointerDown = (e: PointerEvent): void => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) closeRef.current()
+        }
+        const onKeyDown = (e: KeyboardEvent): void => {
+            if (e.key !== 'Escape') return
+            // Kept from the terminal behind the menu: Esc there would interrupt the agent.
+            e.preventDefault()
+            e.stopPropagation()
+            closeRef.current()
+        }
+        window.addEventListener('pointerdown', onPointerDown, true)
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => {
+            window.removeEventListener('pointerdown', onPointerDown, true)
+            window.removeEventListener('keydown', onKeyDown, true)
+        }
+    }, [])
+    return menuRef
+}
 
 interface WorkspaceContextMenuProps {
     x: number
@@ -53,6 +84,7 @@ export function WorkspaceContextMenu({
     onCopy,
     showWorktrees = true
 }: WorkspaceContextMenuProps) {
+    const menuRef = useCloseOnOutside(onClose)
     const handleCopy = (text: string, label: string) => {
         onCopy(text, label)
         onClose()
@@ -88,6 +120,8 @@ export function WorkspaceContextMenu({
 
     return createPortal(
         <div
+            ref={menuRef}
+            data-sidebar-menu="workspace"
             className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-44 backdrop-blur-md`}
             style={{ top: y, left: x }}
             onClick={e => e.stopPropagation()}
@@ -329,6 +363,7 @@ export function WorktreeContextMenu({
     onClose,
     onCopy
 }: WorktreeContextMenuProps) {
+    const menuRef = useCloseOnOutside(onClose)
     const handleCopy = (e: React.MouseEvent, text: string, label: string) => {
         e.preventDefault()
         e.stopPropagation()
@@ -388,6 +423,8 @@ export function WorktreeContextMenu({
 
     return createPortal(
         <div
+            ref={menuRef}
+            data-sidebar-menu="worktree"
             className="fixed bg-[#1e1e20] border border-white/10 rounded shadow-xl py-1 w-48 backdrop-blur-md max-h-[400px] overflow-y-auto"
             style={{
                 top: y,
@@ -541,6 +578,7 @@ export function BranchMenu({
     onRefresh,
     onClose
 }: BranchMenuProps) {
+    const menuRef = useCloseOnOutside(onClose)
     const handleRefresh = (e: React.MouseEvent) => {
         e.stopPropagation()
         onRefresh()
@@ -548,6 +586,8 @@ export function BranchMenu({
 
     return createPortal(
         <div
+            ref={menuRef}
+            data-sidebar-menu="branch"
             className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-52 backdrop-blur-md max-h-64 overflow-y-auto`}
             style={{ top: y, left: x }}
             onClick={e => e.stopPropagation()}
@@ -638,6 +678,7 @@ export function SessionContextMenu({
     onDisconnectAi,
     onClose
 }: SessionContextMenuProps) {
+    const menuRef = useCloseOnOutside(onClose)
     const handleCopy = (text: string, label: string) => {
         onCopy(text, label)
         onClose()
@@ -645,6 +686,8 @@ export function SessionContextMenu({
 
     return createPortal(
         <div
+            ref={menuRef}
+            data-sidebar-menu="session"
             className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-40 backdrop-blur-md`}
             style={{ top: y, left: x }}
             onClick={e => e.stopPropagation()}
@@ -756,8 +799,11 @@ export function FolderContextMenu({
     onDelete,
     onClose
 }: FolderContextMenuProps) {
+    const menuRef = useCloseOnOutside(onClose)
     return createPortal(
         <div
+            ref={menuRef}
+            data-sidebar-menu="folder"
             className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-36 backdrop-blur-md`}
             style={{ top: y, left: x }}
             onClick={e => e.stopPropagation()}
