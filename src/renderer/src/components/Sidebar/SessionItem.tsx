@@ -7,6 +7,7 @@ import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/ty
 import { useControlApiMasters } from '../../hooks/useControlApiMasters'
 import { InboxDot } from '../Inbox/InboxDot'
 import { SESSION_DRAG_TYPE, isSessionDrag, useDropHighlight, useSessionDrop } from './sessionDrop'
+import type { TreeGuide } from '../../utils/relatedSessions'
 
 // Session status colors (claude-squad 방식)
 const SESSION_STATUS_COLORS: Record<SessionStatus, string> = {
@@ -84,14 +85,16 @@ interface SessionItemProps {
     hideDragHandle?: boolean
     /** Cut a long `workspaceLabel` at the front, so a path keeps its last folder in view. */
     workspaceLabelFromEnd?: boolean
-    /** Levels below the tree root in the All sessions tree; drawn as indent and a └. */
+    /** Levels below the tree root in the All sessions tree; drawn as indent. */
     treeDepth?: number
     /**
-     * A Tree row's fold button (report dca55fd6), drawn where a child's └ goes. `null` for a tree
-     * row with nothing under it — its └ (or, for a root, a blank) gets the button's width so the
-     * icons stay in line; left out everywhere else.
+     * A Tree row's fold button (report dca55fd6), drawn ahead of the icon. `null` for a tree row
+     * with nothing under it — a blank of the button's width, so the icons stay in line; left out
+     * everywhere else.
      */
     treeBranch?: TreeBranch | null
+    /** A Tree row's guide lines — ├ │ └ joining it to the rows above and below (report a35f1aa1). */
+    treeGuide?: TreeGuide
 }
 
 export interface TreeBranch {
@@ -105,6 +108,13 @@ export interface TreeBranch {
 
 // Indent per tree level in the All sessions tree (px). Small: a deep row still needs room for its name.
 const TREE_INDENT_PX = 10
+// A row's own left padding (px-1.5) and the fold button's width (w-3) — where a tree row's guide lines go.
+const TREE_ROW_PAD_PX = 6
+const TREE_SLOT_PX = 12
+// The space between Tree rows (`space-y-0.5` in SidebarSessionTree): a line that runs on crosses it.
+const TREE_ROW_GAP_PX = 2
+// The fold button's chevron is 12px tall; a line down to the children starts just under it.
+const TREE_CHEVRON_HALF_PX = 6
 // A path label gets onto the name's line only with room for about its last folder (in `ch`, capped).
 const PATH_LABEL_MIN_CH = 16
 // A tree row's name is cut in the middle: this many last characters always stay.
@@ -145,6 +155,52 @@ function NameWithPath({ name, path, fontSize }: { name: string; path: string; fo
 }
 
 /**
+ * The ├ │ └ of a Tree row, drawn over its left padding. A level's line sits under the fold button
+ * of the row it hangs from, so a parent, its children and their siblings read as one connected
+ * list. A line that runs on reaches through the gap into the next row, where that row's own
+ * piece of it starts at its top.
+ */
+function TreeGuideLines({ depth, guide, leaf }: { depth: number; guide: TreeGuide; leaf: boolean }) {
+    const lineX = (level: number): number => TREE_ROW_PAD_PX + (level - 1) * TREE_INDENT_PX + TREE_SLOT_PX / 2
+    const slotStart = TREE_ROW_PAD_PX + depth * TREE_INDENT_PX
+    // A leaf's arm crosses its empty slot toward the icon; a parent's stops at its fold button.
+    const armEnd = leaf ? slotStart + TREE_SLOT_PX - 2 : slotStart + 2
+    const vertical = 'pointer-events-none absolute w-px bg-gray-600'
+    return (
+        <>
+            {guide.through.map(level => (
+                <span key={level} aria-hidden data-tree-line="v" className={vertical} style={{ left: lineX(level), top: 0, bottom: -TREE_ROW_GAP_PX }} />
+            ))}
+            {depth > 0 && (
+                <>
+                    {/* ├ runs on to the next sibling, └ stops at the arm. */}
+                    <span
+                        aria-hidden
+                        data-tree-line="v"
+                        className={vertical}
+                        style={{ left: lineX(depth), top: 0, bottom: guide.continues ? -TREE_ROW_GAP_PX : 'calc(50% - 0.5px)' }}
+                    />
+                    <span
+                        aria-hidden
+                        data-tree-line="arm"
+                        className="pointer-events-none absolute h-px bg-gray-600"
+                        style={{ left: lineX(depth), top: 'calc(50% - 0.5px)', width: armEnd - lineX(depth) }}
+                    />
+                </>
+            )}
+            {guide.opensDown && (
+                <span
+                    aria-hidden
+                    data-tree-line="down"
+                    className={vertical}
+                    style={{ left: lineX(depth + 1), top: `calc(50% + ${TREE_CHEVRON_HALF_PX}px)`, bottom: -TREE_ROW_GAP_PX }}
+                />
+            )}
+        </>
+    )
+}
+
+/**
  * 터미널 세션 항목 컴포넌트
  * 세션 선택, 알림 표시, 삭제 기능 제공
  * 드래그 앤 드롭으로 같은 워크스페이스 내에서 순서 변경 가능
@@ -172,7 +228,8 @@ export function SessionItem({
     hideDragHandle = false,
     workspaceLabelFromEnd = false,
     treeDepth = 0,
-    treeBranch
+    treeBranch,
+    treeGuide
 }: SessionItemProps) {
     const [tempName, setTempName] = useState(session.name)
     const [previewLines, setPreviewLines] = useState<string[] | null>(null)
@@ -353,9 +410,13 @@ export function SessionItem({
                 data-session-role={role}
                 data-tree-depth={treeDepth > 0 ? treeDepth : undefined}
                 data-tree-holds-active={treeBranch?.holdsActive ? session.id : undefined}
-                style={treeDepth > 0 ? { paddingLeft: treeDepth * TREE_INDENT_PX } : undefined}
+                data-tree-connector={treeGuide && treeDepth > 0 ? (treeGuide.continues ? 'tee' : 'elbow') : undefined}
+                data-tree-through={treeGuide?.through.length ? treeGuide.through.join(' ') : undefined}
+                data-tree-opens-down={treeGuide?.opensDown ? '' : undefined}
+                style={treeDepth > 0 ? { paddingLeft: TREE_ROW_PAD_PX + treeDepth * TREE_INDENT_PX } : undefined}
                 className={clsx(
                     "flex items-center gap-1 py-1 px-1.5 rounded transition-colors text-sm group",
+                    treeGuide && 'relative',
                     isActive ? rowClasses.active : rowClasses.idle,
                     treeBranch?.holdsActive && 'shadow-[inset_2px_0_0_0_rgba(96,165,250,0.9)] bg-blue-500/5'
                 )}
@@ -368,8 +429,9 @@ export function SessionItem({
                     // Note: backgroundColor 제거 - 드래그 종료 후에도 색상이 유지되는 버그 방지
                 }}
             >
-                {/* One slot ahead of the icon: the fold button where there is something under the row, else the └
-                    of a child (a blank for a root). The button takes the └'s place so a row loses little width. */}
+                {treeGuide && <TreeGuideLines depth={treeDepth} guide={treeGuide} leaf={!treeBranch} />}
+                {/* One slot ahead of the icon: the fold button where there is something under the row, else a blank
+                    that a child's guide arm crosses. */}
                 {treeBranch ? (
                     <button
                         type="button"
@@ -384,8 +446,6 @@ export function SessionItem({
                     >
                         {treeBranch.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                     </button>
-                ) : treeDepth > 0 ? (
-                    <span aria-hidden className={clsx('text-gray-600 text-xs shrink-0', treeBranch === null && 'w-3 text-center')}>└</span>
                 ) : treeBranch === null && (
                     <span aria-hidden className="shrink-0 w-3" />
                 )}

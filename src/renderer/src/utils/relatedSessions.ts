@@ -409,3 +409,33 @@ export function sessionForestFor(
     }
     return { rows, unlinked: entries.filter(entry => !placed.has(entry.session.id)) }
 }
+
+/** The lines of a file tree that join a Tree row to the rows around it (report a35f1aa1). */
+export interface TreeGuide {
+    /** Levels above the row's own (1 … depth − 1) whose line runs on past it: that ancestor has a sibling further down. */
+    through: number[]
+    /** Another row follows at this depth under the same parent: ├ rather than └. Always false for a root. */
+    continues: boolean
+    /** The next row is a child of this one, so a line runs down from under its fold button. */
+    opensDown: boolean
+}
+
+/**
+ * The guide lines of the rows on screen, from their depths alone. `depths` is the forest's order
+ * with folded parts left out — each row followed by the rows under it — so a level's line runs on
+ * past a row exactly when the next row at that level or shallower is at that level.
+ */
+export function treeGuidesFor(depths: readonly number[]): TreeGuide[] {
+    return depths.map((depth, i) => {
+        const runsOn = (level: number): boolean => {
+            for (let next = i + 1; next < depths.length; next++) {
+                if (depths[next] < level) return false
+                if (depths[next] === level) return true
+            }
+            return false
+        }
+        const through: number[] = []
+        for (let level = 1; level < depth; level++) if (runsOn(level)) through.push(level)
+        return { through, continues: depth > 0 && runsOn(depth), opensDown: depths[i + 1] === depth + 1 }
+    })
+}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Reorder } from 'framer-motion'
 import type { TerminalSession, Workspace } from '../../../../shared/types'
-import type { SessionForest } from '../../utils/relatedSessions'
+import { treeGuidesFor, type SessionForest, type TreeGuide } from '../../utils/relatedSessions'
 import { SessionItem, type TreeBranch } from './SessionItem'
 import { SidebarSessionList } from './SidebarSessionList'
 
@@ -13,7 +13,7 @@ interface SidebarSessionTreeProps {
 }
 
 type Row = { session: TerminalSession; workspace: Workspace; depth: number }
-type ShownRow = Row & { branch: TreeBranch | null | undefined }
+type ShownRow = Row & { branch: TreeBranch | null | undefined; guide?: TreeGuide }
 
 /** Folded rows, by session id. A per-machine view choice like the layout itself, so it outlives a restart. */
 const COLLAPSED_STORAGE_KEY = 'sidebar-session-tree-collapsed'
@@ -54,12 +54,15 @@ function foldRows(rows: Row[], collapsed: Set<string>, activeSessionId: string |
         })
         i = folded ? end : i + 1
     }
-    return shown
+    // The guide lines follow what is on screen: a folded row has nothing shown under it.
+    const guides = treeGuidesFor(shown.map(row => row.depth))
+    return shown.map((row, index) => ({ ...row, guide: guides[index] }))
 }
 
 /**
  * The Tree layout of All sessions: each session under its parent — the session that opened it,
- * first worked in it, or that it was dragged onto — then the sessions in no tree. A row with
+ * first worked in it, or that it was dragged onto — joined to it by file-tree guide lines
+ * (a35f1aa1), then the sessions in no tree. A row with
  * sessions under it folds (dca55fd6); a folded row whose part holds the active session is marked
  * instead of unfolding, since the user folded it. Rows are the same SessionItem as the list —
  * click, right-click and drag-to-relate behave alike — labelled with the workspace path, cut at
@@ -85,7 +88,7 @@ export function SidebarSessionTree({ forest, listProps }: SidebarSessionTreeProp
     // SessionItem is a Reorder.Item and needs a group; the order is computed, so a drop is ignored.
     const rowGroup = (rows: ShownRow[], testId: string) => (
         <Reorder.Group axis="y" values={rows.map(row => row.session)} onReorder={() => {}} className="space-y-0.5" data-testid={testId}>
-            {rows.map(({ workspace, session, depth, branch }) => {
+            {rows.map(({ workspace, session, depth, branch, guide }) => {
                 const statusInfo = sessionStatuses?.get(session.id)
                 return (
                     <SessionItem
@@ -96,6 +99,7 @@ export function SidebarSessionTree({ forest, listProps }: SidebarSessionTreeProp
                         workspaceLabelFromEnd
                         treeDepth={depth}
                         treeBranch={branch}
+                        treeGuide={guide}
                         hideDragHandle
                         isActive={activeSessionId === session.id}
                         sessionStatus={statusInfo?.status}

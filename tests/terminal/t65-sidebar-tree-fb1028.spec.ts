@@ -16,6 +16,7 @@ import type { SessionRelation } from '../../src/shared/types'
  * - f44ebd21: in the List, a line between the pinned sessions and the rest.
  * - 540ceb60: the sidebar's right-click menus close on a press outside, on Esc, on a click in the
  *   terminal and on a right-click elsewhere.
+ * - a35f1aa1: Tree rows are joined by guide lines (├ │ └), each line running on from the row above.
  *
  * Real mouse drags and clicks, judged in the DOM, config.json and localStorage across a relaunch.
  * `T65_SHOTS=<dir>` leaves 1280 and 390 captures there (taken before the checks that the old code
@@ -440,5 +441,106 @@ test.describe('T65 sidebar tree (fb-1028)', () => {
         const listBox = await page.getByTestId('sidebar-all-sessions').boundingBox()
         expect(lineBox!.x + lineBox!.width).toBeLessThanOrEqual(listBox!.x + listBox!.width)
         await shot(page, app, 'list-long-names')
+    })
+
+    test('guide lines join each row to the row above: ├ for a sibling that follows, └ for the last, │ past deeper rows (a35f1aa1)', async () => {
+        const root = dir('guides')
+        const repo = path.join(root, 'Users', 'someone', 'Downloads', 'CLImanger-worktrees', 'fb1028-b')
+        const chief = path.join(root, 'Users', 'someone', '.climanager', 'chief')
+        for (const made of [repo, chief]) fs.mkdirSync(made, { recursive: true })
+        const names: Record<string, string> = {
+            [CHIEF]: 'AI: fb1028 총괄 — 라쏘런 피드백 3개 프로젝트 반영',
+            [LEAD]: 'AI: fb1028 팀장 CLI Manager — 제보 12건 트리아지',
+            [WORKER]: 'AI: fb1028 CLI Manager 사이드바 All sessions 트리',
+            [LOOSE]: 'AI: fb1028 CLI Manager 사이드바 트리 캡처 보조',
+            [W2]: 'AI: fb1028 CLI Manager 터미널 경로 선택',
+            [LEAD_B]: 'AI: fb1028 팀장 콘텐츠 운영 — 제보 7건',
+            [ROOT2]: '대화: 옵시디언 정리 규칙',
+            [X]: '대화: EFM 운영 승격'
+        }
+        ctx = await launchAppWithWorkspaces([
+            { id: 'ws-chief', name: 'chief', path: chief, sessions: [CHIEF, LEAD_B, ROOT2, X].map(id => ({ id, name: names[id] })) },
+            { id: 'ws-repo', name: 'CLImanger', path: repo, sessions: [LEAD, WORKER, LOOSE, W2].map(id => ({ id, name: names[id] })) }
+        ], {
+            settings: { showHomeWorkspace: false },
+            config: { sessionRelations: [
+                { from: CHIEF, to: LEAD, kind: 'opened', at: 1 }, { from: CHIEF, to: LEAD_B, kind: 'opened', at: 2 },
+                { from: LEAD, to: WORKER, kind: 'opened', at: 3 }, { from: WORKER, to: LOOSE, kind: 'manual', at: 4 },
+                { from: LEAD, to: W2, kind: 'opened', at: 5 }, { from: ROOT2, to: X, kind: 'connected', at: 6 }
+            ] satisfies SessionRelation[] }
+        })
+        const { page, app } = ctx
+        await resizeMainWindow(app, 1280, 800)
+        await openTree(page)
+        const all = [at(CHIEF, 0), at(LEAD, 1), at(WORKER, 2), at(LOOSE, 3), at(W2, 2), at(LEAD_B, 1), at(ROOT2, 0), at(X, 1)]
+        await expect.poll(() => treeRows(page)).toEqual(all)
+        await page.mouse.move(900, 500)
+        await shot(page, app, 'tree-guides')
+
+        // What each row draws: its connector (├ tee / └ elbow), the levels whose line runs past it, a line down to its children.
+        const guides = () => page.locator('[data-testid="session-tree-rows"] [data-session-item]').evaluateAll(rows => rows.map(r =>
+            `${r.getAttribute('data-tree-connector') ?? '·'}${r.getAttribute('data-tree-through') ? `|${r.getAttribute('data-tree-through')}` : ''}${r.hasAttribute('data-tree-opens-down') ? '↓' : ''}`))
+        // On screen, every vertical piece starts where a piece of the row above, at the same x, ends — no gap, no
+        // stray line; the elbow stops at the row's middle; the arm reaches toward the row and stops short of its name.
+        const breaks = () => page.locator('[data-testid="session-tree-rows"]').evaluate(list => {
+            const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-session-item]'))
+            const pieces = (r: HTMLElement, kind: string) => Array.from(r.querySelectorAll<HTMLElement>(`[data-tree-line="${kind}"]`), e => e.getBoundingClientRect())
+            const problems: string[] = []
+            rows.forEach((r, i) => {
+                const id = r.getAttribute('data-session-item')
+                const box = r.getBoundingClientRect()
+                const above = i > 0 ? [...pieces(rows[i - 1], 'v'), ...pieces(rows[i - 1], 'down')] : []
+                for (const v of pieces(r, 'v')) {
+                    const x = v.left + v.width / 2
+                    if (v.width < 0.5 || v.height < 4) problems.push(`${id}: a vertical piece too small (${v.width}x${v.height})`)
+                    if (Math.abs(v.top - box.top) > 0.5) problems.push(`${id}: a vertical piece starts below the row top`)
+                    if (!above.some(a => Math.abs(a.left + a.width / 2 - x) < 0.6 && a.bottom >= v.top - 0.5)) problems.push(`${id}: the line at x=${x.toFixed(1)} does not join the row above`)
+                }
+                const connector = r.getAttribute('data-tree-connector')
+                const arm = pieces(r, 'arm')[0]
+                if (connector && !arm) problems.push(`${id}: no arm`)
+                if (arm) {
+                    const middle = box.top + box.height / 2
+                    if (Math.abs(arm.top + arm.height / 2 - middle) > 1) problems.push(`${id}: the arm is off the row middle`)
+                    const elbow = pieces(r, 'v').find(v => Math.abs(v.left + v.width / 2 - arm.left) < 1)
+                    if (!elbow) problems.push(`${id}: the arm does not leave a vertical line`)
+                    else if (connector === 'elbow' && Math.abs(elbow.bottom - (arm.top + arm.height)) > 1) problems.push(`${id}: └ runs past the arm`)
+                    else if (connector === 'tee' && elbow.bottom < box.bottom) problems.push(`${id}: ├ stops before the row bottom`)
+                    const name = r.querySelector('[data-testid="session-name"]')!.getBoundingClientRect()
+                    if (arm.width < 4 || arm.right > name.left) problems.push(`${id}: arm ${arm.left.toFixed(1)}–${arm.right.toFixed(1)} vs name at ${name.left.toFixed(1)}`)
+                }
+            })
+            return problems
+        })
+
+        await expect.poll(guides).toEqual(['·↓', 'tee↓', 'tee|1↓', 'elbow|1 2', 'elbow|1', 'elbow', '·↓', 'elbow'])
+        expect(await breaks()).toEqual([])
+        // The deepest, longest name still ends inside its row.
+        const nameEndsInside = async (id: string) => row(page, id).evaluate(item => {
+            const box = item.getBoundingClientRect()
+            const name = item.querySelector('[data-testid="session-name"]')!.getBoundingClientRect()
+            return name.right <= box.right + 0.5 && name.width > 40
+        })
+        expect(await nameEndsInside(LOOSE)).toBe(true)
+
+        await resizeMainWindow(app, 390, 800)
+        await page.waitForTimeout(600)
+        expect(await breaks(), 'at 390').toEqual([])
+        expect(await nameEndsInside(LOOSE), 'depth 3 name at 390').toBe(true)
+        await resizeMainWindow(app, 1280, 800)
+        await page.waitForTimeout(400)
+
+        // Folded, a row has nothing under it on screen: no line down from it, and its siblings still join.
+        await page.locator(`[data-tree-toggle="${WORKER}"]`).click()
+        await page.mouse.move(900, 500)
+        await expect.poll(guides).toEqual(['·↓', 'tee↓', 'tee|1', 'elbow|1', 'elbow', '·↓', 'elbow'])
+        expect(await breaks()).toEqual([])
+        await page.locator(`[data-tree-toggle="${LEAD}"]`).click()
+        await page.mouse.move(900, 500)
+        await expect.poll(guides).toEqual(['·↓', 'tee', 'elbow', '·↓', 'elbow'])
+        expect(await breaks()).toEqual([])
+        await shot(page, app, 'tree-guides-folded')
+        // Not in a tree: no guides there.
+        await expect(page.locator('[data-testid="session-tree-unlinked-rows"] [data-tree-line]')).toHaveCount(0)
     })
 })
