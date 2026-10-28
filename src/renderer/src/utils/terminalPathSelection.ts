@@ -38,8 +38,19 @@ export interface ResolvedPathSelection {
 
 /** How many rows a single path may be stitched across, and how far to look beyond the selection. */
 const MAX_STITCHED_ROWS = 24
-/** A row "reaches the screen edge" when its last painted cell is within this many columns of the end. */
-const EDGE_SLACK_COLUMNS = 1
+/**
+ * A row "reaches the screen edge" when its last painted cell is within this many columns of the end.
+ * Claude Code breaks prose at the full width, but tool output (`⎿`) and `⏺ Bash(` lines at width − 5 (measured on
+ * 110- and 118-column reports), and a wide character at the edge can leave one more cell empty.
+ */
+const EDGE_SLACK_COLUMNS = 6
+/** Only a long unbreakable word is hard-broken by the program; a short word at the edge is just prose. */
+const MIN_BROKEN_WORD_LENGTH = 20
+
+/** Characters that start a list item, quote or box row — never the rest of a path. */
+const NEVER_PATH_START = new Set(['•', '●', '⏺', '⎿', '…', '│', '├', '└', '┌', '┐', '┘', '┤'])
+/** Markers that are a bullet only when a space follows (`- item`), not when part of a path (`-ncdigitec`). */
+const BULLET_WITH_SPACE = new Set(['-', '*', '+', '>'])
 
 interface Entry {
     ch: string
@@ -71,9 +82,20 @@ function readRow(buffer: PathBuffer, y: number): { entries: Entry[]; painted: nu
     return { entries, painted }
 }
 
-/** True when the row paints up to the screen edge, i.e. the program had to break the text there. */
-function reachesEdge(painted: number, columns: number): boolean {
-    return painted >= columns - EDGE_SLACK_COLUMNS
+/**
+ * True when the program had to break the text after this row: it paints up to the screen edge, or the next
+ * row's first word would not have fitted. The second form covers wraps at a hyphen (`…8d40` ⏎ `-3dd…` on a 118
+ * column screen stops at 103 cells), where the row ends well before the edge.
+ */
+function brokeAtEdge(painted: number, columns: number, nextWordCells: number): boolean {
+    return painted >= columns - EDGE_SLACK_COLUMNS || painted + nextWordCells > columns
+}
+
+/** Cells taken by the first word of the row, after its indent. */
+function firstWordCells(entries: Entry[], firstText: number): number {
+    let end = firstText
+    while (end < entries.length && !WHITESPACE.test(entries[end].ch)) end++
+    return entries[end - 1].col - entries[firstText].col + 1
 }
 
 function lastWord(entries: Entry[]): string {
@@ -96,12 +118,31 @@ function continuesBelow(buffer: PathBuffer, y: number, columns: number): 'wrap' 
     const upper = readRow(buffer, y)
     const lower = readRow(buffer, y + 1)
     if (!upper || !lower) return null
-    if (!reachesEdge(upper.painted, columns)) return null
-    if (!lastWord(upper.entries).includes('/')) return null
-    // `  0-3dd…`: at least one space, then a path character right away (not a bullet or a sentence).
     const firstText = lower.entries.findIndex((e) => !WHITESPACE.test(e.ch))
     if (firstText < 1) return null
+    if (!brokeAtEdge(upper.painted, columns, firstWordCells(lower.entries, firstText))) return null
+    const word = lastWord(upper.entries)
+    if (!word.includes('/') || word.length < MIN_BROKEN_WORD_LENGTH) return null
+    // `  0-3dd…`: at least one space, then a path character right away (not a bullet or a sentence).
+    if (startsListItem(lower.entries, firstText)) return null
     return 'indent'
+}
+
+function startsListItem(entries: Entry[], at: number): boolean {
+    const ch = entries[at].ch
+    if (NEVER_PATH_START.has(ch)) return true
+    const after = entries[at + 1]?.ch
+    const spaceFollows = after === undefined || WHITESPACE.test(after)
+    if (BULLET_WITH_SPACE.has(ch)) return spaceFollows
+    if (/\d/.test(ch)) {
+        // `1. item` / `2) item`
+        let i = at
+        while (entries[i + 1] && /\d/.test(entries[i + 1].ch)) i++
+        const mark = entries[i + 1]?.ch
+        const afterMark = entries[i + 2]?.ch
+        return (mark === '.' || mark === ')') && (afterMark === undefined || WHITESPACE.test(afterMark))
+    }
+    return false
 }
 
 interface Stitched {
@@ -162,6 +203,23 @@ function normalizeCandidate(raw: string): string {
     return raw.replace(LEADING_NOISE, '').replace(TRAILING_NOISE, '')
 }
 
+/**
+ * The path-shaped part of a run like `Bash(B=/private/x/board;` — from the first `/`, `~/` or `./` that follows
+ * a separator up to the next `;` `)` quote or comma. Null when the run is a URL or holds no such start.
+ */
+function extractPathShape(run: string): string | null {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(run)) return null
+    for (let i = 0; i < run.length; i++) {
+        const startsPath = run.startsWith('/', i) || run.startsWith('~/', i) || run.startsWith('./', i) || run.startsWith('../', i)
+        if (!startsPath) continue
+        if (i > 0 && !'=(:\'"[<,'.includes(run[i - 1])) continue
+        const rest = run.slice(i)
+        const stop = rest.search(/[;)"',>]/)
+        return normalizeCandidate(stop < 0 ? rest : rest.slice(0, stop))
+    }
+    return null
+}
+
 function pushUnique(list: string[], value: string): void {
     if (value && !list.includes(value)) list.push(value)
 }
@@ -205,7 +263,10 @@ export function resolvePathSelection(
     while (left > 0 && !WHITESPACE.test(entries[left - 1].ch)) left--
     let right = to
     while (right < entries.length && !WHITESPACE.test(entries[right].ch)) right++
-    const widened = normalizeCandidate(textOf(entries, left, right))
+    const run = textOf(entries, left, right)
+    const widened = normalizeCandidate(run)
+    const shaped = extractPathShape(run)
+    if (shaped && shaped !== widened) pushUnique(candidates, shaped)
     pushUnique(candidates, widened)
     pushUnique(candidates, raw)
     return { candidates }
