@@ -10,6 +10,7 @@ import { registerFilePathLinks } from '../utils/filePathLinkProvider'
 import { SESSION_LINK_PROTOCOL, SESSION_LINK_REGEX } from '../utils/sessionLink'
 import { buildLinkSchemeRegex, isLinkAllowed } from '../utils/terminalLinks'
 import { TerminalResizeManager } from '../utils/terminalResizeManager'
+import { resolvePathSelection, joinedPathForCopy } from '../utils/terminalPathSelection'
 import {
     debugRegisterTerminal,
     debugUnregisterTerminal,
@@ -100,6 +101,13 @@ export function requestOpenTerminalPath(sessionId: string, target: OpenPathReque
     window.dispatchEvent(new CustomEvent<OpenPathRequest>(OPEN_PATH_EVENT, { detail: { sessionId, target } }))
 }
 
+/** Paths the current selection may mean, best first; null when nothing is selected. */
+function selectedPathCandidates(term: Terminal): string[] | null {
+    const pos = term.getSelectionPosition()
+    if (!pos) return null
+    return resolvePathSelection(term.buffer.active, term.cols, pos)?.candidates ?? null
+}
+
 export function TerminalView({
     id,
     cwd,
@@ -163,7 +171,9 @@ export function TerminalView({
         x: number
         y: number
         selectedText: string
-    }>({ visible: false, x: 0, y: 0, selectedText: '' })
+        /** Paths the selection may mean (whole path first) — read when the menu opens, before a click clears the selection. */
+        pathCandidates: string[]
+    }>({ visible: false, x: 0, y: 0, selectedText: '', pathCandidates: [] })
 
     // keyboardSettings가 변경될 때 ref 업데이트 (실시간 적용)
     useEffect(() => {
@@ -558,9 +568,22 @@ export function TerminalView({
                 visible: true,
                 x: e.clientX,
                 y: e.clientY,
-                selectedText: selection
+                selectedText: selection,
+                pathCandidates: selectedPathCandidates(term) ?? [selection]
             })
         }
+
+        // A path that Claude Code broke across rows with an indent copies as one path; any other copy is left to xterm.
+        const copyHandler = (e: ClipboardEvent) => {
+            const pos = term.getSelectionPosition()
+            const joined = pos ? joinedPathForCopy(term.buffer.active, term.cols, pos) : null
+            if (!joined || !e.clipboardData) return
+            e.clipboardData.setData('text/plain', joined)
+            e.preventDefault()
+            // xterm's own copy handler sits on the textarea and would write the raw selection over ours.
+            e.stopPropagation()
+        }
+        terminalRef.current?.addEventListener('copy', copyHandler, { capture: true })
 
         // Use capture phase to catch event before xterm.js handles it
         terminalRef.current?.addEventListener('contextmenu', contextMenuHandler, { capture: true })
@@ -795,6 +818,7 @@ export function TerminalView({
         return () => {
             resizeObserver.disconnect()
             terminalElement?.removeEventListener('contextmenu', contextMenuHandler, { capture: true })
+            terminalElement?.removeEventListener('copy', copyHandler, { capture: true })
             resizeManagerRef.current?.dispose()
             resizeManagerRef.current = null
             disposed = true
@@ -872,48 +896,53 @@ export function TerminalView({
 
     // Context menu handlers
     const closeContextMenu = useCallback(() => {
-        setContextMenu({ visible: false, x: 0, y: 0, selectedText: '' })
+        setContextMenu({ visible: false, x: 0, y: 0, selectedText: '', pathCandidates: [] })
     }, [])
 
-    const openPathInEditor = useCallback(async (text: string) => {
-        // Parse line:column if present (e.g., file.ts:42:10)
-        const match = text.match(/^(.+?)(?::(\d+))?(?::(\d+))?$/)
-        if (match) {
-            const filePath = match[1]
+    // The selection may be only a piece of a path, so each candidate is tried until one exists on disk.
+    const openPathInEditor = useCallback(async (candidates: string[]) => {
+        for (const text of candidates) {
+            // Parse line:column if present (e.g., file.ts:42:10)
+            const match = text.match(/^(.+?)(?::(\d+))?(?::(\d+))?$/)
+            if (!match) continue
             const line = match[2] ? parseInt(match[2], 10) : undefined
             const column = match[3] ? parseInt(match[3], 10) : undefined
-            await window.api.openFileInEditor(filePath, cwd, line, column)
+            const result = await window.api.openFileInEditor(match[1], cwd, line, column)
+            if (result.success) return
         }
     }, [cwd])
 
-    const revealPathInFinder = useCallback(async (text: string) => {
-        // Remove line:column suffix if present
-        const filePath = text.replace(/:\d+(:\d+)?$/, '')
-        await window.api.revealInFinder(filePath, cwd)
+    const revealPathInFinder = useCallback(async (candidates: string[]) => {
+        for (const text of candidates) {
+            // Remove line:column suffix if present
+            if (await window.api.revealInFinder(text.replace(/:\d+(:\d+)?$/, ''), cwd)) return
+        }
     }, [cwd])
 
     const handleOpenInEditor = useCallback(async () => {
-        const text = contextMenu.selectedText
+        const candidates = contextMenu.pathCandidates
         closeContextMenu()
-        await openPathInEditor(text)
-    }, [contextMenu.selectedText, closeContextMenu, openPathInEditor])
+        await openPathInEditor(candidates)
+    }, [contextMenu.pathCandidates, closeContextMenu, openPathInEditor])
 
     const handleRevealInFinder = useCallback(async () => {
-        const text = contextMenu.selectedText
+        const candidates = contextMenu.pathCandidates
         closeContextMenu()
-        await revealPathInFinder(text)
-    }, [contextMenu.selectedText, closeContextMenu, revealPathInFinder])
+        await revealPathInFinder(candidates)
+    }, [contextMenu.pathCandidates, closeContextMenu, revealPathInFinder])
 
     // Shortcuts (report 7d7abfff): the same two actions on the selected path, or on the session folder.
     useEffect(() => {
         const handleOpenPath = (event: Event) => {
             const { sessionId, target } = (event as CustomEvent<OpenPathRequest>).detail
             if (sessionId !== id) return
-            const selected = xtermRef.current?.getSelection().trim() ?? ''
+            const term = xtermRef.current
+            const selected = term?.getSelection().trim() ?? ''
+            const candidates = (term && selectedPathCandidates(term)) ?? (selected ? [selected] : [])
             if (target === 'finder') {
-                void (selected ? revealPathInFinder(selected) : window.api.revealInFinder(cwd))
+                void (candidates.length ? revealPathInFinder(candidates) : window.api.revealInFinder(cwd))
             } else {
-                void (selected ? openPathInEditor(selected) : window.api.openInEditor(cwd))
+                void (candidates.length ? openPathInEditor(candidates) : window.api.openInEditor(cwd))
             }
         }
         window.addEventListener(OPEN_PATH_EVENT, handleOpenPath)
