@@ -223,7 +223,6 @@ declare global {
             getInbox: () => Promise<InboxRequest[]>
             onInbox: (callback: (requests: InboxRequest[]) => void) => () => void
             markInboxRead: (id: string) => Promise<void>
-            markInboxSessionsRead: (sessionIds: string[]) => Promise<void>
             markInboxAllRead: () => Promise<void>
             peekSessions: (sessionIds: string[]) => Promise<SessionPeek[]>
         }

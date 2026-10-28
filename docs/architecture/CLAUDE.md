@@ -260,7 +260,7 @@ User Action (Renderer)
 
 #### Inbox
 - `get-inbox` → `InboxRequest[]`(최신이 앞, 읽은 것 포함) · `inbox` (main → renderer): 바뀔 때마다 전체 목록. main 은 같은 때 Dock 배지(안 읽은 수)를 고친다
-- `mark-inbox-read(id)` · `mark-inbox-sessions-read(ids)` · `mark-inbox-all-read`: 목록에서 누름 · 그 세션이 보임(창이 포커스일 때 — `useInboxReadOnView`) · 「Mark all read」
+- `mark-inbox-read(id)` · `mark-inbox-all-read`: 줄의 ✓ · 「Mark all read」. 세션을 열거나 보는 것으로는 읽지 않는다(1.22.0, 제보 b165acc4 — 그 전에는 `mark-inbox-sessions-read` 로 보이는 세션을 읽었다)
 - 코드: `src/main/InboxStore.ts`(저장·검사) · `ControlApiService.notifyInbox`(API) · `hooks/useInbox.ts` · `components/Inbox/`(종·목록·행 점). 계약은 [`control-api.md`](control-api.md) 「Inbox」
 
 #### Communication Patterns

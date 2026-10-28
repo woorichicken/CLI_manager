@@ -3226,13 +3226,11 @@ app.whenReady().then(async () => {
         if (typeof sessionId === 'string' && sessionId) recentSessions.push(sessionId)
     })
     // Inbox: requests sessions sent through the Control API (InboxStore). The renderer reads
-    // them here and marks them read when the user opens a request or looks at its session.
+    // them here and marks one read only when the user checks it off, or all with "Mark all read"
+    // (report b165acc4: opening a session must not clear what it asked for).
     ipcMain.handle('get-inbox', () => inbox.list())
     ipcMain.handle('mark-inbox-read', (_e, id: string): void => {
         if (typeof id === 'string') inbox.markRead(id)
-    })
-    ipcMain.handle('mark-inbox-sessions-read', (_e, sessionIds: string[]): void => {
-        if (Array.isArray(sessionIds)) inbox.markSessionsRead(sessionIds.filter((id) => typeof id === 'string'))
     })
     ipcMain.handle('mark-inbox-all-read', (): void => {
         inbox.markAllRead()

@@ -19,8 +19,9 @@ interface InboxButtonProps {
 
 /**
  * The inbox bell: unread count in red, and the request list below it. Opening a
- * request shows its session and marks it read; looking at the session marks the
- * rest (useInboxReadOnView).
+ * request (or its link) only shows it; a request turns read when the user checks
+ * it off or uses "Mark all read" — report b165acc4: reading on open hid what was
+ * still to do.
  */
 export function InboxButton({ placement, workspaces, linkSchemes, onShowSession, compact }: InboxButtonProps) {
     const requests = useInbox()
@@ -38,13 +39,11 @@ export function InboxButton({ placement, workspaces, linkSchemes, onShowSession,
     const openRequest = (request: InboxRequest): void => {
         close()
         onShowSession(request.sessionId)
-        if (!request.readAt) void window.api.markInboxRead(request.id)
     }
 
     const openLink = (request: InboxRequest): void => {
         if (!request.url) return
         void window.api.openExternal(request.url)
-        if (!request.readAt) void window.api.markInboxRead(request.id)
     }
 
     const iconSize = compact ? 13 : 14
@@ -81,6 +80,7 @@ export function InboxButton({ placement, workspaces, linkSchemes, onShowSession,
                     linkSchemes={linkSchemes}
                     onOpenRequest={openRequest}
                     onOpenLink={openLink}
+                    onMarkRead={(request) => void window.api.markInboxRead(request.id)}
                     onMarkAllRead={() => void window.api.markInboxAllRead()}
                     onClose={close}
                 />
