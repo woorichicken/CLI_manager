@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCheck, ExternalLink } from 'lucide-react'
+import { Check, CheckCheck, ExternalLink } from 'lucide-react'
 import clsx from 'clsx'
 import { InboxRequest, Workspace } from '../../../../shared/types'
 import { isLinkAllowed } from '../../utils/terminalLinks'
@@ -16,6 +16,8 @@ interface InboxPopoverProps {
     linkSchemes?: string[]
     onOpenRequest: (request: InboxRequest) => void
     onOpenLink: (request: InboxRequest) => void
+    /** The row's check: the only way one request turns read (report b165acc4). */
+    onMarkRead: (request: InboxRequest) => void
     onMarkAllRead: () => void
     onClose: () => void
 }
@@ -31,7 +33,9 @@ function locate(workspaces: Workspace[], sessionId: string): { session: string; 
 
 /**
  * The inbox list. Fixed to the viewport (portal) so it can spread past a narrow
- * sidebar, clamped so a 390px-wide window still shows all of it.
+ * sidebar, clamped so a 390px-wide window still shows all of it. A request's text
+ * is cut at two lines and shows whole while the row is hovered or focused
+ * (report 8bf5e3f9 — the title tooltip was not enough).
  */
 export function InboxPopover({
     anchor,
@@ -40,6 +44,7 @@ export function InboxPopover({
     linkSchemes,
     onOpenRequest,
     onOpenLink,
+    onMarkRead,
     onMarkAllRead,
     onClose
 }: InboxPopoverProps) {
@@ -113,7 +118,7 @@ export function InboxPopover({
                                         if (e.key === 'Enter') onOpenRequest(request)
                                     }}
                                     className={clsx(
-                                        'flex gap-2 px-3 py-2 cursor-pointer hover:bg-white/5',
+                                        'group flex gap-2 px-3 py-2 cursor-pointer hover:bg-white/5 focus:outline-none focus-visible:bg-white/5',
                                         request.readAt && 'opacity-60'
                                     )}
                                     title={`${meta.label} — ${request.text}\n${new Date(request.at).toLocaleString()}`}
@@ -127,8 +132,15 @@ export function InboxPopover({
                                                 <span className="truncate min-w-0 flex-1 text-[10px] text-gray-500">{where.workspace}</span>
                                             )}
                                             <span className="ml-auto shrink-0 text-[10px] text-gray-500">{formatInboxAge(request.at, now)}</span>
+                                            {!request.readAt && <MarkReadButton onMark={() => onMarkRead(request)} />}
                                         </div>
-                                        <p className={clsx('mt-0.5 text-xs line-clamp-2 break-words', request.readAt ? 'text-gray-400' : 'text-gray-200')}>
+                                        <p
+                                            data-inbox-text
+                                            className={clsx(
+                                                'mt-0.5 text-xs line-clamp-2 group-hover:line-clamp-none group-focus-visible:line-clamp-none break-words',
+                                                request.readAt ? 'text-gray-400' : 'text-gray-200'
+                                            )}
+                                        >
                                             {request.text}
                                         </p>
                                         {request.url && (
@@ -143,6 +155,26 @@ export function InboxPopover({
             )}
         </div>,
         document.body
+    )
+}
+
+function MarkReadButton({ onMark }: { onMark: () => void }) {
+    const handleClick = (e: React.MouseEvent): void => {
+        // The row behind it opens the session; the check only reads.
+        e.stopPropagation()
+        onMark()
+    }
+    return (
+        <button
+            data-testid="inbox-mark-read"
+            onClick={handleClick}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="shrink-0 -my-0.5 p-0.5 rounded text-gray-500 hover:bg-white/10 hover:text-green-400"
+            title="Mark as read"
+            aria-label="Mark as read"
+        >
+            <Check size={12} />
+        </button>
     )
 }
 

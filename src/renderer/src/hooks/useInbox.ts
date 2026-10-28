@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { InboxRequest } from '../../../shared/types'
 
 /**
@@ -45,40 +45,4 @@ export function useInbox(): InboxRequest[] {
 export function useUnreadInboxFor(sessionId: string): InboxRequest[] {
     const requests = useInbox()
     return useMemo(() => requests.filter((r) => !r.readAt && r.sessionId === sessionId), [requests, sessionId])
-}
-
-function useWindowFocused(): boolean {
-    const [focused, setFocused] = useState(() => document.hasFocus())
-    useEffect(() => {
-        const onFocus = (): void => setFocused(true)
-        const onBlur = (): void => setFocused(false)
-        window.addEventListener('focus', onFocus)
-        window.addEventListener('blur', onBlur)
-        return () => {
-            window.removeEventListener('focus', onFocus)
-            window.removeEventListener('blur', onBlur)
-        }
-    }, [])
-    return focused
-}
-
-/**
- * "Opening the session reads it": while this window has focus, the requests of
- * every session it shows (the active tab, each split pane, each Grid window
- * pane) are marked read — when the view changes, when a request arrives for a
- * session already on screen, and when the user comes back to the window. A
- * request from the session on screen while the user is in another app stays
- * unread (and on the Dock badge) until they return.
- */
-export function useInboxReadOnView(visibleSessionIds: readonly string[]): void {
-    const requests = useInbox()
-    const focused = useWindowFocused()
-    const key = visibleSessionIds.join(',')
-    useEffect(() => {
-        if (!focused || visibleSessionIds.length === 0) return
-        const visible = new Set(visibleSessionIds)
-        if (!requests.some((r) => !r.readAt && visible.has(r.sessionId))) return
-        void window.api.markInboxSessionsRead([...visible])
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [requests, focused, key])
 }

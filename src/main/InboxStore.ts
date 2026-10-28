@@ -129,12 +129,6 @@ export class InboxStore {
         return updated
     }
 
-    /** The user is looking at these sessions: whatever they asked for has been seen. */
-    markSessionsRead(sessionIds: readonly string[], now = Date.now()): number {
-        const ids = new Set(sessionIds)
-        return this.markWhere((r) => ids.has(r.sessionId), now)
-    }
-
     markAllRead(now = Date.now()): number {
         return this.markWhere(() => true, now)
     }

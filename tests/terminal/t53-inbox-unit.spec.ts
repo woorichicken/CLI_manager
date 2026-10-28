@@ -57,7 +57,7 @@ test.describe('T53 inbox store', () => {
         expect(changes.length).toBeGreaterThan(0)
     })
 
-    test('reading: one, by session, all; unknown id is null', () => {
+    test('reading: one, all; unknown id is null', () => {
         const inbox = new InboxStore(fakeStore())
         const a = inbox.add(base, 1).request
         inbox.add({ ...base, text: 'two' }, 2)
@@ -65,9 +65,9 @@ test.describe('T53 inbox store', () => {
         expect(inbox.markRead('nope')).toBeNull()
         expect(inbox.markRead(a.id, 10)?.readAt).toBe(10)
         expect(inbox.markRead(a.id, 20)?.readAt).toBe(10)
-        expect(inbox.markSessionsRead(['s1'], 30)).toBe(1)
-        expect(inbox.list({ unreadOnly: true }).map((r) => r.sessionId)).toEqual(['s2'])
-        expect(inbox.markAllRead(40)).toBe(1)
+        // Reading one leaves the others — even the same session's (report b165acc4).
+        expect(inbox.list({ unreadOnly: true }).map((r) => `${r.sessionId}:${r.text}`)).toEqual(['s2:Sign in', 's1:two'])
+        expect(inbox.markAllRead(40)).toBe(2)
         expect(inbox.unreadCount()).toBe(0)
     })
 

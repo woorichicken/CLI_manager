@@ -31,7 +31,6 @@ import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } fro
 import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
-import { useInboxReadOnView } from './hooks/useInbox'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 
@@ -106,14 +105,6 @@ function App() {
 
     // Grid view state (sessions currently open in grid window)
     const [gridViewSessionIds, setGridViewSessionIds] = useState<string[]>([])
-
-    // Inbox: every session this window shows has been seen. A Grid window shows its panes,
-    // the main window its split panes or the active tab.
-    const shownSessionIds = useMemo(
-        () => (isFullscreenMode ? fullscreenSessionIds : splitLayout ? splitLayout.sessionIds : activeSession ? [activeSession.id] : []),
-        [isFullscreenMode, fullscreenSessionIds, splitLayout, activeSession]
-    )
-    useInboxReadOnView(shownSessionIds)
 
     // Check URL parameters for fullscreen mode
     useEffect(() => {

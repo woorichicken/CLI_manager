@@ -1037,7 +1037,21 @@ export function Sidebar({
                                 showCollapseAll={sessionFolders.length > 0}
                                 onToggleCollapseAll={() => void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), !anySessionFolderExpanded)}
                                 onNewFolder={() => setShowFolderPrompt('session')}
+                                onAddWorkspace={onAddWorkspace}
                             />
+                        )}
+                        {/* Adding a project folder belongs to the folder view; All sessions keeps it in
+                            the … menu (report d9783659). Left of the view toggle for the same reason as
+                            the … menu: the toggle stays put when this drops out. */}
+                        {!isAllSessionsView && (
+                            <button
+                                data-testid="sidebar-add-workspace"
+                                onClick={onAddWorkspace}
+                                className="p-1 hover:bg-white/10 rounded transition-colors"
+                                title="Add Workspace"
+                            >
+                                <Plus size={14} className="text-gray-400" />
+                            </button>
                         )}
                         <button
                             data-testid="sidebar-view-toggle"
@@ -1049,13 +1063,6 @@ export function Sidebar({
                             {isAllSessionsView
                                 ? <FolderTree size={14} className="text-blue-400" />
                                 : <List size={14} className="text-gray-400" />}
-                        </button>
-                        <button
-                            onClick={onAddWorkspace}
-                            className="p-1 hover:bg-white/10 rounded transition-colors"
-                            title="Add Workspace"
-                        >
-                            <Plus size={14} className="text-gray-400" />
                         </button>
                         <button
                             onClick={onClose}

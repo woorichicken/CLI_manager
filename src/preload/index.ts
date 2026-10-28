@@ -321,7 +321,6 @@ const api = {
         return () => ipcRenderer.removeListener('inbox', listener)
     },
     markInboxRead: (id: string): Promise<void> => ipcRenderer.invoke('mark-inbox-read', id),
-    markInboxSessionsRead: (sessionIds: string[]): Promise<void> => ipcRenderer.invoke('mark-inbox-sessions-read', sessionIds),
     markInboxAllRead: (): Promise<void> => ipcRenderer.invoke('mark-inbox-all-read'),
     peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds)
 }

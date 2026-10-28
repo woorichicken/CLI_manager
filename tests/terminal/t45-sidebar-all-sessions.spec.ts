@@ -124,10 +124,22 @@ test.describe('T45 sidebar all sessions', () => {
         await expect(page.getByTestId('sidebar-new-folder')).toHaveCount(0)
         await expect(page.getByTestId('sidebar-collapse-all')).toHaveCount(0)
         await expect(page.getByTestId('sidebar-collapse-session-folders')).toHaveCount(0)
-        await page.keyboard.press('Escape')
+        // Adding a project is not a session action: All view has no + in its header, the menu
+        // carries it instead (d9783659) — and the item still reaches the folder picker in main.
+        await ctx.app.evaluate(({ dialog }) => {
+            const g = globalThis as unknown as { __pickerCalls: number }
+            g.__pickerCalls = 0
+            dialog.showOpenDialog = (async () => {
+                g.__pickerCalls++
+                return { canceled: true, filePaths: [] }
+            }) as unknown as typeof dialog.showOpenDialog
+        })
+        await page.getByTestId('sidebar-more-add-workspace').click()
+        await expect(page.getByTestId('sidebar-more-menu')).toHaveCount(0)
+        await expect.poll(() => ctx!.app.evaluate(() => (globalThis as unknown as { __pickerCalls: number }).__pickerCalls)).toBe(1)
         // The view-independent buttons stay.
         await expect(page.getByTestId('sidebar-search-toggle')).toBeVisible()
-        await expect(page.getByTitle('Add Workspace')).toBeVisible()
+        await expect(page.getByTestId('sidebar-add-workspace')).toHaveCount(0)
         // The toggle does not move, so a second press under the same pointer switches back
         // (a shifted row put the search button there).
         expect(await toggleX()).toBe(folderViewX)
@@ -136,8 +148,10 @@ test.describe('T45 sidebar all sessions', () => {
         await toggle.click()
         await expect(more).toBeVisible()
         expect(await toggleX()).toBe(folderViewX)
+        await expect(page.getByTestId('sidebar-add-workspace')).toBeVisible()
         await more.click()
         await expect(page.getByTestId('sidebar-collapse-all')).toHaveText('Collapse All')
+        await expect(page.getByTestId('sidebar-more-add-workspace')).toHaveCount(0)
         await page.keyboard.press('Escape')
         await expect(page.getByTestId('sidebar-more-menu')).toHaveCount(0)
     })

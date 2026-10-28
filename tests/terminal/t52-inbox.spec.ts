@@ -10,9 +10,10 @@ import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, L
  * POST /v1/inbox puts a request (login / review / question / other, one line,
  * optional link) in the app's inbox. The sidebar header's bell shows the unread
  * count, the asking session's row gets an orange dot and the Dock badge carries
- * the count. Opening a request shows its session; looking at a session (window
- * focused) reads its requests. Requests survive a restart and go with their
- * session.
+ * the count. Opening a request shows its session but leaves it unread; only the
+ * row's check or "Mark all read" reads (report b165acc4). A long request shows
+ * whole while its row is hovered (8bf5e3f9). Requests survive a restart and go
+ * with their session.
  *
  * Judged at the ends: the API's own list (`read`), the sidebar DOM, which
  * terminal is visible, app.dock.getBadge() in main, shell.openExternal stubbed
@@ -120,7 +121,7 @@ test.describe('T52 inbox', () => {
         }
     }
 
-    test('requests reach the bell, the row and the Dock; opening or looking reads them', async () => {
+    test('requests reach the bell, the row and the Dock; only the check or Mark all read reads them', async () => {
         ctx = await launch()
         const { app, page } = ctx
         const shots = shotsDir()
@@ -192,7 +193,7 @@ test.describe('T52 inbox', () => {
         await expect(dot(page, C)).toHaveCount(0)
         if (shots) await page.screenshot({ path: path.join(shots, 'bell-count-1280.png') })
 
-        // --- Opening a request shows its session and reads it ---------------
+        // --- Opening a request shows its session; it stays unread ------------
         await sidebarBell(page).click()
         await expect(popover(page)).toBeVisible()
         const reviewRow = popover(page).locator(`[data-inbox-request="${review.json.request.id}"]`)
@@ -206,17 +207,49 @@ test.describe('T52 inbox', () => {
         await reviewRow.click()
         await expect(popover(page)).toHaveCount(0)
         await expect.poll(() => visibleSession(page)).toBe(B)
-        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '1')
-        await expect(dot(page, B)).toHaveCount(0)
-        expect((await list()).find((r) => r.id === review.json.request.id)?.read).toBe(true)
+        await page.waitForTimeout(500)
+        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '2')
+        await expect(dot(page, B)).toBeVisible()
+        expect((await list()).find((r) => r.id === review.json.request.id)?.read).toBe(false)
 
-        // --- Going to the session from the sidebar reads it too -------------
+        // --- Going to the session from the sidebar leaves it unread too -----
         await activateSession(page, 'T52A login agent')
         await expect.poll(() => visibleSession(page)).toBe(A)
-        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '0')
-        await expect(sidebarBell(page).getByTestId('inbox-count')).toHaveCount(0)
-        await expect(dot(page, A)).toHaveCount(0)
-        if (process.platform === 'darwin') await expect.poll(() => dockBadge(app)).toBe('')
+        await page.waitForTimeout(500)
+        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '2')
+        await expect(dot(page, A)).toBeVisible()
+        if (process.platform === 'darwin') await expect.poll(() => dockBadge(app)).toBe('2')
+
+        // --- A long request is cut at two lines and shows whole on hover ----
+        const longText = 'Check the release notes draft for 1.22.0 and the screenshots at 1280 and 390 wide, then answer in the console which of the two layouts to keep, why, and whether the old one can go now'
+        const long = await api<{ request: ApiInboxRequest }>('POST', '/v1/inbox', { kind: 'question', text: longText }, C)
+        expect(long.status).toBe(200)
+        await sidebarBell(page).click()
+        const longRow = popover(page).locator(`[data-inbox-request="${long.json.request.id}"]`)
+        const longP = longRow.locator('[data-inbox-text]')
+        await expect(longP).toHaveText(longText)
+        const clipped = () => longP.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }))
+        const before = await clipped()
+        expect(before.scroll, 'two lines are not enough for the long text').toBeGreaterThan(before.client)
+        await longRow.hover()
+        await expect.poll(async () => { const now = await clipped(); return now.scroll <= now.client && now.client > before.client }).toBe(true)
+        if (shots) await page.screenshot({ path: path.join(shots, 'popover-hover-1280.png') })
+
+        // --- The row's check reads that one request only --------------------
+        await expect(popover(page).getByTestId('inbox-mark-read')).toHaveCount(3)
+        await reviewRow.getByTestId('inbox-mark-read').click()
+        // The check is not a click on the row: the popover stays, the session does not change.
+        await expect(popover(page)).toBeVisible()
+        expect(await visibleSession(page)).toBe(A)
+        await expect(reviewRow).toHaveAttribute('data-read', 'true')
+        await expect(reviewRow.getByTestId('inbox-mark-read')).toHaveCount(0)
+        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '2')
+        await expect(dot(page, B)).toHaveCount(0)
+        expect((await list()).find((r) => r.id === review.json.request.id)?.read).toBe(true)
+        await longRow.getByTestId('inbox-mark-read').click()
+        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '1')
+        await page.keyboard.press('Escape')
+        await expect(popover(page)).toHaveCount(0)
 
         // --- Links: allowed ones reach the OS, others do not ----------------
         const obsidian = await api<{ request: ApiInboxRequest }>('POST', '/v1/inbox', { kind: 'other', text: 'Open the note', url: 'obsidian://open?vault=x' }, C)
@@ -232,26 +265,31 @@ test.describe('T52 inbox', () => {
         // The link click did not navigate away: the popover is still open on A.
         await expect(popover(page)).toBeVisible()
         expect(await visibleSession(page)).toBe(A)
+        // …and opening the link did not read the request either.
+        expect((await list()).find((r) => r.id === first.json.request.id)?.read).toBe(false)
 
         // --- Mark all read ---------------------------------------------------
-        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '1')
+        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '2')
         await popover(page).getByTestId('inbox-mark-all-read').click()
         await expect(sidebarBell(page)).toHaveAttribute('data-unread', '0')
+        if (process.platform === 'darwin') await expect.poll(() => dockBadge(app)).toBe('')
         await page.keyboard.press('Escape')
         await expect(popover(page)).toHaveCount(0)
 
-        // --- The session on screen reads its request at once; not while the window is in the background ---
+        // --- The session on screen does not read what it asks, focused or not ---
         const onScreen = await api<{ request: ApiInboxRequest }>('POST', '/v1/inbox', { kind: 'question', text: 'Which port?' }, A)
         expect(onScreen.status).toBe(200)
-        await expect.poll(async () => (await list()).find((r) => r.id === onScreen.json.request.id)?.read).toBe(true)
-        // Window blur/focus events stand in for switching to another app (the test window is never shown).
-        await page.evaluate(() => window.dispatchEvent(new Event('blur')))
-        const background = await api<{ request: ApiInboxRequest }>('POST', '/v1/inbox', { kind: 'question', text: 'Still there?' }, A)
         await expect(sidebarBell(page)).toHaveAttribute('data-unread', '1')
-        await page.waitForTimeout(500)
-        expect((await list()).find((r) => r.id === background.json.request.id)?.read).toBe(false)
+        // Window blur/focus events stand in for switching to another app and back (the test window is never shown).
+        await page.evaluate(() => window.dispatchEvent(new Event('blur')))
         await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await page.waitForTimeout(500)
+        expect((await list()).find((r) => r.id === onScreen.json.request.id)?.read).toBe(false)
+        await expect(sidebarBell(page)).toHaveAttribute('data-unread', '1')
+        await sidebarBell(page).click()
+        await popover(page).locator(`[data-inbox-request="${onScreen.json.request.id}"]`).getByTestId('inbox-mark-read').click()
         await expect(sidebarBell(page)).toHaveAttribute('data-unread', '0')
+        await page.keyboard.press('Escape')
 
         // --- The sender resolves it itself ----------------------------------
         const selfResolved = await api<{ request: ApiInboxRequest }>('POST', '/v1/inbox', { kind: 'login', text: 'Sign in again' }, B)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronsDownUp, ChevronsUpDown, FolderPlus, MoreHorizontal } from 'lucide-react'
+import { ChevronsDownUp, ChevronsUpDown, FolderOpen, FolderPlus, MoreHorizontal } from 'lucide-react'
 import { MENU_Z_INDEX } from '../../constants/styles'
 
 const MENU_GAP_PX = 4
@@ -19,6 +19,8 @@ interface SidebarMoreMenuProps {
     folderKind?: 'workspace' | 'session'
     /** Hide "Collapse/Expand All" when there is nothing it could fold. */
     showCollapseAll?: boolean
+    /** All sessions has no + button in its header (report d9783659): adding a project lives here. */
+    onAddWorkspace?: () => void
 }
 
 /**
@@ -26,7 +28,7 @@ interface SidebarMoreMenuProps {
  * Folding them keeps the header at the button count it had before the inbox
  * bell, so the "Workspaces" title is not cut at the default width.
  */
-export function SidebarMoreMenu({ anyExpanded, onToggleCollapseAll, onNewFolder, folderKind = 'workspace', showCollapseAll = true }: SidebarMoreMenuProps) {
+export function SidebarMoreMenu({ anyExpanded, onToggleCollapseAll, onNewFolder, folderKind = 'workspace', showCollapseAll = true, onAddWorkspace }: SidebarMoreMenuProps) {
     const sessionFolders = folderKind === 'session'
     const buttonRef = useRef<HTMLButtonElement>(null)
     const menuRef = useRef<HTMLDivElement>(null)
@@ -107,6 +109,12 @@ export function SidebarMoreMenu({ anyExpanded, onToggleCollapseAll, onNewFolder,
                             <FolderPlus size={12} className="text-gray-400 shrink-0" />
                             <span className="truncate">{sessionFolders ? 'New Session Folder' : 'New Folder'}</span>
                         </button>
+                        {onAddWorkspace && (
+                            <button data-testid="sidebar-more-add-workspace" className={itemClass} onClick={run(onAddWorkspace)}>
+                                <FolderOpen size={12} className="text-gray-400 shrink-0" />
+                                <span className="truncate">Add Workspace…</span>
+                            </button>
+                        )}
                     </div>,
                     document.body
                 )}

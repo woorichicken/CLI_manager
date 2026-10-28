@@ -108,8 +108,8 @@ For MCP, set the header in the client config, e.g. Claude Code `.mcp.json`:
 ## Inbox
 
 A session that needs the user's hands — sign in somewhere (often a browser login an agent cannot do),
-look at a result, answer a question — sends a request. The app keeps it in an inbox until the user
-looks at that session. Code: `src/main/InboxStore.ts` (store, checks) · `ControlApiService.notifyInbox`
+look at a result, answer a question — sends a request. The app keeps it in an inbox, unread, until the user
+checks it off. Code: `src/main/InboxStore.ts` (store, checks) · `ControlApiService.notifyInbox`
 · renderer `hooks/useInbox.ts`, `components/Inbox/`. Tests: `t52-inbox.spec.ts`, `t53-inbox-unit.spec.ts`.
 
 | Piece | Contract |
@@ -120,7 +120,7 @@ looks at that session. Code: `src/main/InboxStore.ts` (store, checks) · `Contro
 | Which session | `sessionId` in the body, else `X-Caller-Session`. Neither → `400 session_required`; an id that names no open session → `404 not_found`. A request without a session has nowhere to lead |
 | AI mark | Sending does **not** set `aiControl` — the sender is the session itself |
 | Repeats | The same session + kind + text while still unread is not added again: it moves to the top with the new time (and the new link, if one was sent). `created: false` says so |
-| Read | (1) The session is **shown** — active tab, a split pane or a Grid window pane — while that window has focus. (2) The user clicks the request (shows the session) or its link. (3) **Mark all read**. (4) `POST /v1/inbox/:id/read` — the sender solved it itself |
+| Read | (1) The user checks the request off (✓ on its row). (2) **Mark all read**. (3) `POST /v1/inbox/:id/read` — the sender solved it itself. Showing the session, clicking the request (it shows the session) or its link does **not** read it — since 1.22.0 (report b165acc4: reading on sight hid what was still to do) |
 | Kept | electron-store `inbox`, owned by main (survives restarts; every window sees the same list). At most **200** — the oldest read ones go first. Read ones older than **7 days** are dropped at startup. A session closed (API or sidebar) takes its requests with it |
 | Shown | Bell at the front of the sidebar header with the unread count in red; the main header carries the same bell while the sidebar is closed. Orange dot on the session's row (tree, All sessions, search). macOS Dock badge = unread count |
 
@@ -341,5 +341,5 @@ without its own IPC listener.
 IPC: `get-control-api-state`, `set-control-api`, `regenerate-control-api-token`,
 `control-api-release-session`, `get-control-api-masters`.
 The inbox has its own channel `inbox` (the whole list on every change) and `get-inbox`, `mark-inbox-read`,
-`mark-inbox-sessions-read`, `mark-inbox-all-read`; `hooks/useInbox.ts` holds it in one module-level store
+`mark-inbox-all-read`; `hooks/useInbox.ts` holds it in one module-level store
 like the masters.
