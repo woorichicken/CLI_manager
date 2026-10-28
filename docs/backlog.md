@@ -81,6 +81,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Discovered: 2026-10-27 v1.21.0 릴리스 빌드 1회차 사전 점검 — `t26-session-navigation.spec.ts:187` 「deleting a session shown in split view removes its pane」이 `deleteFromSidebar` 의 `expect(row).toHaveCount(0, { timeout: 10_000 })` 에서 실패(Received 1, 24회 확인). 302 passed · 1 failed(12.3m), 게시 없음. 부하 1분 값 38(배치 밖 헤드리스 크롬 4개). 단독 `--repeat-each=3` 3/3, 2회차 빌드 303 passed 로 공개. 로그 `/tmp/climanager-release-121-build-try1.log` → 전체 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1793070940740.log` · `/tmp/climanager-release-121-t26split.log`.
 - 앞 이력: 10-09 v1.13.0 · 10-25 1.18.0(T40) · 10-26 1.19.0(T40) 에 같은 사이드바 삭제 버튼에서 났다. 원인 경로(코드로 확인): `App.tsx` `handleRemoveSession` 이 `hasRunningProcess` 참이면 네이티브 확인 상자를 띄운다 — 숨긴 시험 창에서는 아무도 답하지 않는다. 2026-10-26 PR #62 가 클릭 전에 `hasRunningProcess === false` 를 기다리게 했고 day-1027 #69 가 이 줄을 닫았지만, **대기를 지난 뒤에도 줄이 남았다** — 대기와 클릭 사이에 자식이 생겼는지, 클릭이 hover 전환 중에 빗나갔는지는 아직 모른다.
 - 「Ctrl keys」(같은 파일)는 PR #66 뒤 1.21.0 사전 점검 두 번 모두 통과 — 그 줄의 트리거대로 지웠다.
+- **재발(트리거 충족)**: 2026-10-29 v1.22.1 릴리스 빌드 1회차 — `:132` 「Cmd+] skips a session deleted from the sidebar」·`:141` 「deleting the active session from the sidebar shows its neighbour」 둘 다 `Delete session` 클릭이 **「performing click action」에서 끝나지 않고** 4.5분 시간 초과(줄이 남은 게 아니라 클릭이 안 돌아옴 → 네이티브 확인 상자 쪽으로 기운다). 단독 `--repeat-each=2` 4회 중 1회 같은 멈춤(`/tmp/climanager-release-1221-t26.log`), 2회차 빌드 345 passed 로 공개. 1회차 로그 `/tmp/climanager-release-1221-build-try1.log` → 전체 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1793215725560.log`.
 - Trigger: 사전 점검·묶음 실행에서 사이드바 삭제 시험이 다시 실패할 때.
 - Fix direction: 실패 때 화면(확인 상자 여부)과 `hasRunningProcess` 값을 남긴다 → 원인이 상자면 시험 모드에서 확인을 건너뛰는 길, 빗나간 클릭이면 「hover → 버튼 보임 대기 → 클릭 → 행 사라짐」 재시도. 여러 시험(T26·T40·T45·T52)의 사이드바 삭제를 공용 도우미로 묶는 것은 사람 컨펌.
 - Owner: 없음
@@ -228,6 +229,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 다음 릴리즈에서 또 실패하면 그때 남는 `/tmp/release-tests-*.log` 로 스펙을 특정한다.
 - Evidence: `--check` 1회차와 `--build` 1회차가 `tests failed` 로 멈췄고, 사이에 돌린
   `pnpm test:term` 은 87 passed (3.7m). 세 번째 `--check` 도 87 passed.
+- 2026-10-29 v1.22.0 사전 점검(부하 15~21 · 스왑 49~56GB, 배치 밖 dev 서버·Docker): 1회차 T19-4 「text sent right after Escape arrives whole」 · 2회차 T1 「single visible terminal keeps seq output contiguous」(`last` 228478 / 300000 — `SEQ-DONE` 를 본 뒤에도 화면이 덜 따라옴) 각 1건 실패, 둘 다 단독 3/3 통과(T1 은 gap 0), 3회차 340 passed 로 공개. 로그 `/tmp/climanager-release-122-build-try1.log` · `-try2.log` · `/tmp/climanager-release-122-t19.log` · `-t1.log`. 바꾼 곳과 무관한 시험이 부하 높을 때만 하나씩 걸린다 — 한 회차에 한 건이면 단독 재실행 후 다시 빌드가 지금 절차.
 - Owner: Maintainer
 
 ### `.github/workflows/ci.yml` — 설치 단계 403 은 지나갔고, 지금은 터미널 테스트 시간 초과로 취소된다
