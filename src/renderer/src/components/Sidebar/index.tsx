@@ -1179,8 +1179,12 @@ export function Sidebar({
                         className="flex-1 overflow-y-auto p-2"
                         onKeyDown={(e) => {
                             // Only reaches here from a focused check box or button in the list;
-                            // Esc typed in a terminal never bubbles through the sidebar.
-                            if (e.key === 'Escape' && selectedSessionIds.length > 0) clearSessionSelection()
+                            // Esc typed in a terminal never bubbles through the sidebar. Esc in a
+                            // rename box cancels the rename and must leave the pick alone.
+                            const target = e.target as HTMLElement
+                            const typing = target instanceof HTMLTextAreaElement
+                                || (target instanceof HTMLInputElement && target.type !== 'checkbox')
+                            if (e.key === 'Escape' && !typing && selectedSessionIds.length > 0) clearSessionSelection()
                         }}
                         onMouseEnter={() => { pointerInSessionListRef.current = true }}
                         onMouseLeave={() => {

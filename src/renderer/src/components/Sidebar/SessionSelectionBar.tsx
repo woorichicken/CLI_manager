@@ -72,11 +72,12 @@ export function SessionSelectionBar({ selected, onShowSessions, onClear }: Sessi
     }
 
     return (
+        // Two rows: at the default sidebar width (256px) the count, two buttons and ✕ do not fit on one.
         <div
             data-testid="session-selection-bar"
             role="toolbar"
             aria-label="Selected sessions"
-            className="shrink-0 mx-2 mb-2 flex items-center gap-1.5 px-2 py-1.5 rounded border border-blue-500/30 bg-[#1b2230] text-xs"
+            className="shrink-0 mx-2 mb-2 px-2 py-1.5 rounded border border-blue-500/30 bg-[#1b2230] text-xs"
             onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                     e.stopPropagation()
@@ -84,15 +85,27 @@ export function SessionSelectionBar({ selected, onShowSessions, onClear }: Sessi
                 }
             }}
         >
-            <span data-testid="session-selection-count" className="text-gray-300 whitespace-nowrap mr-auto">
-                {selected.length} selected
-            </span>
+            <div className="flex items-center gap-1.5">
+                <span data-testid="session-selection-count" className="text-gray-300 truncate min-w-0 mr-auto">
+                    {selected.length} selected
+                </span>
+                <button
+                    data-testid="session-selection-clear"
+                    onClick={onClear}
+                    title="Clear selection (Esc)"
+                    aria-label="Clear selection"
+                    className="shrink-0 p-0.5 rounded text-gray-500 hover:text-gray-200 hover:bg-white/10"
+                >
+                    <X size={12} />
+                </button>
+            </div>
+            <div className="flex items-center gap-1.5 mt-1.5">
             <button
                 data-testid="session-selection-split"
                 disabled={!canSplit}
                 onClick={() => onShowSessions(selected)}
                 title={canSplit ? 'Open these side by side' : `Side by side needs 2–${MAX_LINKED_SESSIONS} sessions`}
-                className="px-2 py-0.5 rounded border border-blue-500/40 text-blue-200 hover:bg-blue-500/15 disabled:opacity-40 disabled:hover:bg-transparent whitespace-nowrap"
+                className="flex-1 min-w-0 truncate px-2 py-0.5 rounded border border-blue-500/40 text-blue-200 hover:bg-blue-500/15 disabled:opacity-40 disabled:hover:bg-transparent"
             >
                 Side by side
             </button>
@@ -100,19 +113,11 @@ export function SessionSelectionBar({ selected, onShowSessions, onClear }: Sessi
                 data-testid="session-selection-copy"
                 onClick={copyIds}
                 title="Copy the session IDs, one per line"
-                className="px-2 py-0.5 rounded border border-white/15 text-gray-300 hover:bg-white/5 whitespace-nowrap"
+                className="flex-1 min-w-0 truncate px-2 py-0.5 rounded border border-white/15 text-gray-300 hover:bg-white/5"
             >
                 {copied === 'ok' ? 'Copied' : copied === 'failed' ? 'Copy failed' : 'Copy IDs'}
             </button>
-            <button
-                data-testid="session-selection-clear"
-                onClick={onClear}
-                title="Clear selection (Esc)"
-                aria-label="Clear selection"
-                className="p-0.5 rounded text-gray-500 hover:text-gray-200 hover:bg-white/10"
-            >
-                <X size={12} />
-            </button>
+            </div>
         </div>
     )
 }

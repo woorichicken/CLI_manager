@@ -90,6 +90,20 @@ test.describe('T69 All sessions select', () => {
             await page.getByTestId('session-selection-copy').click()
             await expect.poll(readClipboard).toBe([S[4], S[1], S[5], S[2], S[3]].join('\n'))
 
+            // The bar fits the default sidebar width: nothing spills out, ✕ stays inside.
+            const fits = await bar(page).evaluate((el) => {
+                const box = el.getBoundingClientRect()
+                const clear = el.querySelector('[data-testid="session-selection-clear"]')!.getBoundingClientRect()
+                return el.scrollWidth <= el.clientWidth && clear.right <= box.right && clear.left >= box.left
+            })
+            expect(fits).toBe(true)
+
+            // Esc in a rename box cancels the rename, not the pick.
+            await row(page, S[0]).click({ button: 'right' })
+            await page.getByRole('button', { name: 'Rename', exact: true }).click()
+            await page.keyboard.press('Escape')
+            await expect(page.getByTestId('session-selection-count')).toHaveText('5 selected')
+
             // Unticking drops one; Esc (focus on a box) clears all.
             await box(page, S[2]).click()
             await expect(page.getByTestId('session-selection-count')).toHaveText('4 selected')
