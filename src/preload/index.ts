@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -290,6 +290,14 @@ const api = {
         const listener = (_e: unknown, masters: ControlApiMasters) => callback(masters)
         ipcRenderer.on('control-api-masters', listener)
         return () => ipcRenderer.removeListener('control-api-masters', listener)
+    },
+
+    // Sidebar status dots, judged in main from the screen mirrors (Settings > General)
+    getSessionScreenStatuses: (): Promise<SessionScreenStatusMessage> => ipcRenderer.invoke('get-session-screen-statuses'),
+    onSessionScreenStatus: (callback: (message: SessionScreenStatusMessage) => void) => {
+        const listener = (_e: unknown, message: SessionScreenStatusMessage) => callback(message)
+        ipcRenderer.on(SESSION_SCREEN_STATUS_CHANNEL, listener)
+        return () => ipcRenderer.removeListener(SESSION_SCREEN_STATUS_CHANNEL, listener)
     },
 
     // Session header "Related sessions"

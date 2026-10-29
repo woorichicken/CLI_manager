@@ -64,6 +64,7 @@ rules stay in the root; this file is the inventory.
   - Codex: `agent-turn-complete` (유일한 이벤트 — 턴 **시작**은 입력 가로채기로 보완)
 - **Permission Inbox 신호**: 승인 대기 세션은 사이드바에서 앰버 펄스 + OS 알림
 - **기존 heuristic은 fallback으로 유지** — 훅 미설치 세션은 이전과 동일하게 동작
+- **화면으로 읽는 상태 점(hook 없이, 1.23.0)** — Settings › General 「Show Session Status」(기본 끔). main 의 `SessionScreenStatusPoller` 가 1초마다 미러 화면을 읽어 작업 중(파란 점)·질문 대기(노란 점, 툴팁에 질문 줄)를 정한다. 켜져 있으면 위 두 방식의 사이드바 배지를 대신한다(hook 의 running·awaitingInput 은 판정에 그대로 들어간다)
 
 #### 9. Usage / Rate Limit Tracking (NEW)
 - 제공자가 **직접 보고한 값** (추정 아님, `/usage`·`/status`와 일치)
@@ -238,6 +239,7 @@ User Action (Renderer)
 - `set-hook-integration`: 훅 설치/제거 (끄면 원래 커맨드로 복구)
 - `get-agent-status-snapshot` / `agent-status-update`: 터미널 상태 조회·브로드캐스트
 - `agent-status-observed`: 렌더러가 관측한 상태 보고 (우선순위 판정은 main이 담당)
+- `get-session-screen-statuses` / `session-screen-status` (main → renderer): 화면으로 읽은 사이드바 상태 점. 메시지는 `{ enabled, reset, changes }` — 켜고 끌 때 `reset`, 그 사이엔 바뀐 세션만. 끄면 아무것도 안 온다
 - `get-usage-snapshot` / `usage-update` / `usage-threshold`: 사용량 조회·브로드캐스트·임계값 알림
 - `set-usage-alerts`: 알림 임계값 저장
 

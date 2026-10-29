@@ -106,6 +106,7 @@ pnpm build && pnpm test:term
    - `SessionRelations.ts`: 세션 헤더 「관련 세션」 저장(`sessionRelations`) — API 가 열거나 처음 읽은·입력한 세션, 손으로 추가한 세션. 한 쌍에 한 줄, 어느 쪽이든 닫히면 지운다 ([`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) 14)
    - `SessionFolders.ts`: All sessions 보기의 세션 폴더 저장(`sessionFolders`) — 소속은 세션의 `sessionFolderId`(세션 하나에 폴더 하나), 폴더를 지워도 세션은 그대로 ([`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) 14-1)
    - `InboxStore.ts`: 앱 인박스 저장(`inbox`) — 세션이 Control API 로 보낸 「사람 손 필요」 요청(login·review·question·other · 한 줄 · 링크). 같은 안 읽은 요청은 하나로, 최대 200 · 읽은 것 7일 · 세션이 닫히면 지움. 바뀔 때마다 렌더러에 알리고 Dock 배지를 고친다 ([`docs/architecture/control-api.md`](docs/architecture/control-api.md) 「Inbox」)
+   - `SessionScreenStatus.ts`: 사이드바 상태 점(Settings › General 「Show Session Status」, 기본 끔) — 1초마다 미러 화면에서 작업 중(`esc to interrupt`)·질문 대기(`AWAITING_INPUT_PATTERNS`, Related·API 와 같은 목록 — 단 작업 중이면 질문으로 안 보고, 입력 상자가 있으면 그 아래만 본다: `TerminalMirror.screenStatus`)를 읽어 **바뀐 세션만** `session-screen-status` 로 보낸다. 출력이 없던 화면은 다시 읽지 않는다. 끄면 타이머·IPC 가 없다. 셸 로그(출력만 있음)는 점이 안 켜진다 — Related 의 「Working」(최근 출력도 셈)과 다른 점
    - `screenLines.ts`: 화면 줄에서 읽을 것 고르기(입력 상자 규칙선, 「마지막 줄」) — pty 없이 테스트하려고 `TerminalMirror` 밖에 둔다
    - `ClaudeSessionSync.ts`: Claude 의 실행 중 세션 레지스트리(`~/.claude/sessions/<pid>.json`)를 읽어 저장된 대화 id 를 실제 대화로 맞춤 — Claude 안에서 `/resume` 하면 id 가 바뀐다
    - `FeedbackRelay.ts`: 피드백 위젯의 HTTP 요청을 main 에서 대신 보낸다 — 배포 렌더러는 `file://` 라 `Origin: null` 이 되고 라쏘런이 403 으로 거부한다. 수집 함수 경로만 허용
@@ -142,6 +143,7 @@ pnpm build && pnpm test:term
      - `useWorkspaceBranches.ts`: 워크스페이스별 브랜치 정보 관리
      - `useTemplates.ts`: 커스텀 터미널 템플릿 관리
      - `useSidebarCollapseAll.ts`: 사이드바 전체 접기 — 접기 직전 펼침 상태를 기억했다가 다음 누름에 그대로 복원
+     - `useSessionScreenStatus.ts`: 사이드바 상태 점의 모듈 저장소(`useSyncExternalStore`) — 줄마다 자기 항목만 고르므로 점 하나가 바뀌면 그 줄만 다시 그린다(App 상태에 두면 App 과 모든 줄이 다시 그려진다). 설정이 켜져 있으면 옛 배지(Settings › Hooks 의 화면 추측·hook)를 대신한다
      - `useSessionFolders.ts`: All sessions 세션 폴더 목록과 동작(만들기·이름·지우기·펼침·세션 넣고 빼기) — 화면을 먼저 바꾸고 뒤에서 저장
    - `utils/reviewPrompt.ts`: diff 라인 선택 → 에이전트 프롬프트 조립
    - `utils/platform.ts`: 앱 단축키 수식키 판정 — macOS 는 Cmd 만, 그 외는 Ctrl. macOS 의 Ctrl 은 터미널 몫이라 단축키로 받지 않는다 (`useKeyboardShortcuts`·`KeyboardSettings` 가 사용)
@@ -343,6 +345,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 | 재시작 때 히스토리 복원 | 세션 40개 × 2000줄: 터미널 등록 **+0.6초**, 메인 RSS **+221MB**(세션당 약 5.5MB, 80열) | 미러가 2000줄을 채웠을 때의 정상 비용을 앞당긴 것. 줄이려면 `MIRROR_SCROLLBACK` |
 | 대화 id 동기화 (`ClaudeSessionSync`) | 10초마다 레지스트리 목록+stat 약 1ms. `ps` 37ms 는 **새 Claude 프로세스가 보일 때만** | |
 | `wait` 폴링 | 30~60µs/회 · 200ms 간격 → 대기 중인 세션당 **0.03%** | 대기 요청이 떠 있는 동안만 |
+| 사이드바 상태 점 — 새 방식(`SessionScreenStatusPoller`, 켰을 때만) | 미러 46개 1회 판정 **중앙 0.17~0.24ms · 최대 0.53ms**(1초마다) · 턴이 오갈 때 IPC 56/분 · 줄 렌더 96/분 · App 렌더 **0** | 끄면 타이머·broadcast 0. 2026-10-29 T68(세션 41 · 부하 churn) |
+| 사이드바 상태 배지 — Settings › Hooks 화면 추측(렌더러) | 같은 부하에서 IPC 98/분 × 2방향 · App 렌더 **166/분** · 사이드바 줄 렌더 **7,636/분** · 쉬는 Claude 30개 전부 앰버 「Ready」 | 상태가 바뀔 때마다 App 상태(`sessionStatuses`)를 갈아 앱 전체가 다시 그려진다. CPU 차이는 이 부하에서 작다(렌더러 1.26% vs 0.95%) |
 
 포트 모니터가 터미널 검사보다 **수백 배** 비싸다. 그래서 끄는 스위치는 그쪽에 있고
 (Settings > Port Monitoring), pid→cwd 캐시로 반복 호출을 없앴다.
@@ -462,6 +466,9 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T63 All sessions 나무(day-1027) — 시드 관계(총괄→팀장 둘·대화, 팀장→작업→보조)로 Tree 줄 순서·깊이(`data-tree-depth`), 손으로 넣은 짝·뺀 짝은 「Not in a tree」, 긴 작업 폴더 경로가 잘리되 마지막 글자가 칸 안(Range 좌표), 줄 누르면 그 세션 터미널이 보이는지, 앞이 같은 긴 이름 셋(깊이 1~3)이 기본 폭에서 끝 글자까지 보이고 이름이 잘리면 경로는 숨는지(옛 판에서 「이름이 잘렸는데 경로가 보임」으로 실패), Settings 「Show Session Tree」 끄면 나무·전환이 사라지고 List, 다시 켜면 고른 Tree 로. 나무 계산은 T39 「session forest」 유닛 5건(뿌리 순서·고리·부모 둘·깊이 상한 뒤 새 나무·본 순서)
   - T64 경로 선택(fb-1028) — 유닛: 실제 `@xterm/headless` 버퍼에 제보 3건의 실제 Claude Code 줄(110·118칸 — 산문은 cols 에서, 도구 출력·`Bash(` 줄은 cols−5 에서 끊긴다)을 써 넣고 가운데 낱말·앞부분·여러 줄 조각 선택의 첫 후보가 이은 전체 경로인지, 불릿 5종·표·짧은 줄은 잇지 않는지. E2E: `printf` 로 같은 모양을 찍고 실제 마우스 드래그 → ⌘⇧O 가 main `shell.showItemInFolder`(바꿔 기록)에 전체 경로를, 에디터 스크립트에 전체 경로를 넘기는지, 이은 경로 ⌘C 는 한 줄·일반 여러 줄 복사는 그대로(main `clipboard`, 시험 뒤 복원)
   - T65 사이드바 트리(fb-1028) — 실제 마우스로 끌어 넣은 세션이 놓은 줄 밑 자식(`data-tree-depth`)·Related 창 Above/Below/Also related(by hand 표지)인지, 연 세션보다 손 짝이 이기는지, 자기 자식 밑으로 끌면 거절 알림·저장 없음, 연 세션 위로 되돌려 끌면 막던 손 짝만 dismissed, 줄을 눌러도 Tree 순서가 그대로인지(옛 코드: 최근 본 순으로 흔들림), ▸/▾ 접기·+N·활성 세션 조상 표시·재시작 뒤 유지(localStorage `sidebar-session-tree-collapsed`), List·세션 폴더 안 고정 구분선(`session-list-pinned-divider`, Tree 에는 없음), 사이드바 우클릭 메뉴가 바깥 누름·Esc·터미널 클릭·다른 줄 우클릭에 닫히는지(세션·세션 폴더·워크스페이스·워크스페이스 폴더 — 540ceb60), 실제 배치 이름 깊이 3에서 칸 안. 안내선(a35f1aa1) — 줄마다 ├/└·지나가는 │·아래로 내려가는 선(`data-tree-connector`·`data-tree-through`·`data-tree-opens-down`)과 세로 조각이 **같은 x 에서 위 줄 조각에 닿는지**·팔이 이름 앞에서 끝나는지(좌표, 1280·390), 접으면 선이 안 내려가는지. `T65_SHOTS=<폴더>` 면 1280·390 캡처
+  - T66 상태 점 유닛 — Electron 없이. 실제 `TerminalMirror`(가짜 TerminalManager)로 권한 질문 · **실제 Claude Code 2.1.312 AskUserQuestion 화면**(질문 줄은 「Esc to cancel」 꼬리가 아니라 「어떤 색이 좋아?」) · 실제 권한 질문 화면 · 보기 설명이 「?」로 끝나도 질문 줄 · 「?」로 안 끝나는 질문 · 작업 중/쉼 · **에이전트 출력에 대화상자 문구가 있어도(시험 픽스처) 작업 중이면 working, 입력 상자 위면 질문 아님**(총괄 10-29 관찰 — API 의 `showsAwaitingInput` 은 일부러 그대로 true), 그리고 폴러: 바뀐 것만 보냄 · 출력이 없으면 다시 안 읽음(읽기 횟수) · hook running/awaitingInput · 끝난·닫힌 세션 · start/stop 메시지
+  - T67 상태 점 화면(d499aed0 · 1dbd271b) — 사람 설정(Settings › Hooks 끔)으로 모의 에이전트 넷: 작업 중 = 파란 점 · 질문 = 노란 점 + 툴팁 「Waiting for you — Do you want to proceed?」 · 쉬는 에이전트·로그 찍는 셸·보고 있는 세션 = 점 없음, 자기 프롬프트에 「Esc to cancel」을 찍은 에이전트 = 일하는 동안 파랑·끝나면 점 없음, 답하면 점이 사라지고, Settings 에서 끄면 점이 없어지고 main 판정 횟수(`__sessionScreenStatusTicks`)가 멈추는지, 처음부터 끔(기본)이면 판정 0. 옛 코드에는 `data-session-status` 가 없어 실패
+  - T68 상태 점 비용(opt-in `STATUS_PERF=1`, 약 9분) — 세션 41개(작업 4 · 질문 2 · 쉬는 Claude 30 · 셸 로그 4)에서 끔 / Settings › Hooks 화면 추측 / 새 점 을 같은 부하로: main·렌더러 CPU(`app.getAppMetrics`), 상태 IPC/분(양방향), main 판정 ms, React commit·App·사이드바 줄 렌더/분(DevTools 훅 — 줄은 props 로 찾는다, 빌드가 이름을 줄인다). 부하 둘: steady(상태가 안 바뀜) · churn(5초마다 2.5초 턴 — 바뀔 때의 비용). 결과 `tests/terminal/results/<label>/t68-*.json`. `STATUS_PERF_ONLY=heuristic-churn,screen-churn` 로 골라 돌린다
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

@@ -5,7 +5,7 @@ import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import logoIcon from '../../resources/logo-final.png?asset'
 import Store from 'electron-store'
-import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest, HookIntegrationSettings, UsageAlertSettings, UsageSnapshot, HookInstallState, AgentStatusUpdate, DEFAULT_HOOK_INTEGRATION, DEFAULT_USAGE_ALERTS, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API } from '../shared/types'
+import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest, HookIntegrationSettings, UsageAlertSettings, UsageSnapshot, HookInstallState, AgentStatusUpdate, DEFAULT_HOOK_INTEGRATION, DEFAULT_USAGE_ALERTS, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { simpleGit } from 'simple-git'
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
@@ -36,6 +36,7 @@ import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
 import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
+import { SessionScreenStatusPoller } from './SessionScreenStatus'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
@@ -358,6 +359,26 @@ const controlApiServer = new ControlApiServer({
     store,
     appVersion: app.getVersion()
 })
+
+// Sidebar status dots read from the screen mirrors (Settings > General). Off by default;
+// when off there is no timer at all.
+const sessionScreenStatus = new SessionScreenStatusPoller({
+    mirror: terminalMirror,
+    hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId),
+    publish: (message) => broadcast(SESSION_SCREEN_STATUS_CHANNEL, message),
+    // Tests read tick timings from main (window.__termDebug has no view of main).
+    onTick: process.env.CLIMANGER_TERM_DEBUG === '1'
+        ? (ms, sessions) => {
+            const ticks = ((globalThis as { __sessionScreenStatusTicks?: Array<{ ms: number; sessions: number }> }).__sessionScreenStatusTicks ??= [])
+            ticks.push({ ms, sessions })
+        }
+        : undefined
+})
+
+function applySessionStatusSetting(settings: UserSettings | undefined): void {
+    if (settings?.showSessionStatus === true) sessionScreenStatus.start()
+    else sessionScreenStatus.stop()
+}
 
 const getControlApiSettings = (): ControlApiSettings => {
     const settings = store.get('settings') as UserSettings | undefined
@@ -1798,8 +1819,11 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('save-settings', (_, settings: UserSettings) => {
         store.set('settings', settings)
+        applySessionStatusSetting(settings)
         return true
     })
+
+    ipcMain.handle('get-session-screen-statuses', () => sessionScreenStatus.snapshot())
 
     // Shell Path Validation
     ipcMain.handle('validate-shell-path', async (_, shellPath: string) => {
@@ -3284,6 +3308,8 @@ app.whenReady().then(async () => {
     inbox.prune(existingSessionIds)
     // prune() only announces a change; the badge must show what survived the restart either way.
     updateInboxBadge(inbox.unreadCount())
+
+    applySessionStatusSetting(store.get('settings') as UserSettings | undefined)
 
     // apply() never throws; a port conflict shows up in Settings instead of blocking boot.
     void controlApiServer.apply(getControlApiSettings()).then((state) => {
