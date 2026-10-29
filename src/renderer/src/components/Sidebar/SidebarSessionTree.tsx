@@ -117,6 +117,7 @@ export function SidebarSessionTree({ forest, listProps }: SidebarSessionTreeProp
                         isInSplit={listProps.splitLayout?.sessionIds.includes(session.id)}
                         onDragStartSession={listProps.onDragStartSession}
                         onDragEndSession={listProps.onDragEndSession}
+                        selection={listProps.selection}
                     />
                 )
             })}

@@ -1481,6 +1481,7 @@ function App() {
                     showWorktrees={settings.showWorktrees ?? true}
                     showPlayground={settings.showPlayground ?? true}
                     showSessionTree={settings.showSessionTree ?? true}
+                    onShowSessions={showSessions}
                     sessionRelations={sessionRelations}
                     splitLayout={splitLayout}
                     onDragStartSession={handleSidebarDragStart}

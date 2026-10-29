@@ -18,6 +18,7 @@ import { sessionForestFor, wouldMakeLoop, handParentsInTheWay } from '../../util
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
+import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
 
 /**
  * ReorderableRow - 워크스페이스·폴더 드래그 앤 드롭을 위한 래퍼 컴포넌트
@@ -126,6 +127,8 @@ interface SidebarProps {
     showPlayground?: boolean  // Show the Playground section below the workspace list
     /** Offer the Tree layout in All sessions (Settings). Off: the list only, and no List/Tree switch. */
     showSessionTree?: boolean
+    /** Opens sessions by id — one as a sidebar click would, several side by side (App.showSessions). */
+    onShowSessions?: (sessionIds: string[]) => void
     /** Session relations (who opened whom), for the Tree layout. */
     sessionRelations?: SessionRelation[]
     // Split view props
@@ -186,6 +189,7 @@ export function Sidebar({
     showWorktrees = true,
     showPlayground = true,
     showSessionTree = true,
+    onShowSessions,
     sessionRelations = [],
     splitLayout,
     onDragStartSession,
@@ -761,6 +765,14 @@ export function Sidebar({
     )
     const sessionResults = isSearching ? findMatchingSessions(allSessionEntries, searchQuery) : []
     const isAllSessionsView = viewMode === 'all'
+    // Rows picked with their check boxes in All sessions (0d1e3d34). Closed sessions drop out.
+    const sessionIdsKey = allSessionEntries.map(entry => entry.session.id).join('\n')
+    const existingSessionIds = useMemo(() => new Set(sessionIdsKey.split('\n')), [sessionIdsKey])
+    const { selected: selectedSessionIds, selection: sessionSelection, clear: clearSessionSelection } = useSessionSelection(existingSessionIds)
+    // The bar lives in All sessions; leaving the view drops the pick rather than hiding it.
+    useEffect(() => {
+        if (!isAllSessionsView) clearSessionSelection()
+    }, [isAllSessionsView, clearSessionSelection])
 
     const toggleViewMode = () => {
         const next: SidebarViewMode = isAllSessionsView ? 'folders' : 'all'
@@ -819,6 +831,7 @@ export function Sidebar({
         onDragStartSession,
         onDragEndSession
     }
+    const allSessionsListProps = { ...sessionListProps, selection: onShowSessions ? sessionSelection : undefined }
 
     return (
         <SessionDropContext.Provider value={sessionDrop}>
@@ -1160,9 +1173,15 @@ export function Sidebar({
                         )}
                     </div>
                 ) : isAllSessionsView ? (
+                    <>
                     <div
                         data-testid="sidebar-all-sessions"
                         className="flex-1 overflow-y-auto p-2"
+                        onKeyDown={(e) => {
+                            // Only reaches here from a focused check box or button in the list;
+                            // Esc typed in a terminal never bubbles through the sidebar.
+                            if (e.key === 'Escape' && selectedSessionIds.length > 0) clearSessionSelection()
+                        }}
                         onMouseEnter={() => { pointerInSessionListRef.current = true }}
                         onMouseLeave={() => {
                             pointerInSessionListRef.current = false
@@ -1193,20 +1212,28 @@ export function Sidebar({
                         {allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
                         ) : sessionForest ? (
-                            <SidebarSessionTree forest={sessionForest} listProps={sessionListProps} />
+                            <SidebarSessionTree forest={sessionForest} listProps={allSessionsListProps} />
                         ) : sessionFolderActions ? (
                             <SidebarAllSessions
                                 entries={orderForAllSessions(allSessionEntries, recentIds)}
                                 sessionFolders={sessionFolders}
                                 folderActions={sessionFolderActions}
-                                listProps={sessionListProps}
+                                listProps={allSessionsListProps}
                                 fontSize={fontSize}
                                 showSessionCount={showSessionCount}
                             />
                         ) : (
-                            <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} dividePinned {...sessionListProps} />
+                            <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} dividePinned {...allSessionsListProps} />
                         )}
                     </div>
+                    {onShowSessions && (
+                        <SessionSelectionBar
+                            selected={selectedSessionIds}
+                            onShowSessions={onShowSessions}
+                            onClear={clearSessionSelection}
+                        />
+                    )}
+                    </>
                 ) : (
                 <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
                     {/* Home workspace first */}
