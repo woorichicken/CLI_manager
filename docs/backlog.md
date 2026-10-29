@@ -273,6 +273,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   pty 로 바로 간다. 중재하는 코드가 없다.
 - Owner: Human Review
 
+### `src/main/TerminalMirror.ts` `showsAwaitingInput` — 일하는 세션도 화면에 대화상자 문구가 있으면 「질문 대기」로 읽힌다
+- Discovered: 2026-10-29, fb-1029b 상태 점 작업 중 총괄 관찰(14:30) — 시험 픽스처의 `Esc to cancel` 이 도구 출력으로 화면에 떠 있던 세션 4개가 스피너가 도는데도 `clim sessions`·Related 에서 질문 대기였다
+- Why deferred: 이 판정은 API 입력 거부(409, AI Control API 불변식 3)의 안전장치다. 느슨하게 바꾸면 진짜 질문에 글이 들어가 Enter 가 보기를 고를 수 있어 따로 정한다. 사이드바 상태 점(`screenStatus`)은 1.23.0 에서 엄격한 규칙을 이미 쓴다
+- Trigger: `clim send` 가 일하는 세션에 409 로 막히거나, Related 「Waiting for you」 가 일하는 세션에 뜬다는 제보
+- Evidence: 실제 Claude Code 2.1.312 권한 질문·AskUserQuestion 화면에는 스피너(`esc to interrupt`)도 입력 상자(─ 규칙선 둘 + `❯`)도 없다(fb-1029b `review/climanager/evidence/*-claude-2.1.312.txt`). 제안: `screenStatus` 와 같은 두 규칙 — 작업 중이면 질문 아님, 입력 상자가 있으면 그 아래만 — 을 `showsAwaitingInput` 에도. 먼저 Codex 질문 화면 한 장으로 확인(Codex 입력 상자에는 ─ 규칙선이 없다). T66 의 「API 는 그대로 true」 단언을 같이 바꾼다
+- Owner: Human Review
+
 ### `src/main/ControlApiService.ts` — API 를 켠 채로 특정 세션만 AI 에게서 잠글 방법이 없다
 - Discovered: 2026-09-30, 같은 작업
 - Why deferred: 0006 에서 "켜져 있으면 전부 열림"으로 정했다. Disconnect AI 는 걸려 있던 `wait` 만 끊는다.
