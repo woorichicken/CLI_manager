@@ -667,6 +667,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                     <p className="text-xs text-gray-500 mt-1">
                                                         A dot on sidebar session rows: blue while an agent is working, yellow when it is waiting
                                                         for you (hover for the question). Read from each terminal's screen — no hooks, no files.
+                                                        While on, it replaces the status badges from Settings &gt; Hooks.
                                                     </p>
                                                 </div>
                                                 <button

@@ -70,6 +70,57 @@ test.describe('T66 screen status', () => {
         expect(mirror.screenStatus('s1')).toEqual({ busy: false, question: '어떤 색이 좋아?' })
     })
 
+    test('an option whose description ends in "?" does not replace the question above the options', async () => {
+        const mirror = await mirrorShowing([
+            'Which plan should we ship?',
+            '',
+            '❯ 1. Plan A',
+            '     Faster, but is it safe?',
+            '  2. Plan B',
+            '     Slower and well tested',
+            '',
+            'Enter to select · ↑/↓ to navigate · Esc to cancel'
+        ].join('\n'))
+        expect(mirror.screenStatus('s1').question).toBe('Which plan should we ship?')
+    })
+
+    test('a real permission prompt (Claude Code 2.1.312) is waiting with its question', async () => {
+        // fb-1029b evidence/permission-prompt-claude-2.1.312.txt: no spinner, no input box — one rule on top.
+        const dashes = '╌'.repeat(98)
+        const mirror = await mirrorShowing([
+            "❯ Bash 도구로 정확히 'touch /tmp/fb1029b-perm-probe' 명령 하나만 실행해. 다른 일은 하지 마.",
+            '',
+            '⏺ Bash(touch /tmp/fb1029b-perm-probe)',
+            '  ⎿  Waiting…',
+            '',
+            '─'.repeat(98),
+            ' Bash command',
+            ' Create empty probe file in /tmp',
+            dashes,
+            ' touch /tmp/fb1029b-perm-probe',
+            dashes,
+            ' Do you want to proceed?',
+            ' ❯ 1. Yes',
+            '   2. Yes, and always allow access to /tmp from this project',
+            '   4. No',
+            '',
+            ' Esc to cancel · Tab to amend'
+        ].join('\n'))
+        expect(mirror.screenStatus('s1')).toEqual({ busy: false, question: 'Do you want to proceed?' })
+    })
+
+    // chief 14:30: a working session read as waiting because its own output showed a test fixture.
+    test('dialog words in the agent\'s own output: busy is working, and above an input box they do not count', async () => {
+        const fixture = ['  4. Chat about this', '', '  Enter to select · ↑/↓ to navigate · Esc to cancel']
+        const rule = '─'.repeat(98)
+        const busy = await mirrorShowing([...fixture, '', '✻ Working… (12s · esc to interrupt)', rule, '❯ ', rule, '  ⏵⏵ bypass permissions on'].join('\n'))
+        expect(busy.screenStatus('s1')).toEqual({ busy: true, question: null })
+        const idle = await mirrorShowing([...fixture, '', '✻ Sautéed for 35s', rule, '❯ ', rule, '  ⏵⏵ bypass permissions on'].join('\n'))
+        expect(idle.screenStatus('s1')).toEqual({ busy: false, question: null })
+        // The API's input guard stays on the safe side: it still refuses text here.
+        expect(idle.showsAwaitingInput('s1')).toBe(true)
+    })
+
     test('a prompt that does not end in "?" falls back to the line that matched', async () => {
         const mirror = await mirrorShowing('Update available\nPress enter to continue')
         expect(mirror.screenStatus('s1').question).toBe('Press enter to continue')

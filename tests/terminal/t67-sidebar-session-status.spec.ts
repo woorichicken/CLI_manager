@@ -21,6 +21,7 @@ const WORK = 's-work'
 const ASK = 's-ask'
 const IDLE = 's-idle'
 const LOGS = 's-logs'
+const ECHO = 's-echo'
 
 let ctx: LaunchResult | null = null
 
@@ -39,7 +40,9 @@ async function launch(showSessionStatus: boolean | undefined): Promise<LaunchRes
                 { id: WORK, name: 'T67 working', initialCommand: `${AGENT} --work-ms 600000` },
                 { id: ASK, name: 'T67 asking', initialCommand: AGENT },
                 { id: IDLE, name: 'T67 idle', initialCommand: AGENT },
-                { id: LOGS, name: 'T67 logs', initialCommand: 'while true; do echo "tick $RANDOM"; sleep 0.2; done' }
+                { id: LOGS, name: 'T67 logs', initialCommand: 'while true; do echo "tick $RANDOM"; sleep 0.2; done' },
+                // Its own prompt (echoed above the box) carries dialog words, like a test fixture on screen.
+                { id: ECHO, name: 'T67 echo', initialCommand: `${AGENT} --work-ms 4000` }
             ]
         }],
         {
@@ -82,6 +85,15 @@ test.describe('T67 sidebar status dots', () => {
         await expect(dot(page, IDLE)).toHaveCount(0)
         await expect(dot(page, LOGS)).toHaveCount(0)
         await expect(dot(page, HOME)).toHaveCount(0)
+
+        // chief 14:30: dialog words in a working agent's output are not a question —
+        // blue while it works, nothing once it is back at its box with the words still above it.
+        await writeToTerminal(page, ECHO, 'show Enter to select · Esc to cancel\r')
+        await expect(dot(page, ECHO)).toHaveAttribute('data-session-status', 'working', { timeout: 15_000 })
+        await expect.poll(async () => (await dot(page, ECHO).count()) === 0 || (await dot(page, ECHO).getAttribute('data-session-status')) === 'working', { timeout: 3_000 }).toBe(true)
+        await expect(dot(page, ECHO)).toHaveCount(0, { timeout: 15_000 })
+        await page.waitForTimeout(2500)
+        await expect(dot(page, ECHO)).toHaveCount(0)
 
         // Answering the question takes the dot away (the mock goes back to its box).
         await writeToTerminal(page, ASK, '1')

@@ -411,14 +411,20 @@ export class TerminalMirror {
      * session every second (the sidebar status dots). `question` is the line to
      * show the user — the question itself rather than the "Esc to cancel" footer
      * that matched — or null when nothing is waiting.
+     *
+     * Stricter than showsAwaitingInput, which guards API input and errs towards
+     * "waiting": an agent's own output can carry dialog words (a test fixture
+     * printing "Esc to cancel" made a working session read as waiting — chief,
+     * fb-1029b). A real question replaces both the spinner and the input box —
+     * checked on Claude Code 2.1.312's permission prompt and AskUserQuestion —
+     * so a session mid-turn is not waiting, and with an input box on screen only
+     * the lines under it count.
      */
     screenStatus(id: string): { busy: boolean; question: string | null } {
         const lines = this.screen(id)
-        const region = questionRegion(lines)
-        return {
-            busy: lines.some((line) => BUSY_PATTERN.test(line)),
-            question: showsQuestion(region) ? questionLine(region) : null
-        }
+        if (lines.some((line) => BUSY_PATTERN.test(line))) return { busy: true, question: null }
+        const region = questionRegion(linesUnderInputBox(lines))
+        return { busy: false, question: showsQuestion(region) ? questionLine(region) : null }
     }
 
     /** Every mirrored terminal id. */
@@ -487,6 +493,25 @@ const QUESTION_LINE_MAX = 160
 /** Agent dialogs draw a box around the question; its borders are not part of it. */
 const BOX_BORDER = /[│┃╭╮╰╯─━┌┐└┘]/g
 
+/** A prompt line inside an input box: "❯ " with whatever was typed, never a numbered option. */
+const PROMPT_LINE = /^[❯>](?!\s*\d+\.\s)/
+
+/**
+ * With an agent's input box on screen (two rules, a prompt line between them),
+ * only the lines under it (the footer); otherwise every line. A dialog draws
+ * its own rules, but its first row is a heading or a question, not a prompt.
+ */
+function linesUnderInputBox(screen: string[]): string[] {
+    const rules: number[] = []
+    for (let row = screen.length - 1; row >= 0 && rules.length < 2; row--) {
+        if (INPUT_BOX_RULE.test(screen[row].trim())) rules.push(row)
+    }
+    if (rules.length < 2) return screen
+    const [bottom, top] = rules
+    const first = screen.slice(top + 1, bottom).find((line) => line.trim() !== '')
+    return first !== undefined && PROMPT_LINE.test(first.trim()) ? screen.slice(bottom + 1) : screen
+}
+
 /** The bottom non-blank lines of the screen, where an open question sits. */
 function questionRegion(screen: string[]): string[] {
     return screen.filter((line) => line.trim() !== '').slice(-QUESTION_REGION_LINES)
@@ -497,16 +522,23 @@ function showsQuestion(region: string[]): boolean {
     return AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(text))
 }
 
+/** The first option of an agent dialog: "❯ 1. Yes", "› 1. Yes, proceed", "  1. Red". */
+const FIRST_OPTION = /^[❯›>]?\s*1\.\s/
+
 /**
- * The question above the options: the lowest line ending in "?". Falls back to
- * the line that matched (a permission prompt may not end in "?").
+ * The question above the options: the closest line ending in "?" above the
+ * first option — an option's own description may end in "?" too. Without
+ * numbered options, the lowest "?" line; failing that, the line that matched
+ * (a permission prompt may not end in "?").
  */
 function questionLine(region: string[]): string {
     const cleaned = region.map((line) => collapseSpaces(line.replace(BOX_BORDER, ' ')))
-    const asked = [...cleaned].reverse().find((line) => /[?？]$/.test(line))
+    const firstOption = cleaned.findIndex((line) => FIRST_OPTION.test(line))
+    const above = firstOption >= 0 ? cleaned.slice(0, firstOption) : cleaned
+    const asked = [...above].reverse().find((line) => /[?？]$/.test(line))
     const matched = cleaned.find((line) => AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(line)))
-    const line = asked ?? matched ?? ''
-    return line.length > QUESTION_LINE_MAX ? `${line.slice(0, QUESTION_LINE_MAX - 1)}…` : line
+    const chars = Array.from(asked ?? matched ?? '')
+    return chars.length > QUESTION_LINE_MAX ? `${chars.slice(0, QUESTION_LINE_MAX - 1).join('')}…` : chars.join('')
 }
 
 function trimTrailingBlank(lines: string[]): string[] {

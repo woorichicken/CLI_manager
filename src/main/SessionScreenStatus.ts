@@ -59,8 +59,17 @@ export class SessionScreenStatusPoller {
     start(): void {
         if (this.timer) return
         this.deps.publish({ enabled: true, reset: true, changes: [] })
-        this.timer = setInterval(() => this.tick(), SESSION_SCREEN_STATUS_INTERVAL_MS)
-        this.tick()
+        this.timer = setInterval(() => this.safeTick(), SESSION_SCREEN_STATUS_INTERVAL_MS)
+        this.safeTick()
+    }
+
+    /** A throw inside a main-process timer is an uncaught exception (an error dialog); a dot is not worth that. */
+    private safeTick(): void {
+        try {
+            this.tick()
+        } catch (err) {
+            console.error('[session-screen-status] tick failed:', err)
+        }
     }
 
     stop(): void {
