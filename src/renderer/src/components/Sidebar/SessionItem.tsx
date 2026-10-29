@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion'
 import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/types'
 import { useControlApiMasters } from '../../hooks/useControlApiMasters'
+import { useSessionScreenStatus } from '../../hooks/useSessionScreenStatus'
 import { InboxDot } from '../Inbox/InboxDot'
 import { SESSION_DRAG_TYPE, isSessionDrag, useDropHighlight, useSessionDrop } from './sessionDrop'
 import type { TreeGuide } from '../../utils/relatedSessions'
@@ -28,6 +29,14 @@ const SESSION_STATUS_TITLES: Record<SessionStatus, string> = {
 // it is the one worth interrupting the user for. Official hooks can tell the
 // two apart (PermissionRequest / Notification); the screen heuristic cannot.
 const AWAITING_INPUT_COLOR = 'bg-amber-400 animate-pulse ring-2 ring-amber-400/30'
+
+// Dots read from the screen in main (Settings > General "Show Session Status").
+// No pulse on "working": dozens of rows animating at once is noise, and the
+// dot itself already says the agent is mid-turn.
+const SCREEN_STATUS_COLORS = {
+    working: 'bg-blue-500',
+    waiting: 'bg-amber-400 ring-2 ring-amber-400/30'
+} as const
 
 // Sessions an AI drives through the Control API are green instead of blue, so
 // the user can tell at a glance which terminals something else may type into.
@@ -240,6 +249,7 @@ export function SessionItem({
     const itemRef = useRef<HTMLDivElement>(null)
     const dragControls = useDragControls()
     const orchestrator = useControlApiMasters().masters[session.id]
+    const screenStatus = useSessionScreenStatus(session.id)
     const role: SessionRole = orchestrator ? 'master' : session.aiControl ? 'ai' : 'user'
     const rowClasses = ROW_CLASSES[role]
     // Another session dropped on this row joins its Related sessions (report 269168e4).
@@ -351,6 +361,20 @@ export function SessionItem({
     const getSessionStatusBadge = () => {
         // Don't show for active session (user is already looking at it)
         if (isActive) return null
+        // The screen-read dots replace the older badges while that setting is on.
+        if (screenStatus.enabled) {
+            const status = screenStatus.status
+            if (!status || status.state === 'idle') return null
+            return (
+                <div
+                    data-session-status={status.state}
+                    className={`w-2 h-2 rounded-full shrink-0 ${SCREEN_STATUS_COLORS[status.state]}`}
+                    title={status.state === 'waiting'
+                        ? `Waiting for you${status.question ? ` — ${status.question}` : ''}`
+                        : 'Working'}
+                />
+            )
+        }
         // Only show if enabled and it's a Claude Code session
         if (!showStatusInSidebar || !isClaudeCodeSession || !sessionStatus) return null
         // Don't show idle status to reduce visual noise

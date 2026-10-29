@@ -403,11 +403,27 @@ export class TerminalMirror {
      * is history.
      */
     showsAwaitingInput(id: string): boolean {
-        const text = this.screen(id)
-            .filter((line) => line.trim() !== '')
-            .slice(-QUESTION_REGION_LINES)
-            .join('\n')
-        return AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(text))
+        return showsQuestion(questionRegion(this.screen(id)))
+    }
+
+    /**
+     * Busy and waiting from one read of the screen, for callers that check every
+     * session every second (the sidebar status dots). `question` is the line to
+     * show the user — the question itself rather than the "Esc to cancel" footer
+     * that matched — or null when nothing is waiting.
+     */
+    screenStatus(id: string): { busy: boolean; question: string | null } {
+        const lines = this.screen(id)
+        const region = questionRegion(lines)
+        return {
+            busy: lines.some((line) => BUSY_PATTERN.test(line)),
+            question: showsQuestion(region) ? questionLine(region) : null
+        }
+    }
+
+    /** Every mirrored terminal id. */
+    ids(): string[] {
+        return [...this.mirrors.keys()]
     }
 
     /**
@@ -463,6 +479,34 @@ function collapseSpaces(text: string): string {
 /** The box starts with a prompt glyph ("❯" or ">"); it is decoration, not input. */
 function stripPromptGlyph(text: string): string {
     return text.replace(/^[❯>]\s*/, '').trim()
+}
+
+/** Longest question line handed to the renderer; a tooltip, not a transcript. */
+const QUESTION_LINE_MAX = 160
+
+/** Agent dialogs draw a box around the question; its borders are not part of it. */
+const BOX_BORDER = /[│┃╭╮╰╯─━┌┐└┘]/g
+
+/** The bottom non-blank lines of the screen, where an open question sits. */
+function questionRegion(screen: string[]): string[] {
+    return screen.filter((line) => line.trim() !== '').slice(-QUESTION_REGION_LINES)
+}
+
+function showsQuestion(region: string[]): boolean {
+    const text = region.join('\n')
+    return AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+/**
+ * The question above the options: the lowest line ending in "?". Falls back to
+ * the line that matched (a permission prompt may not end in "?").
+ */
+function questionLine(region: string[]): string {
+    const cleaned = region.map((line) => collapseSpaces(line.replace(BOX_BORDER, ' ')))
+    const asked = [...cleaned].reverse().find((line) => /[?？]$/.test(line))
+    const matched = cleaned.find((line) => AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(line)))
+    const line = asked ?? matched ?? ''
+    return line.length > QUESTION_LINE_MAX ? `${line.slice(0, QUESTION_LINE_MAX - 1)}…` : line
 }
 
 function trimTrailingBlank(lines: string[]): string[] {

@@ -192,6 +192,12 @@ export interface UserSettings {
     showPlayground?: boolean
     /** Offer the Tree layout (sessions under the session that opened them) in the sidebar's All sessions view (default: true). Off shows the list only. */
     showSessionTree?: boolean
+    /**
+     * Status dots on sidebar session rows, read from each screen in main
+     * (default: false). Off stops the reader entirely — no timer, no IPC.
+     * Independent of Settings > Hooks (the renderer heuristic) and of agent hooks.
+     */
+    showSessionStatus?: boolean
     hasCompletedOnboarding?: boolean
     // Home Workspace 설정
     showHomeWorkspace?: boolean  // 홈 워크스페이스 표시 여부 (기본값: true)
@@ -565,6 +571,31 @@ export interface AgentStatusUpdate {
     awaitingInput?: boolean
     at: number
 }
+
+/**
+ * The sidebar status dot, judged in main from each session's screen mirror —
+ * no hooks, no files. `working` = an agent turn is in progress ("esc to
+ * interrupt" on screen, or a hook says running); `waiting` = a question only a
+ * human can answer is on screen. Plain shell output (a dev server's logs) is
+ * neither, so a busy shell does not light up.
+ */
+export type SessionScreenState = 'working' | 'waiting' | 'idle'
+
+export interface SessionScreenStatus {
+    sessionId: string
+    state: SessionScreenState
+    /** The question line from the screen, when waiting. */
+    question?: string
+}
+
+/** One message on SESSION_SCREEN_STATUS_CHANNEL. `reset` replaces everything the renderer holds. */
+export interface SessionScreenStatusMessage {
+    enabled: boolean
+    reset: boolean
+    changes: SessionScreenStatus[]
+}
+
+export const SESSION_SCREEN_STATUS_CHANNEL = 'session-screen-status'
 
 // ============================================
 // Usage / Rate Limit Types

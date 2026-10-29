@@ -660,6 +660,36 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 </button>
                                             </div>
 
+                                            {/* Sidebar status dots read from the screen */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Show Session Status</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        A dot on sidebar session rows: blue while an agent is working, yellow when it is waiting
+                                                        for you (hover for the question). Read from each terminal's screen — no hooks, no files.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    data-testid="settings-show-session-status"
+                                                    aria-pressed={settings.showSessionStatus ?? false}
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        showSessionStatus: !(prev.showSessionStatus ?? false)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
+                                                        (settings.showSessionStatus ?? false)
+                                                            ? 'bg-emerald-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.showSessionStatus ?? false)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
                                             {/* Custom Path */}
                                             {(settings.showHomeWorkspace ?? true) && (
                                                 <div>
