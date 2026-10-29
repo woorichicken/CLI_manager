@@ -54,6 +54,12 @@ export function SessionSelectionBar({ selected, onShowSessions, onClear }: Sessi
     useEffect(() => () => {
         if (timerRef.current) clearTimeout(timerRef.current)
     }, [])
+    // "Copied" speaks for the ids that were copied; a different pick has not been copied yet.
+    const selectedKey = selected.join('\n')
+    useEffect(() => {
+        if (timerRef.current) clearTimeout(timerRef.current)
+        setCopied(null)
+    }, [selectedKey])
 
     if (selected.length === 0) return null
 

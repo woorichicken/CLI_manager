@@ -104,9 +104,11 @@ test.describe('T69 All sessions select', () => {
             await page.keyboard.press('Escape')
             await expect(page.getByTestId('session-selection-count')).toHaveText('5 selected')
 
-            // Unticking drops one; Esc (focus on a box) clears all.
+            // Unticking drops one — and "Copied" no longer speaks for the pick; Esc (focus on a box) clears all.
+            await expect(page.getByTestId('session-selection-copy')).toHaveText('Copied')
             await box(page, S[2]).click()
             await expect(page.getByTestId('session-selection-count')).toHaveText('4 selected')
+            await expect(page.getByTestId('session-selection-copy')).toHaveText('Copy IDs')
             await box(page, S[3]).focus()
             await page.keyboard.press('Escape')
             await expect(bar(page)).toHaveCount(0)
