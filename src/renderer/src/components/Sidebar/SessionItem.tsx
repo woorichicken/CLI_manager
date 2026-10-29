@@ -8,6 +8,7 @@ import { useControlApiMasters } from '../../hooks/useControlApiMasters'
 import { InboxDot } from '../Inbox/InboxDot'
 import { SESSION_DRAG_TYPE, isSessionDrag, useDropHighlight, useSessionDrop } from './sessionDrop'
 import type { TreeGuide } from '../../utils/relatedSessions'
+import type { SessionSelection } from './SessionSelectionBar'
 
 // Session status colors (claude-squad 방식)
 const SESSION_STATUS_COLORS: Record<SessionStatus, string> = {
@@ -57,6 +58,11 @@ const HOVER_LINGER_MS = 400    // Keep preview visible after mouse leaves
 
 interface SessionItemProps {
     session: TerminalSession
+    /**
+     * All sessions view only: the row icon turns into a check box on hover (on every
+     * row once something is picked). Ticking it picks the row without opening it.
+     */
+    selection?: SessionSelection
     workspace: Workspace
     isActive: boolean
     sessionStatus?: SessionStatus
@@ -207,6 +213,7 @@ function TreeGuideLines({ depth, guide, leaf }: { depth: number; guide: TreeGuid
  */
 export function SessionItem({
     session,
+    selection,
     workspace,
     isActive,
     sessionStatus,
@@ -241,6 +248,24 @@ export function SessionItem({
     const dragControls = useDragControls()
     const orchestrator = useControlApiMasters().masters[session.id]
     const role: SessionRole = orchestrator ? 'master' : session.aiControl ? 'ai' : 'user'
+    const roleIcon = orchestrator ? (
+        <span
+            className="shrink-0 flex"
+            data-master-icon
+            title={`Master session — opened ${orchestrator.openedCount} AI session${orchestrator.openedCount === 1 ? '' : 's'}`}
+        >
+            <Crown size={14} className="text-rose-400" />
+        </span>
+    ) : session.aiControl ? (
+        <span
+            className="shrink-0 flex"
+            title={`Driven by AI (${session.aiControl.client}) — right-click → Disconnect AI to take it back`}
+        >
+            <Bot size={14} className="text-emerald-400" />
+        </span>
+    ) : (
+        <Terminal size={14} className="shrink-0" />
+    )
     const rowClasses = ROW_CLASSES[role]
     // Another session dropped on this row joins its Related sessions (report 269168e4).
     const drop = useSessionDrop()
@@ -481,24 +506,27 @@ export function SessionItem({
                     onClick={() => !isRenaming && onSelect(workspace, session)}
                     className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
                 >
-                    {orchestrator ? (
-                        <span
-                            className="shrink-0 flex"
-                            data-master-icon
-                            title={`Master session — opened ${orchestrator.openedCount} AI session${orchestrator.openedCount === 1 ? '' : 's'}`}
-                        >
-                            <Crown size={14} className="text-rose-400" />
+                    {selection ? (
+                        // Same 14px slot as the icon, so names do not shift when the box appears.
+                        <span className="relative shrink-0 flex w-[14px] h-[14px]">
+                            <span className={clsx('flex', selection.active ? 'invisible' : 'group-hover:invisible')}>
+                                {roleIcon}
+                            </span>
+                            <input
+                                type="checkbox"
+                                data-session-select={session.id}
+                                checked={selection.isSelected(session.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={() => selection.toggle(session.id)}
+                                aria-label={`Select ${session.name}`}
+                                title="Select — copy IDs or open side by side"
+                                className={clsx(
+                                    'absolute inset-0 m-0 w-[14px] h-[14px] cursor-pointer accent-blue-500',
+                                    selection.active ? 'visible' : 'invisible group-hover:visible'
+                                )}
+                            />
                         </span>
-                    ) : session.aiControl ? (
-                        <span
-                            className="shrink-0 flex"
-                            title={`Driven by AI (${session.aiControl.client}) — right-click → Disconnect AI to take it back`}
-                        >
-                            <Bot size={14} className="text-emerald-400" />
-                        </span>
-                    ) : (
-                        <Terminal size={14} className="shrink-0" />
-                    )}
+                    ) : roleIcon}
                     {isRenaming ? (
                         <input
                             ref={inputRef}

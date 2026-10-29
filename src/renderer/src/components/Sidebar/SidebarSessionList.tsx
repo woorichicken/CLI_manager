@@ -3,6 +3,7 @@ import { Reorder } from 'framer-motion'
 import { TerminalSession, Workspace, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import type { SessionEntry } from '../../utils/sessionNavigation'
 import { SessionItem } from './SessionItem'
+import type { SessionSelection } from './SessionSelectionBar'
 
 interface SidebarSessionListProps {
     entries: SessionEntry[]
@@ -22,6 +23,8 @@ interface SidebarSessionListProps {
     onRenameCancel: () => void
     onDragStartSession?: (sessionId: string) => void
     onDragEndSession?: () => void
+    /** All sessions view: rows get a check box (0d1e3d34). Not in search results. */
+    selection?: SessionSelection
 }
 
 /**
@@ -70,6 +73,7 @@ export function SidebarSessionList({ entries, dividePinned = false, activeSessio
                         isInSplit={rest.splitLayout?.sessionIds.includes(session.id)}
                         onDragStartSession={rest.onDragStartSession}
                         onDragEndSession={rest.onDragEndSession}
+                        selection={rest.selection}
                     />
                     </Fragment>
                 )
