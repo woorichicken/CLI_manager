@@ -55,7 +55,7 @@ test.describe('T13 hide worktrees', () => {
         await expect(worktreeRow.first()).toBeVisible({ timeout: 15_000 })
 
         // Settings > Git (Local) > Show Worktrees
-        await page.locator('button[title="Settings"]').click()
+        await page.locator('button[title^="Settings"]').click()
         await page.getByRole('button', { name: 'Git (Local)', exact: true }).click()
         const toggleRow = page.locator('div.flex.items-center.justify-between')
             .filter({ hasText: 'Show Worktrees' })

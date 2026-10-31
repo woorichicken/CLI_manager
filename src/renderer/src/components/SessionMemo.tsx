@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { Check, ChevronLeft, ChevronRight, Copy, FilePlus, StickyNote, Trash2, X } from 'lucide-react'
 import type { MemoShortcutAction } from '../../../shared/types'
+import { useShortcutHint } from '../utils/shortcutHints'
 
 interface SessionMemoProps {
     sessionId: string
@@ -113,6 +114,7 @@ function focusTerminal(sessionId: string): void {
 export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
     function SessionMemo({ sessionId, workspaceId, initialMemo, initialMemoPages, visible }, ref) {
         const [isOpen, setIsOpen] = useState(false)
+        const hint = useShortcutHint()
         // Read by closeMemo's delayed terminal focus: a memo reopened meanwhile keeps the focus.
         const isOpenRef = useRef(isOpen)
         isOpenRef.current = isOpen
@@ -327,7 +329,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                                 ? 'bg-yellow-500/20 text-yellow-400 opacity-60 hover:opacity-100'
                                 : 'bg-white/5 text-gray-500 opacity-40 hover:opacity-100'
                     }`}
-                    title="Session Memo (⌘J)"
+                    title={hint('Session Memo', 'toggleMemo')}
                 >
                     <StickyNote size={14} />
                 </button>
@@ -347,7 +349,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                                             onClick={() => turnPage(-1)}
                                             onMouseDown={(e) => e.preventDefault()}
                                             className="text-gray-500 hover:text-gray-300 transition-colors"
-                                            title="Previous page"
+                                            title={hint('Previous page', 'memoPrevPage')}
                                             aria-label="Previous page"
                                         >
                                             <ChevronLeft size={12} />
@@ -360,7 +362,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                                             onClick={() => turnPage(1)}
                                             onMouseDown={(e) => e.preventDefault()}
                                             className="text-gray-500 hover:text-gray-300 transition-colors"
-                                            title="Next page"
+                                            title={hint('Next page', 'memoNextPage')}
                                             aria-label="Next page"
                                         >
                                             <ChevronRight size={12} />
@@ -372,7 +374,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                                     onClick={addPage}
                                     onMouseDown={(e) => e.preventDefault()}
                                     className="text-gray-500 hover:text-gray-300 transition-colors"
-                                    title="New page"
+                                    title={hint('New page', 'memoNewPage')}
                                     aria-label="New page"
                                 >
                                     <FilePlus size={12} />
@@ -384,7 +386,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                                         onClick={deletePage}
                                         onMouseDown={(e) => e.preventDefault()}
                                         className={`transition-colors ${confirmingDelete ? 'text-red-400' : 'text-gray-500 hover:text-gray-300'}`}
-                                        title={confirmingDelete ? 'Click again to delete this page' : 'Delete this page'}
+                                        title={confirmingDelete ? 'Click again to delete this page' : hint('Delete this page', 'memoDeletePage')}
                                         aria-label={confirmingDelete ? 'Click again to delete this page' : 'Delete this page'}
                                     >
                                         <Trash2 size={12} />
@@ -399,7 +401,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                                     className={`transition-colors disabled:opacity-30 disabled:cursor-default ${
                                         copied ? 'text-emerald-400' : 'text-gray-500 hover:text-gray-300'
                                     }`}
-                                    title={copied ? 'Copied' : pages.length > 1 ? 'Copy this page' : 'Copy memo'}
+                                    title={copied ? 'Copied' : hint(pages.length > 1 ? 'Copy this page' : 'Copy memo', 'memoCopyPage')}
                                     aria-label={copied ? 'Copied' : pages.length > 1 ? 'Copy this page' : 'Copy memo'}
                                 >
                                     {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -407,6 +409,8 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                                 <button
                                     onClick={closeMemo}
                                     className="text-gray-500 hover:text-gray-300 transition-colors"
+                                    title={hint('Close memo', 'toggleMemo')}
+                                    aria-label="Close memo"
                                 >
                                     <X size={12} />
                                 </button>
