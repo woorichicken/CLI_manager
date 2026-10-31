@@ -32,6 +32,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   그 세션의 사건 기록은 `restored`·`started` 뿐(`resized` 0 · `scrollback-erased` 0 — PR #59 뒤라 크기 변경이 있었으면 남는다). 빠진 줄은 그 답이 화면 맨 위에 있던
   부분이고 바로 뒤에 Claude Code 의 「Compacted while idle」이 찍혀 있다 → 이 경우는 이 항목(리사이즈)이 아니라 **Claude Code 가 쉬는 동안 압축하며 다시 그릴 때**로 본다(재현 못 함 — 압축을 일부러 일으키기 어렵다).
   제보는 needs_review 로 「idleCompaction 끄기」(사용자 Claude 설정)를 추천했다. f2a636b9 도 「오랜만에 돌아오면」이라 같은 원인일 수 있다 — 그러면 아래 보정은 둘 중 리사이즈 쪽만 덮는다.
+- 정정 (2026-10-30, 총괄 재조사 — 사람: 「idleCompaction 이 아니라 터미널(CLI Manager) 문제 같다」): 위 「압축 때 다시 그리기」는 **시각이 겹친다는 정황뿐**이고, 남은 기록으로는 원인을 못 가른다.
+  - 원 답(Claude 대화 기록 `~/.claude/projects/-Users-jeong-gyeonghun/031f2aec-….jsonl`, 16:15 KST)과 맞대면 빠진 것은 약 8줄 — 158행 꼬리 「 `check`·`verify` 모두 통과)」, 빈 줄, 표 윗선·머리·구분선, 첫 줄 「넘길 몫」(2줄), 구분선.
+    **손실이 158행 72번째 칸, 줄 중간에서 시작한다** — 그 줄은 71칸에서 끊겼고 남은 글(24칸)은 103열에 충분히 들어간다. 줄이 통째로 밀려난 게 아니라 그 자리에서 「여기부터 지우기」가 들어간 흔적이다.
+  - 언제 지워졌는지도 모른다 — 답 16:15 · 압축 17:09~17:10 · 제보 17:35 사이 어디든 된다.
+  - 「미러 줄에도 없다」는 **CLI Manager·xterm.js 를 무죄로 만들지 않는다.** 화면과 미러(`TerminalMirror`) 모두 xterm.js 6.0.0 이 같은 바이트를 해석한 결과라, 해석 쪽 문제면 둘 다 같이 잃는다. 렌더러(그리기)만의 문제가 아니라는 뜻뿐이다.
+  - 판정에 필요한 것은 **PTY 에서 들어온 원본 바이트**인데 어디에도 남지 않는다 — `TerminalEventLog` 는 메모리 사건 기록, `ScrollbackStore`(`.ans`)는 xterm 이 처리한 결과를 덮어쓰고 세션을 닫으면 사라진다.
+  - 제안(사람 결정 대기): 터미널마다 최근 원본 출력 링버퍼(메모리 약 2MB)를 두고 제보에 첨부한다. 같은 바이트를 Terminal.app·iTerm 과 CLI Manager 에서 재생해 **CLI Manager 에서만 사라지면 앱·xterm.js, 둘 다 사라지면 Claude Code** 로 가른다.
+    앱 변경 없이 당장 쓸 길: CLI Manager 터미널에서 `script -q -r <파일> claude …` 로 원본을 기록해 두고 재현되면 같은 비교를 한다.
 - Owner: 없음
 
 ### `electron-vite.config.ts` — 이 설정 파일은 읽히지 않는다
