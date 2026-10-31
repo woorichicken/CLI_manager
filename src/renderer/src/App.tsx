@@ -33,6 +33,7 @@ import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
+import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 
 /** Let the window settle before spending anything on a network check. */
 const UPDATE_CHECK_STARTUP_DELAY_MS = 2000
@@ -188,6 +189,11 @@ function App() {
     // Sidebar state
     const [sidebarWidth, setSidebarWidth] = useState(256)
     const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+    const hint = useShortcutHint()
+    // Tooltips name the bindings set in Settings › Keyboard, not the defaults (report 386b0c76).
+    useEffect(() => {
+        setActiveShortcuts(settings.keyboard?.shortcuts)
+    }, [settings.keyboard?.shortcuts])
 
     // Onboarding state
     const [showOnboarding, setShowOnboarding] = useState(false)
@@ -1508,7 +1514,7 @@ function App() {
                             <button
                                 onClick={() => setIsSidebarOpen(true)}
                                 className={`${splitLayout ? 'p-0.5' : 'p-1.5'} hover:bg-white/10 rounded transition-colors no-drag text-gray-400`}
-                                title="Open Sidebar"
+                                title={hint('Open Sidebar', 'toggleSidebar')}
                             >
                                 <PanelLeft size={splitLayout ? 14 : 16} />
                             </button>
@@ -1568,7 +1574,7 @@ function App() {
                                         }
                                     }}
                                     className="p-2 hover:bg-white/10 rounded transition-colors no-drag disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Search Files (Cmd+P)"
+                                    title={hint('Search Files', 'fileSearch')}
                                     disabled={!activeWorkspace}
                                 >
                                     <Search size={16} className="text-gray-400" />
@@ -1619,7 +1625,7 @@ function App() {
                                 <button
                                     onClick={() => handleOpenSettings('general')}
                                     className="p-2 hover:bg-white/10 rounded transition-colors no-drag"
-                                    title="Settings"
+                                    title={hint('Settings', 'toggleSettings')}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
                                         <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>

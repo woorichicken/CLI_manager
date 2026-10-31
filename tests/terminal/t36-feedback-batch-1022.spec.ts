@@ -55,7 +55,7 @@ test.describe('T36 feedback batch 1022', () => {
         const section = page.getByText('PLAYGROUND', { exact: true })
         await expect(section).toBeVisible()
 
-        await page.locator('button[title="Settings"]').click()
+        await page.locator('button[title^="Settings"]').click()
         await page.getByTestId('settings-show-playground').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
 

@@ -100,7 +100,7 @@ test.describe('T67 sidebar status dots', () => {
         await expect(dot(page, ASK)).toHaveCount(0, { timeout: 15_000 })
 
         // Off in Settings: dots gone, and main stops reading screens.
-        await page.locator('button[title="Settings"]').click()
+        await page.locator('button[title^="Settings"]').click()
         await expect(page.getByTestId('settings-show-session-status')).toHaveAttribute('aria-pressed', 'true')
         await page.getByTestId('settings-show-session-status').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
@@ -110,7 +110,7 @@ test.describe('T67 sidebar status dots', () => {
         expect(await ticks(ctx)).toBe(before)
 
         // On again: the working agent lights up again.
-        await page.locator('button[title="Settings"]').click()
+        await page.locator('button[title^="Settings"]').click()
         await page.getByTestId('settings-show-session-status').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(dot(page, WORK)).toHaveAttribute('data-session-status', 'working', { timeout: 15_000 })
@@ -124,7 +124,7 @@ test.describe('T67 sidebar status dots', () => {
         await page.waitForTimeout(4000)
         await expect(page.locator('[data-session-status]')).toHaveCount(0)
         expect(await ticks(ctx)).toBe(0)
-        await page.locator('button[title="Settings"]').click()
+        await page.locator('button[title^="Settings"]').click()
         await expect(page.getByTestId('settings-show-session-status')).toHaveAttribute('aria-pressed', 'false')
     })
 })

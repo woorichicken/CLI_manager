@@ -18,6 +18,7 @@ import { sessionForestFor, wouldMakeLoop, handParentsInTheWay } from '../../util
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
+import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
 
 /**
@@ -257,6 +258,7 @@ export function Sidebar({
         showWorktrees
     })
     const { notice: copyNotice, copy } = useCopyWithNotice()
+    const hint = useShortcutHint()
     const anySessionFolderExpanded = sessionFolders.some(f => f.isExpanded)
 
     // A session row dragged onto another row relates the two (report 269168e4). Rows read the
@@ -1106,7 +1108,7 @@ export function Sidebar({
                         <button
                             onClick={onClose}
                             className="p-1 hover:bg-white/10 rounded transition-colors"
-                            title="Close Sidebar"
+                            title={hint('Close Sidebar', 'toggleSidebar')}
                         >
                             <PanelLeftClose size={14} className="text-gray-400" />
                         </button>
@@ -1225,6 +1227,7 @@ export function Sidebar({
                                 listProps={allSessionsListProps}
                                 fontSize={fontSize}
                                 showSessionCount={showSessionCount}
+                                onCopy={copy}
                             />
                         ) : (
                             <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} dividePinned {...allSessionsListProps} />

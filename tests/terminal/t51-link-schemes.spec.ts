@@ -154,7 +154,7 @@ async function clickText(page: Page, needle: string): Promise<void> {
 }
 
 async function openTerminalSettings(page: Page): Promise<void> {
-    await page.locator('button[title="Settings"]').click()
+    await page.locator('button[title^="Settings"]').click()
     await page.getByRole('button', { name: 'Terminal', exact: true }).click()
     await expect(page.getByTestId('link-scheme-input')).toBeVisible()
 }

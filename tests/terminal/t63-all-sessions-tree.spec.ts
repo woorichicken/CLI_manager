@@ -120,7 +120,7 @@ test.describe('T63 All sessions tree', () => {
         await page.getByTestId('all-sessions-layout-tree').click()
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible()
 
-        await page.locator('button[title="Settings"]').click()
+        await page.locator('button[title^="Settings"]').click()
         await page.getByTestId('settings-show-session-tree').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(page.getByTestId('sidebar-session-tree')).toHaveCount(0, { timeout: 15_000 })
@@ -128,7 +128,7 @@ test.describe('T63 All sessions tree', () => {
         await expect(page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${HELPER}"]`)).toHaveCount(1)
 
         // Back on: the switch returns with the layout chosen before.
-        await page.locator('button[title="Settings"]').click()
+        await page.locator('button[title^="Settings"]').click()
         await page.getByTestId('settings-show-session-tree').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible({ timeout: 15_000 })

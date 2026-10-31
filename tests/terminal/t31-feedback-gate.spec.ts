@@ -65,7 +65,7 @@ async function reloadWatched(page: Page): Promise<() => boolean> {
 }
 
 async function openFeedbackSettings(page: Page): Promise<void> {
-    await page.locator('button[title="Settings"]').first().click()
+    await page.locator('button[title^="Settings"]').first().click()
     await expect(page.getByTestId('feedback-mode-status')).toBeVisible()
 }
 

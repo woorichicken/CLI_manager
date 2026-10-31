@@ -10,36 +10,15 @@ import {
     SHORTCUT_GROUP_NAMES,
 } from '../../../shared/types'
 import { RotateCcw } from 'lucide-react'
-import { isMac, hasPrimaryModifier, hasTerminalOnlyModifier } from '../utils/platform'
+import { hasPrimaryModifier, hasTerminalOnlyModifier } from '../utils/platform'
 import { keyFromCode } from '../hooks/useKeyboardShortcuts'
-
-// Keys a binding stores by name (`KeyboardEvent.key`), shown as their key-cap symbol.
-const KEY_SYMBOLS: Record<string, string> = {
-    ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
-    Backspace: isMac ? '⌫' : 'Backspace', Delete: isMac ? '⌦' : 'Delete', Enter: isMac ? '↩' : 'Enter',
-}
+import { formatBinding } from '../utils/shortcutHints'
 
 interface KeyboardSettingsProps {
     settings: UserSettings
     setSettings: React.Dispatch<React.SetStateAction<UserSettings>>
 }
 
-
-function formatModifier(mod: string): string {
-    if (mod === 'mod') return isMac ? '⌘' : 'Ctrl'
-    if (mod === 'shift') return isMac ? '⇧' : 'Shift'
-    if (mod === 'alt') return isMac ? '⌥' : 'Alt'
-    return mod
-}
-
-function formatBinding(binding: KeyBinding): string {
-    const mods = binding.modifiers.map(formatModifier)
-    const key = KEY_SYMBOLS[binding.key] ?? binding.key
-    if (isMac) {
-        return [...mods, key].join('')
-    }
-    return [...mods, key].join('+')
-}
 
 function bindingsEqual(a: KeyBinding, b: KeyBinding): boolean {
     if (a.code.toLowerCase() !== b.code.toLowerCase()) return false

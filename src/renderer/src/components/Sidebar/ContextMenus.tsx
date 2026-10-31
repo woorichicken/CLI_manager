@@ -786,25 +786,34 @@ interface FolderContextMenuProps {
     onRename: () => void
     onDelete: () => void
     onClose: () => void
+    /** Session folders only: copy the folder name / its sessions' IDs (report 88d69c82). */
+    onCopyName?: () => void
+    onCopySessionIds?: () => void
+    /** How many sessions Copy Session IDs would copy — 0 disables it. */
+    sessionCount?: number
 }
 
 /**
  * Folder right-click context menu
- * Provides rename and delete options for workspace folders
+ * Provides rename and delete options for workspace folders, plus copy options for session folders
  */
 export function FolderContextMenu({
     x,
     y,
     onRename,
     onDelete,
-    onClose
+    onClose,
+    onCopyName,
+    onCopySessionIds,
+    sessionCount = 0
 }: FolderContextMenuProps) {
     const menuRef = useCloseOnOutside(onClose)
+    const hasCopy = Boolean(onCopyName || onCopySessionIds)
     return createPortal(
         <div
             ref={menuRef}
             data-sidebar-menu="folder"
-            className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-36 backdrop-blur-md`}
+            className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 ${hasCopy ? 'w-44' : 'w-36'} backdrop-blur-md`}
             style={{ top: y, left: x }}
             onClick={e => e.stopPropagation()}
         >
@@ -818,6 +827,42 @@ export function FolderContextMenu({
                 <Edit2 size={12} className="text-gray-400 shrink-0" />
                 <span className="truncate">Rename</span>
             </button>
+            {hasCopy && (
+                <>
+                    <div className="border-t border-white/10 my-0.5"></div>
+                    {/* Copy - for handing a whole folder of sessions to an agent, one ID per line like Copy IDs */}
+                    {onCopyName && (
+                        <button
+                            data-testid="folder-menu-copy-name"
+                            className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                            onClick={() => {
+                                onCopyName()
+                                onClose()
+                            }}
+                        >
+                            <Type size={12} className="text-gray-400 shrink-0" />
+                            <span className="truncate">Copy Name</span>
+                        </button>
+                    )}
+                    {onCopySessionIds && (
+                        <button
+                            data-testid="folder-menu-copy-ids"
+                            className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                            disabled={sessionCount === 0}
+                            title={sessionCount === 0 ? 'No sessions in this folder' : `The ${sessionCount} session IDs in this folder, one per line`}
+                            onClick={() => {
+                                onCopySessionIds()
+                                onClose()
+                            }}
+                        >
+                            <Hash size={12} className="text-gray-400 shrink-0" />
+                            <span className="truncate">Copy Session IDs</span>
+                            {sessionCount > 0 && <span className="ml-auto text-[10px] text-gray-500 shrink-0">{sessionCount}</span>}
+                        </button>
+                    )}
+                    <div className="border-t border-white/10 my-0.5"></div>
+                </>
+            )}
             <button
                 className="w-full text-left px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-colors flex items-center gap-2"
                 onClick={() => {
