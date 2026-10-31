@@ -270,6 +270,11 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: `wait` 는 세션 하나만 기다린다. 여러 개를 폴링하면 (1) 감시를 다시 거는 사이에 끝난 세션을 놓쳤고
   (2) 백그라운드 셸을 기다리며 잠깐 쉬는 세션을 완료로 잘못 알렸다(화면의 `shell still running` 으로 구분).
   제안: `GET /v1/events` 또는 `POST /v1/wait-any` — busy→idle·질문 대기 전환을 이벤트로, 백그라운드 셸 대기는 제외.
+- Evidence 2026-10-31 (AI TOP 100 예선, 인터뷰 세션 8개 + 압축 세션 1개를 `watch-sessions.sh` 스트림 모드로 감시):
+  - 한 세션(홍보라)이 12:0x~12:2x 사이 `QUESTION`↔`IDLE` 을 8번 넘게 오갔다. 원인은 아래 「Claude Code 안내 창」 항목이고, 감시에서 그 세션을 `grep -v` 로 빼서야 조용해졌다.
+  - 세션이 Bash 명령을 배경으로 돌리고 턴을 끝내면(`1 shell still running`) 일은 계속 도는데 감시는 `IDLE` 로 알렸다 — 위 (2) 와 같은 것이 9개 세션 규모에서 계속 났다.
+  - 감시를 Claude Code `Monitor` 로 걸면 30분마다 끝나 다시 걸어야 했다(4시간 동안 6번). 앱 쪽 이벤트 스트림이 있으면 감시 스크립트 재기동이 필요 없다.
+  - 재현 명령: `SESSION_PREFIX='AI: aitop' WATCH_STREAM=1 zsh ~/skills/macbook-cc/climanager-session/scripts/watch-sessions.sh` — 안내 창이 뜬 세션 하나만 있어도 같은 줄이 반복된다.
 - Owner: 없음
 
 ### `src/main/ControlApiService.ts` — 사용자와 AI 가 같은 세션에 동시에 입력하면 글자가 섞인다
@@ -316,6 +321,9 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: 읽기는 `describe()` 가 `session.memo` 를 돌려준다. 쓰기 경로는 renderer IPC `update-session-memo`
   (`src/main/index.ts` 1385행 부근)뿐이다. 열 때 고를 것: 덮어쓰기 vs 덧붙이기, 사용자가 메모를 편집 중일 때의 충돌,
   `aiControl` 세션만 허용(기존 경계 유지).
+- Evidence 2026-10-31 (AI TOP 100 예선): 인터뷰 세션 8개의 진행(질문 N/100 · 발굴률 X%)을 보려고 각 세션이 자기 장부 파일 첫 줄에
+  `<!-- 상태: … -->` 를 쓰고 총괄이 `head -1 ledger/*.md` 로 읽었다. 사이드바에서 한눈에 보이지 않아 사람이 진행을 물을 때마다 총괄이 표로 다시 옮겼다.
+  메모 쓰기가 보류라면 대안: 사용자 메모와 **별도인 「AI 상태 한 줄」 필드**(AI 만 쓰고 사람 메모를 건드리지 않음 — 위 충돌 문제를 피한다)를 사이드바 세션 행 아래에.
 - Owner: Human Review
 
 ### `src/renderer/src/utils/terminalResizeManager.ts` — 보이는 터미널의 창 크기 변경이 PTY resize 를 두 번 보낸다
@@ -332,6 +340,26 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 렌더러(`TerminalView.tsx`)와 main 미러(`TerminalMirror.ts`)가 같은 로직을 써야 해서 `src/shared` 새 파일이 필요하다 — 새 공용 모듈은 사람 컨펌 뒤에 만든다.
 - Trigger: 사람이 공용 모듈을 승인할 때(day-1023 팀장 보고 「정할 것」).
 - Fix direction: `src/shared` 에 resize 보정 함수 하나 + 두 곳에서 import. T29·T38·T41 과 함께 녹화 재생 시험을 붙인다.
+- Owner: Human Review
+
+### Claude Code 안내 창(「Teach auto mode about your environment?」)이 쉬는 세션을 막는다 — API 로는 닫을 길이 없다
+- Discovered: 2026-10-31, AI TOP 100 예선 — auto 모드로 연 인터뷰 세션들.
+- Evidence: Claude Code 가 auto 모드 세션이 턴을 마칠 때 `Teach auto mode about your environment? ❯ 1. Yes 2. Not now 3. Don't show again · Enter to confirm · Esc to cancel` 를 띄운다.
+  - 이 창은 권한 질문이 아니라 기능 안내인데, 화면 판정이 질문 대기로 읽어 `clim send` 가 종료코드 3 으로 거부됐다(홍보라·고길동 세션, 12:0x).
+  - 총괄 AI 가 `clim send <세션> --keys down,enter`(Not now)로 닫으려 하자 총괄 쪽 auto 모드 검사기가 「Auto-Mode Bypass」로 막았다 — 결국 사람이 세션마다 눌러야 했다.
+  - 세션이 배경 셸로 턴을 끝낼 때마다 다시 떠서(「Not now」) 같은 세션에 반복된다.
+- Why deferred: 어떤 창을 AI 가 대신 닫아도 되는지는 안전 경계(질문 대기 = 입력 거부, AI Control API 불변식 3)라 사람 결정이다.
+- Trigger: 사람이 세션마다 이 창을 닫아 달라는 요청을 또 받을 때, 또는 Claude Code 가 비슷한 안내 창을 더 늘릴 때.
+- 제안: ① 판정에서 「알려진 안내 창」(권한·AskUserQuestion 이 아님)을 따로 분류해 `awaitingInput` 대신 `tip` 상태로 · ② 앱 설정 「AI 세션의 안내 창은 자동으로 Not now」(허용 목록 문구만) · ③ 화면에 안내 창이 있을 때 사이드바 행에 「사람 확인 필요 — 안내 창」 표시.
+- Owner: Human Review
+
+### 세션 템플릿 — auto 모드로 여는 Claude Code 템플릿이 없다
+- Discovered: 2026-10-31, AI TOP 100 예선 — 외부 글(관계자 답)을 다루는 세션을 우회 모드(`cldy`) 대신 열려다.
+- Evidence: `clim templates` 는 `claude-code`(cldy = 권한 우회) 뿐이다. `--command "claude --permission-mode default --allowedTools …"` 로 연 세션 3개는
+  첫 명령 `pwd; ls; ls ..; date` 에서 바로 승인 창에 섰다(허용 목록이 복합 셸을 못 덮음). `--command "claude --permission-mode auto --disallowedTools Agent Task WebFetch WebSearch"` 로 다시 열어 9개가 승인 창 없이 돌았다.
+- Why deferred: 템플릿 목록은 사용자 설정이라 기본값을 바꾸는 건 사람 결정이다.
+- Trigger: 외부 글을 읽는 세션을 우회 모드 없이 여러 개 열 일이 또 생길 때.
+- 제안: 기본 템플릿에 `claude-auto`(`claude --permission-mode auto`)를 추가하고, `clim open --template claude-auto` 로 열 수 있게.
 - Owner: Human Review
 
 ### 숨긴 세션의 시작 크기 — PR #47 뒤에 남은 것 (위 「높이만 바뀌는 resize」와 한 묶음)
