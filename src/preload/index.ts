@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -330,6 +330,18 @@ const api = {
     },
     markInboxRead: (id: string): Promise<void> => ipcRenderer.invoke('mark-inbox-read', id),
     markInboxAllRead: (): Promise<void> => ipcRenderer.invoke('mark-inbox-all-read'),
+    getChecklists: (): Promise<Checklist[]> => ipcRenderer.invoke('get-checklists'),
+    onChecklists: (callback: (checklists: Checklist[]) => void) => {
+        const listener = (_e: unknown, checklists: Checklist[]) => callback(checklists)
+        ipcRenderer.on('checklists', listener)
+        return () => ipcRenderer.removeListener('checklists', listener)
+    },
+    createChecklist: (title: string, workspaceId?: string): Promise<string | null> => ipcRenderer.invoke('create-checklist', title, workspaceId),
+    updateChecklist: (id: string, patch: { title?: string; due?: string | null; workspaceId?: string | null }): Promise<boolean> => ipcRenderer.invoke('update-checklist', id, patch),
+    removeChecklist: (id: string): Promise<boolean> => ipcRenderer.invoke('remove-checklist', id),
+    addChecklistItem: (id: string, text: string): Promise<boolean> => ipcRenderer.invoke('add-checklist-item', id, text),
+    updateChecklistItem: (id: string, itemId: string, patch: { text?: string; done?: boolean }): Promise<boolean> => ipcRenderer.invoke('update-checklist-item', id, itemId, patch),
+    removeChecklistItem: (id: string, itemId: string): Promise<boolean> => ipcRenderer.invoke('remove-checklist-item', id, itemId),
     peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds)
 }
 

@@ -36,6 +36,7 @@ import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
 import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
+import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText } from './ChecklistStore'
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import type { FeedbackRelayRequest } from '../shared/types'
@@ -338,6 +339,8 @@ const inbox = new InboxStore(store, (requests) => {
     updateInboxBadge(requests.filter((r) => !r.readAt).length)
 })
 
+const checklists = new ChecklistStore(store, (all) => broadcast(CHECKLISTS_CHANNEL, all))
+
 const controlApiService = new ControlApiService({
     store,
     terminals: terminalManager,
@@ -347,6 +350,7 @@ const controlApiService = new ControlApiService({
     relations: sessionRelations,
     sessionFolders,
     inbox,
+    checklists,
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)
@@ -1556,6 +1560,7 @@ app.whenReady().then(async () => {
 
         store.set('workspaces', workspaces.filter((w: Workspace) => w.id !== id))
         for (const session of workspace.sessions ?? []) controlApiService.forgetSession(session.id)
+        checklists.forgetWorkspace(id)
         return true
     })
 
@@ -3259,6 +3264,41 @@ app.whenReady().then(async () => {
     ipcMain.handle('mark-inbox-all-read', (): void => {
         inbox.markAllRead()
     })
+    // Header checklists (ChecklistStore): the panel edits here, the Control API edits the same
+    // store, and every change is broadcast on CHECKLISTS_CHANNEL.
+    ipcMain.handle('get-checklists', () => checklists.list())
+    ipcMain.handle('create-checklist', (_e, title: unknown, workspaceId: unknown): string | null => {
+        const check = checkChecklistInput({ title }, { requireTitle: true })
+        if (!check.ok) return null
+        const workspace = typeof workspaceId === 'string' && workspaceId ? workspaceId : undefined
+        return checklists.create({ title: check.title!, ...(workspace ? { workspaceId: workspace } : {}), client: 'app' })?.checklist.id ?? null
+    })
+    ipcMain.handle('update-checklist', (_e, id: unknown, patch: unknown): boolean => {
+        if (typeof id !== 'string' || !patch || typeof patch !== 'object') return false
+        const input = patch as Record<string, unknown>
+        const check = checkChecklistInput(input, { requireTitle: false })
+        if (!check.ok) return false
+        const { ok: _ok, ...valid } = check
+        const workspaceId = input.workspaceId === null || typeof input.workspaceId === 'string' ? (input.workspaceId || null) : undefined
+        return checklists.update(id, { ...valid, ...(workspaceId !== undefined ? { workspaceId } : {}) }) !== null
+    })
+    ipcMain.handle('remove-checklist', (_e, id: unknown): boolean => typeof id === 'string' && checklists.remove(id))
+    ipcMain.handle('add-checklist-item', (_e, id: unknown, text: unknown): boolean => {
+        const items = checkItemTexts(text)
+        if (typeof id !== 'string' || !items.ok || items.texts.length === 0) return false
+        return checklists.addItems(id, items.texts) !== null
+    })
+    ipcMain.handle('update-checklist-item', (_e, id: unknown, itemId: unknown, patch: unknown): boolean => {
+        if (typeof id !== 'string' || typeof itemId !== 'string' || !patch || typeof patch !== 'object') return false
+        const input = patch as Record<string, unknown>
+        const valid: { text?: string; done?: boolean } = {}
+        if (typeof input.text === 'string' && cleanText(input.text)) valid.text = cleanText(input.text)
+        if (typeof input.done === 'boolean') valid.done = input.done
+        return checklists.updateItem(id, itemId, valid) !== null
+    })
+    ipcMain.handle('remove-checklist-item', (_e, id: unknown, itemId: unknown): boolean =>
+        typeof id === 'string' && typeof itemId === 'string' && checklists.removeItem(id, itemId) !== null
+    )
     ipcMain.handle('peek-sessions', (_e, sessionIds: string[]) =>
         controlApiService.peekSessions(Array.isArray(sessionIds) ? sessionIds.filter((id) => typeof id === 'string') : [])
     )
@@ -3306,6 +3346,7 @@ app.whenReady().then(async () => {
     sessionRelations.prune(existingSessionIds)
     recentSessions.prune(existingSessionIds)
     inbox.prune(existingSessionIds)
+    checklists.prune(new Set(((store.get('workspaces') as Workspace[] | undefined) ?? []).map((w) => w.id)))
     // prune() only announces a change; the badge must show what survived the restart either way.
     updateInboxBadge(inbox.unreadCount())
 

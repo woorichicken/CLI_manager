@@ -3,6 +3,7 @@ import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import {
     AgentStatusUpdate,
+    Checklist,
     ControlApiMasters,
     InboxRequest,
     ControlApiSessionEvent,
@@ -21,6 +22,7 @@ import { TerminalMirror } from './TerminalMirror'
 import { SessionRelations } from './SessionRelations'
 import { SessionFolders, SESSION_FOLDERS_CHANNEL } from './SessionFolders'
 import { checkInboxInput, InboxStore } from './InboxStore'
+import { ChecklistStatus, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText, isComplete } from './ChecklistStore'
 
 /**
  * What the Control API can do, independent of transport. The HTTP routes and
@@ -328,6 +330,52 @@ export interface ApiInboxRequest extends Omit<InboxRequest, 'at' | 'createdAt' |
     readAt: string | null
 }
 
+export interface ApiChecklistItem {
+    id: string
+    /** Position in the checklist, from 1 — what checklist_check accepts as item. */
+    n: number
+    text: string
+    done: boolean
+    doneAt: string | null
+}
+
+/** A checklist as the API returns it: progress counted, the project and maker named, times in ISO. */
+export interface ApiChecklist {
+    id: string
+    title: string
+    workspaceId: string | null
+    workspaceName: string | null
+    due: string | null
+    /** The deadline has passed (local date of this Mac) and items are still unchecked. */
+    overdue: boolean
+    done: number
+    total: number
+    /** Every item is checked (an empty checklist is not). */
+    complete: boolean
+    items: ApiChecklistItem[]
+    client: string
+    createdBy: string | null
+    createdByName: string | null
+    createdAt: string
+    updatedAt: string
+}
+
+export interface CreateChecklistInput {
+    title?: unknown
+    due?: unknown
+    /** Workspace id, name or absolute path. */
+    project?: unknown
+    items?: unknown
+    client: string
+    caller?: string
+}
+
+/** Today's local calendar date, YYYY-MM-DD — what a checklist's `due` is compared with. */
+export function localDateKey(date = new Date()): string {
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 export interface ControlApiDeps {
     // electron-store has no usable generic type in this codebase (see index.ts)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -342,6 +390,8 @@ export interface ControlApiDeps {
     sessionFolders: SessionFolders
     /** Requests sessions send for the user's hands (sign in, review, answer). */
     inbox: InboxStore
+    /** Header checklists — not tied to any session. */
+    checklists: ChecklistStore
     /** A session is gone for good (closed or deleted): drop what was kept for it elsewhere. */
     onSessionForgotten?: (sessionId: string) => void
 }
@@ -942,6 +992,196 @@ export class ControlApiService {
     }
 
     // ------------------------------------------------------------------
+    // Checklists — header lists that belong to no session
+    // ------------------------------------------------------------------
+
+    /**
+     * Open checklists by default, in the header's order (nearest deadline first).
+     * Reading or editing a checklist never marks a session as AI-driven: it is not a terminal.
+     */
+    listChecklists(options: { status?: ChecklistStatus; project?: string } = {}): { checklists: ApiChecklist[] } {
+        const workspaceId = options.project ? this.requireProject(options.project).id : undefined
+        const names = this.nameIndex()
+        return {
+            checklists: this.deps.checklists
+                .list({ status: options.status ?? 'open', workspaceId })
+                .map((c) => this.describeChecklist(c, names))
+        }
+    }
+
+    getChecklist(ref: string): ApiChecklist {
+        return this.describeChecklist(this.requireChecklist(ref))
+    }
+
+    /**
+     * Makes a checklist, items included. An open checklist with the same title is reused
+     * (created: false) — the items it lacks are added — so a repeated call does not stack copies.
+     */
+    createChecklist(input: CreateChecklistInput): { checklist: ApiChecklist; created: boolean } {
+        const check = checkChecklistInput(input, { requireTitle: true })
+        if (!check.ok) throw new ControlApiError(400, 'bad_request', check.message)
+        const items = input.items === undefined ? { ok: true as const, texts: [] } : checkItemTexts(input.items)
+        if (!items.ok) throw new ControlApiError(400, 'bad_request', items.message)
+        const workspaceId = this.projectOf(input.project)
+        const result = this.deps.checklists.create({
+            title: check.title!,
+            ...(check.due ? { due: check.due } : {}),
+            ...(workspaceId ? { workspaceId } : {}),
+            items: items.texts,
+            client: input.client,
+            ...(input.caller && this.hasSession(input.caller) ? { createdBy: input.caller } : {})
+        })
+        if (!result) throw this.tooMany()
+        return { checklist: this.describeChecklist(result.checklist), created: result.created }
+    }
+
+    /** Title, due (null clears) and project (null clears). */
+    updateChecklist(ref: string, input: { title?: unknown; due?: unknown; project?: unknown }): ApiChecklist {
+        const check = checkChecklistInput(input, { requireTitle: false })
+        if (!check.ok) throw new ControlApiError(400, 'bad_request', check.message)
+        const { ok: _ok, ...patch } = check
+        const project = input.project === undefined ? undefined : input.project === null || input.project === '' ? null : this.projectOf(input.project)
+        if (Object.keys(patch).length === 0 && project === undefined) {
+            throw new ControlApiError(400, 'bad_request', 'Send at least one of title, due, project.')
+        }
+        const target = this.requireChecklist(ref)
+        const updated = this.deps.checklists.update(target.id, { ...patch, ...(project !== undefined ? { workspaceId: project } : {}) })
+        return this.describeChecklist(updated ?? target)
+    }
+
+    removeChecklist(ref: string): void {
+        this.deps.checklists.remove(this.requireChecklist(ref).id)
+    }
+
+    /** Adds items at the end; text the checklist already has is skipped. */
+    addChecklistItems(ref: string, itemsInput: unknown): { checklist: ApiChecklist; added: number } {
+        const items = checkItemTexts(itemsInput)
+        if (!items.ok) throw new ControlApiError(400, 'bad_request', items.message)
+        if (items.texts.length === 0) throw new ControlApiError(400, 'bad_request', 'items is empty')
+        const target = this.requireChecklist(ref)
+        const result = this.deps.checklists.addItems(target.id, items.texts)
+        if (!result) throw this.tooMany()
+        return { checklist: this.describeChecklist(result.checklist), added: result.added }
+    }
+
+    /** Checks or unchecks an item (done), or renames it (text). item is its number from 1, or its id. */
+    updateChecklistItem(ref: string, itemRef: unknown, input: { text?: unknown; done?: unknown }): ApiChecklist {
+        const target = this.requireChecklist(ref)
+        const itemId = this.requireItem(target, itemRef)
+        const patch: { text?: string; done?: boolean } = {}
+        if (input.text !== undefined) {
+            if (typeof input.text !== 'string' || !cleanText(input.text)) throw new ControlApiError(400, 'bad_request', 'text must be a non-empty string')
+            patch.text = cleanText(input.text)
+        }
+        if (input.done !== undefined) {
+            if (typeof input.done !== 'boolean') throw new ControlApiError(400, 'bad_request', 'done must be true or false')
+            patch.done = input.done
+        }
+        if (Object.keys(patch).length === 0) throw new ControlApiError(400, 'bad_request', 'Send text or done.')
+        return this.describeChecklist(this.deps.checklists.updateItem(target.id, itemId, patch) ?? target)
+    }
+
+    removeChecklistItem(ref: string, itemRef: unknown): ApiChecklist {
+        const target = this.requireChecklist(ref)
+        const itemId = this.requireItem(target, itemRef)
+        return this.describeChecklist(this.deps.checklists.removeItem(target.id, itemId) ?? target)
+    }
+
+    private requireChecklist(ref: string): Checklist {
+        const found = this.deps.checklists.resolve(ref)
+        if (found === 'ambiguous') {
+            throw new ControlApiError(409, 'ambiguous_checklist', `More than one checklist is titled "${ref}". Use its id (checklist_list).`)
+        }
+        if (!found) throw new ControlApiError(404, 'checklist_not_found', `No checklist "${ref}".`)
+        return found
+    }
+
+    /** An item by its number from 1 (a number or a numeric string), else by id. */
+    private requireItem(checklist: Checklist, ref: unknown): string {
+        if (ref === undefined || ref === null || ref === '') throw new ControlApiError(400, 'bad_request', 'item is required (its number from 1, or its id)')
+        const asNumber = typeof ref === 'number' ? ref : typeof ref === 'string' && /^\d+$/.test(ref.trim()) ? Number(ref.trim()) : null
+        const item =
+            asNumber !== null
+                ? checklist.items[asNumber - 1]
+                : typeof ref === 'string'
+                  ? checklist.items.find((i) => i.id === ref)
+                  : undefined
+        if (!item) {
+            throw new ControlApiError(404, 'item_not_found', `No item ${String(ref)} in "${checklist.title}" (it has ${checklist.items.length}).`)
+        }
+        return item.id
+    }
+
+    /** A project given as workspace id, name (case ignored) or absolute path; undefined when none was given. */
+    private projectOf(value: unknown): string | undefined {
+        if (value === undefined || value === null || value === '') return undefined
+        if (typeof value !== 'string') throw new ControlApiError(400, 'bad_request', 'project must be a workspace id, name or path')
+        return this.requireProject(value).id
+    }
+
+    private requireProject(ref: string): Workspace {
+        const workspaces = this.workspaces()
+        const byId = workspaces.find((w) => w.id === ref)
+        if (byId) return byId
+        if (path.isAbsolute(ref)) {
+            const target = existsSync(ref) ? canonicalPath(ref) : path.resolve(ref)
+            const byPath = workspaces.find((w) => (existsSync(w.path) ? canonicalPath(w.path) : path.resolve(w.path)) === target)
+            if (byPath) return byPath
+        }
+        const needle = ref.trim().toLowerCase()
+        const byName = workspaces.filter((w) => w.name.trim().toLowerCase() === needle)
+        if (byName.length > 1) {
+            throw new ControlApiError(409, 'ambiguous_project', `More than one workspace is named "${ref}". Use its id or path (list_workspaces).`)
+        }
+        if (!byName[0]) throw new ControlApiError(404, 'workspace_not_found', `No workspace "${ref}" (id, name or path).`)
+        return byName[0]
+    }
+
+    private tooMany(): ControlApiError {
+        return new ControlApiError(409, 'too_many', 'Too many checklists or items. Remove finished checklists first.')
+    }
+
+    /** Workspace and session names by id, for naming a checklist's project and maker. */
+    private nameIndex(): { workspaces: Map<string, string>; sessions: Map<string, string> } {
+        const workspaces = new Map<string, string>()
+        const sessions = new Map<string, string>()
+        for (const workspace of this.workspaces()) {
+            workspaces.set(workspace.id, workspace.name)
+            for (const session of workspace.sessions) sessions.set(session.id, session.name)
+        }
+        return { workspaces, sessions }
+    }
+
+    private describeChecklist(checklist: Checklist, names = this.nameIndex()): ApiChecklist {
+        const done = checklist.items.filter((i) => i.doneAt !== undefined).length
+        const complete = isComplete(checklist)
+        const workspaceName = checklist.workspaceId ? names.workspaces.get(checklist.workspaceId) ?? null : null
+        return {
+            id: checklist.id,
+            title: checklist.title,
+            workspaceId: workspaceName !== null ? checklist.workspaceId! : null,
+            workspaceName,
+            due: checklist.due ?? null,
+            overdue: !complete && checklist.due !== undefined && checklist.due < localDateKey(),
+            done,
+            total: checklist.items.length,
+            complete,
+            items: checklist.items.map((item, index) => ({
+                id: item.id,
+                n: index + 1,
+                text: item.text,
+                done: item.doneAt !== undefined,
+                doneAt: item.doneAt !== undefined ? new Date(item.doneAt).toISOString() : null
+            })),
+            client: checklist.client,
+            createdBy: checklist.createdBy ?? null,
+            createdByName: checklist.createdBy ? names.sessions.get(checklist.createdBy) ?? null : null,
+            createdAt: new Date(checklist.createdAt).toISOString(),
+            updatedAt: new Date(checklist.updatedAt).toISOString()
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Hooks for the rest of the app
     // ------------------------------------------------------------------
 
@@ -1140,6 +1380,7 @@ export class ControlApiService {
 
     private removeWorkspace(workspaceId: string): void {
         this.deps.store.set('workspaces', this.workspaces().filter((w) => w.id !== workspaceId))
+        this.deps.checklists.forgetWorkspace(workspaceId)
         this.emit({ type: 'workspaceRemoved', workspaceId })
     }
 

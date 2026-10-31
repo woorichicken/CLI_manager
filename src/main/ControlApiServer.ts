@@ -484,7 +484,42 @@ export class ControlApiServer {
                 const unread = query.get('unread')
                 return service.listInbox({ unreadOnly: unread === '1' || unread === 'true' })
             }),
-            route('POST', '/v1/inbox/:id/read', ({ params }) => service.readInbox(params.id))
+            route('POST', '/v1/inbox/:id/read', ({ params }) => service.readInbox(params.id)),
+            route('GET', '/v1/checklists', ({ query }) => {
+                const status = query.get('status') ?? undefined
+                if (status !== undefined && status !== 'open' && status !== 'done' && status !== 'all') {
+                    throw new ControlApiError(400, 'bad_request', 'status must be "open", "done" or "all"')
+                }
+                return service.listChecklists({ status, project: query.get('project') ?? undefined })
+            }),
+            route('POST', '/v1/checklists', ({ body, client, caller }) => {
+                const result = service.createChecklist({
+                    title: body.title,
+                    due: body.due,
+                    project: body.project,
+                    items: body.items,
+                    client,
+                    caller
+                })
+                return result.created ? created(result) : result
+            }),
+            route('GET', '/v1/checklists/:checklist', ({ params }) => ({ checklist: service.getChecklist(params.checklist) })),
+            route('POST', '/v1/checklists/:checklist', ({ params, body }) => ({
+                checklist: service.updateChecklist(params.checklist, { title: body.title, due: body.due, project: body.project })
+            })),
+            route('DELETE', '/v1/checklists/:checklist', ({ params }) => {
+                service.removeChecklist(params.checklist)
+                return { ok: true }
+            }),
+            route('POST', '/v1/checklists/:checklist/items', ({ params, body }) =>
+                service.addChecklistItems(params.checklist, body.items ?? body.text)
+            ),
+            route('POST', '/v1/checklists/:checklist/items/:item', ({ params, body }) => ({
+                checklist: service.updateChecklistItem(params.checklist, params.item, { text: body.text, done: body.done })
+            })),
+            route('DELETE', '/v1/checklists/:checklist/items/:item', ({ params }) => ({
+                checklist: service.removeChecklistItem(params.checklist, params.item)
+            }))
         ]
     }
 }

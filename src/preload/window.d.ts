@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
 
 declare global {
     interface Window {
@@ -226,6 +226,14 @@ declare global {
             onInbox: (callback: (requests: InboxRequest[]) => void) => () => void
             markInboxRead: (id: string) => Promise<void>
             markInboxAllRead: () => Promise<void>
+            getChecklists: () => Promise<Checklist[]>
+            onChecklists: (callback: (checklists: Checklist[]) => void) => () => void
+            createChecklist: (title: string, workspaceId?: string) => Promise<string | null>
+            updateChecklist: (id: string, patch: { title?: string; due?: string | null; workspaceId?: string | null }) => Promise<boolean>
+            removeChecklist: (id: string) => Promise<boolean>
+            addChecklistItem: (id: string, text: string) => Promise<boolean>
+            updateChecklistItem: (id: string, itemId: string, patch: { text?: string; done?: boolean }) => Promise<boolean>
+            removeChecklistItem: (id: string, itemId: string) => Promise<boolean>
             peekSessions: (sessionIds: string[]) => Promise<SessionPeek[]>
         }
     }

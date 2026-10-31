@@ -127,6 +127,32 @@ checks it off. Code: `src/main/InboxStore.ts` (store, checks) · `ControlApiServ
 No OS notification or sound in this version: twenty sessions asking at once would be noise. With the API
 switched off nothing can be sent (the inbox still shows what is kept).
 
+## Checklists
+
+Titled lists with a deadline, usually for one project, shown in the main header — the plan a lead
+(or the user) keeps where both see it instead of in a reply that scrolls away (standup note 「기획 - 리스트」,
+2026-10-31 2nd plan: "세션에 붙는게 아니라, 전체에 체크리스트 … 총괄 혹은 팀장이 만들고 특정 세션에 직접 오더").
+A checklist belongs to **no session**: the lead hands the work out with `send_input` as before, and whoever
+finishes an item checks it. Code: `src/main/ChecklistStore.ts` (store, checks, order) ·
+`ControlApiService.listChecklists/createChecklist/…` · renderer `hooks/useChecklists.ts`,
+`components/Checklists/`, `utils/dueDate.ts`. Tests: `t70-checklists-unit.spec.ts`, `t71-checklists.spec.ts`.
+
+| Piece | Contract |
+|---|---|
+| Reference | A checklist by `id` or by its title (case and spacing ignored); two checklists with that title → `409 ambiguous_checklist`. An item by its number from 1 (`n` in results) or its `id` |
+| Title, items | One line each: whitespace folds to single spaces, cut (not refused) at **200** characters. Items keep the order they were added; checking one does not move it |
+| Deadline (`due`) | One per checklist, optional local date `YYYY-MM-DD` (a real date — `2026-02-30` → `400`). `null` or `""` clears it. `overdue` compares with this Mac's local date and is false once every item is checked |
+| Project | Optional workspace, given as id, name (case ignored) or absolute path. Unknown → `404 workspace_not_found`, two of that name → `409 ambiguous_project`. Removing the workspace keeps the checklist and drops only the link. A checklist made in the panel starts with the project of the session in view |
+| Repeats | Creating with the title of an open checklist reuses it (`200`, `created: false`): items it lacks are added, a `due` or `project` sent with the repeat replaces the old one. Adding an item text the checklist already has (checked or not) is skipped |
+| Done | A checklist is finished when every item is checked (an empty one is open). Finished ones go to the end of the header order and stay until removed by hand — nothing is deleted on its own |
+| Order | Open first, nearest deadline on top, undated ones after in the order made; then finished ones, the most recently finished first. This is the order ‹ › pages through |
+| Sessions | Closing or deleting a session does not touch checklists. `createdBy` keeps the maker's id (`X-Caller-Session`); `createdByName` is `null` once that session is gone |
+| AI mark | Reading or editing checklists does **not** set `aiControl` — a checklist is not a terminal |
+| Kept | electron-store `checklists`, owned by main (survives restarts; every window sees the same). At most **100** checklists and **100** items each — more is refused (`409 too_many`), never trimmed |
+| Shown | A chip at the left end of the main header's right-hand buttons — the checklist looked at last (switching sessions does not change it), its done/total and deadline; it stays in split view. Its panel: ‹ › (and ← → when no field has focus) through checklists, double-click the title to rename, project select, deadline (a picked date saves after 0.6 s), a progress bar, the items (check, double-click to rename, × to delete), "Add an item…", "+ New checklist", Delete (two clicks). Shortcut **⌘⇧J** (`toggleChecklists`). Below 640 px the chip shows only the icon and done/total |
+
+Not in this version (backlog): assigning an item to a session.
+
 ## Session state
 
 | `state` | Meaning |
@@ -205,6 +231,14 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/inbox` | `kind`, `text`, `url`; `sessionId` or the `X-Caller-Session` header | `{ request, created }` — see [Inbox](#inbox). `400 session_required`, `404 not_found` |
 | GET | `/v1/inbox` | `?unread=1` | `{ unreadCount, requests[] }`, newest first. A request carries `id`, `sessionId`, `sessionName`, `workspaceName`, `kind`, `text`, `url?`, `client`, `read`, `at`, `createdAt`, `readAt` (ISO) |
 | POST | `/v1/inbox/:id/read` | | the request, marked read. `404 not_found` |
+| GET | `/v1/checklists` | `?status=open\|done\|all` (default `open`) · `?project=` | `{ checklists[] }` in header order — see [Checklists](#checklists). A checklist carries `id`, `title`, `workspaceId`, `workspaceName`, `due`, `overdue`, `done`, `total`, `complete`, `items[]` (`id`, `n`, `text`, `done`, `doneAt`), `client`, `createdBy`, `createdByName`, `createdAt`, `updatedAt` (ISO; absent values are `null`) |
+| POST | `/v1/checklists` | `title`, `items?` (string or list), `due?`, `project?` | `201 { checklist, created: true }`; an open checklist of that title → `200 { checklist, created: false }`. `400`, `404 workspace_not_found`, `409 ambiguous_project`, `409 too_many` |
+| GET | `/v1/checklists/:checklist` | id or title | `{ checklist }`. `404 checklist_not_found`, `409 ambiguous_checklist` |
+| POST | `/v1/checklists/:checklist` | any of `title`, `due` (`null` clears), `project` (`null` clears) | `{ checklist }`. Nothing to change → `400` |
+| DELETE | `/v1/checklists/:checklist` | | `{ ok }` |
+| POST | `/v1/checklists/:checklist/items` | `items` (string or list) or `text` | `{ checklist, added }` — text it already has is skipped. Empty → `400`, over the cap → `409 too_many` |
+| POST | `/v1/checklists/:checklist/items/:item` | `done` (boolean) and/or `text`; item by number from 1 or id | `{ checklist }`. `404 item_not_found` |
+| DELETE | `/v1/checklists/:checklist/items/:item` | | `{ checklist }` |
 
 A session carries `aiControlled`, `controlledBy`, `connectedAt` (both `''` when unmarked),
 `screenPartial`, `orchestrator` and `openedBy` (see [Master sessions](#master-sessions-orchestrators)).
@@ -251,7 +285,11 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 2024-11-05 … 2025-11-25 are echoed. Tools: `list_workspaces`, `list_templates`, `list_sessions`,
 `open_session` (with `folder`, `session_folder`, `ephemeral`), `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
 `focus_session`, `rename_session`, `release_session`, `close_session` (with `hand_to`), `list_session_folders`, `create_session_folder`, `rename_session_folder`, `delete_session_folder`, `move_session_to_folder` (`session_id`, `folder`: string or null), `list_session_relations`, `unregister_workspace`, `inbox_notify`
-(`kind`, `text`, `url`, `session_id` — or the caller header), `inbox_list` (`unread_only`). Domain errors come back as tool results with
+(`kind`, `text`, `url`, `session_id` — or the caller header), `inbox_list` (`unread_only`), `checklist_list` (`status`, `project`),
+`checklist_create` (`title`, `items`, `due`, `project`), `checklist_update` (`checklist`, `title`, `due`, `project` — null clears),
+`checklist_add_items` (`checklist`, `items`), `checklist_check` (`checklist`, `item` — number from 1 or id, `done` default true; answers
+"<title>: 2/5 checked."), `checklist_remove_item`, `checklist_remove`. The server instructions ask a coordinating agent to keep its plan
+in a checklist and check items off as they finish. Domain errors come back as tool results with
 `isError: true` so the model can read them; screen results are plain text, not JSON.
 
 ## MCP 없이 쓰기 (REST + 셸)
@@ -273,6 +311,10 @@ curl -s "${H[@]}" -X DELETE "$URL/v1/workspaces/$WS"                      # API 
 curl -s "${H[@]}" -H "X-Caller-Session: $CLIMANAGER_SESSION_ID" \
      -d '{"kind":"login","text":"Sign in to Aside, then tell me","url":"https://example.com/login"}' \
      "$URL/v1/inbox"                                                      # 사람 손이 필요할 때 — 앱 인박스로
+curl -s "${H[@]}" -H "X-Caller-Session: $CLIMANAGER_SESSION_ID" \
+     -d '{"title":"v1.24 release","project":"CLImanger","due":"2026-11-03","items":["Build","Publish"]}' \
+     "$URL/v1/checklists"                                                 # 계획을 헤더 체크리스트로
+curl -s "${H[@]}" -d '{"done":true}' "$URL/v1/checklists/v1.24%20release/items/1"   # 1번 항목 체크
 ```
 
 `/tmp`·워크트리처럼 한 번 쓰고 버릴 폴더는 열 때 `"ephemeral": true` 를 주면 마지막 세션이
@@ -342,4 +384,6 @@ IPC: `get-control-api-state`, `set-control-api`, `regenerate-control-api-token`,
 `control-api-release-session`, `get-control-api-masters`.
 The inbox has its own channel `inbox` (the whole list on every change) and `get-inbox`, `mark-inbox-read`,
 `mark-inbox-all-read`; `hooks/useInbox.ts` holds it in one module-level store
-like the masters.
+like the masters. Checklists likewise: channel `checklists` (the whole list in header order on every change)
+and `get-checklists`, `create-checklist`, `update-checklist`, `remove-checklist`, `add-checklist-item`,
+`update-checklist-item`, `remove-checklist-item`; `hooks/useChecklists.ts` holds it the same way.

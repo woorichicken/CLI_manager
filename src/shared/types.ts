@@ -128,6 +128,7 @@ export interface AppConfig {
     loopSessions?: LoopSession[]   // Loop Dashboard: persisted loop sessions
     sessionRelations?: SessionRelation[]   // Session header "Related sessions" (see SessionRelation)
     inbox?: InboxRequest[]   // Requests sessions sent for the user's hands (see InboxRequest)
+    checklists?: Checklist[]   // Header checklists, apart from sessions (see Checklist)
 }
 
 export interface UserSettings {
@@ -327,7 +328,7 @@ export type ShortcutAction =
     | 'toggleSidebar' | 'toggleSettings'
     | 'fileSearch' | 'contentSearch'
     | 'newSession' | 'closeSession' | 'clearSession' | 'renameSession'
-    | 'toggleMemo' | 'toggleRelated'
+    | 'toggleMemo' | 'toggleRelated' | 'toggleChecklists'
     | 'revealInFinder' | 'openInEditor'
     | 'memoNewPage' | 'memoPrevPage' | 'memoNextPage' | 'memoDeletePage' | 'memoCopyPage'
 
@@ -359,6 +360,7 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     renameSession:   { key: 'R', modifiers: ['mod'], code: 'r' },
     toggleMemo:      { key: 'J', modifiers: ['mod'], code: 'j' },
     toggleRelated:   { key: 'L', modifiers: ['mod', 'shift'], code: 'l' },
+    toggleChecklists: { key: 'J', modifiers: ['mod', 'shift'], code: 'j' },
     revealInFinder:  { key: 'O', modifiers: ['mod', 'shift'], code: 'o' },
     openInEditor:    { key: 'E', modifiers: ['mod', 'shift'], code: 'e' },
     // Memo pages share ⌥⌘: free in the app, its menu and macOS, and typing in the memo never uses it.
@@ -394,6 +396,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
     renameSession:   { label: 'Rename Tab',          description: 'Rename the current tab',                   group: 'actions' },
     toggleMemo:      { label: 'Toggle Memo',         description: 'Open or close session memo',               group: 'memo' },
     toggleRelated:   { label: 'Related Sessions',    description: 'Open or close the Related sessions dialog', group: 'actions' },
+    toggleChecklists: { label: 'Checklists',         description: 'Open or close the checklist panel in the header', group: 'actions' },
     revealInFinder:  { label: 'Reveal in Finder',    description: 'Show the selected path in Finder, or the session folder', group: 'actions' },
     openInEditor:    { label: 'Open in Editor',      description: 'Open the selected path in the editor, or the session folder', group: 'actions' },
     memoNewPage:     { label: 'New Memo Page',       description: 'Add a page to the memo (opens it if closed)', group: 'memo' },
@@ -1018,4 +1021,38 @@ export interface InboxRequest {
     readAt?: number
     /** X-Client-Name of the sender. */
     client: string
+}
+
+/**
+ * A titled list of items with an optional deadline, usually for one project — shown in
+ * the main header and paged with ‹ ›. It belongs to no session: a lead (or the user) makes
+ * it, hands the work to sessions directly, and whoever finishes an item checks it, from
+ * the header panel or the Control API. Closing a session leaves it alone. Kept by main
+ * (ChecklistStore).
+ */
+export interface Checklist {
+    id: string
+    /** One line, at most 200 characters. */
+    title: string
+    /** The workspace (project) it is for. Absent when it is for none, or that workspace was removed. */
+    workspaceId?: string
+    /** Deadline of the whole checklist, a local calendar date YYYY-MM-DD. */
+    due?: string
+    /** In the order they were added; checking one does not move it. */
+    items: ChecklistItem[]
+    createdAt: number
+    updatedAt: number
+    /** Who made it: "app" from the header panel, else the Control API caller's X-Client-Name. */
+    client: string
+    /** The session that made it through the API (X-Caller-Session). */
+    createdBy?: string
+}
+
+export interface ChecklistItem {
+    id: string
+    /** One line, at most 200 characters. */
+    text: string
+    /** Epoch ms it was checked, absent while unchecked. */
+    doneAt?: number
+    createdAt: number
 }
