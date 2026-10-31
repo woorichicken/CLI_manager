@@ -9,7 +9,7 @@ import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult } fro
  * - 88d69c82: a session folder's right-click menu copies the folder name and the IDs of the
  *   sessions in it — one per line, in the order the list shows them (as Copy IDs does). An empty
  *   folder's Copy Session IDs is disabled.
- * - 386b0c76: a button that has a keyboard shortcut names it in its tooltip ("New page (⌥⌘N)"),
+ * - 386b0c76: a button that has a keyboard shortcut names it in its tooltip ("New page (⌘⌥N)"),
  *   and a binding changed in Settings › Keyboard shows the new key, not the default.
  *
  * Judged from the clipboard in main and the buttons' `title`. `T72_SHOTS=<dir>` leaves the folder
@@ -153,8 +153,8 @@ test.describe('T72 folder copy and shortcut hints (fb-1031)', () => {
         expect(titles.closeSidebar).toBe('Close Sidebar (⌘B)')
         expect(titles.related).toBe('Related sessions — none yet. Open to add one. (⌘⇧L)')
         expect(titles.memo).toBe('Session Memo (⌘J)')
-        // Remapped in Settings: the tooltip shows the new key, never the default ⌥⌘N.
+        // Remapped in Settings: the tooltip shows the new key, never the default ⌘⌥N.
         expect(titles.memoNewPage).toBe('New page (⌘⇧M)')
-        expect(titles.memoCopy).toBe('Copy memo (⌥⌘C)')
+        expect(titles.memoCopy).toBe('Copy memo (⌘⌥C)')
     })
 })

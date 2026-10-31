@@ -15,7 +15,7 @@ function formatModifier(mod: string): string {
     return mod
 }
 
-/** A binding as its key caps: ⌥⌘N on macOS, Ctrl+Alt+N elsewhere. */
+/** A binding as its key caps, in the order it is stored — as Settings › Keyboard shows it: ⌘⌥N on macOS, Ctrl+Alt+N elsewhere. */
 export function formatBinding(binding: KeyBinding): string {
     const mods = binding.modifiers.map(formatModifier)
     const key = KEY_SYMBOLS[binding.key] ?? binding.key
@@ -25,7 +25,7 @@ export function formatBinding(binding: KeyBinding): string {
     return [...mods, key].join('+')
 }
 
-/** "New page" + ⌥⌘N → "New page (⌥⌘N)". */
+/** "New page" + ⌘⌥N → "New page (⌘⌥N)". */
 export function withShortcut(label: string, binding: KeyBinding | undefined): string {
     return binding ? `${label} (${formatBinding(binding)})` : label
 }
