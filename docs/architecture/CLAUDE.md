@@ -195,7 +195,12 @@ User Action (Renderer)
   inbox?: [                         // Inbox — requests sessions sent for the user's hands (InboxStore), newest first
     { id: string, sessionId: string, kind: 'login' | 'review' | 'question' | 'other', text: string, url?: string,
       at: number, createdAt: number, readAt?: number, client: string }
-  ]                                 // ≤200 · read ones dropped after 7 days (startup) · a closed session takes its own
+  ],                                // ≤200 · read ones dropped after 7 days (startup) · a closed session takes its own
+  checklists?: [                    // Header checklists — belong to no session (ChecklistStore), header order
+    { id: string, title: string, workspaceId?: string, due?: 'YYYY-MM-DD',
+      items: [{ id: string, text: string, doneAt?: number, createdAt: number }],
+      createdAt: number, updatedAt: number, client: string, createdBy?: string }
+  ]                                 // ≤100 checklists × ≤100 items, refused beyond · removed only by hand · a removed workspace drops only workspaceId
 }
 ```
 
@@ -264,6 +269,12 @@ User Action (Renderer)
 - `get-inbox` → `InboxRequest[]`(최신이 앞, 읽은 것 포함) · `inbox` (main → renderer): 바뀔 때마다 전체 목록. main 은 같은 때 Dock 배지(안 읽은 수)를 고친다
 - `mark-inbox-read(id)` · `mark-inbox-all-read`: 줄의 ✓ · 「Mark all read」. 세션을 열거나 보는 것으로는 읽지 않는다(1.22.0, 제보 b165acc4 — 그 전에는 `mark-inbox-sessions-read` 로 보이는 세션을 읽었다)
 - 코드: `src/main/InboxStore.ts`(저장·검사) · `ControlApiService.notifyInbox`(API) · `hooks/useInbox.ts` · `components/Inbox/`(종·목록·행 점). 계약은 [`control-api.md`](control-api.md) 「Inbox」
+
+#### Checklists
+- `get-checklists` → `Checklist[]`(헤더 순서: 열린 것 마감 가까운 순 → 다 끝난 것 최근 순) · `checklists` (main → renderer): 바뀔 때마다 전체 목록
+- `create-checklist(title, workspaceId?)` → 새 id 또는 `null` · `update-checklist(id, { title?, due?: string|null, workspaceId?: string|null })` · `remove-checklist(id)` · `add-checklist-item(id, text)` · `update-checklist-item(id, itemId, { text?, done? })` · `remove-checklist-item(id, itemId)` → `boolean`. 검사는 API 와 같은 `checkChecklistInput`·`checkItemTexts`
+- 헤더가 보여 줄 체크리스트(마지막에 본 것)는 렌더러 localStorage `checklists-last-viewed` — 세션을 바꿔도 그대로
+- 코드: `src/main/ChecklistStore.ts` · `ControlApiService.*Checklist*` · `hooks/useChecklists.ts` · `components/Checklists/`(칩·패널·항목 줄·마감 편집) · `utils/dueDate.ts`(마감 표시). 계약은 [`control-api.md`](control-api.md) 「Checklists」
 
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)

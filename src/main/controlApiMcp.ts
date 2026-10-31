@@ -33,6 +33,8 @@ Folders you open that are not registered yet are added to the user's sidebar (in
 
 You can also work in sessions the user opened: list_sessions with scope "all" (use query — there can be hundreds) finds them, and the same tools apply. Do this only when the user's request points at that session. A session's screen may be missing older output when screenPartial is true.
 
+When you coordinate work across sessions, keep the plan in a checklist the user sees in CLI Manager's header: checklist_create with a title, the items, a due date (YYYY-MM-DD) and the project (workspace name). Give the work to sessions as usual with send_input, and check items off with checklist_check as they finish — any session may check them. Checklists belong to no session: closing a session leaves them alone.
+
 When you need the user's hands — sign in to something in a browser, review a page or a diff, answer a question you cannot decide — call inbox_notify. The request shows in CLI Manager's inbox with your session, and it is marked read when the user opens your session. Keep the text to one line saying what to do; put the page in url.
 
 Rules: the first time you read, type into, wait on or focus a session it is marked as AI-driven and highlighted in green, so the user can see where you are working. They may type into it or disconnect it at any time — re-read the screen before acting. If a call reports "disconnected", the user took the session back: stop working in it unless they ask you to continue. Closing a session kills whatever runs in it; never close one you did not open unless the user asked. If a screen shows a question (awaitingInput: true) — a permission prompt, or Claude Code asking whether to trust a new folder — read the options and answer with send_input keys (e.g. ["down","enter"], ["1"]); text is refused until the question is gone. Trusting a folder or approving an action is the user's call: only accept when the user's request clearly covers it.`
@@ -229,6 +231,93 @@ const TOOLS: ToolDefinition[] = [
         inputSchema: {
             type: 'object',
             properties: { unread_only: { type: 'boolean', description: 'Only unread requests. Default false.' } }
+        }
+    },
+    {
+        name: 'checklist_list',
+        description:
+            "List the checklists shown in CLI Manager's header — open ones by default, the nearest deadline first — with each item's number, text and whether it is checked.",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                status: { type: 'string', enum: ['open', 'done', 'all'], description: 'Default "open" (not every item checked).' },
+                project: { type: 'string', description: 'Only checklists of this workspace (id, name or path).' }
+            }
+        }
+    },
+    {
+        name: 'checklist_create',
+        description:
+            "Make a checklist in CLI Manager's header: a title, its items, an optional deadline and project. It belongs to no session. An open checklist with the same title is reused — the items it lacks are added — so repeating the call does not make a copy.",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                title: { type: 'string', description: 'One line (cut at 200 characters).' },
+                items: { type: 'array', items: { type: 'string' }, description: 'One line each, in order. Optional.' },
+                due: { type: 'string', description: 'Deadline of the whole checklist, YYYY-MM-DD (local date). Optional.' },
+                project: { type: 'string', description: 'Workspace it is for: id, name or absolute path. Optional.' }
+            },
+            required: ['title']
+        }
+    },
+    {
+        name: 'checklist_update',
+        description: 'Rename a checklist, set or clear its deadline, or set or clear its project.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                checklist: { type: 'string', description: 'Checklist id or exact title.' },
+                title: { type: 'string', description: 'New title.' },
+                due: { type: ['string', 'null'], description: 'YYYY-MM-DD, or null to clear.' },
+                project: { type: ['string', 'null'], description: 'Workspace id, name or path, or null to clear.' }
+            },
+            required: ['checklist']
+        }
+    },
+    {
+        name: 'checklist_add_items',
+        description: 'Add items at the end of a checklist. Text it already has is skipped.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                checklist: { type: 'string', description: 'Checklist id or exact title.' },
+                items: { type: 'array', items: { type: 'string' }, description: 'One line each.' }
+            },
+            required: ['checklist', 'items']
+        }
+    },
+    {
+        name: 'checklist_check',
+        description: 'Check an item off a checklist (done: false unchecks it). Any session may do this — check the item when its work is finished.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                checklist: { type: 'string', description: 'Checklist id or exact title.' },
+                item: { type: ['integer', 'string'], description: 'Item number from 1 (as in checklist_list), or its id.' },
+                done: { type: 'boolean', description: 'Default true.' }
+            },
+            required: ['checklist', 'item']
+        }
+    },
+    {
+        name: 'checklist_remove_item',
+        description: 'Delete an item that should not be on the checklist. To mark finished work, use checklist_check instead.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                checklist: { type: 'string', description: 'Checklist id or exact title.' },
+                item: { type: ['integer', 'string'], description: 'Item number from 1, or its id.' }
+            },
+            required: ['checklist', 'item']
+        }
+    },
+    {
+        name: 'checklist_remove',
+        description: 'Delete a whole checklist. Finished checklists stay until removed — remove one only when the user no longer needs it.',
+        inputSchema: {
+            type: 'object',
+            properties: { checklist: { type: 'string', description: 'Checklist id or exact title.' } },
+            required: ['checklist']
         }
     },
     {
@@ -455,6 +544,43 @@ async function callTool(
             )
         case 'inbox_list':
             return JSON.stringify(service.listInbox({ unreadOnly: bool(args, 'unread_only') }), null, 1)
+        case 'checklist_list': {
+            const status = str(args, 'status')
+            if (status !== undefined && status !== 'open' && status !== 'done' && status !== 'all') {
+                throw new InvalidParams('status must be "open", "done" or "all"')
+            }
+            return JSON.stringify(service.listChecklists({ status, project: str(args, 'project') }), null, 1)
+        }
+        case 'checklist_create':
+            return JSON.stringify(
+                service.createChecklist({
+                    title: str(args, 'title', true),
+                    items: args.items,
+                    due: args.due,
+                    project: args.project,
+                    client,
+                    caller
+                }),
+                null,
+                1
+            )
+        case 'checklist_update':
+            return JSON.stringify(
+                service.updateChecklist(str(args, 'checklist', true)!, { title: args.title, due: args.due, project: args.project }),
+                null,
+                1
+            )
+        case 'checklist_add_items':
+            return JSON.stringify(service.addChecklistItems(str(args, 'checklist', true)!, args.items), null, 1)
+        case 'checklist_check': {
+            const checklist = service.updateChecklistItem(str(args, 'checklist', true)!, args.item, { done: bool(args, 'done') ?? true })
+            return `${checklist.title}: ${checklist.done}/${checklist.total} checked${checklist.complete ? ' — all done' : ''}.`
+        }
+        case 'checklist_remove_item':
+            return JSON.stringify(service.removeChecklistItem(str(args, 'checklist', true)!, args.item), null, 1)
+        case 'checklist_remove':
+            service.removeChecklist(str(args, 'checklist', true)!)
+            return 'Removed.'
         default:
             throw new InvalidParams(`Unknown tool: ${name}`)
     }

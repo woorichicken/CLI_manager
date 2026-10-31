@@ -15,6 +15,7 @@ import { SplitTerminalHeader } from './components/SplitTerminalHeader'
 import { SessionBreadcrumb } from './components/SessionBreadcrumb'
 import { buildSessionBreadcrumb } from './utils/sessionBreadcrumb'
 import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
+import { HeaderChecklists } from './components/Checklists/HeaderChecklists'
 import { ParentSessionButton, SessionHistoryButtons } from './components/SessionNavButtons'
 import { useSessionHistory } from './hooks/useSessionHistory'
 import { RelatedSessionsModal } from './components/RelatedSessions/RelatedSessionsModal'
@@ -90,6 +91,7 @@ function App() {
 
     // Session header "Related sessions": whose dialog is open, and the counts on the buttons
     const [relatedDialogSessionId, setRelatedDialogSessionId] = useState<string | null>(null)
+    const [checklistsOpen, setChecklistsOpen] = useState(false)
     const sessionRelations = useSessionRelations()
     const relatedCountBySession = useMemo(() => relatedCounts(sessionRelations, workspaces), [sessionRelations, workspaces])
 
@@ -1163,6 +1165,7 @@ function App() {
                 : activeSession?.id ?? null
             setRelatedDialogSessionId(current => (current || !targetId ? null : targetId))
         },
+        onToggleChecklists: () => setChecklistsOpen(open => !open),
         onAddSession: (workspaceId, template) => {
             handleAddSession(workspaceId, 'regular', undefined, template?.command, template?.name)
         },
@@ -1556,6 +1559,15 @@ function App() {
                         )}
                     </div>
                     <div className="flex items-center gap-2 no-drag shrink-0">
+                        {/* Checklists belong to no session, so they stay in split view too */}
+                        <HeaderChecklists
+                            open={checklistsOpen}
+                            onOpenChange={setChecklistsOpen}
+                            compact={Boolean(splitLayout)}
+                            workspaces={workspaces}
+                            activeWorkspaceId={activeWorkspace?.id}
+                            viewedSessionId={viewedSessionId}
+                        />
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
                         {!splitLayout && (
                             <>

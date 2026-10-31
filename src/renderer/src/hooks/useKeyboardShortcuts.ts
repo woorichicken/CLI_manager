@@ -31,6 +31,8 @@ interface UseKeyboardShortcutsConfig {
     onToggleSidebar: () => void
     onToggleSettings: () => void
     onToggleRelated: () => void
+    /** The checklist panel in the main header — not tied to a session. */
+    onToggleChecklists: () => void
     onAddSession: (workspaceId: string, template?: TerminalTemplate) => void
     onCloseSession: (workspaceId: string, sessionId: string) => void
     onClearSession: (sessionId: string) => void
@@ -112,6 +114,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onToggleSidebar,
         onToggleSettings,
         onToggleRelated,
+        onToggleChecklists,
         onAddSession,
         onCloseSession,
         onClearSession,
@@ -285,6 +288,15 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                 return
             }
 
+            // Same for the checklist panel: its fields are inputs, and the key should close it from there too
+            if (matchShortcut(e, shortcuts.toggleChecklists)) {
+                console.log('[Shortcuts] matched: toggleChecklists')
+                e.preventDefault()
+                e.stopPropagation()
+                onToggleChecklists()
+                return
+            }
+
             // Memo pages, also while typing in the memo: ⌥⌘ never types a character there. AltGr reports
             // Ctrl+Alt off macOS and types characters, so it is left alone. A held key's repeats are not
             // presses: a held delete would confirm its own first press.
@@ -441,6 +453,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onToggleSidebar,
         onToggleSettings,
         onToggleRelated,
+        onToggleChecklists,
         onSetFileSearchOpen,
         onSetFileSearchMode,
         onAddSession,
