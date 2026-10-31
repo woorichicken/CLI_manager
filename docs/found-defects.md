@@ -23,6 +23,18 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 메인 헤더 — 창 폭 390 · 사이드바 닫힘에서 「Related」 글자가 ‹ › 버튼과 겹친다
+- Date: 2026-10-30
+- Where: `App.tsx` 메인 헤더 — 왼쪽 묶음(사이드바 열기 · `SessionHistoryButtons` ‹ › · 브레드크럼)과 오른쪽 묶음(`ParentSessionButton` ·
+  `RelatedSessionsButton` · 검색 …). 오른쪽 묶음은 `shrink-0` 이라 줄지 않는다.
+- What: 390 폭에서 오른쪽 버튼 줄이 왼쪽 칸까지 밀고 들어와, 「Related」 글자 위에 ‹ › 가 겹쳐 「Rela‹ted ›」로 보였다.
+- Surfaced by: 세션 작업 리스트 1차(브랜치 `feat/session-tasks-1030`, 방향이 바뀌어 머지 안 함) T71 의 390 캡처 — 그 변경은 헤더를 건드리지 않았다. 체크리스트 2차가 헤더에 칩을 넣으면 더 빠듯해진다.
+- Impact: 좁은 창에서만. 버튼은 눌리지만 무엇을 누르는지 읽기 어렵다.
+- Workaround: 창을 넓힌다.
+- Fix direction: 좁을 때 Related 는 아이콘만(이미 분할 칸 헤더의 `compact`), 또는 왼쪽 묶음에 `overflow-hidden`.
+
+---
+
 ### 🐛 `src/main/index.ts` — 업데이트 확인이 「버전이 다르면 업데이트」라 더 낮은 버전도 권한다
 - Date: 2026-10-21
 - Where: `src/main/index.ts` 의 `check-for-update` 핸들러 — `if (latestVersion && latestVersion !== currentVersion)` 이면
