@@ -1,4 +1,5 @@
 import { Waypoints } from 'lucide-react'
+import { useShortcutHint } from '../../utils/shortcutHints'
 
 interface RelatedSessionsButtonProps {
     sessionId: string
@@ -13,9 +14,10 @@ interface RelatedSessionsButtonProps {
  * the dialog is also where sessions are added by hand.
  */
 export function RelatedSessionsButton({ sessionId, count, onOpen, compact = false }: RelatedSessionsButtonProps) {
+    const hint = useShortcutHint()
     const title = count === 0
-        ? 'Related sessions — none yet. Open to add one.'
-        : `Related sessions (${count})`
+        ? hint('Related sessions — none yet. Open to add one.', 'toggleRelated')
+        : hint(`Related sessions: ${count}`, 'toggleRelated')
 
     return (
         <button

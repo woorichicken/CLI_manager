@@ -336,7 +336,8 @@ test.describe('T65 sidebar tree (fb-1028)', () => {
         ]
         const allView: Opener[] = [
             { name: 'session folder', open: () => page.getByTestId('session-folder-header-sf-t65').click({ button: 'right' }) },
-            { name: 'session (All)', open: () => row(page, 's-a2').click({ button: 'right' }) }
+            // Its left end: the session folder menu (Copy items since fb-1031) now reaches over the row's middle.
+            { name: 'session (All)', open: () => row(page, 's-a2').click({ button: 'right', position: { x: 8, y: 8 } }) }
         ]
         const closers: Array<[string, () => Promise<void>]> = [
             ['a press on the sidebar outside it', pressOutside],

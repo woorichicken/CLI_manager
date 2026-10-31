@@ -320,7 +320,7 @@ test.describe('T71 header checklists', () => {
 
         // --- 390 wide: the chip drops the title, the panel stays in the window --------
         await page.keyboard.press('Escape')
-        await page.locator('button[title="Close Sidebar"]').click()
+        await page.locator('button[title^="Close Sidebar"]').click()
         await resizeMainWindow(app, 390, 800)
         await expect(page.getByTestId('checklist-chip-title')).toBeHidden()
         await chip(page).click()

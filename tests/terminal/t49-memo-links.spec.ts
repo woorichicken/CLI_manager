@@ -160,7 +160,7 @@ test.describe('T49 memo links', () => {
             // Copying is not "done editing": the textarea keeps focus and the caret stays put.
             await expect(textarea).toBeFocused()
             await expect(page.getByTestId('session-memo-read')).toHaveCount(0)
-            await expect(copy).toHaveAttribute('title', 'Copy memo', { timeout: 5_000 })
+            await expect(copy).toHaveAttribute('title', /^Copy memo/, { timeout: 5_000 })
 
             // From the reading view too, and it stays the reading view.
             await page.getByText('Memo', { exact: true }).click()

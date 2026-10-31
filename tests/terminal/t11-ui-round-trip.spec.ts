@@ -80,7 +80,7 @@ test('enabling and disabling the integration through the UI leaves config as fou
     await page.setViewportSize({ width: 1500, height: 950 })
 
     console.log('\n=== STEP 1: Settings > Agents 열기 ===')
-    await page.locator('button[title="Settings"]').click()
+    await page.locator('button[title^="Settings"]').click()
     await page.waitForTimeout(1000)
     await page.getByRole('button', { name: 'Agents', exact: true }).click()
     await page.waitForTimeout(600)
@@ -134,7 +134,7 @@ test('enabling and disabling the integration through the UI leaves config as fou
     expect(status.awaitingInput).toBe(true)
 
     console.log('=== STEP 4: 통합 끄기 → 원래 설정 복구 확인 ===')
-    await page.locator('button[title="Settings"]').click()
+    await page.locator('button[title^="Settings"]').click()
     await page.waitForTimeout(900)
     await page.getByRole('button', { name: 'Agents', exact: true }).click()
     await page.waitForTimeout(500)

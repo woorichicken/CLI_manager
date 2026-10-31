@@ -17,6 +17,8 @@ interface SidebarAllSessionsProps {
     listProps: SessionListProps
     fontSize?: number
     showSessionCount?: boolean
+    /** Writes to the clipboard and shows the sidebar's "Copied" notice. */
+    onCopy?: (text: string, label: string) => void
 }
 
 /** The folder a session is listed under; a folder that no longer exists counts as none. */
@@ -31,13 +33,18 @@ export function sessionFolderOf(entry: SessionEntry, folderIds: Set<string>): st
  * heading goes into that folder; dropped on "No folder" it comes out (078ee766).
  * Dropped on another session row it relates the two instead (SessionItem).
  */
-export function SidebarAllSessions({ entries, sessionFolders, folderActions, listProps, fontSize = 14, showSessionCount = true }: SidebarAllSessionsProps) {
+export function SidebarAllSessions({ entries, sessionFolders, folderActions, listProps, fontSize = 14, showSessionCount = true, onCopy }: SidebarAllSessionsProps) {
     const [menu, setMenu] = useState<{ x: number; y: number; folderId: string } | null>(null)
     const [renamingId, setRenamingId] = useState<string | null>(null)
     // Esc unmounts the input, which may blur it: that blur must not save what Esc threw away.
     const renameCancelledRef = useRef(false)
     const folderIds = new Set(sessionFolders.map(f => f.id))
     const unfiled = entries.filter(entry => sessionFolderOf(entry, folderIds) === null)
+    // The folder's sessions in the order the list shows them, as Copy IDs does.
+    const menuFolder = menu ? sessionFolders.find(f => f.id === menu.folderId) : undefined
+    const menuSessionIds = menu
+        ? entries.filter(entry => sessionFolderOf(entry, folderIds) === menu.folderId).map(entry => entry.session.id)
+        : []
 
     return (
         <>
@@ -134,6 +141,9 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
                         setMenu(null)
                     }}
                     onClose={() => setMenu(null)}
+                    onCopyName={onCopy && menuFolder ? () => onCopy(menuFolder.name, 'folder name') : undefined}
+                    onCopySessionIds={onCopy ? () => onCopy(menuSessionIds.join('\n'), `${menuSessionIds.length} session ID${menuSessionIds.length === 1 ? '' : 's'}`) : undefined}
+                    sessionCount={menuSessionIds.length}
                 />
             )}
         </>

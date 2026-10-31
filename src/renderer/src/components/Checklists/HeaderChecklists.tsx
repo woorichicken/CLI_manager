@@ -5,6 +5,7 @@ import type { Workspace } from '../../../../shared/types'
 import { useCurrentChecklist } from '../../hooks/useChecklists'
 import { describeDue, DUE_TONE_CLASSES, localDateKey } from '../../utils/dueDate'
 import { ChecklistPanel } from './ChecklistPanel'
+import { useShortcutHint } from '../../utils/shortcutHints'
 
 interface HeaderChecklistsProps {
     open: boolean
@@ -35,6 +36,7 @@ const VIEWPORT_MARGIN = 8
  */
 export function HeaderChecklists({ open, onOpenChange, compact, workspaces, activeWorkspaceId, viewedSessionId }: HeaderChecklistsProps) {
     const nav = useCurrentChecklist()
+    const hint = useShortcutHint()
     const { current } = nav
     const chipRef = useRef<HTMLButtonElement>(null)
     // What had focus when the panel opened (usually the terminal) gets it back when the panel closes
@@ -70,9 +72,11 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
     const complete = total > 0 && done === total
     const due = current?.due ? describeDue(current.due, todayKey) : null
 
+    // The key comes from Settings › Keyboard, like every other button's tooltip (386b0c76).
+    const label = hint('Checklists', 'toggleChecklists')
     const tooltip = current
-        ? `Checklists (⌘⇧J) — ${current.title} · ${done}/${total}${current.due ? ` · due ${current.due}` : ''}`
-        : 'Checklists (⌘⇧J)'
+        ? `${label} — ${current.title} · ${done}/${total}${current.due ? ` · due ${current.due}` : ''}`
+        : label
 
     const anchor = open ? chipRef.current?.getBoundingClientRect() : undefined
     const width = Math.min(PANEL_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2)

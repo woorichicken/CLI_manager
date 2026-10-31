@@ -319,7 +319,7 @@ test.describe('T52 inbox', () => {
         expect(mcpRefused.isError).toBe(true)
 
         // --- Sidebar closed: the bell moves to the main header --------------
-        await page.locator('button[title="Close Sidebar"]').click()
+        await page.locator('button[title^="Close Sidebar"]').click()
         await expect(sidebarBell(page)).toHaveCount(0)
         await expect(headerBell(page)).toHaveAttribute('data-unread', '1')
         if (shots) await page.screenshot({ path: path.join(shots, 'header-bell-1280.png') })
@@ -331,7 +331,7 @@ test.describe('T52 inbox', () => {
             await resizeMainWindow(app, 390, 800)
             await page.waitForTimeout(400)
             await page.screenshot({ path: path.join(shots, 'header-bell-390.png') })
-            await page.locator('button[title="Open Sidebar"]').click()
+            await page.locator('button[title^="Open Sidebar"]').click()
             await expect(sidebarBell(page)).toBeVisible()
             await page.screenshot({ path: path.join(shots, 'bell-count-390.png') })
             await sidebarBell(page).click()
@@ -343,7 +343,7 @@ test.describe('T52 inbox', () => {
             await page.keyboard.press('Escape')
             await resizeMainWindow(app, 1280, 800)
         } else {
-            await page.locator('button[title="Open Sidebar"]').click()
+            await page.locator('button[title^="Open Sidebar"]').click()
         }
 
         // --- A closed session takes its requests with it --------------------
