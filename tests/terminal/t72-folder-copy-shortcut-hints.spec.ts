@@ -125,6 +125,28 @@ test.describe('T72 folder copy and shortcut hints (fb-1031)', () => {
         if (SHOTS) {
             fs.mkdirSync(SHOTS, { recursive: true })
             fs.writeFileSync(path.join(SHOTS, 'titles.json'), JSON.stringify(titles, null, 2))
+            // The OS draws title tooltips outside the page, so a capture never has them: label each
+            // button with its own title text, in the page, for the before/after review only.
+            await page.evaluate(() => {
+                const picks = [
+                    ...Array.from(document.querySelectorAll('button[title^="Settings"], [data-related-button], button[title^="Close Sidebar"]')),
+                    ...Array.from(document.querySelectorAll('[data-testid="session-memo-new-page"], [data-testid="session-memo-copy"]'))
+                ] as HTMLElement[]
+                picks.filter(el => el.offsetParent).forEach((el, i) => {
+                    const box = el.getBoundingClientRect()
+                    const tip = document.createElement('div')
+                    tip.textContent = el.getAttribute('title') ?? ''
+                    tip.setAttribute('data-t72-tip', '')
+                    Object.assign(tip.style, {
+                        position: 'fixed', zIndex: '9999', left: `${Math.max(4, Math.min(box.left, window.innerWidth - 330))}px`,
+                        top: `${box.bottom + 6 + (i % 2) * 26}px`, background: '#f5f5f5', color: '#111', font: '12px -apple-system, sans-serif',
+                        padding: '3px 7px', borderRadius: '4px', border: '1px solid #999', boxShadow: '0 2px 6px rgba(0,0,0,.4)', whiteSpace: 'nowrap'
+                    })
+                    document.body.appendChild(tip)
+                })
+            })
+            await saveShot(page, 'tooltips-1280')
+            await page.evaluate(() => document.querySelectorAll('[data-t72-tip]').forEach(el => el.remove()))
         }
 
         expect(titles.settings).toBe('Settings (⌘,)')
