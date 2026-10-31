@@ -257,7 +257,8 @@ test.describe('T71 header checklists', () => {
         await page.keyboard.press('ArrowLeft')
         await expect(page.getByTestId('checklist-title')).toHaveText('v1.24 release (final)')
 
-        // Esc closes and gives focus back to the terminal it came from.
+        // Esc closes and gives focus to the terminal in view. Nothing had focus when the panel opened —
+        // the worker was already on screen at launch, so the page body did — and focus must not stay there.
         await page.keyboard.press('Escape')
         await expect(panel(page)).toHaveCount(0)
         await expect.poll(() => focusedSession(page)).toBe(WORKER)

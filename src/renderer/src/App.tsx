@@ -1560,6 +1560,7 @@ function App() {
                             compact={Boolean(splitLayout)}
                             workspaces={workspaces}
                             activeWorkspaceId={activeWorkspace?.id}
+                            viewedSessionId={viewedSessionId}
                         />
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
                         {!splitLayout && (

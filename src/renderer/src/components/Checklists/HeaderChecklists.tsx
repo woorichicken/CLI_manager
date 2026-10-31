@@ -14,6 +14,14 @@ interface HeaderChecklistsProps {
     workspaces: Workspace[]
     /** The project a new checklist starts with: the workspace of the session in view. */
     activeWorkspaceId?: string
+    /** The session in view (the active pane in split view): its terminal gets focus when nothing else had it. */
+    viewedSessionId: string | null
+}
+
+// Same lookup the memo uses to give focus back to its terminal.
+function focusTerminal(sessionId: string): void {
+    const textarea = document.querySelector(`[data-session-id="${sessionId}"] .xterm textarea`) as HTMLElement | null
+    textarea?.focus()
 }
 
 const PANEL_WIDTH = 320
@@ -25,13 +33,17 @@ const VIEWPORT_MARGIN = 8
  * The panel is a portal like the inbox popover: the header is a window-drag region and
  * sits below the terminal's own overlays in stacking order.
  */
-export function HeaderChecklists({ open, onOpenChange, compact, workspaces, activeWorkspaceId }: HeaderChecklistsProps) {
+export function HeaderChecklists({ open, onOpenChange, compact, workspaces, activeWorkspaceId, viewedSessionId }: HeaderChecklistsProps) {
     const nav = useCurrentChecklist()
     const { current } = nav
     const chipRef = useRef<HTMLButtonElement>(null)
     // What had focus when the panel opened (usually the terminal) gets it back when the panel closes
     // and takes the focused field with it (Esc, ⌘⇧J). A click elsewhere already put focus there.
+    // When nothing had focus (right after launch the page body does), the terminal in view gets it —
+    // otherwise typing after Esc goes nowhere.
     const returnFocusRef = useRef<HTMLElement | null>(null)
+    const viewedSessionRef = useRef(viewedSessionId)
+    viewedSessionRef.current = viewedSessionId
     const [, setViewport] = useState(0)
 
     useEffect(() => {
@@ -43,7 +55,9 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
             window.removeEventListener('resize', onResize)
             const previous = returnFocusRef.current
             setTimeout(() => {
-                if ((document.activeElement === document.body || !document.activeElement) && previous?.isConnected) previous.focus()
+                if (document.activeElement && document.activeElement !== document.body) return
+                if (previous && previous !== document.body && previous.isConnected) previous.focus()
+                else if (viewedSessionRef.current) focusTerminal(viewedSessionRef.current)
             }, 0)
         }
     }, [open])
