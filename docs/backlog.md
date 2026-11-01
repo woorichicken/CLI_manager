@@ -101,6 +101,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - **재발(트리거 충족)**: 2026-10-29 v1.22.1 릴리스 빌드 1회차 — `:132` 「Cmd+] skips a session deleted from the sidebar」·`:141` 「deleting the active session from the sidebar shows its neighbour」 둘 다 `Delete session` 클릭이 **「performing click action」에서 끝나지 않고** 4.5분 시간 초과(줄이 남은 게 아니라 클릭이 안 돌아옴 → 네이티브 확인 상자 쪽으로 기운다). 단독 `--repeat-each=2` 4회 중 1회 같은 멈춤(`/tmp/climanager-release-1221-t26.log`), 2회차 빌드 345 passed 로 공개. 1회차 로그 `/tmp/climanager-release-1221-build-try1.log` → 전체 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1793215725560.log`.
 - 재발: 2026-10-30 세션 작업 리스트 1차 회귀 묶음(10 스펙 · 스왑 48G) — `:141` 1회 실패(행이 10초 안에 안 사라짐), 단독 재실행 15/15 통과.
 - 재발: 2026-10-31 헤더 체크리스트 2차 회귀 묶음(8 스펙 · 스왑 49~54G, 30분 대기 뒤) — `:132` 「Cmd+] skips a session deleted from the sidebar」가 `Delete session` 클릭 「performing click action」에서 4.5분 멈춤(10-29 와 같은 모양). 같은 빌드 계열로 T26 단독 11/11 통과.
+- 재발: 2026-11-01 v1.24.0 사전 점검 2·3회차(스왑 49~51G) — `:132` 가 두 번 모두, 3회차에는 `t40-session-tree.spec.ts:156` 「what you looked at … survives a restart」도 같은 `Delete session` 클릭 「performing click action」에서 4.5분 멈춤. 두 시험 단독 `--repeat-each=3` 6/6 통과(16초). 로그 `/tmp/climanager-release-124-build-2.log` · `/tmp/climanager-release-124-build.log` → 전체 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1793464630529.log` · `-1793467211086.log`.
 - Trigger: 사전 점검·묶음 실행에서 사이드바 삭제 시험이 다시 실패할 때.
 - Fix direction: 실패 때 화면(확인 상자 여부)과 `hasRunningProcess` 값을 남긴다 → 원인이 상자면 시험 모드에서 확인을 건너뛰는 길, 빗나간 클릭이면 「hover → 버튼 보임 대기 → 클릭 → 행 사라짐」 재시도. 여러 시험(T26·T40·T45·T52)의 사이드바 삭제를 공용 도우미로 묶는 것은 사람 컨펌.
 - Owner: 없음
@@ -249,6 +250,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: `--check` 1회차와 `--build` 1회차가 `tests failed` 로 멈췄고, 사이에 돌린
   `pnpm test:term` 은 87 passed (3.7m). 세 번째 `--check` 도 87 passed.
 - 2026-10-29 v1.22.0 사전 점검(부하 15~21 · 스왑 49~56GB, 배치 밖 dev 서버·Docker): 1회차 T19-4 「text sent right after Escape arrives whole」 · 2회차 T1 「single visible terminal keeps seq output contiguous」(`last` 228478 / 300000 — `SEQ-DONE` 를 본 뒤에도 화면이 덜 따라옴) 각 1건 실패, 둘 다 단독 3/3 통과(T1 은 gap 0), 3회차 340 passed 로 공개. 로그 `/tmp/climanager-release-122-build-try1.log` · `-try2.log` · `/tmp/climanager-release-122-t19.log` · `-t1.log`. 바꾼 곳과 무관한 시험이 부하 높을 때만 하나씩 걸린다 — 한 회차에 한 건이면 단독 재실행 후 다시 빌드가 지금 절차.
+- 2026-11-01 v1.24.0(스왑 49~51G · 부하 49): 세 회차가 매번 다른 시험에서 멈췄다 — 1회차 5건(T2 · T22 · T30 · T64 · T71, 367 passed) · 2회차 T19-4 · T26(370) · 3회차 T26 · T40(370). 기준판 bede9e5 에서도 T22 · T30 이 실패해 회귀가 아니었고, 실패한 시험은 모두 다른 회차 전체 실행에서 통과했다. 그래서 4회차는 두 시험 단독 6/6 확인 뒤 `--build --skip-tests` 로 공개했다(typecheck · build 는 그대로 돎). 로그 `/tmp/climanager-release-124-build-1.log` · `-2.log` · `/tmp/climanager-release-124-build.log` · `-build4.log`. 「한 회차에 한 건」 절차가 부하 높은 날은 세 회차를 먹는다 — 시험 실패만 따로 다시 돌리는 옵션(`--retry-failed`)이 있으면 회차마다 30분을 아낀다.
 - Owner: Maintainer
 
 ### `.github/workflows/ci.yml` — 설치 단계 403 은 지나갔고, 지금은 터미널 테스트 시간 초과로 취소된다
