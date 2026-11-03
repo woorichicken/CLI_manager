@@ -179,10 +179,20 @@ rules stay in the root; this file is the inventory.
   `SidebarAllSessions` 도 같은 함수). 폰(`sessionListLines.ts`)은 받은 순서를 그대로 그리고 Mac 처럼 폴더 머리글·고정 아래 줄만 끼운다. 렌더러 보고가
   오기 전에는 불러오는 순서(`workspacesInLoadOrder` — `get-workspaces` 와 같은 함수)
 - **터미널 확대**: −/+/핀치로 고른 배율은 그 폰의 `localStorage`(`phone-terminal-zoom`)에 남는다(기기마다 따로). 없으면 폭 맞춤(기본). 좁은 화면에서
-  고른 배율이 돌린 화면의 폭 맞춤보다 작으면 폭 맞춤으로 보인다
-- 회귀: `t75-phone-unit.spec.ts`(접근 표·짝짓기·알림 규칙·키 바·카드 가리기·목록 순서) · `t76-phone.spec.ts`(앱 + 폰 창 — 가짜 Tailscale 상태 파일
+  고른 배율이 돌린 화면의 폭 맞춤보다 작으면 폭 맞춤으로 보인다. 확대 중엔 Mac 커서가 움직이면 보이게 스크롤한다(따라가기)
+- **화면 폭으로 감싸기**(3회차, ovis mirror fold — `terminalFold.ts`·`PhoneTerminalFold.tsx`): 도구줄 ⤶ 를 켜면 xterm 격자는 그대로(입력·버퍼) 두고 안 보이게,
+  화면 줄을 13px 글로 폰 폭에 감싸 다시 그린다. Mac 이 감싼 줄(`isWrapped`)은 합치고, 괘선만 있는 줄은 한 줄로 자르고, 틀의 오른쪽 끝(공백 뒤 `│`)은 버린다.
+  끝을 따라가고, 위·아래 끝을 넘어 밀면 Mac 기록을 넘긴다. 선택은 `localStorage`(`phone-terminal-wrap`) — **기본은 꺼짐(폭 맞춤)**. PTY 크기는 안 바뀐다
+- **앱 안 알림**(3회차, ovis droplet — `droplets.ts`·`DropletPill.tsx`): 폰 페이지가 열려 있는 동안 3초 목록 읽기에서 다른 세션이 새로 `waiting` 이 되거나
+  (에이전트가) 1분 넘게 일하고 `idle` 이 되면 머리줄 아래 알약(z 70 — Chat z 45·서랍 60 위). 누르면 그 세션 Chat. ☰ 에 다른 세션 대기 수 배지.
+  웹 푸시는 페이지가 앞에 있으면 안 뜨므로 그 빈자리를 메운다. Mac 에 새 메시지 없음
+- **터치 화면**(3회차): `(pointer: coarse)` 면 `ChatView touch` — 열 때 입력칸 포커스 안 줌(키보드), Return = 줄바꿈·보내기는 버튼(ovis Composer). 데스크톱 그대로.
+  키 바: Esc Tab ⇧Tab(CSI Z — Claude Code 모드 바꾸기) Ctrl ↑↓←→ ^C ⏎ 열 키가 폭을 똑같이 나눔, 화살표는 길게 누르면 400ms 뒤 50ms 마다 반복(ovis keyRepeat)
+- **재연결**(3회차): 터미널·Chat 소켓 모두 250ms → 5s 로 늘리는 간격(10s 버틴 연결 뒤 처음부터), 화면·네트워크로 돌아오면(`visibilitychange`·`online`·`pageshow`) 바로
+- 회귀: `t75-phone-unit.spec.ts`(접근 표·짝짓기·알림 규칙·키 바·카드 가리기·목록 순서·droplet·길게 누르기·재연결 간격·감싸기 줄) · `t76-phone.spec.ts`(앱 + 폰 창 — 가짜 Tailscale 상태 파일
   `CLIMANAGER_PHONE_TAILSCALE_STATUS`, 알림은 `CLIMANAGER_PHONE_PUSH_LOG`, 둘 다 시험 userData 일 때만 읽는다) · `t77-phone-text-size.spec.ts`
-  (글씨 크기 세 모드 측정·확대 기억·Mac PTY 크기 그대로)
+  (글씨 크기 세 모드 측정·확대 기억·Mac PTY 크기 그대로) · `t78-phone-quality.spec.ts`(터치 폰 — CDP 터치 에뮬레이션·`Input.dispatchTouchEvent`:
+  앱 안 알림·Return 줄바꿈·키 반복·⇧Tab·감싸기, Mac PTY 크기·`resized` 그대로)
 
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
