@@ -112,6 +112,28 @@ rules stay in the root; this file is the inventory.
 - 없는 폴더를 가리키는 `sessionFolderId` 는 폴더 없음으로 읽는다(옛 판·다른 창에서 지운 경우). 1.19 이전 앱은 두 칸 모두 모른다 — 세션은 예전처럼 평평하게
 - 코드: `src/main/SessionFolders.ts`(저장 · T57) · `hooks/useSessionFolders.ts`(렌더러 상태 — 바로 바꾸고 뒤에서 저장) · `Sidebar/SidebarAllSessions.tsx`(목록·폴더 줄·놓기)
 
+#### 15. Chat view (Terminal / Chat)
+- 세션 헤더의 「Terminal / Chat」(단일 화면 오른쪽 줄 맨 앞, 분할 칸 헤더 아이콘) — Claude Code·Codex 세션(`cliToolName` 이 claude·codex)에만.
+  세션마다 기억한다(localStorage `session-view-modes`, Chat 만 저장). 터미널은 밑에 그대로 살아 있다 — Chat 은 그 위에 덮는 층이라
+  PTY 크기·리페인트가 없다(렌더링 불변식 2 그대로)
+- **읽기**: 에이전트의 대화 기록 파일 — Claude `<CLAUDE_CONFIG_DIR|~/.claude>/projects/<cwd 슬러그>/<cliSessionId>.jsonl`(없으면 projects 전체에서 찾음),
+  Codex `<CODEX_HOME|~/.codex>/sessions/YYYY/MM/DD/rollout-…-<id>[_<segment>].jsonl`. `TranscriptReader` 가 늘어난 바이트만 읽고(첫 읽기는 끝 16MB —
+  241MB 기록 42ms 실측), 해석은 ovis 에서 옮긴 `src/main/transcript/`(Claude·Codex 파서, MIT — `THIRD_PARTY_NOTICES.md`)
+- **화면 쪽**: 「일하는 중」(`esc to interrupt`)과 질문 메뉴는 기록이 아니라 살아 있는 화면(미러)에서 `promptScreen.readPrompt` 로 읽는다 —
+  보기·강조된 보기·설명·「Type something.」. 카드 답은 화살표 + Enter(직접 입력은 그 줄로 가서 글 + Enter). **보내기 직전 화면을 다시 읽어
+  같은 메뉴(질문·보기·강조 위치·맥락 = `signature`)가 아니면 보내지 않는다**(`prompt_changed`). Codex 메뉴·다중 선택은 실제 화면 사본이 없어
+  「Answer in Terminal」만
+- **보내기**: Control API 의 입력 경로(`ControlApiService.typeForChat` = `typeAndSubmit`, AI 표시 없음) — 질문 대기면 거부, 터미널 입력줄(입력 상자)에
+  글이 있으면 거부(사람·AI·Chat 글이 섞이지 않게), 일하는 중이면 main 의 대기열에 두고 턴이 끝나 1.5초 조용하면 보낸다
+- `ConversationService` 는 Chat 이 열린 세션(또는 대기열이 있는 세션)만 0.7초마다 본다 — 기록 stat + 출력이 있었을 때만 화면 읽기. 바뀌면
+  `conversation-changed` 로 알리고 화면이 다시 가져간다
+- **폰과의 약속**: `ChatView/` 는 `window.api` 를 부르지 않는다 — `ChatTransport`(`src/shared/conversation.ts`: 가져오기 · 구독 · 보내기 · 대기 취소 ·
+  카드 답)를 props 로 받는다. Electron 은 `utils/electronChatTransport.ts`(IPC), 폰 페이지는 같은 묶음을 HTTP·WebSocket 으로 채워 같은 부품을 쓴다.
+  데이터(`ConversationSnapshot`)는 main 에서 한 번만 만든다
+- 안 하는 것(첫 판): 그림·수식·Mermaid 그리기(자리 표시·원문), 하위 에이전트 상세, 잘린 도구 출력 더 보기, 200턴보다 앞 페이지
+- 회귀: `t73-chat-view-unit.spec.ts`(해석·리더·메뉴 판정, Electron 없이) · `t74-chat-view.spec.ts`(앱 — `scripts/mock-cli/chat-mock.cjs` 가 화면과
+  기록 파일을 함께 만든다)
+
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
 - **별칭도 인식한다** — 사용자가 `cldy`로 띄워도 `claude`로 판정한다. 시작 시 `zsh -ic alias`를
@@ -275,6 +297,14 @@ User Action (Renderer)
 - `create-checklist(title, workspaceId?)` → 새 id 또는 `null` · `update-checklist(id, { title?, due?: string|null, workspaceId?: string|null })` · `remove-checklist(id)` · `add-checklist-item(id, text)` · `update-checklist-item(id, itemId, { text?, done? })` · `remove-checklist-item(id, itemId)` → `boolean`. 검사는 API 와 같은 `checkChecklistInput`·`checkItemTexts`
 - 헤더가 보여 줄 체크리스트(마지막에 본 것)는 렌더러 localStorage `checklists-last-viewed` — 세션을 바꿔도 그대로
 - 코드: `src/main/ChecklistStore.ts` · `ControlApiService.*Checklist*` · `hooks/useChecklists.ts` · `components/Checklists/`(칩·패널·항목 줄·마감 편집) · `utils/dueDate.ts`(마감 표시). 계약은 [`control-api.md`](control-api.md) 「Checklists」
+
+#### Chat view
+- `conversation-get(sessionId, limit?)` → `ConversationSnapshot`(마지막 `limit` 턴 · working · prompt · queued · revision) · `conversation-subscribe` /
+  `conversation-unsubscribe(sessionId)`(창이 닫히면 그 창 구독은 풀린다) · `conversation-changed` (main → renderer, `{ sessionId, revision }`)
+- `chat-send(sessionId, text)` → `ChatSendResult`(`sent` · `queued` · `rejected` + 이유) · `chat-cancel-queued(sessionId)` ·
+  `prompt-answer(sessionId, { signature, optionIndex | customText })` → `PromptAnswerResult`(`answered` · `rejected: prompt_changed …`)
+- 코드: `src/main/ConversationService.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
+  `SessionViewToggle.tsx` · `hooks/useSessionViewMode.ts` · `utils/electronChatTransport.ts`
 
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)

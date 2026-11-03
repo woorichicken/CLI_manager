@@ -3,7 +3,6 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, termText, waitForBufferText, writeToTerminal } from './helpers'
-import { claudeProjectSlug } from '../../src/main/TranscriptReader'
 
 /**
  * T74 — Chat view in the app (Terminal / Chat per session).
@@ -23,6 +22,8 @@ import { claudeProjectSlug } from '../../src/main/TranscriptReader'
  * CHAT_VIEW_SHOTS=<folder> saves captures at 1280 and 390.
  */
 
+/** Claude's project folder name (every non-alphanumeric → "-"), written here so the spec runs on old code too. */
+const claudeProjectSlug = (cwd: string): string => cwd.replace(/[^A-Za-z0-9]/g, '-')
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
 const FIXTURES = path.join(__dirname, 'fixtures/transcripts')
 const CLAUDE_ID = '00000000-0000-4000-8000-00000000c74a'
