@@ -19,6 +19,15 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 폰 서버 — 앱을 켠 채 다시 빌드하면 폰 페이지 새 청크가 404
+- Discovered: 2026-11-04, 폰 품질 3회차(quality-phone) — 시험 앱을 띄운 채 `pnpm build` 를 하자 폰 페이지가 빈 화면(자산 404).
+- Evidence: `PhoneServer.assets()` 가 `out/renderer/.vite/manifest.json` 으로 만든 허용 목록을 처음 한 번만 읽고 `allowedAssets` 에 들고 있다(`src/main/phone/PhoneServer.ts` 403행 근처).
+  빌드가 청크 이름(해시)을 바꾸면 새 이름은 목록에 없어 404. 앱을 다시 켜면 풀린다. 배포 앱은 실행 중에 `out/` 이 안 바뀌므로 개발 중에만 생긴다.
+- Why deferred: 이번 범위(폰 화면 품질) 밖이고 사용자 영향 없음.
+- Trigger: 폰 페이지를 고치며 앱을 띄워 둔 채 빌드를 되풀이하는 일이 다시 생길 때(재시작이 귀찮아질 때).
+- Fix direction: 매니페스트 파일의 mtime 이 바뀌면 목록을 다시 읽는다(요청마다 `statSync` 한 번) — 또는 개발 빌드(`CLIMANGER_TEST_USERDATA`/dev)일 때만 캐시하지 않는다.
+- Owner: 없음
+
 ### 헤더 체크리스트 — 항목을 특정 세션에 배정하기
 - Discovered: 2026-10-31, 스탠드업 메모 「기획 - 리스트」 2차 기획(사람: 「특정 프로젝트에 따라서, 세션셜로 부여도 가능한건 일단 백로그로 두고 싶고」).
 - Evidence: 지금 체크리스트(`ChecklistStore`)는 세션에 묶이지 않는다 — 총괄이 `checklist_create` 로 만들고 일은 `send_input` 으로 직접 시킨다. 항목에 「누가 맡았나」 칸이 없어서
