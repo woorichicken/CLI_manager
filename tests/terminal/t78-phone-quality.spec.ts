@@ -32,6 +32,8 @@ const SCREEN = 't78-screen'
 const OWNER = 'owner@example.com'
 const DPR = 3
 const READY = 'IDE disconnected'
+/** not the app's default (47830) — a real CLI Manager on this Mac may be listening there */
+const T78_PORT = 47878
 const claudeProjectSlug = (cwd: string): string => cwd.replace(/[^A-Za-z0-9]/g, '-')
 
 let result: LaunchResult | null = null
@@ -129,7 +131,8 @@ test('T78 phone quality: in-app alert, touch chat, key hold-repeat, wrap to scre
                 ]
             }
         ],
-        { settings: { phone: { enabled: true, port: 0 } }, env: { CLAUDE_CONFIG_DIR: claudeDir, CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile } }
+        // a fixed port: step 5 turns the phone server off and on, and the page must find it where it was (port 0 would move it)
+        { settings: { phone: { enabled: true, port: T78_PORT } }, env: { CLAUDE_CONFIG_DIR: claudeDir, CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile } }
     )
     const { app, page } = result
     await resizeMainWindow(app, 1280, 800)
@@ -273,6 +276,19 @@ test('T78 phone quality: in-app alert, touch chat, key hold-repeat, wrap to scre
     await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-wrap', 'off')
     await expect(phone.getByTestId('phone-terminal-fold')).toHaveCount(0)
     expect(await phone.evaluate(() => localStorage.getItem('phone-terminal-wrap'))).toBeNull()
+
+    // ---- 5. the Mac stops answering: the chat says so in its header, the box stays usable, then it sends ----
+    await phone.goto(`${base}/?session=${AGENT_A}&view=chat`)
+    await expect(phone.locator('.chat-composer textarea')).toBeVisible({ timeout: 15_000 })
+    await page.evaluate(() => window.api.setPhoneEnabled(false))
+    await expect(phone.getByTestId('phone-header-offline')).toBeVisible({ timeout: 10_000 })
+    await expect(phone.locator('.chat-composer textarea')).toBeEnabled()
+    await phone.locator('.chat-composer textarea').fill('typed while away')
+    await page.evaluate(() => window.api.setPhoneEnabled(true))
+    await expect(phone.getByTestId('phone-header-offline')).toHaveCount(0, { timeout: 15_000 })
+    await expect(phone.locator('.chat-composer textarea')).toHaveValue('typed while away')
+    await touch(cdp, phone, await centerOf(phone, 'chat-send'))
+    await waitForBufferText(page, AGENT_A, 'typed while away', 15_000)
 
     // the Mac's pty: same size, never resized by any of it
     const after = await ptyState(page, SCREEN)

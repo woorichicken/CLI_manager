@@ -195,6 +195,7 @@ export function PhoneApp() {
                         role={me.role}
                         showMenuButton={!wide}
                         menuBadge={badge}
+                        offline={offline}
                         onMenu={() => setDrawer(true)}
                         onLens={(next) => {
                             rememberLens(session.id, next)

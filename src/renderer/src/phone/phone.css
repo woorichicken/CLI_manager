@@ -734,3 +734,10 @@ body.phone-body #root {
     background: rgba(59, 130, 246, 0.25);
     color: var(--text-white);
 }
+
+/* the Mac not answering, said beside the session's name — the header keeps its height */
+.phone-header-offline {
+    font-weight: 400;
+    font-size: 12px;
+    color: #f59e0b;
+}

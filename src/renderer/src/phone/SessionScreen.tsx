@@ -23,7 +23,8 @@ export function SessionScreen({
     onLens,
     onMenu,
     showMenuButton,
-    menuBadge = 0
+    menuBadge = 0,
+    offline = false
 }: {
     session: PhoneSession
     lens: SessionLens
@@ -33,6 +34,8 @@ export function SessionScreen({
     showMenuButton: boolean
     /** other sessions waiting for an answer — shown on ☰ while the list is out of sight */
     menuBadge?: number
+    /** the Mac stopped answering: said in the header, its height unchanged (ovis headerConnection.ts) */
+    offline?: boolean
 }) {
     const transport = useMemo(() => createPhoneChatTransport(), [])
     const chatAvailable = session.agent !== null
@@ -52,7 +55,14 @@ export function SessionScreen({
                     </button>
                 )}
                 <span className={`phone-dot phone-dot-${session.state}`} aria-hidden="true" />
-                <span className="phone-header-title" data-testid="phone-session-title">{session.name}</span>
+                <span className="phone-header-title" data-testid="phone-session-title">
+                    {session.name}
+                    {offline && (
+                        <span className="phone-header-offline" data-testid="phone-header-offline">
+                            {' '}· Reconnecting…
+                        </span>
+                    )}
+                </span>
                 {chatAvailable && (
                     <div className="phone-seg phone-lens" role="group" aria-label="Chat or terminal">
                         <button type="button" aria-pressed={view === 'chat'} data-testid="phone-lens-chat" onClick={() => onLens('chat')}>
