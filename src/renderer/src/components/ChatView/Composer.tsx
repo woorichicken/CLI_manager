@@ -121,6 +121,8 @@ export interface ComposerProps {
     onConfirmPick(): void
     onCancelPick(): void
     preferences: ChatPreferences
+    /** a touch screen: Return is a new line (Send sends) and opening the chat leaves the keyboard down */
+    touch?: boolean
     onSend(text: string): Promise<ChatSendResult>
     onInterrupt(): Promise<string | null>
     /** the row under the box (model, context, plan) */
@@ -137,7 +139,7 @@ export interface ComposerProps {
  * Stop (and Esc) while the agent works, one-tap replies, the length limit, and the card's numbers.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-    { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, onSend, onInterrupt, status },
+    { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, onSend, onInterrupt, status },
     ref
 ) {
     const [text, setText] = useState(() => drafts[sessionId] ?? '')
@@ -165,6 +167,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         setAttachments([])
         // The terminal under the chat may still hold focus: keys would go to it unseen.
         // Take focus only from it (or from nothing), never from another input.
+        // A touch screen: focus raises the soft keyboard over the chat the user came to read — leave it.
+        if (touch) return
         const timer = window.setTimeout(() => {
             const active = document.activeElement
             const terminal = active?.closest?.(`[data-session-id="${CSS.escape(sessionId)}"]`)
@@ -384,7 +388,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }
         }
         const modifier = event.metaKey || event.ctrlKey
-        const enterSends = preferences.enterSends !== false
+        // a phone keyboard's Return has no Shift: on touch it breaks the line, the Send button sends
+        const enterSends = !touch && preferences.enterSends !== false
         const shouldSend = event.key === 'Enter' && !event.shiftKey && (modifier || (enterSends && !event.altKey))
         // a number typed for the card waits: the empty box's Enter confirms it, Escape cancels it
         if (pendingPick && text.trim() === '') {
@@ -394,7 +399,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 onCancelPick()
                 return
             }
-            if (shouldSend) {
+            // an empty box has no line to break: Return confirms on a touch screen too
+            if (shouldSend || (touch && event.key === 'Enter' && !event.shiftKey)) {
                 event.preventDefault()
                 if (!event.repeat) onConfirmPick()
                 return
@@ -454,8 +460,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const placeholder = pendingPick
         ? 'Enter confirms the option above · Esc cancels'
         : promptOptions
-          ? 'Type an option’s number, or click it above'
-          : preferences.enterSends === false
+          ? touch
+              ? 'Type an option’s number, or tap it above'
+              : 'Type an option’s number, or click it above'
+          : touch
+            ? `Message ${agentName}`
+            : preferences.enterSends === false
             ? `Message ${agentName} (⌘Enter to send)`
             : `Message ${agentName} (Enter to send)`
 
@@ -550,7 +560,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         maxLength={MAX_CHAT_TEXT_LENGTH}
                         data-testid="chat-composer"
                         placeholder={placeholder}
-                        title={preferences.enterSends === false ? '⌘Enter sends · Enter starts a new line' : 'Enter sends · Shift+Enter starts a new line'}
+                        title={touch ? 'Return starts a new line · the arrow sends' : preferences.enterSends === false ? '⌘Enter sends · Enter starts a new line' : 'Enter sends · Shift+Enter starts a new line'}
                         onChange={(event) => {
                             setDraft(event.target.value)
                             setCaret(event.target.selectionStart)
@@ -580,7 +590,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                             disabled={attaching || over > 0 || (empty && !pendingPick)}
                             onPointerDown={(event) => event.preventDefault()}
                             onClick={() => (pendingPick && empty ? onConfirmPick() : void send())}
-                            title={preferences.enterSends === false ? 'Send (⌘Enter)' : 'Send (Enter)'}
+                            title={touch ? 'Send' : preferences.enterSends === false ? 'Send (⌘Enter)' : 'Send (Enter)'}
                             aria-label="Send"
                         >
                             {sending > 0 && empty ? <Loader2 size={14} className="animate-spin" /> : <ArrowUp size={15} />}
