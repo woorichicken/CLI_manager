@@ -57,6 +57,9 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   죽는다 — 그 플러그인은 설치돼 있지 않다(`ls node_modules/@vitejs` 없음). 지금 빌드는 기본 설정(esbuild JSX)으로 돌고 `@renderer` alias 도 없다.
 - Why deferred: 빌드는 정상이고, 이름을 바꾸면 플러그인 설치·alias 사용처 확인까지 따라오는 별개 변경이다.
 - Trigger: 빌드 설정(alias·React 플러그인·Fast Refresh)을 실제로 바꾸려 할 때 — 그 전에 이 파일이 읽히는지부터 고친다.
+- Trigger hit: 2026-11-03 phone-1103 — 폰 페이지(렌더러 두 번째 입구)와 main `define` 이 필요해 **`electron.vite.config.ts`(점)를 새로 만들었다**:
+  기본값 그대로(main·preload `{}`) + 렌더러 입구 둘 + `manifest: true` + main `define`(ws 스위치). 빌드 결과 main 크기 2,151.93 kB 그대로(전후 같음).
+  하이픈 파일은 손대지 않았다 — 지우거나 합치는 일(React 플러그인·`@renderer` alias 를 실제로 켤지)이 남았다.
 - Owner: 없음
 
 ### `src/renderer/src/App.tsx` — 렌더러가 새로 뜨면 보고 있던 세션이 선택돼 있지 않다

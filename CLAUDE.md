@@ -258,6 +258,7 @@ exec('/bin/zsh -l -c "code ."')
 
 - `electron-vite`는 Main/Preload/Renderer를 별도로 번들링. 설정 파일은 **`electron.vite.config.ts`**(점) — 옆의 `electron-vite.config.ts`(하이픈)는 이름이 달라 한 번도 읽히지 않았다(없는 `@vitejs/plugin-react` 를 부른다). 렌더러 입구는 둘(`index.html` · `phone.html`)이고 `manifest: true` — 폰 서버가 manifest 로 폰이 싣는 청크만 낸다
 - main 이 쓰는 npm 패키지를 `dependencies` 에 넣으면 번들에서 빠지고(외부화) 배포 앱에는 없다(`electron-builder.yml` 이 node_modules 를 allowlist 로만 싣는다). 번들에 넣을 것(`ws`·`web-push`)은 `devDependencies` 에 둔다 — 렌더러의 react 와 같은 규칙
+- **번들한 패키지의 선택 의존성은 Vite 가 빈 객체로 바꾼다** — `try { require('bufferutil') }` 가 실패하지 않아 대체 코드로 안 간다. `ws` 는 32바이트 이상 클라이언트 프레임에서 없는 `unmask` 를 불러 main 이 멈췄다(T76) → `electron.vite.config.ts` main `define` 으로 ws 자신의 끄기 스위치(`WS_NO_BUFFER_UTIL`)를 박았다. 새 패키지를 번들하면 `out/main/index.js` 에서 `__viteOptionalPeerDep_` 를 찾아본다
 - Renderer는 Vite + React HMR 지원
 - Main/Preload는 CommonJS 모듈 시스템 사용 (`type: "commonjs"`)
 
