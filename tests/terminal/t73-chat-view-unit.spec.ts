@@ -6,7 +6,26 @@ import { parseClaudeTranscript } from '../../src/main/transcript/claudeTranscrip
 import { parseCodexTranscript } from '../../src/main/transcript/codexTranscript'
 import { TranscriptReader, claudeProjectSlug } from '../../src/main/TranscriptReader'
 import { answerSteps, KEYS, readPrompt } from '../../src/main/promptScreen'
-import type { ConversationPart, ConversationTurn } from '../../src/shared/conversation'
+import type { ConversationPart, ConversationTurn, ToolPart } from '../../src/shared/conversation'
+import { foldMetadata } from '../../src/main/transcript/metadata'
+import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
+import { createChatCommandLister } from '../../src/main/chatCommands'
+import { saveChatAttachment } from '../../src/main/chatAttachments'
+import {
+    activeTrigger,
+    artifactLinks,
+    codeIsFilePath,
+    fileLineTarget,
+    fileMention,
+    latestTodos,
+    lineDiff,
+    modelLabel,
+    resolveChatPath,
+    shouldFoldUserMessage,
+    splitFilePaths,
+    terminalCommand,
+    todoSnapshot
+} from '../../src/renderer/src/components/ChatView/chatLib'
 
 /**
  * T73 — Chat view, without Electron.
@@ -279,3 +298,262 @@ test.describe('T73 question menus off the screen (promptScreen)', () => {
         expect(menu.options[0].label).toBe('Yes')
     })
 })
+
+// ------------------------------------------------------------------------------------------------
+// 2nd round (ovis gap): model · effort · context, records read back (pictures, cut outputs), stop,
+// queued messages one by one, the `/` command list, attachments, and the composer's pure helpers.
+// Expected values come out of the records written here, never typed twice.
+// ------------------------------------------------------------------------------------------------
+
+const jsonl = (entries: unknown[]): string => entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n'
+
+test.describe('T73 r2 model, effort and context from the records (ported ovis conversation-metadata)', () => {
+    test('Claude: the answer names model, effort and usage; a /model answer sets the next model; /clear forgets', () => {
+        const usage = { input_tokens: 3, cache_creation_input_tokens: 700, cache_read_input_tokens: 41_000, output_tokens: 90 }
+        const answer = { type: 'assistant', uuid: 'a1', effort: 'xhigh', message: { role: 'assistant', model: 'claude-opus-5-5', usage, content: [{ type: 'text', text: 'hi' }] } }
+        const sidechain = { ...answer, uuid: 'a2', isSidechain: true, message: { ...answer.message, usage: { input_tokens: 999_999 } } }
+        let meta = foldMetadata(jsonl([answer, sidechain]), 'claude', null)
+        expect(meta).toEqual({ model: answer.message.model, effort: answer.effort, context: { used: usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens, window: null } })
+        const said = 'Set model to `Sonnet 5`'
+        meta = foldMetadata(jsonl([{ type: 'user', uuid: 'c1', message: { role: 'user', content: `<local-command-stdout>${said}</local-command-stdout>` } }]), 'claude', meta)
+        expect(meta?.model).toBe('claude-sonnet-5')
+        meta = foldMetadata(jsonl([{ type: 'user', uuid: 'c2', message: { role: 'user', content: '<command-name>/clear</command-name>' } }]), 'claude', meta)
+        expect(meta).toEqual({ model: null, effort: null })
+    })
+
+    test('Codex: turn_context names model and effort; token_count fills the context against its window', () => {
+        const context = { type: 'turn_context', payload: { model: 'gpt-6-luna', effort: 'medium' } }
+        const tokens = { type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { total_tokens: 48_011 }, model_context_window: 828_400 } } }
+        expect(foldMetadata(jsonl([context, tokens]), 'codex', null)).toEqual({
+            model: context.payload.model,
+            effort: context.payload.effort,
+            context: { used: tokens.payload.info.last_token_usage.total_tokens, window: tokens.payload.info.model_context_window }
+        })
+    })
+
+    test('the reader carries the meta of the lines it read', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't73-meta-'))
+        const id = '00000000-0000-4000-8000-00000000aa01'
+        const file = path.join(dir, 'projects', claudeProjectSlug('/w'), `${id}.jsonl`)
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        const answer = { type: 'assistant', uuid: 'm1', timestamp: '2026-11-03T01:00:00.000Z', effort: 'high', message: { role: 'assistant', model: 'claude-haiku-4-5', stop_reason: 'end_turn', usage: { input_tokens: 10 }, content: [{ type: 'text', text: 'ok' }] } }
+        fs.writeFileSync(file, jsonl([{ type: 'user', uuid: 'u1', timestamp: '2026-11-03T01:00:00.000Z', message: { role: 'user', content: 'q' } }, answer]))
+        const reader = new TranscriptReader({ claudeConfigDir: () => dir, codexHome: () => dir })
+        expect(reader.read('s', 'claude', id, '/w')?.meta).toEqual({ model: answer.message.model, effort: answer.effort, context: { used: 10, window: null } })
+    })
+})
+
+test.describe('T73 r2 records read back from the transcript (pictures, a cut output)', () => {
+    test('a pasted picture is read back by its ref, across chunk edges; an unknown ref is null', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't73-image-'))
+        const id = '00000000-0000-4000-8000-00000000aa02'
+        const file = path.join(dir, 'projects', claudeProjectSlug('/w'), `${id}.jsonl`)
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.copyFileSync(claudeFile('image.jsonl'), file)
+        const reader = new TranscriptReader({ claudeConfigDir: () => dir, codexHome: () => dir, findChunkBytes: 64 })
+        const turns = reader.read('s', 'claude', id, '/w')!.turns
+        const image = turns[0].parts.find((part) => part.kind === 'image') as { ref: string; media_type: string }
+        const block = records(claudeFile('image.jsonl'))[0].message.content[0].source
+        expect(await reader.image('s', image.ref)).toBe(`data:${block.media_type};base64,${block.data}`)
+        expect(await reader.image('s', `${image.ref.split(':')[0]}:9`)).toBeNull()
+        expect(await reader.image('s', 'not-a-ref')).toBeNull()
+    })
+
+    test('a tool output cut in the chat is read back whole (Claude tool_use_id, Codex call_id)', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't73-output-'))
+        const whole = Array.from({ length: 400 }, (_, i) => `line ${i} ${'x'.repeat(20)}`).join('\n')
+        const id = '00000000-0000-4000-8000-00000000aa03'
+        const claudeFilePath = path.join(dir, 'projects', claudeProjectSlug('/w'), `${id}.jsonl`)
+        fs.mkdirSync(path.dirname(claudeFilePath), { recursive: true })
+        fs.writeFileSync(claudeFilePath, jsonl([
+            { type: 'user', uuid: 'u1', timestamp: '2026-11-03T01:00:00.000Z', message: { role: 'user', content: 'run it' } },
+            { type: 'assistant', uuid: 'a1', timestamp: '2026-11-03T01:00:01.000Z', message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'toolu_long', name: 'Bash', input: { command: 'seq' } }] } },
+            { type: 'user', uuid: 'r1', timestamp: '2026-11-03T01:00:02.000Z', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_long', content: whole }] } },
+            { type: 'assistant', uuid: 'a2', timestamp: '2026-11-03T01:00:03.000Z', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'done' }] } }
+        ]))
+        const reader = new TranscriptReader({ claudeConfigDir: () => dir, codexHome: () => dir, findChunkBytes: 100 })
+        const tool = reader.read('c', 'claude', id, '/w')!.turns[1].parts.find((part) => part.kind === 'tool') as ToolPart
+        expect(tool.output_size).toBe(whole.length)
+        expect(tool.output.length).toBeLessThan(whole.length)
+        expect(await reader.toolOutput('c', tool.output_ref!)).toBe(whole)
+
+        const codexId = '00000000-0000-4000-8000-00000000aa04'
+        const rollout = path.join(dir, 'sessions', '2026', '11', '03', `rollout-2026-11-03T01-00-00-${codexId}.jsonl`)
+        fs.mkdirSync(path.dirname(rollout), { recursive: true })
+        fs.writeFileSync(rollout, jsonl([
+            { timestamp: '2026-11-03T01:00:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'run it' } },
+            { timestamp: '2026-11-03T01:00:01.000Z', type: 'response_item', payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"seq"}', call_id: 'call_long' } },
+            { timestamp: '2026-11-03T01:00:02.000Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_long', output: whole } }
+        ]))
+        const codexTool = reader.read('x', 'codex', codexId)!.turns.flatMap((turn) => turn.parts).find((part) => part.kind === 'tool') as ToolPart
+        expect(codexTool.output_size).toBe(whole.length)
+        expect(await reader.toolOutput('x', codexTool.output_ref!)).toBe(whole)
+    })
+})
+
+test.describe('T73 r2 ConversationService: stop, queued messages one by one, commands', () => {
+    function service(screen: string[], typed = '') {
+        const writes: string[] = []
+        const sent: string[] = []
+        const deps: ConversationServiceDeps = {
+            session: () => ({ cwd: '/w', cliSessionId: undefined, cliToolName: 'claude' }),
+            reader: new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' }),
+            mirror: {
+                screen: () => screen,
+                flush: async () => undefined,
+                lastOutputAt: () => Date.now(),
+                hasExited: () => false,
+                showsAwaitingInput: () => false,
+                inputBox: () => ({ typed })
+            },
+            hasTerminal: () => true,
+            writeInput: (_id, data) => writes.push(data),
+            type: async (_id, text) => (sent.push(text), true),
+            onChange: () => undefined,
+            listCommands: (agent) => [{ name: agent === 'claude' ? 'config' : 'model', description: '', source: 'builtin', terminal: 'always' }]
+        }
+        return { conversations: new ConversationService(deps), writes, sent }
+    }
+    const WORKING = ['✻ Working… (esc to interrupt)', '─'.repeat(20), '❯ ', '─'.repeat(20)]
+    const IDLE = ['─'.repeat(20), '❯ ', '─'.repeat(20)]
+
+    test('Stop sends Esc only while the screen shows a turn in progress', async () => {
+        const idle = service(IDLE)
+        expect(await idle.conversations.interrupt('s')).toMatchObject({ status: 'rejected', reason: 'not_working' })
+        expect(idle.writes).toEqual([])
+        const busy = service(WORKING)
+        expect(await busy.conversations.interrupt('s')).toEqual({ status: 'stopped' })
+        expect(busy.writes).toEqual(['\x1b'])
+    })
+
+    test('queued while working, each with an id: Send now types one, ✕ drops one, the rest stay in order', async () => {
+        const { conversations, sent } = service(WORKING)
+        conversations.subscribe('s')
+        for (const text of ['one', 'two', 'three']) expect(await conversations.send('s', text)).toEqual({ status: 'queued' })
+        let queued = (await conversations.getConversation('s')).queued
+        expect(queued.map((item) => item.text)).toEqual(['one', 'two', 'three'])
+        expect(new Set(queued.map((item) => item.id)).size).toBe(3)
+        expect(await conversations.sendQueuedNow('s', queued[1].id)).toEqual({ status: 'sent' })
+        expect(sent).toEqual(['two'])
+        conversations.discardQueued('s', queued[0].id)
+        queued = (await conversations.getConversation('s')).queued
+        expect(queued.map((item) => item.text)).toEqual(['three'])
+        conversations.unsubscribe('s')
+        conversations.cancelQueued('s')
+    })
+
+    test('Send now is refused while the terminal input line holds text, and the message stays queued', async () => {
+        const { conversations, sent } = service(WORKING, 'half typed')
+        conversations.subscribe('s')
+        // a send is refused for the same reason, so queue it while the box is empty first
+        ;(conversations as unknown as { entry(id: string): { queue: { id: string; text: string }[] } }).entry('s').queue.push({ id: 'q-test', text: 'later' })
+        expect(await conversations.sendQueuedNow('s', 'q-test')).toMatchObject({ status: 'rejected', reason: 'input_busy' })
+        expect(sent).toEqual([])
+        expect((await conversations.getConversation('s')).queued.map((item) => item.id)).toEqual(['q-test'])
+        conversations.unsubscribe('s')
+        conversations.cancelQueued('s')
+    })
+
+    test('the command list comes from the lister for the session’s agent', () => {
+        expect(service(IDLE).conversations.listCommands('s').map((command) => command.name)).toEqual(['config'])
+    })
+})
+
+test.describe('T73 r2 `/` commands an agent offers (ported ovis command tables)', () => {
+    test('Claude: personal and project skills, command files, and built-ins marked terminal-only', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 't73-cmds-'))
+        const config = path.join(home, '.claude')
+        const project = path.join(home, 'project')
+        fs.mkdirSync(path.join(config, 'skills', 'my-skill'), { recursive: true })
+        fs.writeFileSync(path.join(config, 'skills', 'my-skill', 'SKILL.md'), '---\nname: my-skill\ndescription: Does a thing\n---\nbody')
+        fs.mkdirSync(path.join(config, 'skills', 'hidden'), { recursive: true })
+        fs.writeFileSync(path.join(config, 'skills', 'hidden', 'SKILL.md'), '---\nname: hidden\nuser-invocable: false\n---\n')
+        fs.mkdirSync(path.join(config, 'commands', 'team'), { recursive: true })
+        fs.writeFileSync(path.join(config, 'commands', 'team', 'standup.md'), '---\ndescription: Standup notes\n---\n')
+        fs.mkdirSync(path.join(project, '.git'), { recursive: true })
+        fs.mkdirSync(path.join(project, '.claude', 'skills', 'local-one'), { recursive: true })
+        fs.writeFileSync(path.join(project, '.claude', 'skills', 'local-one', 'SKILL.md'), '---\ndescription: Project skill\n---\n')
+        const list = createChatCommandLister({ home, claudeConfigDir: () => config, codexHome: () => path.join(home, '.codex') })('claude', project)
+        const byName = new Map(list.map((command) => [command.name, command]))
+        expect(byName.get('my-skill')).toMatchObject({ source: 'skill', description: 'Does a thing' })
+        expect(byName.has('hidden')).toBe(false)
+        expect(byName.get('team:standup')).toMatchObject({ source: 'command', description: 'Standup notes' })
+        expect(byName.get('local-one')).toMatchObject({ source: 'project' })
+        expect(byName.get('config')).toMatchObject({ source: 'builtin', terminal: 'always' })
+        expect(byName.get('model')).toMatchObject({ source: 'builtin', terminal: 'bare' })
+        expect(byName.get('compact')?.terminal).toBeUndefined()
+        // what the chat does after sending them
+        expect(terminalCommand('/config', list)).toBe('/config')
+        expect(terminalCommand('/model', list)).toBe('/model')
+        expect(terminalCommand('/model sonnet', list)).toBeNull()
+        expect(terminalCommand('/compact', list)).toBeNull()
+        expect(terminalCommand('please /config', list)).toBeNull()
+    })
+
+    test('Codex: built-ins, and skills typed with $', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 't73-codex-cmds-'))
+        const codex = path.join(home, '.codex')
+        fs.mkdirSync(path.join(codex, 'skills', 'deep', 'nested-skill'), { recursive: true })
+        fs.writeFileSync(path.join(codex, 'skills', 'deep', 'nested-skill', 'SKILL.md'), '---\nname: nested-skill\ndescription: Codex skill\n---\n')
+        const list = createChatCommandLister({ home, claudeConfigDir: () => path.join(home, '.claude'), codexHome: () => codex })('codex', undefined)
+        expect(list.find((command) => command.name === 'nested-skill')).toMatchObject({ trigger: '$', source: 'skill' })
+        expect(list.find((command) => command.name === 'model')).toMatchObject({ terminal: 'bare' })
+        expect(list.find((command) => command.name === 'status')).toMatchObject({ terminal: 'always' })
+    })
+})
+
+test.describe('T73 r2 attachments and the composer helpers', () => {
+    test('a pasted picture is stored under an ASCII name with its type; too large is refused', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 't73-attach-'))
+        const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+        const name = '스크린샷 2026.png'.normalize('NFD')
+        const saved = saveChatAttachment(root, name, new Uint8Array(bytes))
+        expect(saved.status).toBe('attached')
+        const file = (saved as { path: string }).path
+        expect(path.basename(file)).toMatch(/^\d+-[0-9a-f]{8}\.png$/)
+        expect(fs.readFileSync(file).equals(bytes)).toBe(true)
+        expect(saveChatAttachment(root, 'big.bin', new Uint8Array(32 * 1024 * 1024 + 1))).toMatchObject({ status: 'rejected', reason: 'too_large' })
+    })
+
+    test('completion triggers, mentions, paths, diffs, folds, model names, plans', () => {
+        expect(activeTrigger('/rev', 4, false)).toEqual({ kind: 'slash', prefix: '/', query: 'rev', start: 0 })
+        expect(activeTrigger('hello\n/co', 9, false)).toMatchObject({ kind: 'slash', query: 'co', start: 6 })
+        expect(activeTrigger('a/b', 3, false)).toBeNull()
+        expect(activeTrigger('$sk', 3, false)).toBeNull()
+        expect(activeTrigger('$sk', 3, true)).toMatchObject({ kind: 'slash', prefix: '$', query: 'sk' })
+        expect(activeTrigger('look at @src/ma', 15, false)).toEqual({ kind: 'file', query: 'src/ma', start: 8 })
+        expect(activeTrigger('mail a@b', 8, false)).toBeNull()
+        expect(fileMention('/tmp/a.png')).toBe('@/tmp/a.png')
+        expect(fileMention('/Users/x/My Docs/a.png')).toBe('@"/Users/x/My Docs/a.png"')
+
+        expect(splitFilePaths('saved to docs/demo.mp4 and src/a.ts:12.')).toEqual(['saved to ', { path: 'docs/demo.mp4' }, ' and ', { path: 'src/a.ts:12' }, '.'])
+        expect(splitFilePaths('and/or e.g. 1.2.3')).toEqual(['and/or e.g. 1.2.3'])
+        expect(codeIsFilePath('README.md')).toBe(true)
+        expect(codeIsFilePath('process.env')).toBe(false)
+        expect(fileLineTarget('src/a.ts#L40')).toEqual({ path: 'src/a.ts', line: 40 })
+        expect(resolveChatPath('src/../lib/a.ts', '/w/app')).toBe('/w/app/lib/a.ts')
+        expect(resolveChatPath('~/x.md', '/w', '/Users/me')).toBe('/Users/me/x.md')
+        expect(resolveChatPath('/abs/x', '/w')).toBe('/abs/x')
+
+        const before = 'a\nb\nc'
+        const after = 'a\nB\nc\nd'
+        const diff = lineDiff(before, after)
+        expect(diff.filter((line) => line.kind !== 'add').map((line) => line.text)).toEqual(before.split('\n'))
+        expect(diff.filter((line) => line.kind !== 'del').map((line) => line.text)).toEqual(after.split('\n'))
+
+        expect(shouldFoldUserMessage('short')).toBe(false)
+        expect(shouldFoldUserMessage(Array.from({ length: 13 }, (_, i) => `l${i}`).join('\n'))).toBe(true)
+        expect(modelLabel('claude-opus-5-5')).toEqual({ text: 'Opus 5.5', named: true })
+        expect(modelLabel('gpt-6-luna')).toEqual({ text: 'gpt-6-luna', named: false })
+
+        const todos = [{ content: 'A', status: 'completed', activeForm: 'Doing A' }, { content: 'B', status: 'in_progress', activeForm: 'Doing B' }]
+        const tool: ToolPart = { kind: 'tool', name: 'TodoWrite', summary: '', input: JSON.stringify({ todos }), output: '' }
+        expect(todoSnapshot(tool)).toEqual(todos.map((todo) => ({ label: todo.content, status: todo.status, active: todo.activeForm })))
+        expect(latestTodos([{ parts: [tool] }])?.length).toBe(2)
+        const codexPlan: ToolPart = { kind: 'tool', name: 'update_plan', summary: '', input: JSON.stringify({ plan: [{ step: 'X', status: 'pending' }] }), output: '' }
+        expect(todoSnapshot(codexPlan)).toEqual([{ label: 'X', status: 'pending' }])
+        const artifact: ToolPart = { kind: 'tool', name: 'Artifact', summary: '', input: JSON.stringify({ title: 'Report' }), output: 'Published https://claude.ai/code/artifact/abc-123 ok' }
+        expect(artifactLinks([{ parts: [artifact] }])).toEqual([{ url: 'https://claude.ai/code/artifact/abc-123', title: 'Report' }])
+    })
+})
+

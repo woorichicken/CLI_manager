@@ -8,6 +8,7 @@
  *   --transcript <file>   jsonl to append (Claude: projects/<slug>/<id>.jsonl, Codex: rollout-…-<id>.jsonl)
  *   --agent claude|codex  record and screen format (default claude)
  *   --work-ms N           how long a turn "works" with the spinner (default 1200)
+ *   --user-delay-ms N     write a submitted prompt to the transcript N ms late (default 0)
  *
  * Prompts:
  *   ASK       a permission question. The layout is copied from a real Claude Code 2.1.312 screen
@@ -17,8 +18,16 @@
  *   QUESTION  an AskUserQuestion menu, copied from the real 2.1.312 screen (askuserquestion evidence):
  *             tab title, question, options with descriptions, "Type something.", a rule, "Chat about this".
  *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
+ *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
+ *   /model X  (Claude) records the command and "Set model to `X 5`", as Claude Code 2.1.3xx does; the next
+ *             answers name that model. Bare `/model`, `/config`: a panel only the terminal shows (Esc closes it).
+ *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
  * Arrows move the highlighted option; Enter picks it and prints `CHOSE: <label>` (or `CHOSE: custom <text>`).
- * Every submitted prompt prints `ANSWER[n]: <text>`.
+ * Every submitted prompt prints `ANSWER[n]: <text>`. Enter while a turn works holds the text (`HELD: <text>`)
+ * and submits it when the turn ends, as Claude Code queues it. Esc while a turn works stops it (`INTERRUPTED`),
+ * recording "[Request interrupted by user]" as Claude Code does.
+ * Answers record a model (`claude-opus-5-5`, effort `high`, usage) — Codex: a turn_context (gpt-6-luna,
+ * medium) and a token_count with its window.
  */
 const fs = require('fs')
 const crypto = require('crypto')
@@ -30,6 +39,8 @@ const arg = (name, fallback) => {
 const TRANSCRIPT = arg('--transcript')
 const AGENT = arg('--agent', 'claude')
 const WORK_MS = Number(arg('--work-ms', '1200'))
+/** how long a submitted prompt takes to reach the transcript (Claude Code writes it at once; a slow disk does not) */
+const USER_DELAY_MS = Number(arg('--user-delay-ms', '0'))
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
 const FRAMES = ['✻', '✢', '✳', '∗']
@@ -48,6 +59,14 @@ let spinner = 0
 /** the open menu: { kind, options: [{label, description?, custom?}], selected, customText } */
 let menu = null
 let lastUuid = null
+/** a panel only the terminal shows (bare /model, /config), closed by Esc */
+let panel = null
+/** text submitted while a turn works, sent when it ends */
+const held = []
+let workTimer = null
+let workSpin = null
+let claudeModel = 'claude-opus-5-5'
+const CLAUDE_NAMES = { opus: ['Opus 5.5', 'claude-opus-5-5'], sonnet: ['Sonnet 5', 'claude-sonnet-5'], haiku: ['Haiku 4.5', 'claude-haiku-4-5'], default: ['Opus 5.5', 'claude-opus-5-5'] }
 
 function record(entry) {
     if (!TRANSCRIPT) return
@@ -56,6 +75,11 @@ function record(entry) {
 function now() {
     return new Date().toISOString()
 }
+let tokens = 12000
+function usage() {
+    tokens += 3500
+    return { input_tokens: 4, cache_creation_input_tokens: 500, cache_read_input_tokens: tokens, output_tokens: 120 }
+}
 function claudeEntry(type, message, extra = {}) {
     const uuid = crypto.randomUUID()
     const entry = { type, message, uuid, parentUuid: lastUuid, timestamp: now(), sessionId: 'mock', cwd: '/masked', ...extra }
@@ -63,6 +87,10 @@ function claudeEntry(type, message, extra = {}) {
     record(entry)
 }
 function recordUser(text) {
+    if (USER_DELAY_MS > 0) return void setTimeout(() => writeUser(text), USER_DELAY_MS)
+    writeUser(text)
+}
+function writeUser(text) {
     if (AGENT === 'codex') {
         record({ timestamp: now(), type: 'event_msg', payload: { type: 'user_message', message: text, kind: 'plain' } })
         record({ timestamp: now(), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } })
@@ -72,17 +100,20 @@ function recordUser(text) {
 }
 function recordAnswer(text) {
     if (AGENT === 'codex') {
+        record({ timestamp: now(), type: 'turn_context', payload: { cwd: '/masked', model: 'gpt-6-luna', effort: 'medium', summary: 'none' } })
         record({ timestamp: now(), type: 'event_msg', payload: { type: 'agent_message', message: text, phase: 'final_answer' } })
+        tokens += 3500
+        record({ timestamp: now(), type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { total_tokens: tokens }, model_context_window: 200000 } } })
         record({ timestamp: now(), type: 'event_msg', payload: { type: 'task_complete' } })
     } else {
-        claudeEntry('assistant', { role: 'assistant', content: [{ type: 'text', text }], stop_reason: 'end_turn' })
+        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: usage() }, { effort: 'high' })
     }
 }
 function recordToolUse(id, command) {
     if (AGENT === 'codex') {
         record({ timestamp: now(), type: 'response_item', payload: { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ cmd: command }), call_id: id } })
     } else {
-        claudeEntry('assistant', { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Bash', input: { command, description: 'Create a probe file' } }], stop_reason: 'tool_use' })
+        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'tool_use', id, name: 'Bash', input: { command, description: 'Create a probe file' } }], stop_reason: 'tool_use', usage: usage() }, { effort: 'high' })
     }
 }
 function recordToolResult(id, output, isError) {
@@ -126,6 +157,7 @@ function menuLines() {
 
 function boxLines() {
     if (menu) return menuLines()
+    if (panel) return [rule(), ` ${panel}`, '', ' (mock panel — only the terminal shows it)', '', ' Esc to close']
     const status = busy ? [`${FRAMES[spinner % FRAMES.length]} Working… (${AGENT === 'codex' ? 'Esc' : 'esc'} to interrupt)`] : []
     if (AGENT === 'codex') return [...status, `› ${input}`, '  ? for shortcuts']
     return [...status, rule(), `❯ ${input}`, rule(), '  ⏵⏵ accept edits on']
@@ -143,21 +175,61 @@ function say(line) {
     for (const part of String(line).split('\n')) history.push(part)
 }
 
-function answerTurn(text) {
+function endWork() {
+    clearInterval(workSpin)
+    clearTimeout(workTimer)
+    workSpin = null
+    workTimer = null
+    busy = false
+}
+
+function answerTurn(text, answer = null) {
     busy = true
     draw()
-    const timer = setInterval(() => {
+    workSpin = setInterval(() => {
         spinner++
         draw()
     }, 100)
-    setTimeout(() => {
-        clearInterval(timer)
-        busy = false
-        const answer = `Echo: ${text}\n\n| key | value |\n| --- | --- |\n| length | ${text.length} |`
-        recordAnswer(answer)
-        say(`⏺ Echo: ${text}`)
+    workTimer = setTimeout(() => {
+        endWork()
+        const said = answer ?? `Echo: ${text}\n\n| key | value |\n| --- | --- |\n| length | ${text.length} |`
+        recordAnswer(said)
+        say(`⏺ ${said.split('\n')[0]}`)
         draw()
+        // what was typed during the turn goes next
+        if (held.length > 0) setTimeout(() => (submit(held.shift()), draw()), 50)
     }, WORK_MS)
+}
+
+function interrupt() {
+    endWork()
+    held.length = 0
+    say('  ⎿  Interrupted · What should Claude do instead?')
+    say('INTERRUPTED')
+    if (AGENT === 'codex') record({ timestamp: now(), type: 'event_msg', payload: { type: 'turn_aborted', reason: 'interrupted' } })
+    else claudeEntry('user', { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] })
+    draw()
+}
+
+function recordPlan() {
+    const todos = [
+        { content: 'Read the code', status: 'completed', activeForm: 'Reading the code' },
+        { content: 'Write the fix', status: 'in_progress', activeForm: 'Writing the fix' },
+        { content: 'Run the tests', status: 'pending', activeForm: 'Running the tests' }
+    ]
+    if (AGENT === 'codex') {
+        record({ timestamp: now(), type: 'response_item', payload: { type: 'function_call', name: 'update_plan', arguments: JSON.stringify({ plan: todos.map((t) => ({ step: t.content, status: t.status })) }), call_id: 'call_plan' } })
+        record({ timestamp: now(), type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_plan', output: 'Plan updated' } })
+    } else {
+        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'tool_use', id: 'toolu_plan', name: 'TodoWrite', input: { todos } }], stop_reason: 'tool_use', usage: usage() }, { effort: 'high' })
+        claudeEntry('user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_plan', content: 'Todos have been modified successfully.' }] })
+    }
+}
+
+/** Claude Code's record of a slash command and its answer. */
+function recordCommand(name, args, stdout) {
+    claudeEntry('user', { role: 'user', content: `<command-name>/${name}</command-name>\n            <command-message>${name}</command-message>\n            <command-args>${args}</command-args>` })
+    claudeEntry('user', { role: 'user', content: `<local-command-stdout>${stdout}</local-command-stdout>` })
 }
 
 function openMenu(kind) {
@@ -213,13 +285,31 @@ function submit(text) {
     submitted++
     say(`> ${text}`)
     say(`ANSWER[${submitted}]: ${text.includes('\n') ? `lines=${text.split('\n').length}` : text}`)
+    const model = /^\/model(?:\s+(\S+))?\s*$/.exec(text)
+    if (model || text.trim() === '/config') {
+        if (model && model[1] && AGENT !== 'codex') {
+            const [label, id] = CLAUDE_NAMES[model[1]] ?? [model[1], model[1]]
+            claudeModel = id
+            recordCommand('model', model[1], `Set model to \`${label}\``)
+            say(`  ⎿  Set model to ${label}`)
+            say(`MODEL: ${model[1]}`)
+        } else {
+            panel = model ? 'Select model (mock picker)' : 'Settings (mock /config panel)'
+            say(`PANEL: ${text.trim()}`)
+        }
+        return
+    }
     recordUser(text)
     if (text === 'ASK') openMenu(AGENT === 'codex' ? 'codex-trust' : 'permission')
     else if (text === 'QUESTION') openMenu('question')
-    else answerTurn(text)
+    else if (text === 'PLAN') {
+        recordPlan()
+        answerTurn(text, 'Planned three steps.')
+    } else answerTurn(text)
 }
 
 let escape = ''
+let escapeTimer = null
 function handleKey(key) {
     if (menu) {
         if (key === '\x1b[A') menu.selected = Math.max(0, menu.selected - 1)
@@ -231,10 +321,26 @@ function handleKey(key) {
         }
         return draw()
     }
+    if (panel) {
+        if (key === '\x1b') {
+            panel = null
+            say('PANEL CLOSED')
+        }
+        return draw()
+    }
+    if (key === '\x1b') {
+        if (busy) interrupt()
+        return draw()
+    }
     if (key === '\r') {
-        if (input.length === 0 || busy) return draw()
+        if (input.length === 0) return draw()
         const text = input
         input = ''
+        if (busy) {
+            held.push(text)
+            say(`HELD: ${text}`)
+            return draw()
+        }
         submit(text)
         return draw()
     }
@@ -270,10 +376,19 @@ function feed(chunk) {
         if (escape || data[0] === '\x1b') {
             escape += data[0]
             data = data.slice(1)
+            clearTimeout(escapeTimer)
             if (/^\x1b\[[0-9;]*[A-Za-z~]$/.test(escape) || (escape.length === 2 && escape[1] !== '[')) {
                 const key = escape
                 escape = ''
                 handleKey(key)
+            } else if (escape === '\x1b' && data.length === 0) {
+                // a lone Esc: nothing follows it within a moment
+                escapeTimer = setTimeout(() => {
+                    if (escape === '\x1b') {
+                        escape = ''
+                        handleKey('\x1b')
+                    }
+                }, 40)
             }
             continue
         }
