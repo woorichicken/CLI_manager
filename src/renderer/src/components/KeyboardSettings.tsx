@@ -6,6 +6,7 @@ import {
     ShortcutAction,
     ShortcutGroup,
     DEFAULT_SHORTCUTS,
+    effectiveShortcuts,
     SHORTCUT_LABELS,
     SHORTCUT_GROUP_NAMES,
 } from '../../../shared/types'
@@ -29,7 +30,7 @@ function bindingsEqual(a: KeyBinding, b: KeyBinding): boolean {
 }
 
 function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
-    return { ...DEFAULT_SHORTCUTS, ...settings.keyboard?.shortcuts }
+    return effectiveShortcuts(settings.keyboard?.shortcuts)
 }
 
 const GROUP_ORDER: ShortcutGroup[] = ['navigation', 'splitView', 'search', 'ui', 'actions', 'chat', 'memo']
@@ -65,7 +66,7 @@ function ShortcutRow({
                         : 'bg-white/10 text-gray-300 hover:bg-white/15'
                 }`}
             >
-                {isRecording ? 'Press keys...' : formatBinding(binding)}
+                {isRecording ? 'Press keys...' : binding.code ? formatBinding(binding) : 'Not set'}
             </button>
             {conflict && (
                 <p className="text-xs text-red-400 ml-2">{conflict}</p>

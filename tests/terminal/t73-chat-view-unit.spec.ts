@@ -8,6 +8,7 @@ import { TranscriptReader, claudeProjectSlug } from '../../src/main/TranscriptRe
 import { answerSteps, KEYS, readPrompt } from '../../src/main/promptScreen'
 import type { ConversationPart, ConversationTurn, ToolPart } from '../../src/shared/conversation'
 import { foldMetadata } from '../../src/main/transcript/metadata'
+import { DEFAULT_SHORTCUTS, effectiveShortcuts } from '../../src/shared/types'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { createChatCommandLister } from '../../src/main/chatCommands'
 import { saveChatAttachment } from '../../src/main/chatAttachments'
@@ -554,6 +555,20 @@ test.describe('T73 r2 attachments and the composer helpers', () => {
         expect(todoSnapshot(codexPlan)).toEqual([{ label: 'X', status: 'pending' }])
         const artifact: ToolPart = { kind: 'tool', name: 'Artifact', summary: '', input: JSON.stringify({ title: 'Report' }), output: 'Published https://claude.ai/code/artifact/abc-123 ok' }
         expect(artifactLinks([{ parts: [artifact] }])).toEqual([{ url: 'https://claude.ai/code/artifact/abc-123', title: 'Report' }])
+    })
+})
+
+test.describe('T73 r2 shortcut defaults never take a chord the person already bound', () => {
+    test('a stored binding on ⌘⇧M keeps it; the new Terminal / Chat default is left unbound, the rest stay', () => {
+        const mine = { key: 'M', modifiers: ['mod', 'shift'] as ('mod' | 'shift' | 'alt')[], code: 'm' }
+        expect(DEFAULT_SHORTCUTS.toggleChatView).toMatchObject({ code: mine.code, modifiers: mine.modifiers })
+        const effective = effectiveShortcuts({ memoNewPage: mine })
+        expect(effective.memoNewPage).toEqual(mine)
+        expect(effective.toggleChatView.code).toBe('')
+        expect(effective.focusChatInput).toEqual(DEFAULT_SHORTCUTS.focusChatInput)
+        expect(effectiveShortcuts(undefined)).toEqual(DEFAULT_SHORTCUTS)
+        // an explicit choice for the chat itself is kept even when it equals another stored one's
+        expect(effectiveShortcuts({ toggleChatView: mine, memoNewPage: mine }).toggleChatView).toEqual(mine)
     })
 })
 

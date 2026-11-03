@@ -381,6 +381,25 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     scrollPaneDown:  { key: 'PageDown', modifiers: ['mod', 'shift'], code: 'PageDown' },
 }
 
+/**
+ * The bindings in effect: the stored ones over the defaults. A default whose chord the person
+ * already gave another action (a default added in a later version — ⌘⇧M for Terminal / Chat, say,
+ * after ⌘⇧M was recorded for a memo page) gives way: theirs wins, and that default is left unbound
+ * (`code: ''`, matches no key) until they pick one in Settings › Keyboard.
+ */
+export function effectiveShortcuts(overrides?: Partial<KeyboardShortcutMap>): KeyboardShortcutMap {
+    const stored = overrides ?? {}
+    const same = (a: KeyBinding, b: KeyBinding): boolean =>
+        a.code.toLowerCase() === b.code.toLowerCase() && a.modifiers.length === b.modifiers.length && a.modifiers.every((m) => b.modifiers.includes(m))
+    const taken = Object.values(stored).filter((binding): binding is KeyBinding => Boolean(binding && binding.code))
+    const result = { ...DEFAULT_SHORTCUTS, ...stored } as KeyboardShortcutMap
+    for (const action of Object.keys(DEFAULT_SHORTCUTS) as ShortcutAction[]) {
+        if (stored[action]) continue
+        if (taken.some((binding) => same(binding, DEFAULT_SHORTCUTS[action]))) result[action] = { key: '', modifiers: [], code: '' }
+    }
+    return result
+}
+
 export type ShortcutGroup = 'navigation' | 'splitView' | 'search' | 'ui' | 'actions' | 'memo' | 'chat'
 
 export interface ShortcutInfo {

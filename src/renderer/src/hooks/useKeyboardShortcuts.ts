@@ -9,6 +9,7 @@ import {
     ShortcutAction,
     MemoShortcutAction,
     DEFAULT_SHORTCUTS,
+    effectiveShortcuts,
     TerminalTemplate,
 } from '../../../shared/types'
 import { hasPrimaryModifier, hasTerminalOnlyModifier } from '../utils/platform'
@@ -51,7 +52,7 @@ interface UseKeyboardShortcutsConfig {
 }
 
 function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
-    return { ...DEFAULT_SHORTCUTS, ...settings.keyboard?.shortcuts }
+    return effectiveShortcuts(settings.keyboard?.shortcuts)
 }
 
 // Unshifted character for the physical keys bindings use. `e.key` reports what
