@@ -376,8 +376,19 @@ body.phone-body #root {
     flex-shrink: 0;
     overflow-x: auto;
 }
+.phone-term-toolbar,
+.phone-key-row {
+    scrollbar-width: none;
+}
+.phone-term-toolbar::-webkit-scrollbar,
+.phone-key-row::-webkit-scrollbar {
+    display: none;
+}
+.phone-term-toolbar .phone-seg button {
+    padding: 5px 7px;
+}
 .phone-term-toolbar > button {
-    width: 30px;
+    width: 28px;
     height: 30px;
     display: inline-flex;
     align-items: center;
@@ -457,9 +468,11 @@ body.phone-body #root {
     overflow-x: auto;
 }
 .phone-key {
-    min-width: 40px;
-    height: 34px;
-    padding: 0 8px;
+    /* nine keys share the width of a 390 phone; wider screens just get wider keys */
+    flex: 1 0 auto;
+    min-width: 34px;
+    height: 36px;
+    padding: 0 6px;
     border-radius: 7px;
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--border-color);

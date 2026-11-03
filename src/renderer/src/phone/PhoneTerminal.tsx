@@ -123,8 +123,8 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
     return (
         <div className="phone-terminal" data-testid="phone-terminal" data-status={term.status}>
             <div className="phone-term-toolbar">
-                <span className="phone-term-size" data-testid="phone-terminal-size">
-                    {term.size ? `${term.size.cols}×${term.size.rows}` : '—'} · {Math.round(scale * 100)}%
+                <span className="phone-term-size" data-testid="phone-terminal-size" title={`The Mac's size, shown at ${Math.round(scale * 100)}%`}>
+                    {term.size ? `${term.size.cols}×${term.size.rows}` : '—'}
                 </span>
                 <button type="button" aria-label="Zoom out" onClick={() => setZoom(Math.max(fitScale, scale / 1.25))}><Minus size={14} /></button>
                 <button type="button" aria-label="Fit width" data-testid="phone-terminal-fit" onClick={() => setZoom(null)}><Maximize2 size={14} /></button>
