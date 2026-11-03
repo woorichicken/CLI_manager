@@ -22,6 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | When changing which sessions the Control API may touch, what the AI mark means, or when the mirror is attached | [`docs/decisions/0006-control-api-reaches-every-session.md`](docs/decisions/0006-control-api-reaches-every-session.md) |
 | When changing how the Control API registers, files or unregisters workspaces, or when tempted to let it remove one the user added | [`docs/decisions/0007-api-cleans-up-only-its-own-registrations.md`](docs/decisions/0007-api-cleans-up-only-its-own-registrations.md) |
 | When changing where terminal history is kept, how a terminal view attaches to a pty, or when tempted to switch the screen mirror off while the Control API is off | [`docs/decisions/0008-terminal-history-lives-in-main.md`](docs/decisions/0008-terminal-history-lives-in-main.md) |
+| When changing how a phone reaches the app (Settings › Phone), who it lets in, or whether a phone may resize a terminal | [`docs/decisions/0009-phone-connection-second-server.md`](docs/decisions/0009-phone-connection-second-server.md) |
 | When a design choice looks arbitrary and you are about to change it | [`docs/decisions/CLAUDE.md`](docs/decisions/CLAUDE.md) |
 | When touching an area that misbehaves, or when triaging a report against known-wrong behavior | [`docs/found-defects.md`](docs/found-defects.md) |
 | When adding or debugging an integration with an external AI CLI (hooks, status line, usage data) | [`docs/integrations/CLAUDE.md`](docs/integrations/CLAUDE.md) |
@@ -113,6 +114,7 @@ pnpm build && pnpm test:term
    - `ClaudeSessionSync.ts`: Claude 의 실행 중 세션 레지스트리(`~/.claude/sessions/<pid>.json`)를 읽어 저장된 대화 id 를 실제 대화로 맞춤 — Claude 안에서 `/resume` 하면 id 가 바뀐다
    - `FeedbackRelay.ts`: 피드백 위젯의 HTTP 요청을 main 에서 대신 보낸다 — 배포 렌더러는 `file://` 라 `Origin: null` 이 되고 라쏘런이 403 으로 거부한다. 수집 함수 경로만 허용
    - `TerminalEventLog.ts`: 터미널마다 최근 사건(시작·복원·다시 붙음·붙기 시간 초과·Cmd+K·PTY 크기 변경 `80x30→111x43`(창 끌기처럼 몰린 것은 한 줄)·프로그램의 스크롤백 삭제 CSI 3 J·종료 코드·닫힘)과 창 사건(렌더러 크래시·새로고침)을 메모리에만 둔다 — 제보가 「무엇이 먼저 있었나」를 싣는 원본
+   - `phone/`: 폰 연결(Settings › Phone, 기본 꺼짐) — `PhoneServer.ts`(127.0.0.1 두 번째 서버, Control API 와 분리, 정해진 경로만) · `phoneAccess.ts`(접근 판정 순수 함수: Tailscale serve 주인 로그인 + tailnet XFF, 아니면 짝지은 기기, Funnel 거절) · `PhoneDevices.ts`(6자리 · 10분 · 5회, 해시만 0600) · `PhonePush.ts`(웹 푸시 — 질문 대기·턴 끝, Mac 앞이면 안 보냄, 세션당 1분) · `phoneApi.ts`(Chat 은 `ConversationService` 를 같은 프로세스에서) · `phoneSockets.ts`(터미널: 스냅샷 → 이어 붙이기, **크기 메시지 거절**) · `tailscaleStatus.ts`(`tailscale status --json` 읽기만) · `phoneSetup.ts`(배선·IPC) ([`docs/decisions/0009`](docs/decisions/0009-phone-connection-second-server.md))
    - `feedbackTerminalContext.ts` / `maskSecrets.ts`: 제보에 실을 터미널 상태와 최근 200줄을 만든다. 줄은 비밀값·홈 폴더·계정 이름을 가린 뒤 나간다. 오른쪽 끝에서 끊긴 키도 가린다 — zsh 는 긴 입력 줄을 스스로 끊어 wrap 표시가 없다
 
 2. **Renderer Process** (`src/renderer/`)
@@ -135,6 +137,7 @@ pnpm build && pnpm test:term
    - `components/Feedback/`: feedback-kit 위젯 — `FeedbackGate`(비밀번호 관문·마운트), `FeedbackWidget`(배선, 통과한 뒤에만 lazy import), `FeedbackModeSetting`(Settings > Feedback 토글), `terminalContext`(제보가 어느 터미널 얘기인지 정하고 main 의 터미널 정보를 싣는다). 판정·상수는 `utils/feedbackGate.ts`
    - `components/SessionBreadcrumb.tsx` · `utils/sessionBreadcrumb.ts`: 세션 헤더 `폴더 > 프로젝트 > 세션` 경로(단일 헤더·분할 칸·Grid 창이 같이 쓴다). 폴더가 없거나 Playground 면 그 칸을 뺀다, 워크트리는 부모 폴더를 따른다, 좁으면 폴더·프로젝트부터 줄인다
    - `components/ChatView/` · `SessionChatSlot.tsx` · `SessionViewToggle.tsx`: 세션 헤더 「Terminal / Chat」과 Chat view(말풍선·마크다운·코드 색칠·작업 접기·질문 카드·입력칸). `ChatView/` 는 `window.api` 를 부르지 않고 `ChatTransport` 를 props 로 받는다(폰이 같은 부품을 쓴다) — Electron 쪽은 `utils/electronChatTransport.ts`. 2회차(ovis 대비 빠진 것, `gap.md`): 첨부 ＋·붙여넣기·끌어 놓기(제 경로를 `@path`, 미리보기는 data: — 앱 CSP 가 blob: 을 막는다) · 파일 경로 → `ChatFilePreview.tsx`(그림·글은 앱 미리보기, 그 밖은 Mac 기본 앱) · 그림 라이트박스 · 바뀐 줄 · Stop/Esc · 경과 시간 · 흐린 보낸 말풍선 · 대기 하나씩 · 계획 칩 · 모델 칩(바꾸기는 /model, 기본값도 바뀐다는 확인) · 문맥 칩 · `/`·`@` 자동완성 · 터미널 전용 명령 → 「Back to Chat」 띠 · 카드 번호 입력 · 빠른 답·Enter 설정(`ChatViewSettings.tsx`, Settings › Terminal) · 레일 · 앞 턴 더 보기 · 스크롤 자리 기억. 단축키 ⌘⇧M Terminal/Chat · ⌘⇧I 입력칸 · ⌘⇧PgUp/PgDn 한 쪽(터미널이면 `requestTerminalPage` 로 스크롤백) — App 이 `sendChatCommand` 로 그 세션 Chat 에 전한다. 순수 함수는 `ChatView/chatLib.ts`
+   - `phone/` + `../phone.html`: 폰 페이지(렌더러 두 번째 Vite 입구, 폰 서버가 낸다 — Electron 안에서 뜨지 않음). 세션 목록(작업 공간·세션 폴더 묶음·상태 점, 만들기·지우기 없음) · 「Chat | Terminal」 · 데스크톱 `ChatView` 에 `phoneChatTransport`(fetch + WS) · `PhoneTerminal`(Mac 칸 수 그대로 축소, 키 바 `keyBar.ts`·iOS 키보드 `viewport.ts` — ovis, MIT) · 짝짓기 · 알림. `components/PhoneSettings.tsx`(설정 Phone) · `PhoneBadge.tsx`(사이드바 아래 「Phone on · n connected」 + 끄기)
    - `components/TerminalView.tsx`: xterm.js 터미널 인스턴스
    - `components/StatusBar.tsx`: 포트 모니터링 정보 표시
    - `components/GitPanel.tsx`: Git 상태 관리 패널
@@ -253,7 +256,8 @@ exec('/bin/zsh -l -c "code ."')
 
 ### Build Configuration
 
-- `electron-vite`는 Main/Preload/Renderer를 별도로 번들링
+- `electron-vite`는 Main/Preload/Renderer를 별도로 번들링. 설정 파일은 **`electron.vite.config.ts`**(점) — 옆의 `electron-vite.config.ts`(하이픈)는 이름이 달라 한 번도 읽히지 않았다(없는 `@vitejs/plugin-react` 를 부른다). 렌더러 입구는 둘(`index.html` · `phone.html`)이고 `manifest: true` — 폰 서버가 manifest 로 폰이 싣는 청크만 낸다
+- main 이 쓰는 npm 패키지를 `dependencies` 에 넣으면 번들에서 빠지고(외부화) 배포 앱에는 없다(`electron-builder.yml` 이 node_modules 를 allowlist 로만 싣는다). 번들에 넣을 것(`ws`·`web-push`)은 `devDependencies` 에 둔다 — 렌더러의 react 와 같은 규칙
 - Renderer는 Vite + React HMR 지원
 - Main/Preload는 CommonJS 모듈 시스템 사용 (`type: "commonjs"`)
 
@@ -479,6 +483,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T68 상태 점 비용(opt-in `STATUS_PERF=1`, 약 9분) — 세션 41개(작업 4 · 질문 2 · 쉬는 Claude 30 · 셸 로그 4)에서 끔 / Settings › Hooks 화면 추측 / 새 점 을 같은 부하로: main·렌더러 CPU(`app.getAppMetrics`), 상태 IPC/분(양방향), main 판정 ms, React commit·App·사이드바 줄 렌더/분(DevTools 훅 — 줄은 props 로 찾는다, 빌드가 이름을 줄인다). 부하 둘: steady(상태가 안 바뀜) · churn(5초마다 2.5초 턴 — 바뀔 때의 비용). 결과 `tests/terminal/results/<label>/t68-*.json`. `STATUS_PERF_ONLY=heuristic-churn,screen-churn` 로 골라 돌린다
   - T73 Chat view 유닛 — Electron 없이. 2회차: 모델·추론·문맥 읽기(Claude·Codex), 그림·잘린 출력 다시 읽기(조각 경계를 넘게 `findChunkBytes` 를 줄여), Stop·대기열 하나씩(가짜 미러), `/` 명령 목록(스킬·명령 파일·`user-invocable: false` 제외·터미널 전용·Codex `$`), 붙여넣은 그림 저장(NFD 한글 이름 → ASCII), 입력칸 순수 함수, `effectiveShortcuts`. 합성 대화 기록(`fixtures/transcripts`, `make-fixtures.py` — 실제 기록은 커밋 금지) 10종 + Codex 1종을 ovis 에서 옮긴 파서로: 입력한 프롬프트·마지막 답이 파일에서 코드로 뽑은 값과 같은지, 다시 보낸 글·압축·/clear·하위 에이전트·그림·거절·대기 입력·진행 중. `TranscriptReader`(슬러그·찾기·이어 읽기·찢어진 줄·줄어든 파일·첫 읽기 한도·Codex 조각). `promptScreen` 은 실제 Claude Code 2.1.312 화면 사본(`fixtures/prompts`)으로 보기·강조·맥락·키 순서·서명, 일하는 중/입력 상자 위 문구는 메뉴 아님, Codex·다중 선택은 터미널 전용
   - T74 Chat view — `chat-mock.cjs`(Claude/Codex 모양 화면 + 기록 파일 쓰기, 질문 화면은 2.1.312 배치)를 세션의 `cliCommand` 로 심어 앱 시작 resume 이 모의 에이전트를 띄운다. 전환(에이전트 세션만·세션마다 기억)·읽기(표·코드 색칠·접힌 작업)·보내기(터미널 `ANSWER[n]`·기록·Chat)·일하는 중 대기열·터미널 입력줄 글 있으면 거부·질문 카드(옛 서명은 `prompt_changed` 로 거부·보기·직접 입력)·Codex(읽기·보내기·카드는 「Answer in Terminal」)·390 폭. `CHAT_VIEW_SHOTS=<폴더>` 면 1280·390 캡처. 옛 코드에서는 `view-toggle` 이 없어 실패. **T74 r2**(2회차): 단축키(⌘⇧M·⌘⇧I·PgUp·⌘⇧PgUp)·툴팁, 앞 턴 더 보기·레일·접기·스크롤 자리 기억·그림(기록에서 다시 읽어 data: 비교)·라이트박스·전체 출력·diff·파일 미리보기(답 속·도구 줄 ↗)·답 복사, 빠른 답, Stop·Esc·경과 시간, Send now(모의가 `HELD:`)·버리기·고치기, 계획 칩, 모델 칩·바꾸기 확인(취소면 아무것도 안 침)·`/model sonnet` 뒤 칩·문맥 Compact·피커는 터미널 + Back to Chat, `/`·`@` 완성·`/config`·Keep Terminal, 첨부 3길(기록의 프롬프트로 확인 — 터미널은 긴 줄을 접는다)·미리보기 그려짐, 카드 번호 → 답 뒤 카드 사라짐, Enter 설정, 흐린 말풍선·5초 시계(`--user-delay-ms`), Codex 모델·문맥 %·피커, 390. `CHAT_VIEW_SHOTS` 면 기능마다 1280·390(`shotBoth` — 사이드바는 JS 클릭, 팝오버가 안 닫히게). 옛 코드(fcd61ad)에선 툴팁에 단축키가 없고 ⌘⇧M 이 아무 일도 안 해 실패
+  - T75 폰 유닛 — Electron 없이. 접근 판정 표(주인·남·머리말 없음·XFF 없음/LAN/목록·Mac 주인 모름·짝지은 기기 치기/보기·꺼짐·Funnel·loopback 아님)·Host/Origin·`tailscale status` 주인(태그 노드는 없음)·짝짓기(6자리·해시만 0600·재시작·5회·10분·끊기)·알림(질문·끝난 턴·1분·Mac 사용 중·셸 없음·시험·기기 끊기)·키 바 순서/시퀀스/Ctrl+글자·카드 글 가리기(서명 유지)
+  - T76 폰 — 앱 + 폰(앱 안 390×844 창, 따로 쿠키 — Playwright 브라우저는 CI 에 없다). 기본 꺼짐 → 설정 스위치(serve 명령·QR·배지) · HTTP 접근(머리말 없음/남 401 · Funnel 403 · Host 421 · 남의 Origin POST 403 · `/v1`·`/mcp` 없음 · 데스크톱 청크 404) · 폰에서 짝짓기(틀린 코드) · 목록(작업 공간·세션 폴더 묶음) · Chat 보내기(Mac 터미널 `ANSWER`·`phone-input`) · 카드 답 · Terminal(Mac 크기·축소·키 바·입력줄·^C) · 크기 메시지 2건 거절 · **폰이 붙었다 떠나도 Mac PTY 크기 같고 `resized` 0건** · 보기 전용 기기 403 · 알림(질문 1건 · 1분 안 두 번째 없음 · Mac 사용 중 없음 · 시험) · 알림 주소 → 그 세션 Chat · 기기 끊기 → 짝짓기 화면 · 배지로 끄기 → 소켓 끊김·접속 거부 · 비밀 파일 0600. `PHONE_SHOTS=<폴더>` 면 리뷰 캡처
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

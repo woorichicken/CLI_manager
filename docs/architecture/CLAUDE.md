@@ -148,6 +148,34 @@ rules stay in the root; this file is the inventory.
 - 회귀: `t73-chat-view-unit.spec.ts`(해석·리더·메뉴 판정, Electron 없이) · `t74-chat-view.spec.ts`(앱 — `scripts/mock-cli/chat-mock.cjs` 가 화면과
   기록 파일을 함께 만든다)
 
+#### 16. Phone connection (Settings › Phone)
+- 근거: [`../decisions/0009-phone-connection-second-server.md`](../decisions/0009-phone-connection-second-server.md). 기본 꺼짐 — 켜면 main 안
+  두 번째 서버(`src/main/phone/PhoneServer.ts`)가 `127.0.0.1:47830`(`settings.phone.port`, 시험은 0)에만 듣는다. Control API 와 포트·경로·토큰이 다르다
+- **길**: 사람이 `tailscale serve --bg --https=443 http://127.0.0.1:<port>` 를 돌린다(설정이 명령과 되돌리는 `tailscale serve --https=443 off` 를 보여
+  준다 — 앱은 돌리지 않는다). 폰 주소는 `https://<MagicDNS>/`(QR). Funnel 머리말이 있으면 거절
+- **누가**(`phoneAccess.ts`, 순수 함수 — T75 표): `Tailscale-User-Login` = 이 Mac 의 로그인(`tailscale status --json`, 5분 캐시, 읽기만) 이고
+  `X-Forwarded-For` 가 tailnet 주소면 주인(치기). 그 밖은 짝지은 기기 쿠키(`climanager_phone`, HttpOnly·SameSite=Strict)만 —
+  `PhoneDevices`: 6자리 · 10분 · 5회 틀리면 폐기 · 「can type / view only」 · 해시만 `userData/phone/devices.json`(0600). Host 는 loopback·`*.ts.net`·
+  tailnet 주소만(421), 바꾸는 요청·소켓은 Origin 이 같은 곳만(403)
+- **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/sessions`(작업 공간·폴더·세션 폴더·세션 +
+  상태 점·질문 줄) · `/api/phone/chat/<id>/<conversation|send|answer|interrupt|cancel-queued|discard-queued|send-queued-now|attach|image|tool-output|commands>`
+  · WS `/api/phone/chat/<id>/events`(revision) · WS `/api/phone/terminal?session=<id>` · `POST /api/phone/push/<subscribe|unsubscribe|test>`.
+  만들기·지우기·이름 바꾸기·크기 바꾸기 경로는 없다. 치는 경로는 `drive` 만, 그리고 세션 사건 기록에 `phone-input`(무엇을 했는지만, 글은 안 남김)
+- **Chat**: 같은 프로세스에서 `ConversationService` 를 부른다(IPC 핸들러와 같은 함수). 질문 카드 글(화면에서 읽은 것)은 `maskSecretLines` 를 거친다.
+  변경 알림은 `ConversationService.onChange` → `phoneConversationListeners`
+- **Terminal**: `TerminalManager.attachRemote` — 있는 pty 에만 붙고(만들지 않음) 불변식 6 순서(flush → hold → 스냅샷 → 그 뒤 출력)를 따르되 서버가
+  바로 확인하고 순서를 스스로 지킨다(폰 네트워크가 Mac 출력을 붙잡지 않게). 소켓은 `input` 만 받는다 — 크기 메시지는 `resize_not_allowed`.
+  Mac 창이 크기를 바꾸면 `size` 로 알려 폰이 같은 칸 수로 다시 그린다. 폰은 Mac 칸 수로 그리고 폭에 맞춰 줄여 보인다(확대·가로 밀기)
+- **알림**(`PhonePush.ts`, `web-push`): 폰 서버가 켜져 있는 동안 자기 `SessionScreenStatusPoller` 를 돌려 에이전트 세션의 질문 대기·5초 넘게 일한 턴의
+  끝을 웹 푸시로. Mac 앞에서 앱을 쓰는 중(보이는·포커스된 창 + 2분 안 입력)이면 안 보냄, 세션당 1분에 한 번, 시험 알림은 늘. VAPID 키·구독은
+  `userData/phone/{vapid,push}.json`(0600), 404/410 이면 구독을 지운다. 누르면 `/?session=<id>&view=chat`
+- **폰 페이지**: 렌더러 두 번째 Vite 입구 `src/renderer/phone.html` → `src/renderer/src/phone/`(목록·서랍(768px 아래)·「Chat | Terminal」·키 바·입력줄·
+  짝짓기·알림). Chat 은 데스크톱 `ChatView` 에 `phoneChatTransport`(fetch + WS)를 준다. 서버는 `out/renderer/.vite/manifest.json` 으로 phone.html 이
+  싣는 청크만 낸다(데스크톱 입구·피드백 위젯 청크는 404). 매니페스트·서비스 워커·아이콘은 `src/renderer/public/phone/`
+- 끄기: 설정 스위치 · 사이드바 「Phone on · n connected」의 ✕ · 앱 종료 → 서버 닫힘 + 모든 소켓 끊김. 기기 끊기는 그 기기 소켓·알림까지
+- 회귀: `t75-phone-unit.spec.ts`(접근 표·짝짓기·알림 규칙·키 바·카드 가리기) · `t76-phone.spec.ts`(앱 + 폰 창 — 가짜 Tailscale 상태 파일
+  `CLIMANAGER_PHONE_TAILSCALE_STATUS`, 알림은 `CLIMANAGER_PHONE_PUSH_LOG`, 둘 다 시험 userData 일 때만 읽는다)
+
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
 - **별칭도 인식한다** — 사용자가 `cldy`로 띄워도 `claude`로 판정한다. 시작 시 `zsh -ic alias`를
@@ -240,6 +268,9 @@ User Action (Renderer)
 }
 ```
 
+폰 연결(`settings.phone = { enabled, port }`)의 비밀은 config.json 이 아니라 `userData/phone/` 에 둔다 — `devices.json`(기기 토큰 해시) ·
+`vapid.json`(웹 푸시 키) · `push.json`(구독), 모두 0600.
+
 디스크에 따로 두는 것: `userData/scrollback/<sessionId>.ans` — 터미널 히스토리 스냅샷(이스케이프 시퀀스, 최대 2000줄).
 사이드바 세션이 지워지면 같이 지우고, 시작 때 고아 파일을 정리한다.
 
@@ -322,6 +353,13 @@ User Action (Renderer)
   `chat-save-attachment(name, bytes)` → `AttachResult`(32MB) · `chat-open-path(path)` → `shell.openPath`. `@` 파일 찾기는 기존 `search-files` 를 쓴다
 - 코드: `src/main/ConversationService.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · `chatCommands.ts` · `chatAttachments.ts` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
   `SessionViewToggle.tsx` · `ChatFilePreview.tsx` · `ChatViewSettings.tsx` · `hooks/useSessionViewMode.ts`(peek 포함) · `utils/electronChatTransport.ts`
+
+#### Phone connection
+- `phone-get-state` → `PhoneState`(실제 상태: running·port·Tailscale 로그인·MagicDNS·serve 명령·기기·짝짓기 코드·연결 수·알림 기기 수) ·
+  `phone-set-enabled(boolean)`(즉시 적용, `settings.phone` 은 main 이 쥔다 — `save-settings` 가 옛 값으로 덮지 않는다) · `phone-start-pairing('drive'|'watch')` ·
+  `phone-cancel-pairing` · `phone-revoke-device(id)` · `phone-revoke-all` → `PhoneState` · `phone-test-push` → `PhoneTestPushResult` ·
+  `phone-state-changed` (main → renderer, 0.1초 묶음)
+- 코드: `src/main/phone/`(`phoneSetup.ts` 배선·IPC) · 렌더러 `components/PhoneSettings.tsx` · `PhoneBadge.tsx` · `hooks/usePhoneState.ts`
 
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)
