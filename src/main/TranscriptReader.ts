@@ -40,6 +40,8 @@ export interface TranscriptRead {
 export interface TranscriptReaderDeps {
     claudeConfigDir: () => string
     codexHome: () => string
+    /** Tests shrink it; the app uses MAX_FIRST_READ_BYTES. */
+    firstReadBytes?: number
 }
 
 interface FileCursor {
@@ -155,7 +157,7 @@ export class TranscriptReader {
         let fed = false
         const firstRead = state.files.every((cursor) => cursor.offset === 0)
         // On a first read, only the newest MAX_FIRST_READ_BYTES of the whole thread are taken.
-        let budget = firstRead ? MAX_FIRST_READ_BYTES : Infinity
+        let budget = firstRead ? this.deps.firstReadBytes ?? MAX_FIRST_READ_BYTES : Infinity
         const sizes = state.files.map((cursor) => (existsSync(cursor.path) ? statSync(cursor.path).size : 0))
         if (firstRead) {
             // Spend the budget from the last file backwards.

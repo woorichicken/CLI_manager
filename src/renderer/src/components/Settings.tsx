@@ -9,6 +9,7 @@ import { ControlApiSettings } from './ControlApiSettings'
 import { CHANGELOG_URL } from '../constants/links'
 import { FeedbackModeSetting } from './Feedback/FeedbackModeSetting'
 import { TerminalLinkSchemesSetting } from './TerminalLinkSchemesSetting'
+import { ThirdPartyNotices } from './ThirdPartyNotices'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
@@ -322,6 +323,8 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                         >
                                             view changelog
                                         </a>
+                                        <span className="text-[9px] text-gray-600"> · </span>
+                                        <ThirdPartyNotices />
                                     </div>
                                 )}
 
