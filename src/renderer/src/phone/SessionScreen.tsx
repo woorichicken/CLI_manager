@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { Menu, MessageSquareText, TerminalSquare } from 'lucide-react'
-import type { ChatPreferences } from '../../../shared/conversation'
 import type { PhoneRole, PhoneSession } from '../../../shared/phone'
 import { ChatView } from '../components/ChatView'
 import { createPhoneChatTransport } from './phoneChatTransport'
@@ -13,9 +12,6 @@ import { PhoneTerminal } from './PhoneTerminal'
  */
 
 export type SessionLens = 'chat' | 'terminal'
-
-/** On a phone keyboard, return makes a new line; the send button sends. */
-const PHONE_CHAT_PREFERENCES: ChatPreferences = { enterSends: false }
 
 export function SessionScreen({
     session,
@@ -63,7 +59,6 @@ export function SessionScreen({
                         sessionId={session.id}
                         transport={transport}
                         fontSize={15}
-                        preferences={PHONE_CHAT_PREFERENCES}
                         onOpenTerminal={() => onLens('terminal')}
                     />
                 ) : (

@@ -52,6 +52,8 @@ export interface PhoneApiDeps {
     maskLine(text: string): string
     /** the session's event log: «phone» + what happened (never the text itself) */
     recordPhoneInput(sessionId: string, detail: string): void
+    /** Settings shows how many devices turned alerts on */
+    onStateChange(): void
 }
 
 const DRIVE_ONLY = new Set(['send', 'cancel-queued', 'discard-queued', 'send-queued-now', 'interrupt', 'answer', 'attach'])
@@ -68,12 +70,14 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
     if (path === PHONE_API.pushSubscribe && method === 'POST') {
         const body = await readJson(req)
         const ok = deps.push.subscribe(body?.subscription, deps.owner)
+        if (ok) deps.onStateChange()
         send(res, ok ? 200 : 400, ok ? { status: 'subscribed' } : { error: 'bad_subscription' })
         return
     }
     if (path === PHONE_API.pushUnsubscribe && method === 'POST') {
         const body = await readJson(req)
         deps.push.unsubscribe(body?.endpoint)
+        deps.onStateChange()
         send(res, 200, { status: 'unsubscribed' })
         return
     }
