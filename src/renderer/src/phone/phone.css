@@ -115,38 +115,34 @@ body.phone-body #root {
     font-size: 11px;
     color: #fbbf24;
 }
-.phone-group {
-    padding: 2px 0 6px;
-}
-.phone-group-head {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px 2px;
-    color: var(--text-secondary);
+.phone-list-title {
     font-size: 12px;
     font-weight: 600;
-    text-align: left;
+    color: var(--text-secondary);
 }
-.phone-group-title {
+.phone-list-order {
     flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.phone-group-count {
-    font-weight: 400;
-    color: var(--text-tertiary);
-}
-.phone-group-sub {
-    padding: 0 12px 4px 46px;
     font-size: 11px;
     color: var(--text-tertiary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+}
+.phone-group-count {
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+/* where a session folder's sessions start, as the Mac's folder heading (not a switch, not collapsible) */
+.phone-list-folder {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 10px 12px 2px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+}
+.phone-list-divider {
+    margin: 4px 12px;
+    border-top: 1px solid var(--border-color);
 }
 .phone-row {
     width: 100%;
@@ -154,7 +150,7 @@ body.phone-body #root {
     align-items: flex-start;
     gap: 8px;
     min-height: 44px;
-    padding: 9px 12px 9px 22px;
+    padding: 9px 12px;
     text-align: left;
     color: var(--text-primary);
 }
@@ -186,6 +182,13 @@ body.phone-body #root {
     display: inline;
     margin-right: 4px;
     color: var(--text-tertiary);
+}
+.phone-row-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .phone-row-sub {
     font-size: 11px;

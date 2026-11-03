@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, FolderOpen, Folder } from 'lucide-react'
 import { SessionFolder } from '../../../../shared/types'
-import type { SessionEntry } from '../../utils/sessionNavigation'
+import { groupBySessionFolder, sessionFolderOf, type SessionEntry } from '../../utils/sessionNavigation'
 import type { SessionFolderActions } from '../../hooks/useSessionFolders'
 import { SidebarSessionList } from './SidebarSessionList'
 import { FolderContextMenu } from './ContextMenus'
@@ -21,12 +21,6 @@ interface SidebarAllSessionsProps {
     onCopy?: (text: string, label: string) => void
 }
 
-/** The folder a session is listed under; a folder that no longer exists counts as none. */
-export function sessionFolderOf(entry: SessionEntry, folderIds: Set<string>): string | null {
-    const id = entry.session.sessionFolderId
-    return id && folderIds.has(id) ? id : null
-}
-
 /**
  * The All sessions view: session folders first, each holding its sessions in
  * list order, then the sessions in no folder. A session row dropped on a folder
@@ -39,7 +33,8 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
     // Esc unmounts the input, which may blur it: that blur must not save what Esc threw away.
     const renameCancelledRef = useRef(false)
     const folderIds = new Set(sessionFolders.map(f => f.id))
-    const unfiled = entries.filter(entry => sessionFolderOf(entry, folderIds) === null)
+    // The same grouping the phone's list flattens: what it shows top to bottom is this.
+    const { folders: folderRows, unfiled } = groupBySessionFolder(entries, sessionFolders)
     // The folder's sessions in the order the list shows them, as Copy IDs does.
     const menuFolder = menu ? sessionFolders.find(f => f.id === menu.folderId) : undefined
     const menuSessionIds = menu
@@ -48,8 +43,7 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
 
     return (
         <>
-            {sessionFolders.map(folder => {
-                const rows = entries.filter(entry => sessionFolderOf(entry, folderIds) === folder.id)
+            {folderRows.map(({ folder, rows }) => {
                 return (
                     <div key={folder.id} data-session-folder={folder.id}>
                         <FolderDropRow

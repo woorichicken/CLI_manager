@@ -94,6 +94,30 @@ export function orderForAllSessions(entries: SessionEntry[], recentIds: string[]
     return [...pinned, ...orderByRecent(rest, recentIds)]
 }
 
+/** The session folder an entry is listed under; a folder that no longer exists counts as none. */
+export function sessionFolderOf(entry: SessionEntry, folderIds: Set<string>): string | null {
+    const id = entry.session.sessionFolderId
+    return id && folderIds.has(id) ? id : null
+}
+
+/**
+ * The All sessions List as it is drawn top to bottom: each session folder in
+ * folder order holding its sessions in list order, then the sessions in no
+ * folder. `entries` must already be in list order (`orderForAllSessions`).
+ * The sidebar (SidebarAllSessions) and the phone's session list both read it,
+ * so the phone shows the Mac's order exactly.
+ */
+export function groupBySessionFolder<F extends { id: string }>(
+    entries: SessionEntry[],
+    sessionFolders: F[]
+): { folders: Array<{ folder: F; rows: SessionEntry[] }>; unfiled: SessionEntry[] } {
+    const folderIds = new Set(sessionFolders.map(folder => folder.id))
+    return {
+        folders: sessionFolders.map(folder => ({ folder, rows: entries.filter(entry => sessionFolderOf(entry, folderIds) === folder.id) })),
+        unfiled: entries.filter(entry => sessionFolderOf(entry, folderIds) === null)
+    }
+}
+
 /**
  * Where to land after closing `closingId` from the "All sessions" list: the
  * session looked at most recently before it that still exists. Null when the

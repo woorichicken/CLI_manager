@@ -8,9 +8,13 @@ import { SessionScreenStatusPoller } from '../SessionScreenStatus'
 import type { TerminalEventLog } from '../TerminalEventLog'
 import type { TerminalManager } from '../TerminalManager'
 import type { TerminalMirror } from '../TerminalMirror'
-import type { PhoneSessionsResponse, PhoneSessionState } from '../../shared/phone'
+import type { PhoneSession, PhoneSessionsResponse, PhoneSessionState } from '../../shared/phone'
 import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
 import { DEFAULT_PHONE } from '../../shared/types'
+// The sidebar's own ordering functions (pure, types only): the phone's list is the Mac's All
+// sessions List exactly because it is computed by the same code, not a copy of it.
+import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder, type SessionEntry } from '../../renderer/src/utils/sessionNavigation'
+import { workspacesInLoadOrder } from '../workspaceLoadOrder'
 import { PhoneDevices } from './PhoneDevices'
 import { PhonePush } from './PhonePush'
 import { PhoneServer } from './PhoneServer'
@@ -39,6 +43,10 @@ export interface PhoneSetupDeps {
     userDataDir: string
     /** out/renderer */
     staticDir: string
+    /** recently viewed session ids, newest first (RecentSessions) — the All sessions order */
+    recentSessions(): string[]
+    /** the ids in the order the sidebar draws sessions, as the renderer last reported it (null before it has) */
+    sidebarSessionOrder(): string[] | null
 }
 
 export interface PhoneSetup {
@@ -89,42 +97,51 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
 
     const listSessions = (): PhoneSessionsResponse => {
         const dots = new Map(poller.snapshot().changes.map((c) => [c.sessionId, c]))
-        const home = os.homedir()
-        const list = workspaces()
-        const sessions = list.flatMap((workspace) =>
-            (workspace.sessions ?? []).map((session) => {
-                const dot = dots.get(session.id)
-                let state: PhoneSessionState = 'idle'
-                if (!deps.terminals.hasTerminal(session.id)) state = 'stopped'
-                else if (deps.mirror.hasExited(session.id)) state = 'exited'
-                else if (dot?.state === 'waiting') state = 'waiting'
-                else if (dot?.state === 'working') state = 'working'
-                const agent = session.cliToolName === 'claude' ? 'claude' : session.cliToolName === 'codex' ? 'codex' : null
-                return {
-                    id: session.id,
-                    name: session.name,
-                    workspaceId: workspace.id,
-                    agent,
-                    state,
-                    ...(state === 'waiting' && dot?.question ? { question: maskLine(dot.question) } : {}),
-                    ...(session.sessionFolderId ? { sessionFolderId: session.sessionFolderId } : {}),
-                    ...(session.isPinned ? { pinned: true } : {})
-                } as const
-            })
-        )
-        const folders = ((deps.store.get('folders') as WorkspaceFolder[] | undefined) ?? []).map((f) => ({ id: f.id, name: f.name }))
-        const sessionFolders = ((deps.store.get('sessionFolders') as SessionFolder[] | undefined) ?? []).map((f) => ({ id: f.id, name: f.name }))
+        const settings = deps.store.get('settings') as UserSettings | undefined
+        const folders = (deps.store.get('folders') as WorkspaceFolder[] | undefined) ?? []
+        const sessionFolders = (deps.store.get('sessionFolders') as SessionFolder[] | undefined) ?? []
+        // The sidebar's All sessions (List), top to bottom, by the sidebar's own steps: the order it
+        // draws sessions in (sessionsInSidebarOrder) → pinned first, then recently viewed
+        // (orderForAllSessions) → session folders first (groupBySessionFolder).
+        const all = workspaces()
+        const loadOrder = sessionsInSidebarOrder(workspacesInLoadOrder([...all]), folders, settings?.showWorktrees ?? true, settings?.showPlayground ?? true)
+        const reported = deps.sidebarSessionOrder()
+        let drawn: SessionEntry[] = loadOrder
+        if (reported) {
+            // The renderer's order wins (a workspace drag lives only there). Names, pins and folders are
+            // read fresh from the store; a session it has not reported yet follows in load order.
+            const byId = new Map(all.flatMap((workspace) => (workspace.sessions ?? []).map((session) => [session.id, { workspace, session }] as const)))
+            const listed = reported.map((id) => byId.get(id)).filter((entry): entry is SessionEntry => entry !== undefined)
+            const seen = new Set(listed.map((entry) => entry.session.id))
+            drawn = [...listed, ...loadOrder.filter((entry) => !seen.has(entry.session.id))]
+        }
+        const entries = orderForAllSessions(drawn, deps.recentSessions())
+        const grouped = groupBySessionFolder(entries, sessionFolders)
+        const ordered = [...grouped.folders.flatMap((group) => group.rows), ...grouped.unfiled]
+        const sessions = ordered.map(({ workspace, session }): PhoneSession => {
+            const dot = dots.get(session.id)
+            let state: PhoneSessionState = 'idle'
+            if (!deps.terminals.hasTerminal(session.id)) state = 'stopped'
+            else if (deps.mirror.hasExited(session.id)) state = 'exited'
+            else if (dot?.state === 'waiting') state = 'waiting'
+            else if (dot?.state === 'working') state = 'working'
+            const agent = session.cliToolName === 'claude' ? 'claude' : session.cliToolName === 'codex' ? 'codex' : null
+            const folderId = session.sessionFolderId && sessionFolders.some((f) => f.id === session.sessionFolderId) ? session.sessionFolderId : undefined
+            return {
+                id: session.id,
+                name: session.name,
+                workspaceId: workspace.id,
+                workspaceName: workspace.name,
+                agent,
+                state,
+                ...(state === 'waiting' && dot?.question ? { question: maskLine(dot.question) } : {}),
+                ...(folderId ? { sessionFolderId: folderId } : {}),
+                ...(session.isPinned ? { pinned: true } : {})
+            }
+        })
         return {
-            workspaces: list.map((w) => ({
-                id: w.id,
-                name: w.name,
-                path: w.path.startsWith(home) ? `~${w.path.slice(home.length)}` : w.path,
-                ...(w.folderId ? { folderId: w.folderId } : {}),
-                ...(w.parentWorkspaceId ? { isWorktree: true } : {})
-            })),
-            folders,
-            sessionFolders,
-            sessions: sessions.map((s) => ({ ...s }))
+            sessions,
+            sessionFolders: grouped.folders.filter((group) => group.rows.length > 0).map(({ folder }) => ({ id: folder.id, name: folder.name }))
         }
     }
     const sessionExists = (id: string): boolean => findSession(id) !== null

@@ -34,7 +34,7 @@ import { BusyOverlay } from './components/BusyOverlay'
 import { FeedbackGate } from './components/Feedback/FeedbackGate'
 import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { mostRecentOtherSession, neighborSession, sidebarWorkspaceOrder, type SessionLanding } from './utils/sessionNavigation'
+import { mostRecentOtherSession, neighborSession, sessionsInSidebarOrder, sidebarWorkspaceOrder, type SessionLanding } from './utils/sessionNavigation'
 import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
@@ -1148,6 +1148,19 @@ function App() {
         () => sidebarWorkspaceOrder(sortedWorkspaces, folders, settings.showWorktrees ?? true, settings.showPlayground ?? true),
         [sortedWorkspaces, folders, settings.showWorktrees, settings.showPlayground]
     )
+    // The phone's session list is the sidebar's All sessions: main takes the order the sidebar draws
+    // sessions in from here (a workspace drag lives only in this renderer) and applies the same
+    // All sessions steps to it. Sent only when the order itself changes.
+    const sidebarSessionIdsKey = useMemo(
+        () => sessionsInSidebarOrder(sortedWorkspaces, folders, settings.showWorktrees ?? true, settings.showPlayground ?? true)
+            .map(entry => entry.session.id).join('\n'),
+        [sortedWorkspaces, folders, settings.showWorktrees, settings.showPlayground]
+    )
+    useEffect(() => {
+        // grid/fullscreen windows render this App too, but only the main window has the sidebar
+        if (!sessionsRestored || new URLSearchParams(window.location.search).get('mode') === 'fullscreen') return
+        window.api.reportSidebarSessionOrder(sidebarSessionIdsKey ? sidebarSessionIdsKey.split('\n') : [])
+    }, [sidebarSessionIdsKey, sessionsRestored])
 
     // Centralized keyboard shortcuts (session/workspace navigation, search, sidebar, settings, etc.)
     useKeyboardShortcuts({

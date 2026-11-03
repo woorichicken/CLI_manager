@@ -325,6 +325,7 @@ const api = {
     moveSessionToSessionFolder: (sessionId: string, folderId: string | null): Promise<boolean> => ipcRenderer.invoke('move-session-to-session-folder', sessionId, folderId),
     getRecentSessions: (): Promise<string[]> => ipcRenderer.invoke('get-recent-sessions'),
     pushRecentSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('push-recent-session', sessionId),
+    reportSidebarSessionOrder: (sessionIds: string[]): void => ipcRenderer.send('sidebar-session-order', sessionIds),
     getInbox: (): Promise<InboxRequest[]> => ipcRenderer.invoke('get-inbox'),
     onInbox: (callback: (requests: InboxRequest[]) => void) => {
         const listener = (_e: unknown, requests: InboxRequest[]) => callback(requests)

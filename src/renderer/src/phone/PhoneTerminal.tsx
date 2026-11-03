@@ -18,6 +18,30 @@ import { usePhoneTerminal } from './usePhoneTerminal'
 const MAX_SCALE = 2
 /** between the text and the Enter of an input line, as the Control API spaces them */
 const ENTER_GAP_MS = 60
+/**
+ * The zoom this phone last chose (−/+/pinch), kept in its own browser storage so each device
+ * remembers its own; absent means "fit the width", the default. Only remembered — what the
+ * default should be is still open (report-r2 of impl-phone).
+ */
+const ZOOM_KEY = 'phone-terminal-zoom'
+
+function readZoom(): number | null {
+    try {
+        const saved = Number(window.localStorage.getItem(ZOOM_KEY))
+        return Number.isFinite(saved) && saved > 0 ? Math.min(MAX_SCALE, saved) : null
+    } catch {
+        return null
+    }
+}
+
+function saveZoom(zoom: number | null): void {
+    try {
+        if (zoom === null) window.localStorage.removeItem(ZOOM_KEY)
+        else window.localStorage.setItem(ZOOM_KEY, String(zoom))
+    } catch {
+        // storage blocked: the zoom just is not remembered
+    }
+}
 
 export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; deviceRole: PhoneRole }) {
     const host = useRef<HTMLDivElement>(null)
@@ -25,7 +49,7 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
     const term = usePhoneTerminal(sessionId, host)
     const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
     const [fitWidth, setFitWidth] = useState(0)
-    const [zoom, setZoom] = useState<number | null>(null) // null: fit the width
+    const [zoom, setZoom] = useState<number | null>(readZoom) // null: fit the width
     const [typing, setTyping] = useState(false)
     const [ctrl, setCtrl] = useState(false)
     const [line, setLine] = useState('')
@@ -55,8 +79,11 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
         return () => observer.disconnect()
     }, [])
 
+    useEffect(() => saveZoom(zoom), [zoom])
+
     const fitScale = natural && fitWidth > 0 ? Math.min(1, fitWidth / natural.width) : 1
-    const scale = zoom ?? fitScale
+    // a zoom remembered on a narrower screen (portrait, then turned) never shows less than the width
+    const scale = zoom === null ? fitScale : Math.max(fitScale, zoom)
 
     const sendKey = useCallback((item: KeyBarItem) => {
         if (item.type === 'modifier') {
@@ -121,7 +148,7 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
         term.status === 'connecting' ? 'Connecting…' : term.status === 'exited' ? 'The shell in this session has exited.' : term.status === 'closed' ? 'Reconnecting…' : null
 
     return (
-        <div className="phone-terminal" data-testid="phone-terminal" data-status={term.status}>
+        <div className="phone-terminal" data-testid="phone-terminal" data-status={term.status} data-scale={scale.toFixed(4)} data-zoom={zoom === null ? 'fit' : 'zoomed'}>
             <div className="phone-term-toolbar">
                 <span className="phone-term-size" data-testid="phone-terminal-size" title={`The Mac's size, shown at ${Math.round(scale * 100)}%`}>
                     {term.size ? `${term.size.cols}×${term.size.rows}` : '—'}

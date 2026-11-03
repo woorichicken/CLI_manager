@@ -45,6 +45,7 @@ import { saveChatAttachment } from './chatAttachments'
 import type { PromptAnswer } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import { setupPhone, phoneConversationListeners, type PhoneSetup } from './phone/phoneSetup'
+import { workspacesInLoadOrder } from './workspaceLoadOrder'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
 
@@ -333,6 +334,8 @@ async function saveHistoryBeforeQuit(): Promise<void> {
 const sessionRelations = new SessionRelations(store, (visible) => broadcast(SESSION_RELATIONS_CHANNEL, visible))
 const sessionFolders = new SessionFolders(store)
 const recentSessions = new RecentSessions(store)
+/** sessionsInSidebarOrder as the renderer last computed it; null until the window has drawn its sidebar */
+let sidebarSessionOrder: string[] | null = null
 
 /** Unread inbox requests on the Dock icon, so a request is seen from the browser the user is signing in with. */
 function updateInboxBadge(unread: number): void {
@@ -1390,12 +1393,7 @@ app.whenReady().then(async () => {
         ensureHomeWorkspace()
         const workspaces = store.get('workspaces') as Workspace[]
 
-        // Sort: home first, then regular workspaces by createdAt
-        return workspaces.sort((a, b) => {
-            if (a.isHome) return -1
-            if (b.isHome) return 1
-            return a.createdAt - b.createdAt
-        })
+        return workspacesInLoadOrder(workspaces)
     })
 
     ipcMain.handle('sync-worktree-workspaces', async (): Promise<IPCResult<WorktreeSyncSummary>> => {
@@ -3295,6 +3293,11 @@ app.whenReady().then(async () => {
     ipcMain.handle('push-recent-session', (_e, sessionId: string): void => {
         if (typeof sessionId === 'string' && sessionId) recentSessions.push(sessionId)
     })
+    // The order the sidebar draws sessions in. Its workspace order lives in the renderer (a drag
+    // reorders it there; a restart loads Home, then by createdAt), so the phone's list takes it from here.
+    ipcMain.on('sidebar-session-order', (_e, sessionIds: unknown) => {
+        if (Array.isArray(sessionIds)) sidebarSessionOrder = sessionIds.filter((id): id is string => typeof id === 'string')
+    })
     // Inbox: requests sessions sent through the Control API (InboxStore). The renderer reads
     // them here and marks one read only when the user checks it off, or all with "Mark all read"
     // (report b165acc4: opening a session must not clear what it asked for).
@@ -3486,7 +3489,9 @@ app.whenReady().then(async () => {
         broadcast,
         mask: { homeDir: os.homedir(), username: currentUsername() },
         userDataDir: app.getPath('userData'),
-        staticDir: join(__dirname, '../renderer')
+        staticDir: join(__dirname, '../renderer'),
+        recentSessions: () => recentSessions.list(),
+        sidebarSessionOrder: () => sidebarSessionOrder
     })
     void phone.start()
 

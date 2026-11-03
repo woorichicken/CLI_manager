@@ -42,6 +42,8 @@ export interface PhoneSession {
     id: string
     name: string
     workspaceId: string
+    /** shown dim on the row, as the Mac's All sessions list labels each row with its workspace */
+    workspaceName: string
     /** Claude Code / Codex: opens in Chat */
     agent: 'claude' | 'codex' | null
     state: PhoneSessionState
@@ -52,23 +54,16 @@ export interface PhoneSession {
     pinned?: boolean
 }
 
-export interface PhoneWorkspace {
-    id: string
-    name: string
-    /** shown dim under the name; the home folder is `~` */
-    path: string
-    folderId?: string
-    isWorktree?: boolean
-}
-
-/** GET /api/phone/sessions */
+/**
+ * GET /api/phone/sessions — the Mac sidebar's «All sessions» (List), top to bottom.
+ * main orders it with the sidebar's own functions (`sessionsInSidebarOrder` →
+ * `orderForAllSessions` → `groupBySessionFolder`), so the phone cannot drift from the Mac.
+ */
 export interface PhoneSessionsResponse {
-    workspaces: PhoneWorkspace[]
-    /** sidebar folders that group workspaces */
-    folders: Array<{ id: string; name: string }>
-    /** All sessions folders that group sessions */
-    sessionFolders: Array<{ id: string; name: string }>
+    /** one list, in the Mac's order: each session folder's sessions, then the rest — pinned first, then recently viewed */
     sessions: PhoneSession[]
+    /** the All sessions folders, in order — the phone marks where each one's sessions start */
+    sessionFolders: Array<{ id: string; name: string }>
 }
 
 /** POST /api/phone/pair — a code the Mac shows in Settings › Phone. */
