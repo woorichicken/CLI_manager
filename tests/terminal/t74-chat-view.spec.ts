@@ -402,6 +402,11 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await expect(edit.locator('.chat-diff-line.is-add')).toHaveText(['+new line'])
     await edit.scrollIntoViewIfNeeded()
     await shotBoth(app, page, 'r2-tools')
+    // the tool row's ↗ opens the file it edited
+    await edit.getByTestId('chat-tool-open').click()
+    await expect(page.getByTestId('chat-file-preview')).toHaveAttribute('data-path', path.join(project, 'notes.md'))
+    await page.getByTestId('chat-file-preview').locator('button').filter({ has: page.locator('svg.lucide-x') }).first().click()
+    await expect(page.getByTestId('chat-file-preview')).toHaveCount(0)
     // a path in an answer opens in the preview (relative to the session folder)
     await chat(page).locator('[data-testid="chat-answer"]', { hasText: 'single pixel' }).getByTestId('chat-file-link').first().click()
     await expect(page.getByTestId('chat-file-preview')).toHaveAttribute('data-path', path.join(project, 'notes.md'))
@@ -419,6 +424,15 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     const shown = Math.min(total, 400)
     await expect(chat(page).locator('[data-testid="chat-turn"]')).toHaveCount(shown, { timeout: 10_000 })
     await expect(older).toContainText(`Showing the last ${shown} of ${total}`)
+    // the chat comes back where it was left (not at its end) after another session
+    await scroll.evaluate((element) => (element.scrollTop = Math.round(element.scrollHeight / 3)))
+    await page.waitForTimeout(200)
+    const left = await scroll.evaluate((element) => element.scrollTop)
+    await selectSession(page, 'R2 Slow')
+    await selectSession(page, 'R2 Claude')
+    await expect(chat(page).locator('[data-testid="chat-turn"]').first()).toBeVisible()
+    await expect.poll(() => chat(page).getByTestId('chat-scroll').evaluate((element) => element.scrollTop)).toBeGreaterThan(left - 400)
+    expect(Math.abs((await chat(page).getByTestId('chat-scroll').evaluate((element) => element.scrollTop)) - left)).toBeLessThan(400)
     await shotBoth(app, page, 'r2-reading')
 
     // --- quick replies (on in Settings): one tap sends -------------------------------------------
@@ -496,6 +510,11 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await chat(page).getByTestId('chat-model-confirm-ok').click()
     await waitForBufferText(page, R2, 'MODEL: sonnet', 10_000)
     await expect(modelChip.getByTestId('chat-model-name')).toHaveText('Sonnet 5', { timeout: 10_000 })
+    // the context chip's Compact sends /compact like a typed message
+    await chat(page).getByTestId('chat-context-chip').click()
+    await chat(page).getByTestId('chat-compact').click()
+    await waitForBufferText(page, R2, ': /compact', 10_000)
+    await expect(chat(page).getByTestId('chat-working')).toHaveCount(0, { timeout: 20_000 })
     // the picker only the terminal shows: the chat opens the terminal with "Back to Chat"
     await modelChip.click()
     await chat(page).getByTestId('chat-model-picker').click()

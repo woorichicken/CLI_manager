@@ -51,8 +51,12 @@ const RAIL_MARGIN_PX = 32
 
 const NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
 
-/** Where each session's chat was scrolled (ovis chatScrollMemory): back to the same place, unless it was at the end. */
-const scrollMemory = new Map<string, { top: number; pinned: boolean }>()
+/**
+ * Where each session's chat was scrolled, and how many turns it showed (ovis chatScrollMemory):
+ * back to the same place, unless it was at the end. Written on every scroll — on unmount the
+ * scroller is already gone.
+ */
+const scrollMemory = new Map<string, { top: number; pinned: boolean; limit: number }>()
 
 /** Each session's command list, for telling which sent commands open the terminal. */
 const commandLists = new Map<string, Promise<ChatCommand[]>>()
@@ -73,12 +77,14 @@ interface SentWaiting {
 let sentSequence = 0
 
 export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {} }: ChatViewProps) {
-    const [limit, setLimit] = useState(CHAT_TURN_LIMIT)
+    const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? CHAT_TURN_LIMIT)
     const { snapshot, refresh } = useConversation(transport, sessionId, limit)
     const scroller = useRef<HTMLDivElement>(null)
     const column = useRef<HTMLDivElement>(null)
     const composer = useRef<ComposerHandle>(null)
     const pinned = useRef(true)
+    const limitRef = useRef(limit)
+    limitRef.current = limit
     const [showJump, setShowJump] = useState(false)
     const [sent, setSent] = useState<SentWaiting[]>([])
     const [now, setNow] = useState(() => Date.now())
@@ -90,14 +96,10 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     useEffect(() => {
         const remembered = scrollMemory.get(sessionId)
         pinned.current = remembered?.pinned ?? true
-        setLimit(CHAT_TURN_LIMIT)
+        setLimit(remembered?.limit ?? CHAT_TURN_LIMIT)
         setSent([])
         setPicked(null)
         setGallery(null)
-        return () => {
-            const element = scroller.current
-            if (element) scrollMemory.set(sessionId, { top: element.scrollTop, pinned: pinned.current })
-        }
     }, [sessionId])
 
     const restored = useRef<string | null>(null)
@@ -122,6 +124,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_PX
         pinned.current = atBottom
         setShowJump(!atBottom)
+        scrollMemory.set(sessionId, { top: element.scrollTop, pinned: atBottom, limit: limitRef.current })
     }
 
     const jumpToEnd = (): void => {
@@ -139,7 +142,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         const line = parseFloat(getComputedStyle(element).lineHeight) || 20
         element.scrollTop += direction * Math.max(1, element.clientHeight - line)
         onScroll()
-    }, [])
+    }, [sessionId])
 
     // The app's shortcuts reach this session's chat through the bus (App → sendChatCommand).
     useEffect(
