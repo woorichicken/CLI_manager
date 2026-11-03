@@ -7,8 +7,10 @@ under the menu → **licenses**).
 ## ovis
 
 - Project: https://github.com/devswha/ovis (commit `3e51902`)
-- Used for: the Chat view — Claude Code and Codex transcript parsers (`src/main/transcript/`), the
-  Markdown parser and renderer, code highlighting helpers and work-block folding
+- Used for: the Chat view — Claude Code and Codex transcript parsers and the model / effort / context
+  reader (`src/main/transcript/`), the Claude Code and Codex slash-command tables
+  (`src/main/chatCommands.ts`), the Markdown parser and renderer, code highlighting helpers,
+  work-block folding, and file-path, line-diff, message-fold, model-name and todo helpers
   (`src/renderer/src/components/ChatView/`). Every file taken from ovis starts with
   `From ovis (https://github.com/devswha/ovis, 3e51902) — MIT, Copyright (c) 2026 devswha. Modified.`
 - License: MIT

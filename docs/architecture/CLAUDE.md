@@ -130,7 +130,21 @@ rules stay in the root; this file is the inventory.
 - **폰과의 약속**: `ChatView/` 는 `window.api` 를 부르지 않는다 — `ChatTransport`(`src/shared/conversation.ts`: 가져오기 · 구독 · 보내기 · 대기 취소 ·
   카드 답)를 props 로 받는다. Electron 은 `utils/electronChatTransport.ts`(IPC), 폰 페이지는 같은 묶음을 HTTP·WebSocket 으로 채워 같은 부품을 쓴다.
   데이터(`ConversationSnapshot`)는 main 에서 한 번만 만든다
-- 안 하는 것(첫 판): 그림·수식·Mermaid 그리기(자리 표시·원문), 하위 에이전트 상세, 잘린 도구 출력 더 보기, 200턴보다 앞 페이지
+- **2회차(ovis 대비 빠진 것 — 배치 폴더 `gap.md` 107줄 전수)**:
+  - 파일: ＋ · 붙여넣기 · 끌어 놓기 → 메시지에 `@path`(공백이면 `@"…"`). 같은 Mac 이라 제 경로를 그대로, 경로 없는 붙여넣기만 `os.tmpdir()/climanager-chat/<날짜>/<시각>-<난수>.<확장자>`.
+    답·도구 줄의 경로(ovis `filePaths` 이식 — `:12`·`#L12`, 상대 경로는 세션 폴더 기준) → 앱 미리보기, PDF·영상 등은 `shell.openPath`.
+    그림(프롬프트·도구 결과)은 `TranscriptReader.image(ref)` 가 기록에서 그 줄을 다시 읽어 data: URL — 끝에서 거꾸로 찾는다(`findRecord`). 잘린 출력도 같은 길(`toolOutput`)
+  - 작업 상태: Stop = Esc 를 **화면이 일하는 중일 때만** 보낸다(쉬는 중 Esc 는 메뉴·입력칸에 떨어진다). 대기열은 id 를 가진 줄 — 하나씩 Send now(바로 친다,
+    읽는 때는 에이전트가 정함)·버리기. 치는 중(`sending`)에 온 보내기도 대기열 뒤로(두 보내기가 동시에 치지 않게)
+  - 모델: `transcript/metadata.ts`(ovis conversation-metadata 이식) — Claude 답의 `message.model`·`effort`·usage, /model 답(「Set model to `Sonnet 5`」),
+    Codex `turn_context`·`token_count`(창 크기 → %). 바꾸기는 에이전트의 `/model` 뿐: Claude 는 그 선택을 새 세션 기본값(settings.json)으로도 저장하므로
+    칩은 반드시 확인을 거친다. 인자 없는 `/model`·`/config` 처럼 터미널만 그리는 명령(`chatCommands.ts` 의 `terminal`)은 보낸 뒤 터미널 + 「Back to Chat」 띠
+  - 화면 읽기: `refreshScreen` 하나 — 미러를 flush 한 뒤 읽고 그 출력 시각까지만 「읽음」. (flush 없이 읽던 1회차는 그리기 전 화면을 읽어 답한 뒤에도
+    카드가 남거나, 새 질문 카드가 안 뜰 수 있었다)
+  - 단축키: `toggleChatView` ⌘⇧M · `focusChatInput` ⌘⇧I · `scrollPaneUp/Down` ⌘⇧PgUp/PgDn(그룹 「Chat View」). 입력칸 안에서도 먹도록 입력 칸 건너뛰기
+    앞에서 맞춘다. 저장된 키와 겹치는 새 기본값은 `effectiveShortcuts` 가 비운다
+- 아직 안 하는 것: 수식·Mermaid, 하위 에이전트 상세·BG, 가상 목록, Claude 회색 제안(Tab), 취소된 보내기 되돌리기, 답 댓글, 터미널 선택 인용,
+  Codex·다중 선택 카드 버튼(실제 화면 사본이 없다) — 이유와 크기는 `gap.md` 「다음 판」
 - 회귀: `t73-chat-view-unit.spec.ts`(해석·리더·메뉴 판정, Electron 없이) · `t74-chat-view.spec.ts`(앱 — `scripts/mock-cli/chat-mock.cjs` 가 화면과
   기록 파일을 함께 만든다)
 
@@ -303,8 +317,11 @@ User Action (Renderer)
   `conversation-unsubscribe(sessionId)`(창이 닫히면 그 창 구독은 풀린다) · `conversation-changed` (main → renderer, `{ sessionId, revision }`)
 - `chat-send(sessionId, text)` → `ChatSendResult`(`sent` · `queued` · `rejected` + 이유) · `chat-cancel-queued(sessionId)` ·
   `prompt-answer(sessionId, { signature, optionIndex | customText })` → `PromptAnswerResult`(`answered` · `rejected: prompt_changed …`)
-- 코드: `src/main/ConversationService.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
-  `SessionViewToggle.tsx` · `hooks/useSessionViewMode.ts` · `utils/electronChatTransport.ts`
+- 2회차: `chat-discard-queued(sessionId, id)` · `chat-send-queued-now(sessionId, id)` → `ChatSendResult` · `chat-interrupt(sessionId)` → `InterruptResult` ·
+  `chat-image(sessionId, ref)` → data: URL | null · `chat-tool-output(sessionId, ref)` → string | null · `chat-commands(sessionId)` → `ChatCommand[]` ·
+  `chat-save-attachment(name, bytes)` → `AttachResult`(32MB) · `chat-open-path(path)` → `shell.openPath`. `@` 파일 찾기는 기존 `search-files` 를 쓴다
+- 코드: `src/main/ConversationService.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · `chatCommands.ts` · `chatAttachments.ts` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
+  `SessionViewToggle.tsx` · `ChatFilePreview.tsx` · `ChatViewSettings.tsx` · `hooks/useSessionViewMode.ts`(peek 포함) · `utils/electronChatTransport.ts`
 
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)
