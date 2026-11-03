@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
 import type { AttachResult, ChatCommand, ChatSendResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { PhoneState } from '../shared/types'
+import type { PhoneTestPushResult } from '../shared/phone'
 
 // Custom APIs for renderer
 const api = {
@@ -345,6 +347,19 @@ const api = {
     removeChecklistItem: (id: string, itemId: string): Promise<boolean> => ipcRenderer.invoke('remove-checklist-item', id, itemId),
     peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds),
     // Chat view (ConversationService) — wrapped as a ChatTransport by renderer/src/utils/electronChatTransport.ts
+    // Phone connection (Settings › Phone)
+    getPhoneState: (): Promise<PhoneState> => ipcRenderer.invoke('phone-get-state'),
+    setPhoneEnabled: (enabled: boolean): Promise<PhoneState> => ipcRenderer.invoke('phone-set-enabled', enabled),
+    startPhonePairing: (role: 'drive' | 'watch'): Promise<PhoneState> => ipcRenderer.invoke('phone-start-pairing', role),
+    cancelPhonePairing: (): Promise<PhoneState> => ipcRenderer.invoke('phone-cancel-pairing'),
+    revokePhoneDevice: (id: string): Promise<PhoneState> => ipcRenderer.invoke('phone-revoke-device', id),
+    revokeAllPhoneDevices: (): Promise<PhoneState> => ipcRenderer.invoke('phone-revoke-all'),
+    testPhonePush: (): Promise<PhoneTestPushResult> => ipcRenderer.invoke('phone-test-push'),
+    onPhoneStateChanged: (callback: (state: PhoneState) => void) => {
+        const listener = (_e: unknown, state: PhoneState) => callback(state)
+        ipcRenderer.on('phone-state-changed', listener)
+        return () => ipcRenderer.removeListener('phone-state-changed', listener)
+    },
     getConversation: (sessionId: string, limit?: number): Promise<ConversationSnapshot | null> =>
         ipcRenderer.invoke('conversation-get', sessionId, limit),
     subscribeConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('conversation-subscribe', sessionId),

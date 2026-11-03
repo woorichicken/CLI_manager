@@ -1,6 +1,8 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
 import type { AttachResult, ChatCommand, ChatSendResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { PhoneState } from '../shared/types'
+import type { PhoneTestPushResult } from '../shared/phone'
 
 declare global {
     interface Window {
@@ -236,6 +238,14 @@ declare global {
             updateChecklistItem: (id: string, itemId: string, patch: { text?: string; done?: boolean }) => Promise<boolean>
             removeChecklistItem: (id: string, itemId: string) => Promise<boolean>
             peekSessions: (sessionIds: string[]) => Promise<SessionPeek[]>
+            getPhoneState: () => Promise<PhoneState>
+            setPhoneEnabled: (enabled: boolean) => Promise<PhoneState>
+            startPhonePairing: (role: 'drive' | 'watch') => Promise<PhoneState>
+            cancelPhonePairing: () => Promise<PhoneState>
+            revokePhoneDevice: (id: string) => Promise<PhoneState>
+            revokeAllPhoneDevices: () => Promise<PhoneState>
+            testPhonePush: () => Promise<PhoneTestPushResult>
+            onPhoneStateChanged: (callback: (state: PhoneState) => void) => () => void
             getConversation: (sessionId: string, limit?: number) => Promise<ConversationSnapshot | null>
             subscribeConversation: (sessionId: string) => Promise<void>
             unsubscribeConversation: (sessionId: string) => Promise<void>

@@ -138,6 +138,8 @@ interface SidebarProps {
     onDragEndSession?: () => void
     /** The inbox bell (App builds it: it needs the session navigation and link settings). Drawn first in the header. */
     inboxSlot?: React.ReactNode
+    /** pinned to the bottom (the phone connection badge while it is on) */
+    footerSlot?: React.ReactNode
     /** Folders of the All sessions view (useSessionFolders). */
     sessionFolders?: SessionFolder[]
     sessionFolderActions?: SessionFolderActions
@@ -196,6 +198,7 @@ export function Sidebar({
     onDragStartSession,
     onDragEndSession,
     inboxSlot,
+    footerSlot,
     sessionFolders = [],
     sessionFolderActions
 }: SidebarProps) {
@@ -1575,6 +1578,8 @@ export function Sidebar({
                     </div>
                 </div>
                 )}
+
+                {footerSlot}
 
                 <CopyNotice notice={copyNotice} />
                 <DropNotice text={dropNotice} />

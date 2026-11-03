@@ -44,6 +44,7 @@ import { createChatCommandLister } from './chatCommands'
 import { saveChatAttachment } from './chatAttachments'
 import type { PromptAnswer } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
+import { setupPhone, phoneConversationListeners, type PhoneSetup } from './phone/phoneSetup'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
 
@@ -362,6 +363,7 @@ const controlApiService = new ControlApiService({
         recentSessions.forget(sessionId)
         inbox.forget(sessionId)
         conversationService.forget(sessionId)
+        phone?.forgetSession(sessionId)
     }
 })
 const controlApiServer = new ControlApiServer({
@@ -390,8 +392,14 @@ const conversationService = new ConversationService({
     hasTerminal: (id) => terminalManager.hasTerminal(id),
     writeInput: (id, data) => terminalManager.writeInput(id, data),
     type: (id, text) => controlApiService.typeForChat(id, text),
-    onChange: (sessionId, revision) => broadcast('conversation-changed', { sessionId, revision })
+    onChange: (sessionId, revision) => {
+        broadcast('conversation-changed', { sessionId, revision })
+        phoneConversationListeners.emit(sessionId, revision)
+    }
 })
+
+// Phone connection (Settings › Phone): a second server, off by default, set up once the app is ready.
+let phone: PhoneSetup | null = null
 
 // Sidebar status dots read from the screen mirrors (Settings > General). Off by default;
 // when off there is no timer at all.
@@ -1852,6 +1860,10 @@ app.whenReady().then(async () => {
     })
 
     ipcMain.handle('save-settings', (_, settings: UserSettings) => {
+        // The phone switch is applied the moment it is flipped (phone-set-enabled, the sidebar
+        // badge); a Settings window opened before that must not save its old value back.
+        const savedPhone = (store.get('settings') as UserSettings | undefined)?.phone
+        if (savedPhone) settings = { ...settings, phone: savedPhone }
         store.set('settings', settings)
         applySessionStatusSetting(settings)
         return true
@@ -3464,6 +3476,20 @@ app.whenReady().then(async () => {
         if (state.error) console.error('[control-api]', state.error)
     })
 
+    phone = setupPhone({
+        store,
+        terminals: terminalManager,
+        mirror: terminalMirror,
+        eventLog: terminalEventLog,
+        conversation: conversationService,
+        hookStatus: (id) => agentStatusResolver.getStatus(id),
+        broadcast,
+        mask: { homeDir: os.homedir(), username: currentUsername() },
+        userDataDir: app.getPath('userData'),
+        staticDir: join(__dirname, '../renderer')
+    })
+    void phone.start()
+
     createWindow()
 
     app.on('activate', function () {
@@ -3494,6 +3520,7 @@ app.on('window-all-closed', () => {
 // Remove the discovery file so tools do not try a server that is gone.
 app.on('will-quit', () => {
     void controlApiServer.stop()
+    void phone?.server.stop()
     terminalMirror.disposeAll()
 })
 

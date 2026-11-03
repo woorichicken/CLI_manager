@@ -1,0 +1,578 @@
+/*
+ * The phone page. Same tokens as the desktop app (assets/index.css); the layout follows
+ * ovis's phone shell (MIT) — a drawer under 768px, header · body · key bar stacked in the
+ * visual viewport so the iOS keyboard does not push them away (viewport.ts sets --app-height).
+ */
+html,
+body.phone-body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: var(--background-color);
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+}
+body.phone-body #root {
+    height: 100%;
+}
+
+.phone-app {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--app-height, 100dvh);
+    display: flex;
+    color: var(--text-primary);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    box-sizing: border-box;
+}
+.phone-fill {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+}
+
+/* --- sidebar / drawer --- */
+.phone-sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--glass-sidebar-bg, #0f0f14);
+    border-right: 1px solid var(--border-color);
+}
+.phone-narrow .phone-sidebar {
+    flex: 1;
+    width: 100%;
+}
+.phone-wide .phone-sidebar {
+    width: 300px;
+    flex-shrink: 0;
+}
+.phone-narrow .phone-sidebar.phone-drawer {
+    position: absolute;
+    top: env(safe-area-inset-top);
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 340px);
+    z-index: 60;
+    box-shadow: 8px 0 30px rgba(0, 0, 0, 0.5);
+}
+.phone-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, 0.45);
+}
+.phone-sidebar-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+.phone-sidebar-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.phone-who {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-offline {
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.08);
+}
+
+/* --- session list --- */
+.phone-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+    -webkit-overflow-scrolling: touch;
+}
+.phone-list-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px 6px;
+}
+.phone-waiting-count {
+    font-size: 11px;
+    color: #fbbf24;
+}
+.phone-group {
+    padding: 2px 0 6px;
+}
+.phone-group-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px 2px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+}
+.phone-group-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-group-count {
+    font-weight: 400;
+    color: var(--text-tertiary);
+}
+.phone-group-sub {
+    padding: 0 12px 4px 46px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-row {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 44px;
+    padding: 9px 12px 9px 22px;
+    text-align: left;
+    color: var(--text-primary);
+}
+.phone-row[aria-current='true'] {
+    background: rgba(59, 130, 246, 0.15);
+}
+.phone-row:active {
+    background: var(--button-hover-bg);
+}
+.phone-row-icon {
+    margin-top: 3px;
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+}
+.phone-row-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.phone-row-name {
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-row-pin {
+    display: inline;
+    margin-right: 4px;
+    color: var(--text-tertiary);
+}
+.phone-row-sub {
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+.phone-row-question {
+    font-size: 12px;
+    color: #fbbf24;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.phone-dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--text-muted);
+}
+.phone-dot-working {
+    background: #3b82f6;
+    border-color: #3b82f6;
+}
+.phone-dot-waiting {
+    background: #f59e0b;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+.phone-dot-idle {
+    border-color: var(--text-tertiary);
+}
+.phone-dot-exited,
+.phone-dot-stopped {
+    border-style: dashed;
+}
+.phone-empty {
+    padding: 24px 16px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
+/* --- segmented buttons, icon buttons --- */
+.phone-seg {
+    display: inline-flex;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.phone-seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 9px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.phone-seg button[aria-pressed='true'] {
+    background: rgba(59, 130, 246, 0.25);
+    color: var(--text-white);
+}
+.phone-seg button:disabled {
+    opacity: 0.4;
+}
+.phone-icon-button {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+.phone-icon-button:active {
+    background: var(--button-hover-bg);
+}
+
+/* --- alerts menu --- */
+.phone-alerts {
+    position: relative;
+}
+.phone-menu {
+    position: absolute;
+    right: 0;
+    top: 40px;
+    z-index: 80;
+    width: 250px;
+    padding: 8px;
+    border-radius: 10px;
+    background: var(--glass-panel-bg);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.phone-menu-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 2px 6px;
+}
+.phone-menu button {
+    text-align: left;
+    padding: 8px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+.phone-menu button:active {
+    background: var(--button-hover-bg);
+}
+.phone-menu-note {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    padding: 2px 6px;
+}
+.phone-menu-result {
+    font-size: 12px;
+    color: #93c5fd;
+    padding: 2px 6px;
+}
+
+/* --- one session --- */
+.phone-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.phone-session {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.phone-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 48px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--glass-sidebar-bg, #0f0f14);
+    flex-shrink: 0;
+}
+.phone-header .phone-dot {
+    margin-top: 0;
+}
+.phone-header-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-session-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
+/* the chat's own bottom room for the home indicator */
+.phone-session-body .chat-view {
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* --- terminal --- */
+.phone-terminal {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: #0f0f12;
+}
+.phone-term-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    overflow-x: auto;
+}
+.phone-term-toolbar > button {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+.phone-term-toolbar > button:active {
+    background: var(--button-hover-bg);
+}
+.phone-term-size {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    padding: 0 4px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.phone-term-gap {
+    flex: 1;
+}
+.phone-term-scroller {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    /* the browser pans sideways; a vertical drag scrolls the terminal's history (PhoneTerminal) */
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+}
+.phone-term-sizer {
+    position: relative;
+    overflow: hidden;
+}
+.phone-term-host {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+}
+.phone-term-status {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--text-secondary);
+}
+.phone-toast {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 120px;
+    z-index: 20;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #fecaca;
+}
+.phone-term-input {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
+    background: var(--glass-sidebar-bg, #0f0f14);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+:root[data-keyboard] .phone-term-input {
+    padding-bottom: 0;
+}
+.phone-key-row {
+    display: flex;
+    gap: 4px;
+    padding: 6px 6px 2px;
+    overflow-x: auto;
+}
+.phone-key {
+    min-width: 40px;
+    height: 34px;
+    padding: 0 8px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-primary);
+    flex-shrink: 0;
+}
+.phone-key[aria-pressed='true'] {
+    background: rgba(59, 130, 246, 0.45);
+    border-color: #3b82f6;
+}
+.phone-key:active {
+    background: rgba(255, 255, 255, 0.18);
+}
+.phone-line {
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+}
+.phone-line input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--text-primary);
+    /* 16px keeps iOS from zooming the page when the field takes focus */
+    font-size: 16px;
+    font-family: Menlo, 'SF Mono', monospace;
+}
+.phone-line button {
+    width: 40px;
+    height: 36px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* --- pairing --- */
+.phone-pair {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: var(--text-primary);
+}
+.phone-pair-card {
+    width: 100%;
+    max-width: 360px;
+    padding: 24px;
+    border-radius: 14px;
+    background: var(--glass-panel-bg);
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.phone-pair-icon {
+    color: #60a5fa;
+}
+.phone-pair-card h1 {
+    font-size: 18px;
+    font-weight: 600;
+}
+.phone-pair-card p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+.phone-pair-card form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.phone-pair-card label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+.phone-pair-card input {
+    height: 42px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--text-primary);
+    font-size: 16px;
+}
+.phone-pair-card input[data-testid='phone-pair-code'] {
+    font-size: 22px;
+    letter-spacing: 0.3em;
+    font-variant-numeric: tabular-nums;
+}
+.phone-pair-card button {
+    height: 42px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    font-weight: 600;
+}
+.phone-pair-card button:disabled {
+    opacity: 0.4;
+}
+.phone-pair-error {
+    font-size: 12px;
+    color: #fca5a5;
+}

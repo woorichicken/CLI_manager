@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Sidebar } from './components/Sidebar/index'
+import { PhoneBadge } from './components/PhoneBadge'
 import { TerminalView, requestOpenTerminalPath, requestTerminalPage } from './components/TerminalView'
 import { SessionMemo, SessionMemoHandle } from './components/SessionMemo'
 import { StatusBar } from './components/StatusBar'
@@ -1444,7 +1445,7 @@ function App() {
         }
     }
 
-    const handleOpenSettings = (category: 'general' | 'port-monitoring' | 'agents') => {
+    const handleOpenSettings = (category: 'general' | 'port-monitoring' | 'agents' | 'phone') => {
         setSettingsCategory(category)
         setSettingsOpen(true)
     }
@@ -1524,6 +1525,7 @@ function App() {
                     onDragEndSession={handleSidebarDragEnd}
                     sessionFolders={sessionFolders}
                     sessionFolderActions={sessionFolderActions}
+                    footerSlot={<PhoneBadge onOpenSettings={() => handleOpenSettings('phone')} />}
                     inboxSlot={
                         <InboxButton
                             placement="sidebar"

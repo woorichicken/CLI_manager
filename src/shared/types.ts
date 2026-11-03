@@ -231,6 +231,8 @@ export interface UserSettings {
     controlApi?: ControlApiSettings
     // Chat view (Settings › Terminal › Chat view): Enter behavior, quick replies
     chat?: ChatPreferences
+    // Phone connection (Settings › Phone): a small server on 127.0.0.1 for `tailscale serve`
+    phone?: PhoneSettings
 }
 
 // Hooks settings for AI tool session monitoring
@@ -936,6 +938,8 @@ export type TerminalEventKind =
     | 'exited'
     /** The app closed the pty (session deleted or restarted). */
     | 'closed'
+    /** Typed or sent from the phone page (Settings › Phone) — the detail says what, never the text. */
+    | 'phone-input'
     /** The renderer process died. Window-wide, not per terminal. */
     | 'renderer-gone'
     /** The renderer was reloaded after dying. */
@@ -1089,4 +1093,63 @@ export interface ChecklistItem {
     /** Epoch ms it was checked, absent while unchecked. */
     doneAt?: number
     createdAt: number
+}
+
+// ---------------------------------------------------------------------------
+// Phone connection (Settings › Phone). The wire protocol the phone page speaks is
+// in shared/phone.ts; these are the Electron side's settings and Settings view.
+// ---------------------------------------------------------------------------
+
+export interface PhoneSettings {
+    enabled: boolean
+    /** 127.0.0.1 port; `tailscale serve` forwards to it. 0 picks a free port (tests). */
+    port: number
+}
+
+export const DEFAULT_PHONE: PhoneSettings = {
+    enabled: false,
+    port: 47830
+}
+
+export interface PhoneDeviceInfo {
+    id: string
+    label: string
+    role: 'drive' | 'watch'
+    createdAt: string
+    lastSeenAt: string | null
+}
+
+export interface PhonePairingCode {
+    code: string
+    role: 'drive' | 'watch'
+    expiresAt: string
+}
+
+/** What Settings › Phone and the sidebar badge show: the server as it is. */
+export interface PhoneState {
+    running: boolean
+    port: number | null
+    /** http://127.0.0.1:<port>/ — the page on this Mac */
+    localUrl: string | null
+    error?: string
+    tailscale: {
+        /** the CLI was found and answered */
+        found: boolean
+        /** this Mac's Tailscale login: a phone signed in to it gets in without a code */
+        owner: string | null
+        /** MagicDNS name, e.g. mac.tailnet.ts.net */
+        dnsName: string | null
+    }
+    /** https://<dnsName>/ once serve forwards to the port; null without a MagicDNS name */
+    phoneUrl: string | null
+    /** for the person to run — the app never runs it */
+    serveCommand: string
+    /** undoes `serveCommand` */
+    serveOffCommand: string
+    devices: PhoneDeviceInfo[]
+    pairing: PhonePairingCode | null
+    /** phones with a page open right now (an open socket or a request in the last minute) */
+    connected: number
+    /** devices that turned alerts on */
+    pushDevices: number
 }

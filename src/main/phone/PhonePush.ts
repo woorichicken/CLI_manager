@@ -1,0 +1,219 @@
+import { appendFileSync } from 'fs'
+import webpush from 'web-push'
+import type { PhonePushPayload, PhonePushSubscription, PhoneTestPushResult } from '../../shared/phone'
+import type { SessionScreenStatus } from '../../shared/types'
+import { readPrivateJson, writePrivateJson } from './privateFile'
+
+/**
+ * Web Push to phones that turned alerts on: a session asks a question, or an agent's
+ * turn ends. Tapping the alert opens that session's Chat (`url`).
+ *
+ * - Nothing goes out while someone is at the Mac using the app (`macInUse`): they
+ *   already see it (ovis `server/push.ts:40-41`). The test alert always goes.
+ * - One alert per session per minute, so twenty agents finishing at once is not twenty
+ *   buzzes from one of them.
+ * - Keys (VAPID) and subscriptions sit in 0600 files in the app data folder. Their values
+ *   are never logged. A push service answering 404/410 dropped the subscription: it is removed.
+ *
+ * Encryption and signing are the `web-push` package (RFC 8291 / 8292).
+ */
+
+const SESSION_GAP_MS = 60_000
+/** A turn shorter than this is not worth a buzz (a quick answer you were waiting for at the Mac). */
+const FINISH_MIN_WORK_MS = 5_000
+const TTL_SECONDS = 60 * 60
+/** VAPID contact: the push services want a URL or mailto they can reach the sender at. */
+const VAPID_SUBJECT = 'https://climanager.solhun.com'
+const MAX_SUBSCRIPTIONS = 50
+
+interface StoredSubscription extends PhonePushSubscription {
+    /** `tailscale:<login>` or `device:<id>` — a revoked device loses its alerts with it */
+    owner: string
+    createdAt: number
+}
+
+interface VapidKeys {
+    publicKey: string
+    privateKey: string
+}
+
+export interface PhonePushDeps {
+    keysFile: string
+    subscriptionsFile: string
+    /** someone is at the Mac with the app in front */
+    macInUse(): boolean
+    /** the session's name and whether it runs an agent, for the alert text */
+    session(id: string): { name: string; agent: boolean } | null
+    now?: () => number
+}
+
+export class PhonePush {
+    private keys: VapidKeys | null = null
+    private subscriptions: StoredSubscription[]
+    private readonly lastSent = new Map<string, number>()
+    /** per session: what the screen last said, and since when it was working */
+    private readonly seen = new Map<string, { state: SessionScreenStatus['state']; since: number }>()
+
+    constructor(private readonly deps: PhonePushDeps) {
+        const saved = readPrivateJson<{ subscriptions?: StoredSubscription[] }>(deps.subscriptionsFile)
+        this.subscriptions = Array.isArray(saved?.subscriptions) ? saved!.subscriptions.filter(isSubscription) : []
+    }
+
+    private now(): number {
+        return this.deps.now?.() ?? Date.now()
+    }
+
+    /** The public key a page subscribes with; made on first use. */
+    publicKey(): string {
+        return this.vapid().publicKey
+    }
+
+    count(): number {
+        return this.subscriptions.length
+    }
+
+    subscribe(subscription: unknown, owner: string): boolean {
+        if (!isSubscription(subscription)) return false
+        const { endpoint, keys } = subscription
+        this.subscriptions = this.subscriptions.filter((s) => s.endpoint !== endpoint)
+        this.subscriptions.push({ endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, owner, createdAt: this.now() })
+        if (this.subscriptions.length > MAX_SUBSCRIPTIONS) this.subscriptions.splice(0, this.subscriptions.length - MAX_SUBSCRIPTIONS)
+        this.save()
+        return true
+    }
+
+    unsubscribe(endpoint: unknown): void {
+        if (typeof endpoint !== 'string') return
+        const before = this.subscriptions.length
+        this.subscriptions = this.subscriptions.filter((s) => s.endpoint !== endpoint)
+        if (this.subscriptions.length !== before) this.save()
+    }
+
+    /** A device was revoked (`null`: all of them): its alerts stop with it. */
+    forgetOwner(owner: string | null): void {
+        const before = this.subscriptions.length
+        this.subscriptions = owner === null ? this.subscriptions.filter((s) => !s.owner.startsWith('device:')) : this.subscriptions.filter((s) => s.owner !== owner)
+        if (this.subscriptions.length !== before) this.save()
+    }
+
+    /**
+     * Screen status changes from the phone server's status poller. A question that
+     * appears, or a working turn that ends, becomes an alert.
+     */
+    onStatus(changes: SessionScreenStatus[]): void {
+        const now = this.now()
+        for (const change of changes) {
+            const before = this.seen.get(change.sessionId)
+            if (before?.state === change.state) continue
+            this.seen.set(change.sessionId, { state: change.state, since: now })
+            const session = this.deps.session(change.sessionId)
+            if (!session?.agent) continue
+            if (change.state === 'waiting') {
+                void this.alert(change.sessionId, {
+                    title: `${session.name} needs you`,
+                    body: change.question ? clip(change.question) : 'Waiting for your answer'
+                })
+            } else if (change.state === 'idle' && before?.state === 'working' && now - before.since >= finishMinWorkMs()) {
+                void this.alert(change.sessionId, { title: `${session.name} finished`, body: 'The turn ended. Tap to read it.' })
+            }
+        }
+    }
+
+    forgetSession(sessionId: string): void {
+        this.seen.delete(sessionId)
+        this.lastSent.delete(sessionId)
+    }
+
+    async test(): Promise<PhoneTestPushResult> {
+        if (this.subscriptions.length === 0) {
+            return { status: 'none', message: 'No phone has turned alerts on yet. Open the page on the phone and tap Alerts.' }
+        }
+        const sent = await this.sendAll({ title: 'CLI Manager', body: 'Test alert from your Mac', url: '/', tag: 'climanager-test' })
+        return sent > 0 ? { status: 'sent', devices: sent } : { status: 'failed', message: 'Every push service refused the alert.' }
+    }
+
+    private async alert(sessionId: string, text: { title: string; body: string }): Promise<void> {
+        if (this.subscriptions.length === 0) return
+        if (this.deps.macInUse()) return
+        const now = this.now()
+        const last = this.lastSent.get(sessionId)
+        if (last !== undefined && now - last < SESSION_GAP_MS) return
+        this.lastSent.set(sessionId, now)
+        await this.sendAll({
+            ...text,
+            url: `/?session=${encodeURIComponent(sessionId)}&view=chat`,
+            tag: `session-${sessionId}`
+        })
+    }
+
+    /** How many subscriptions took it. */
+    private async sendAll(payload: PhonePushPayload): Promise<number> {
+        const body = JSON.stringify(payload)
+        const testLog = process.env.CLIMANGER_TEST_USERDATA ? process.env.CLIMANAGER_PHONE_PUSH_LOG : undefined
+        if (testLog) {
+            // tests never reach a real push service
+            for (const s of this.subscriptions) appendFileSync(testLog, JSON.stringify({ endpoint: s.endpoint, payload }) + '\n')
+            return this.subscriptions.length
+        }
+        const keys = this.vapid()
+        let ok = 0
+        const gone: string[] = []
+        await Promise.all(this.subscriptions.map(async (s) => {
+            try {
+                await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, body, {
+                    TTL: TTL_SECONDS,
+                    vapidDetails: { subject: VAPID_SUBJECT, publicKey: keys.publicKey, privateKey: keys.privateKey }
+                })
+                ok += 1
+            } catch (error) {
+                const status = (error as { statusCode?: number }).statusCode
+                if (status === 404 || status === 410) gone.push(s.endpoint)
+                // the endpoint names the device's push account: log only the status
+                else console.warn('[phone] push failed with status', status ?? 'none')
+            }
+        }))
+        if (gone.length > 0) {
+            this.subscriptions = this.subscriptions.filter((s) => !gone.includes(s.endpoint))
+            this.save()
+        }
+        return ok
+    }
+
+    private vapid(): VapidKeys {
+        if (this.keys) return this.keys
+        const saved = readPrivateJson<VapidKeys>(this.deps.keysFile)
+        if (saved && typeof saved.publicKey === 'string' && typeof saved.privateKey === 'string') {
+            this.keys = saved
+            return saved
+        }
+        const fresh = webpush.generateVAPIDKeys()
+        writePrivateJson(this.deps.keysFile, fresh)
+        this.keys = fresh
+        return fresh
+    }
+
+    private save(): void {
+        try {
+            writePrivateJson(this.deps.subscriptionsFile, { subscriptions: this.subscriptions })
+        } catch (error) {
+            console.error('[phone] could not save alert subscriptions:', error instanceof Error ? error.message : error)
+        }
+    }
+}
+
+function finishMinWorkMs(): number {
+    const override = process.env.CLIMANGER_TEST_USERDATA ? Number(process.env.CLIMANAGER_PHONE_FINISH_MIN_MS) : NaN
+    return Number.isFinite(override) ? override : FINISH_MIN_WORK_MS
+}
+
+function clip(text: string): string {
+    const line = text.replace(/\s+/g, ' ').trim()
+    return line.length > 140 ? `${line.slice(0, 139)}…` : line
+}
+
+function isSubscription(value: unknown): value is PhonePushSubscription {
+    const v = value as PhonePushSubscription | null
+    return !!v && typeof v.endpoint === 'string' && /^https:\/\//.test(v.endpoint) && v.endpoint.length < 2048
+        && !!v.keys && typeof v.keys.p256dh === 'string' && typeof v.keys.auth === 'string'
+        && v.keys.p256dh.length < 256 && v.keys.auth.length < 128
+}

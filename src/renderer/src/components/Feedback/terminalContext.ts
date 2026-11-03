@@ -27,7 +27,8 @@ const EVENT_LEVELS: Record<TerminalEventKind, DiagLogEntry['level']> = {
     restored: 'log',
     cleared: 'log',
     resized: 'log',
-    closed: 'log'
+    closed: 'log',
+    'phone-input': 'log'
 }
 
 export type TerminalTargetSource = 'picked' | 'focused' | 'visible'
