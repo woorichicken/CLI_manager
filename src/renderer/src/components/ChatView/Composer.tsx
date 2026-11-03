@@ -56,6 +56,8 @@ const MAX_ROWS = 10
 const MENU_ROWS = 40
 /** Wait this long after a keystroke before asking for files. */
 const FILE_SEARCH_DELAY_MS = 120
+/** A picture bigger than this gets no thumbnail on its tile. */
+const MAX_PREVIEW_BYTES = 8 * 1024 * 1024
 /** The "characters left" hint shows past this share of the limit. */
 const NEAR_LIMIT = 0.9
 
@@ -160,10 +162,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         setText(drafts[sessionId] ?? '')
         setNotice(null)
         setCommands(null)
-        setAttachments((current) => {
-            for (const item of current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
-            return []
-        })
+        setAttachments([])
         // The terminal under the chat may still hold focus: keys would go to it unseen.
         // Take focus only from it (or from nothing), never from another input.
         const timer = window.setTimeout(() => {
@@ -174,19 +173,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         return () => window.clearTimeout(timer)
     }, [sessionId])
 
-    useEffect(
-        () => () => {
-            for (const item of attachmentsRef.current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
-        },
-        []
-    )
-
     useEffect(() => {
         const element = box.current
         if (!element) return
         element.style.height = 'auto'
         const line = parseFloat(getComputedStyle(element).lineHeight) || 18
-        element.style.height = `${Math.min(element.scrollHeight, line * MAX_ROWS + 16)}px`
+        const max = line * MAX_ROWS + 16
+        element.style.height = `${Math.min(element.scrollHeight, max)}px`
+        // a scroll bar only once it stops growing (a fraction of a pixel would show one on every line)
+        element.style.overflowY = element.scrollHeight > max ? 'auto' : 'hidden'
     }, [text])
 
     const setDraft = useCallback(
@@ -215,12 +210,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     id: ++attachmentSequence,
                     name: file.name || 'pasted image',
                     size: file.size,
-                    previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+                    previewUrl: null,
                     state: 'attaching'
                 }
             }))
             setAttachments((current) => [...current, ...added.map(({ item }) => item)])
             for (const { item, file } of added) {
+                // a thumbnail as a data: URL — the app's page allows no blob: pictures (CSP img-src 'self' data:)
+                if (file.type.startsWith('image/') && file.size <= MAX_PREVIEW_BYTES) {
+                    const reader = new FileReader()
+                    reader.onload = () => {
+                        const url = typeof reader.result === 'string' ? reader.result : null
+                        if (url) setAttachments((current) => current.map((entry) => (entry.id === item.id ? { ...entry, previewUrl: url } : entry)))
+                    }
+                    reader.readAsDataURL(file)
+                }
                 void transport
                     .attachFile(sessionId, file)
                     .catch((error: unknown) => ({ status: 'rejected' as const, reason: 'unreadable' as const, message: error instanceof Error ? error.message : String(error) }))
@@ -244,7 +248,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const removeAttachment = (id: number): void => {
         setAttachments((current) =>
             current.filter((item) => {
-                if (item.id === id && item.previewUrl) URL.revokeObjectURL(item.previewUrl)
                 return item.id !== id
             })
         )
@@ -346,12 +349,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             if (taken && textRef.current === '' && attachmentsRef.current.length === 0) {
                 setDraft(taken.text, taken.text.length)
                 setAttachments(taken.attachments)
-            } else if (taken) {
-                for (const item of taken.attachments) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
             }
             return
         }
-        if (taken) for (const item of taken.attachments) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
         if (result.status === 'queued') setNotice({ tone: 'info', text: `${agentName} is working — it gets this when the turn ends.` })
     }
 
@@ -513,7 +513,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                                             {choice.name}
                                         </span>
                                         <span className="chat-complete-description">{choice.description}</span>
-                                        <span className="chat-complete-source">{choice.terminal ? 'terminal' : SOURCE_LABEL[choice.source]}</span>
+                                        <span className="chat-complete-source">{choice.terminal === 'always' ? 'terminal' : SOURCE_LABEL[choice.source]}</span>
                                     </>
                                 ) : (
                                     <>

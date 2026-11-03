@@ -93,7 +93,7 @@ export function ModelChip({
                 )}
                 <ChevronDown size={11} aria-hidden="true" />
             </button>
-            <Popover open={open} onClose={close} testId="chat-model-menu">
+            <Popover open={open} onClose={close} align="end" testId="chat-model-menu">
                 {confirm ? (
                     <div className="chat-confirm" data-testid="chat-model-confirm">
                         <p className="chat-confirm-title">

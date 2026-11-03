@@ -48,6 +48,25 @@ async function shot(page: Page, name: string, width = 1280): Promise<void> {
     await page.screenshot({ path: path.join(dir, name), clip: { x: 0, y: 0, width, height: 800 } })
 }
 
+/**
+ * CHAT_VIEW_SHOTS: the same moment at 1280 and at 390 (sidebar folded for it). The sidebar button
+ * is clicked by script — a real mousedown would close an open popover, the state being captured.
+ */
+async function shotBoth(app: LaunchResult['app'], page: Page, name: string): Promise<void> {
+    if (!process.env.CHAT_VIEW_SHOTS) return
+    await shot(page, `${name}-1280.png`)
+    const close = page.locator('[title^="Close Sidebar"]').first()
+    const wasOpen = await close.isVisible().catch(() => false)
+    if (wasOpen) await close.evaluate((element) => (element as HTMLElement).click())
+    await resizeMainWindow(app, 390, 800)
+    await page.waitForTimeout(700)
+    await shot(page, `${name}-390.png`, 390)
+    await resizeMainWindow(app, 1280, 800)
+    await page.waitForTimeout(500)
+    if (wasOpen) await page.locator('[title^="Open Sidebar"]').first().evaluate((element) => (element as HTMLElement).click())
+    await page.waitForTimeout(300)
+}
+
 async function selectSession(page: Page, name: string): Promise<void> {
     await page.getByText(name, { exact: true }).first().click()
     await page.waitForTimeout(400)
@@ -365,6 +384,7 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     expect(await thumb.locator('img').getAttribute('src')).toBe(`data:image/png;base64,${PNG}`)
     await thumb.click()
     await expect(page.getByTestId('chat-lightbox')).toBeVisible()
+    await shotBoth(app, page, 'r2-lightbox')
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('chat-lightbox')).toHaveCount(0)
     // a cut tool output, read back whole
@@ -380,10 +400,13 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await edit.locator('.chat-tool-toggle').click()
     await expect(edit.locator('.chat-diff-line.is-del')).toHaveText(['−old line'])
     await expect(edit.locator('.chat-diff-line.is-add')).toHaveText(['+new line'])
+    await edit.scrollIntoViewIfNeeded()
+    await shotBoth(app, page, 'r2-tools')
     // a path in an answer opens in the preview (relative to the session folder)
     await chat(page).locator('[data-testid="chat-answer"]', { hasText: 'single pixel' }).getByTestId('chat-file-link').first().click()
     await expect(page.getByTestId('chat-file-preview')).toHaveAttribute('data-path', path.join(project, 'notes.md'))
     await expect(page.getByTestId('chat-file-preview')).toContainText('new line')
+    await shotBoth(app, page, 'r2-preview')
     await page.keyboard.press('Escape')
     await page.getByTestId('chat-file-preview').locator('button').filter({ has: page.locator('svg.lucide-x') }).first().click().catch(() => undefined)
     await expect(page.getByTestId('chat-file-preview')).toHaveCount(0)
@@ -396,22 +419,24 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     const shown = Math.min(total, 400)
     await expect(chat(page).locator('[data-testid="chat-turn"]')).toHaveCount(shown, { timeout: 10_000 })
     await expect(older).toContainText(`Showing the last ${shown} of ${total}`)
-    await shot(page, 'r2-reading-1280.png')
+    await shotBoth(app, page, 'r2-reading')
 
     // --- quick replies (on in Settings): one tap sends -------------------------------------------
     const quick = chat(page).getByTestId('chat-quick-replies')
     await expect(quick).toBeVisible()
+    await shotBoth(app, page, 'r2-quick')
     await quick.getByRole('button', { name: 'continue' }).click()
     await waitForBufferText(page, R2, 'ANSWER[1]: continue', 15_000)
 
     // --- work state: elapsed time, Stop button, Esc --------------------------------------------
     await expect(chat(page).getByTestId('chat-working')).toBeVisible({ timeout: 10_000 })
     await expect(chat(page).getByTestId('chat-working-time')).toHaveText(/^\d+s$/)
-    await shot(page, 'r2-working-1280.png')
+    await shotBoth(app, page, 'r2-working')
     await chat(page).getByTestId('chat-stop').click()
     await waitForBufferText(page, R2, 'INTERRUPTED', 10_000)
     await expect(chat(page).getByTestId('chat-working')).toHaveCount(0, { timeout: 10_000 })
     await expect(chat(page).getByTestId('chat-stopped').last()).toBeVisible({ timeout: 10_000 })
+    await shotBoth(app, page, 'r2-stopped')
     await composer.fill('stop me with esc')
     await composer.press('Enter')
     await expect(chat(page).getByTestId('chat-working')).toBeVisible({ timeout: 10_000 })
@@ -429,7 +454,7 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     }
     const queued = chat(page).getByTestId('chat-queued-item')
     await expect(queued).toHaveCount(3)
-    await shot(page, 'r2-queued-1280.png')
+    await shotBoth(app, page, 'r2-queued')
     await queued.filter({ hasText: 'second' }).getByTestId('chat-queued-send-now').click()
     await waitForBufferText(page, R2, 'HELD: second', 10_000)
     await queued.filter({ hasText: 'third' }).getByTestId('chat-queued-discard').click()
@@ -449,6 +474,7 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await planChip.click()
     await expect(chat(page).getByTestId('chat-plan-panel').locator('.chat-todo')).toHaveCount(3)
     await expect(chat(page).getByTestId('chat-plan-panel').locator('.chat-todo.is-in_progress')).toContainText('Writing the fix')
+    await shotBoth(app, page, 'r2-plan')
     await page.keyboard.press('Escape')
 
     // --- model chip: names the recorded model; a change asks first ------------------------------
@@ -460,7 +486,7 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await modelChip.click()
     await chat(page).locator('[data-testid="chat-model-option"][data-alias="sonnet"]').click()
     await expect(chat(page).getByTestId('chat-model-confirm')).toContainText('default for new sessions')
-    await shot(page, 'r2-model-confirm-1280.png')
+    await shotBoth(app, page, 'r2-model-confirm')
     await chat(page).getByTestId('chat-model-confirm-cancel').click()
     await page.keyboard.press('Escape')
     await page.waitForTimeout(500)
@@ -477,7 +503,7 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await waitForBufferText(page, R2, 'PANEL: /model', 10_000)
     await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal')
     await expect(page.getByTestId('chat-peek-bar')).toContainText('/model')
-    await shot(page, 'r2-peek-1280.png')
+    await shotBoth(app, page, 'r2-peek')
     await writeToTerminal(page, R2, '\x1b')
     await waitForBufferText(page, R2, 'PANEL CLOSED', 10_000)
     await page.getByTestId('chat-peek-back').click()
@@ -489,7 +515,7 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await composer.fill('/conf')
     const configRow = chat(page).locator('[data-testid="chat-complete-row"]', { hasText: '/config' }).first()
     await expect(configRow).toContainText('terminal')
-    await shot(page, 'r2-slash-1280.png')
+    await shotBoth(app, page, 'r2-slash')
     await composer.press('Enter')
     await expect(composer).toHaveValue('/config ')
     await composer.press('Enter')
@@ -528,7 +554,11 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     })
     await expect(tiles).toHaveCount(3)
     await expect(chat(page).locator('[data-testid="chat-attachment"][data-state="ready"]')).toHaveCount(3, { timeout: 10_000 })
-    await shot(page, 'r2-attach-1280.png')
+    // the pasted picture's thumbnail is drawn (the page allows data: pictures only, not blob:)
+    const thumbnail = tiles.filter({ hasText: 'clip.png' }).locator('img')
+    await expect(thumbnail).toHaveAttribute('src', /^data:image\/png;base64,/)
+    await expect.poll(() => thumbnail.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+    await shotBoth(app, page, 'r2-attach')
     await composer.fill('see these')
     await composer.press('Enter')
     await expect(tiles).toHaveCount(0)
@@ -555,6 +585,14 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await composer.press('Enter')
     await expect(card.getByTestId('chat-prompt-picked')).toBeVisible()
     await expect(card.locator('.chat-prompt-option.is-picked')).toHaveAttribute('data-index', '3')
+    await shotBoth(app, page, 'r2-card-pick')
+    // a capture's resize redraws the menu (a new signature), which drops the pick on purpose: pick again
+    if ((await card.getByTestId('chat-prompt-picked').count()) === 0) {
+        await expect(card.getByTestId('chat-prompt-option')).toHaveCount(4)
+        await composer.fill('4')
+        await composer.press('Enter')
+        await expect(card.getByTestId('chat-prompt-picked')).toBeVisible()
+    }
     await composer.press('Enter')
     await waitForBufferText(page, R2, 'CHOSE: No', 10_000)
     // the card goes with the menu, though nothing more is printed (the screen is read after it is drawn)
@@ -562,7 +600,14 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
 
     // --- Settings › Terminal › Chat view: Enter starts a line, ⌘Enter sends ---------------------
     await page.keyboard.press(`${mod}+Comma`)
+    if (process.env.CHAT_VIEW_SHOTS) {
+        await page.getByTestId('settings-category-keyboard').click()
+        await page.getByText('Chat View', { exact: true }).scrollIntoViewIfNeeded()
+        await shotBoth(app, page, 'r2-keyboard-settings')
+    }
     await page.getByTestId('settings-category-terminal').click()
+    await page.getByTestId('chat-view-settings').scrollIntoViewIfNeeded()
+    await shotBoth(app, page, 'r2-chat-settings')
     await page.getByTestId('chat-setting-enter-sends').click()
     await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(chat(page)).toBeVisible()
@@ -583,7 +628,7 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     const bubble = chat(page).getByTestId('chat-sent-bubble')
     await expect(bubble).toHaveText('hello slow')
     await expect(chat(page).getByTestId('chat-sent-clock')).toBeVisible({ timeout: 8_000 })
-    await shot(page, 'r2-sent-1280.png')
+    await shotBoth(app, page, 'r2-sent')
     await expect(bubble).toHaveCount(0, { timeout: 15_000 })
     await expect(chat(page).locator('[data-testid="chat-user-text"]', { hasText: 'hello slow' })).toBeVisible()
 
@@ -597,7 +642,7 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await expect(chat(page).getByTestId('chat-model-name')).toHaveText('gpt-6-luna', { timeout: 15_000 })
     await expect(chat(page).getByTestId('chat-model-effort')).toContainText('medium')
     await expect(chat(page).getByTestId('chat-context-chip')).toContainText(/ctx \d+%/)
-    await shot(page, 'r2-codex-1280.png')
+    await shotBoth(app, page, 'r2-codex')
     await chat(page).getByTestId('chat-model-chip').click()
     await chat(page).getByTestId('chat-model-picker').click()
     await chat(page).getByTestId('chat-model-confirm-ok').click()

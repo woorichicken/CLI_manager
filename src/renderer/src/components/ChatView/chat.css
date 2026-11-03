@@ -221,7 +221,7 @@
 
 /* Rail of sent messages */
 .chat-rail { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); z-index: 2; display: flex; flex-direction: column; gap: 3px; max-height: 70%; }
-.chat-rail-dash { width: 18px; height: 9px; flex-shrink: 0; background: linear-gradient(var(--chat-line), var(--chat-line)) left center / 14px 3px no-repeat; border-radius: 2px; }
+.chat-rail-dash { width: 18px; height: 9px; flex-shrink: 0; background: linear-gradient(var(--chat-faint), var(--chat-faint)) left center / 14px 3px no-repeat; border-radius: 2px; opacity: 0.8; }
 .chat-rail-dash:hover { background: linear-gradient(#60a5fa, #60a5fa) left center / 18px 3px no-repeat; }
 
 /* Pictures */
