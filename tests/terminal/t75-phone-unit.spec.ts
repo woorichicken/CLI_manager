@@ -6,7 +6,11 @@ import { decidePhoneAccess, hostAllowed, isTailnetAddress, parseTailscaleDnsName
 import { PAIRING_CODE_ATTEMPTS, PAIRING_CODE_TTL_MS, PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhonePush } from '../../src/main/phone/PhonePush'
 import { maskSnapshot } from '../../src/main/phone/phoneApi'
-import { controlCharacter, KEY_BAR_ITEMS, keyBarLabel, keySequence } from '../../src/renderer/src/phone/keyBar'
+import { controlCharacter, createKeyRepeat, isRepeatable, KEY_BAR_ITEMS, KEY_REPEAT_DELAY_MS, KEY_REPEAT_INTERVAL_MS, keyBarLabel, keySequence, type KeyRepeatClock } from '../../src/renderer/src/phone/keyBar'
+import { dropletFor, LONG_TURN_MS, nextSeen, waitingElsewhere } from '../../src/renderer/src/phone/droplets'
+import { foldRows, type FoldLine } from '../../src/renderer/src/phone/terminalFold'
+import { reconnectDelay } from '../../src/renderer/src/phone/usePhoneTerminal'
+import { Terminal as HeadlessTerminal } from '@xterm/headless'
 import { listLines } from '../../src/renderer/src/phone/sessionListLines'
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder } from '../../src/renderer/src/utils/sessionNavigation'
 import type { ConversationSnapshot } from '../../src/shared/conversation'
@@ -314,5 +318,151 @@ test.describe('T75 session list order', () => {
         expect(drawn([{ id: 'sf', name: 'Agents' }])).toEqual(['# Agents', 'b1', '---', 'a1', '# No folder', 'a2', '---', 'a3', 'h1', 'b2'])
         // no session folders on the Mac: no headings, only the pinned line
         expect(drawn([]).filter((line) => line.startsWith('#'))).toEqual([])
+    })
+})
+
+
+// ---- quality pass (quality-phone, 11-04): ovis droplet · key hold-repeat · reconnect · «Wrap to screen» ----
+
+const session = (id: string, state: PhoneSession['state'], over: Partial<PhoneSession> = {}): PhoneSession => ({
+    id,
+    name: id.toUpperCase(),
+    workspaceId: 'w',
+    workspaceName: 'W',
+    agent: 'claude',
+    state,
+    ...over
+})
+
+test.describe('T75 in-app alert (droplet)', () => {
+    test('a question elsewhere is news; the open session, the first load and a new session are not', () => {
+        const t0 = 1_000_000
+        const first = [session('a', 'idle'), session('b', 'working'), session('c', 'idle')]
+        // first load: nothing is new
+        expect(dropletFor(null, first, 'a', t0)).toBeNull()
+        const seen = nextSeen(null, first, t0)
+        // c starts waiting while a is open → told, with the question
+        const asked = [session('a', 'idle'), session('b', 'working'), session('c', 'waiting', { question: 'Do you want to proceed?' })]
+        expect(dropletFor(seen, asked, 'a', t0 + 3000)).toEqual({ sessionId: 'c', name: 'C', kind: 'waiting', detail: 'Do you want to proceed?' })
+        // the open one asking is in front of the user already
+        expect(dropletFor(seen, asked, 'c', t0 + 3000)).toBeNull()
+        // still waiting on the next poll: not news twice
+        const seen2 = nextSeen(seen, asked, t0 + 3000)
+        expect(dropletFor(seen2, asked, 'a', t0 + 6000)).toBeNull()
+        // a session the list did not have before is not news
+        expect(dropletFor(seen2, [...asked, session('d', 'waiting')], 'a', t0 + 6000)).toBeNull()
+        // the ☰ badge counts the waiting ones that are not open
+        expect(waitingElsewhere(asked, 'a')).toBe(1)
+        expect(waitingElsewhere(asked, 'c')).toBe(0)
+    })
+
+    test('a finished turn is told only when it worked a minute (ovis done: "long"), never a shell or an exit', () => {
+        const t0 = 5_000_000
+        const working = [session('a', 'idle'), session('b', 'working'), session('s', 'working', { agent: null })]
+        // b seen working at first sight: when it began is unknown — told, as ovis tells a turn it did not see start
+        const seenAtFirst = nextSeen(null, working, t0)
+        expect(dropletFor(seenAtFirst, [session('a', 'idle'), session('b', 'idle'), session('s', 'idle', { agent: null })], 'a', t0 + 3000)).toEqual({ sessionId: 'b', name: 'B', kind: 'finished' })
+        // b seen to start working at t0+3000: a short turn is not told, a minute's is
+        const idle = [session('a', 'idle'), session('b', 'idle')]
+        const seen = nextSeen(nextSeen(null, idle, t0), [session('a', 'idle'), session('b', 'working')], t0 + 3000)
+        expect(dropletFor(seen, idle, 'a', t0 + 3000 + 20_000)).toBeNull()
+        expect(dropletFor(seen, idle, 'a', t0 + 3000 + LONG_TURN_MS)?.kind).toBe('finished')
+        // an exit is not a finished turn
+        expect(dropletFor(seen, [session('a', 'idle'), session('b', 'exited')], 'a', t0 + 3000 + LONG_TURN_MS)).toBeNull()
+        // a question wins over a finish in the same poll
+        const both = nextSeen(null, [session('a', 'idle'), session('b', 'working'), session('c', 'idle')], t0)
+        expect(dropletFor(both, [session('a', 'idle'), session('b', 'idle'), session('c', 'waiting')], 'a', t0 + LONG_TURN_MS)?.sessionId).toBe('c')
+    })
+})
+
+test.describe('T75 key bar hold-repeat', () => {
+    /** a clock the test turns by hand */
+    const manualClock = (): KeyRepeatClock & { tick(ms: number): void } => {
+        let now = 0
+        let timers: Array<{ at: number; run: () => void; id: number }> = []
+        let next = 1
+        return {
+            setTimeout: (run, delay) => {
+                const id = next++
+                timers.push({ at: now + delay, run, id })
+                return id
+            },
+            clearTimeout: (id) => {
+                timers = timers.filter((t) => t.id !== id)
+            },
+            tick(ms) {
+                const end = now + ms
+                for (;;) {
+                    const due = timers.filter((t) => t.at <= end).sort((a, b) => a.at - b.at)[0]
+                    if (!due) break
+                    timers = timers.filter((t) => t !== due)
+                    now = due.at
+                    due.run()
+                }
+                now = end
+            }
+        }
+    }
+
+    test('only the arrows repeat; a hold sends after 400 ms then every 50 ms, and its click is not one more', () => {
+        expect(KEY_BAR_ITEMS.filter(isRepeatable).map(keyBarLabel)).toEqual(['↑', '↓', '←', '→'])
+        const clock = manualClock()
+        let sent = 0
+        const repeat = createKeyRepeat(() => sent++, clock)
+        // a tap: nothing from the timer, the click sends it
+        repeat.press(10, 10)
+        clock.tick(100)
+        repeat.release()
+        expect(sent).toBe(0)
+        expect(repeat.takeClick()).toBe(true)
+        // a hold of 400 + 3×50 ms: four sends, and the click after it is swallowed
+        repeat.press(10, 10)
+        clock.tick(KEY_REPEAT_DELAY_MS + 3 * KEY_REPEAT_INTERVAL_MS)
+        repeat.release()
+        expect(sent).toBe(4)
+        expect(repeat.takeClick()).toBe(false)
+        expect(repeat.takeClick()).toBe(true)
+        // a finger that slides past 10 px before repeating was scrolling the bar
+        repeat.press(10, 10)
+        expect(repeat.move(30, 10)).toBe(true)
+        clock.tick(1000)
+        expect(sent).toBe(4)
+    })
+})
+
+test.describe('T75 reconnect', () => {
+    test('the wait doubles from 250 ms and stops at 5 s', () => {
+        expect([0, 1, 2, 3, 4, 5, 9].map(reconnectDelay)).toEqual([250, 500, 1000, 2000, 4000, 5000, 5000])
+    })
+})
+
+test.describe('T75 «Wrap to screen» rows', () => {
+    const THEME = { foreground: '#e0e0e0', background: '#0f0f12', cursor: '#ffffff' }
+    const write = (term: HeadlessTerminal, data: string): Promise<void> => new Promise((resolve) => term.write(data, resolve))
+    const textOf = (html: string): string => html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+
+    test('rows the Mac wrapped join, trailing blanks go, colours stay, rules and frame edges, cursor', async () => {
+        const term = new HeadlessTerminal({ cols: 40, rows: 10, allowProposedApi: true })
+        const long = 'x'.repeat(50) // wraps at the Mac's 40 columns into two rows
+        await write(term, `\x1b[32mgreen\x1b[0m plain\r\n${long}\r\n${'─'.repeat(40)}\r\n│ 안녕 세계${' '.repeat(20)}│\r\n> `)
+        const buffer = term.buffer.active
+        const lines = foldRows((row) => buffer.getLine(row) as FoldLine | undefined, buffer.viewportY, term.rows, term.cols, THEME, { row: buffer.baseY + buffer.cursorY, col: buffer.cursorX })
+        // 5 lines drawn (the 50-x line joined back), the 5 blank rows under the cursor dropped
+        expect(lines.map((line) => textOf(line.html))).toEqual(['green plain', long, '─'.repeat(40), '│ 안녕 세계', '>  '])  // the cursor's blank cell is drawn (its block)
+        // the green run keeps its colour (palette 2)
+        expect(lines[0].html).toContain('color:#4e9a06')
+        // a rule is one cut line; a frame's right edge after padding is dropped, the left edge and 한글 stay
+        expect(lines.map((line) => line.rule)).toEqual([false, false, true, false, false])
+        // the cursor's line draws a block
+        expect(lines[4].cursor).toBe(true)
+        expect(lines[4].html).toContain('phone-fold-cursor')
+        // no cursor (hidden): no block
+        const hidden = foldRows((row) => buffer.getLine(row) as FoldLine | undefined, buffer.viewportY, term.rows, term.cols, THEME, null)
+        expect(hidden.some((line) => line.html.includes('phone-fold-cursor'))).toBe(false)
+        // markup in the screen is text, not HTML
+        await write(term, '\r\n<b>&</b>')
+        const escaped = foldRows((row) => buffer.getLine(row) as FoldLine | undefined, buffer.viewportY, term.rows, term.cols, THEME, null)
+        expect(escaped[escaped.length - 1].html).toBe('&lt;b&gt;&amp;&lt;/b&gt;')
+        term.dispose()
     })
 })
