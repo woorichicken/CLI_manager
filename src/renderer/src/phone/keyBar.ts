@@ -1,5 +1,5 @@
-// Key list, labels and sequences adapted from ovis src/lib/keyBar.ts and src/lib/keys.ts
-// (https://github.com/devswha/ovis, 3e51902) — MIT License, Copyright (c) 2026 devswha.
+// Key list, labels and sequences adapted from ovis src/lib/keyBar.ts and src/lib/keys.ts, hold-repeat
+// from src/lib/keyRepeat.ts (https://github.com/devswha/ovis, 3e51902) — MIT License, Copyright (c) 2026 devswha.
 // See THIRD_PARTY_NOTICES.md.
 
 /**
@@ -71,4 +71,97 @@ export function controlCharacter(text: string): string | null {
     if (text === ' ') return '\x00'
     if (text === '?') return '\x7f'
     return null
+}
+
+// ---- hold to repeat (ovis keyRepeat.ts; checked there by scripts/key-bar-hold-repeat-regression.ts) ----
+
+export const KEY_REPEAT_DELAY_MS = 400
+export const KEY_REPEAT_INTERVAL_MS = 50
+/** a finger that moves this far before repeating starts was scrolling the bar, not holding a key */
+export const KEY_REPEAT_MOVE_SLOP_PX = 10
+
+/**
+ * Keys that move, which a held hardware key repeats too — walking a long Claude menu or a
+ * shell history. Esc, Tab, Enter and ^C stay single: repeated, they act many times on what
+ * one press meant.
+ */
+export function isRepeatable(item: KeyBarItem): boolean {
+    return item.type === 'key' && (item.key === 'ArrowUp' || item.key === 'ArrowDown' || item.key === 'ArrowLeft' || item.key === 'ArrowRight')
+}
+
+export interface KeyRepeatClock {
+    setTimeout: (callback: () => void, delay: number) => unknown
+    clearTimeout: (timer: unknown) => void
+}
+
+export interface KeyRepeat {
+    press(x: number, y: number): void
+    /** true when moving cancelled a hold that had not started repeating */
+    move(x: number, y: number): boolean
+    release(): void
+    cancel(): void
+    /** the click after a hold that repeated is not one more key — false once for it */
+    takeClick(): boolean
+}
+
+const realClock: KeyRepeatClock = {
+    setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay),
+    clearTimeout: (timer) => globalThis.clearTimeout(timer as number)
+}
+
+/** A hold sends only from timers; a tap stays on the ordinary click. */
+export function createKeyRepeat(send: () => void, clock: KeyRepeatClock = realClock): KeyRepeat {
+    let timer: unknown = null
+    let generation = 0
+    let active = false
+    let repeating = false
+    let suppressClick = false
+    let startX = 0
+    let startY = 0
+    const stop = (): void => {
+        generation++
+        active = false
+        repeating = false
+        if (timer !== null) clock.clearTimeout(timer)
+        timer = null
+    }
+    return {
+        press(x, y) {
+            stop()
+            suppressClick = false
+            active = true
+            startX = x
+            startY = y
+            const pressed = generation
+            const repeat = (): void => {
+                if (!active || generation !== pressed) return
+                timer = null
+                repeating = true
+                send()
+                if (active && generation === pressed) timer = clock.setTimeout(repeat, KEY_REPEAT_INTERVAL_MS)
+            }
+            timer = clock.setTimeout(repeat, KEY_REPEAT_DELAY_MS)
+        },
+        move(x, y) {
+            if (!active || repeating) return false
+            const dx = x - startX
+            const dy = y - startY
+            if (dx * dx + dy * dy <= KEY_REPEAT_MOVE_SLOP_PX * KEY_REPEAT_MOVE_SLOP_PX) return false
+            stop()
+            return true
+        },
+        release() {
+            if (repeating) suppressClick = true
+            stop()
+        },
+        cancel() {
+            stop()
+            suppressClick = false
+        },
+        takeClick() {
+            const allowed = !suppressClick
+            suppressClick = false
+            return allowed
+        }
+    }
 }

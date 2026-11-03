@@ -19,6 +19,9 @@ under the menu → **licenses**).
   and `src/lib/viewport.ts`; the service worker (`src/renderer/public/phone/sw.js`) follows
   `public/sw.js`. The phone's access and pairing rules (`src/main/phone/phoneAccess.ts`,
   `PhoneDevices.ts`) follow ovis `server/access.ts` and `server/devices.ts`, rewritten.
+  The key bar's hold-to-repeat (`keyBar.ts`) is adapted from ovis `src/lib/keyRepeat.ts`, and the
+  terminal's «Wrap to screen» rows — palette, cell styles and row runs (`src/renderer/src/phone/terminalFold.ts`)
+  — from `src/lib/terminalFold.ts`. The in-app alert (`droplets.ts`) follows `src/lib/droplet.ts`'s rules, rewritten.
 - License: MIT
 
 ```

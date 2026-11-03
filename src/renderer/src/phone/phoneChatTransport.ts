@@ -1,6 +1,7 @@
 import type { AttachResult, ChatCommand, ChatSendResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../../shared/conversation'
 import { chatPath, getJson, postJson, socketUrl } from './api'
+import { reconnectDelay } from './usePhoneTerminal'
 
 /**
  * The Chat view's transport on the phone: the same `ChatTransport` the Electron app fills
@@ -10,9 +11,6 @@ import { chatPath, getJson, postJson, socketUrl } from './api'
  * What a phone cannot do the Mac's way: open a file on the Mac (the chat's file links do
  * nothing here) or search the session's folder for `@` (an empty list).
  */
-
-/** a dropped socket (the phone slept, the network moved) comes back after this */
-const RECONNECT_MS = 2000
 
 export function createPhoneChatTransport(onViewOnly?: (message: string) => void): ChatTransport {
     const refuse = (error: unknown): ChatSendResult => {
@@ -27,8 +25,13 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
             let socket: WebSocket | null = null
             let stopped = false
             let retry: number | null = null
+            let retries = 0
+            // a dropped socket (the phone slept, the network moved) comes back as the terminal's does
             const open = (): void => {
                 socket = new WebSocket(socketUrl(chatPath(sessionId, 'events')))
+                socket.onopen = () => {
+                    retries = 0
+                }
                 socket.onmessage = (event) => {
                     try {
                         const message = JSON.parse(String(event.data)) as { type?: string; revision?: number }
@@ -39,16 +42,30 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
                 }
                 socket.onclose = () => {
                     if (stopped) return
-                    retry = window.setTimeout(() => {
-                        // whatever changed while it was gone is fetched once it is back
-                        onChange(-1)
-                        open()
-                    }, RECONNECT_MS)
+                    retry = window.setTimeout(reopen, reconnectDelay(retries++))
                 }
             }
+            const reopen = (): void => {
+                retry = null
+                // whatever changed while it was gone is fetched once it is back
+                onChange(-1)
+                open()
+            }
+            // back on the page or the network: a waiting retry goes now
+            const now = (): void => {
+                if (stopped || retry === null || document.visibilityState !== 'visible') return
+                window.clearTimeout(retry)
+                reopen()
+            }
             open()
+            document.addEventListener('visibilitychange', now)
+            window.addEventListener('online', now)
+            window.addEventListener('pageshow', now)
             return () => {
                 stopped = true
+                document.removeEventListener('visibilitychange', now)
+                window.removeEventListener('online', now)
+                window.removeEventListener('pageshow', now)
                 if (retry !== null) window.clearTimeout(retry)
                 socket?.close()
             }

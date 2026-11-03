@@ -13,13 +13,17 @@ import { PhoneTerminal } from './PhoneTerminal'
 
 export type SessionLens = 'chat' | 'terminal'
 
+/** a finger, not a mouse: the chat's Return breaks the line and opening it leaves the keyboard down */
+const COARSE_POINTER = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
 export function SessionScreen({
     session,
     lens,
     role,
     onLens,
     onMenu,
-    showMenuButton
+    showMenuButton,
+    menuBadge = 0
 }: {
     session: PhoneSession
     lens: SessionLens
@@ -27,6 +31,8 @@ export function SessionScreen({
     onLens: (lens: SessionLens) => void
     onMenu: () => void
     showMenuButton: boolean
+    /** other sessions waiting for an answer — shown on ☰ while the list is out of sight */
+    menuBadge?: number
 }) {
     const transport = useMemo(() => createPhoneChatTransport(), [])
     const chatAvailable = session.agent !== null
@@ -38,6 +44,11 @@ export function SessionScreen({
                 {showMenuButton && (
                     <button type="button" className="phone-icon-button" aria-label="Sessions" data-testid="phone-menu-button" onClick={onMenu}>
                         <Menu size={18} />
+                        {menuBadge > 0 && (
+                            <span className="phone-menu-badge" data-testid="phone-menu-badge" aria-label={`${menuBadge} waiting`}>
+                                {menuBadge}
+                            </span>
+                        )}
                     </button>
                 )}
                 <span className={`phone-dot phone-dot-${session.state}`} aria-hidden="true" />
@@ -59,6 +70,7 @@ export function SessionScreen({
                         sessionId={session.id}
                         transport={transport}
                         fontSize={15}
+                        touch={COARSE_POINTER}
                         onOpenTerminal={() => onLens('terminal')}
                     />
                 ) : (

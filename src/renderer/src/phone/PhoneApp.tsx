@@ -3,6 +3,8 @@ import { Laptop } from 'lucide-react'
 import type { PhoneMe, PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { getMe, getSessions, PhoneApiError } from './api'
 import { AlertsMenu } from './AlertsMenu'
+import { DropletPill } from './DropletPill'
+import { dropletFor, nextSeen, waitingElsewhere, type Droplet, type SeenState } from './droplets'
 import { PairScreen } from './PairScreen'
 import { SessionList } from './SessionList'
 import { SessionScreen, type SessionLens } from './SessionScreen'
@@ -64,6 +66,10 @@ export function PhoneApp() {
     const [offline, setOffline] = useState(false)
     const wide = useWide()
     const edge = useRef<{ x: number; y: number } | null>(null)
+    const [droplet, setDroplet] = useState<Droplet | null>(null)
+    const seen = useRef<Map<string, SeenState> | null>(null)
+    const openIdRef = useRef<string | null>(route.sessionId)
+    openIdRef.current = route.sessionId
 
     const loadMe = useCallback(() => {
         getMe().then(setMe).catch(() => setOffline(true))
@@ -81,6 +87,11 @@ export function PhoneApp() {
                     if (!stopped) {
                         setData(next)
                         setOffline(false)
+                        // another session asked or finished a long turn while this page is open
+                        const now = Date.now()
+                        const news = dropletFor(seen.current, next.sessions, openIdRef.current, now)
+                        seen.current = nextSeen(seen.current, next.sessions, now)
+                        if (news) setDroplet(news)
                     }
                 })
                 .catch((error) => {
@@ -127,6 +138,8 @@ export function PhoneApp() {
         }
     }, [])
 
+    const closeDroplet = useCallback(() => setDroplet(null), [])
+
     if (offline && !me) return <div className="phone-empty phone-fill">The Mac is not answering. Is CLI Manager running, with Settings › Phone on?</div>
     if (!me) return <div className="phone-empty phone-fill">Connecting to the Mac…</div>
     if (me.access === 'none') return <PairScreen reason={me.reason} onPaired={loadMe} />
@@ -138,6 +151,7 @@ export function PhoneApp() {
         navigate(next.id, next.agent ? rememberedLens(next.id) ?? 'chat' : 'terminal')
     }
     const showList = wide || !session || drawer
+    const badge = data ? waitingElsewhere(data.sessions, session?.id ?? null) : 0
 
     return (
         <div
@@ -180,6 +194,7 @@ export function PhoneApp() {
                         lens={lens}
                         role={me.role}
                         showMenuButton={!wide}
+                        menuBadge={badge}
                         onMenu={() => setDrawer(true)}
                         onLens={(next) => {
                             rememberLens(session.id, next)
@@ -189,6 +204,20 @@ export function PhoneApp() {
                 </main>
             )}
             {wide && !session && <main className="phone-main phone-empty">Pick a session.</main>}
+            {droplet && (
+                <DropletPill
+                    droplet={droplet}
+                    onClose={closeDroplet}
+                    onOpen={() => {
+                        const target = data?.sessions.find((s) => s.id === droplet.sessionId)
+                        setDroplet(null)
+                        if (target) {
+                            setDrawer(false)
+                            navigate(target.id, target.agent ? 'chat' : 'terminal')
+                        }
+                    }}
+                />
+            )}
         </div>
     )
 }
