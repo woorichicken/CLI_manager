@@ -13,6 +13,9 @@ import { getErrorMessage } from './utils/errorMessages'
 import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare, Bot } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
 import { SessionBreadcrumb } from './components/SessionBreadcrumb'
+import { SessionViewToggle } from './components/SessionViewToggle'
+import { SessionChatSlot } from './components/SessionChatSlot'
+import { isAgentSession } from './utils/agentSession'
 import { buildSessionBreadcrumb } from './utils/sessionBreadcrumb'
 import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
 import { HeaderChecklists } from './components/Checklists/HeaderChecklists'
@@ -575,9 +578,10 @@ function App() {
         return () => clearTimeout(timer)
     }, [sessionLinkNotice])
 
-    const activeAiControl = activeSession
-        ? workspaces.find(w => w.id === activeWorkspace?.id)?.sessions.find(s => s.id === activeSession.id)?.aiControl
+    const activeLiveSession = activeSession
+        ? workspaces.find(w => w.id === activeWorkspace?.id)?.sessions.find(s => s.id === activeSession.id)
         : undefined
+    const activeAiControl = activeLiveSession?.aiControl
 
     // Single view only: a split view shows several sessions at once and has no one place in a history.
     const sessionHistory = useSessionHistory(
@@ -1546,6 +1550,10 @@ function App() {
                                 Select a workspace to get started
                             </span>
                         ))}
+                        {/* Terminal | Chat — read the live session: cliToolName arrives after the CLI starts */}
+                        {!splitLayout && activeSession && isAgentSession(activeLiveSession) && (
+                            <SessionViewToggle sessionId={activeSession.id} />
+                        )}
                         {/* Read the live session, not activeSession: that object is not refreshed when the AI flag changes */}
                         {!splitLayout && activeAiControl && activeSession && (
                             <span
@@ -1900,6 +1908,12 @@ function App() {
                                             disablePtyResize={isInGridView}
                                             onSessionLink={handleSessionLink}
                                             linkSchemes={settings.terminalLinkSchemes}
+                                        />
+                                        <SessionChatSlot
+                                            sessionId={session.id}
+                                            visible={isVisible && !isInGridView}
+                                            enabled={isAgentSession(session)}
+                                            fontSize={settings.fontSize}
                                         />
                                         <SessionMemo
                                             ref={(handle) => {

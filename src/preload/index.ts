@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
+import type { ChatSendResult, ConversationSnapshot, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 
 // Custom APIs for renderer
 const api = {
@@ -342,7 +343,21 @@ const api = {
     addChecklistItem: (id: string, text: string): Promise<boolean> => ipcRenderer.invoke('add-checklist-item', id, text),
     updateChecklistItem: (id: string, itemId: string, patch: { text?: string; done?: boolean }): Promise<boolean> => ipcRenderer.invoke('update-checklist-item', id, itemId, patch),
     removeChecklistItem: (id: string, itemId: string): Promise<boolean> => ipcRenderer.invoke('remove-checklist-item', id, itemId),
-    peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds)
+    peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds),
+    // Chat view (ConversationService) — wrapped as a ChatTransport by renderer/src/utils/electronChatTransport.ts
+    getConversation: (sessionId: string, limit?: number): Promise<ConversationSnapshot | null> =>
+        ipcRenderer.invoke('conversation-get', sessionId, limit),
+    subscribeConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('conversation-subscribe', sessionId),
+    unsubscribeConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('conversation-unsubscribe', sessionId),
+    onConversationChanged: (callback: (change: { sessionId: string; revision: number }) => void) => {
+        const listener = (_e: unknown, change: { sessionId: string; revision: number }) => callback(change)
+        ipcRenderer.on('conversation-changed', listener)
+        return () => ipcRenderer.removeListener('conversation-changed', listener)
+    },
+    sendChatMessage: (sessionId: string, text: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send', sessionId, text),
+    cancelQueuedChat: (sessionId: string): Promise<void> => ipcRenderer.invoke('chat-cancel-queued', sessionId),
+    answerPrompt: (sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult> =>
+        ipcRenderer.invoke('prompt-answer', sessionId, answer)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

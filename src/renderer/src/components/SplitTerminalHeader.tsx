@@ -3,6 +3,8 @@ import { GripVertical, Search, LayoutGrid, GitBranch, Settings, X } from 'lucide
 import { TerminalSession, Workspace } from '../../../shared/types'
 import { RelatedSessionsButton } from './RelatedSessions/RelatedSessionsButton'
 import { SessionBreadcrumb } from './SessionBreadcrumb'
+import { SessionViewToggle } from './SessionViewToggle'
+import { isAgentSession } from '../utils/agentSession'
 import type { BreadcrumbSegment } from '../utils/sessionBreadcrumb'
 
 interface SplitTerminalHeaderProps {
@@ -145,6 +147,7 @@ export function SplitTerminalHeader({
 
             {/* Right: Action buttons */}
             <div className="flex items-center gap-0.5 shrink-0">
+                {isAgentSession(session) && <SessionViewToggle sessionId={session.id} compact />}
                 {onOpenRelated && (
                     <RelatedSessionsButton sessionId={session.id} count={relatedCount} onOpen={onOpenRelated} compact />
                 )}

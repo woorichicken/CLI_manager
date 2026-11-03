@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
+import type { ChatSendResult, ConversationSnapshot, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 
 declare global {
     interface Window {
@@ -235,6 +236,13 @@ declare global {
             updateChecklistItem: (id: string, itemId: string, patch: { text?: string; done?: boolean }) => Promise<boolean>
             removeChecklistItem: (id: string, itemId: string) => Promise<boolean>
             peekSessions: (sessionIds: string[]) => Promise<SessionPeek[]>
+            getConversation: (sessionId: string, limit?: number) => Promise<ConversationSnapshot | null>
+            subscribeConversation: (sessionId: string) => Promise<void>
+            unsubscribeConversation: (sessionId: string) => Promise<void>
+            onConversationChanged: (callback: (change: { sessionId: string; revision: number }) => void) => () => void
+            sendChatMessage: (sessionId: string, text: string) => Promise<ChatSendResult>
+            cancelQueuedChat: (sessionId: string) => Promise<void>
+            answerPrompt: (sessionId: string, answer: PromptAnswer) => Promise<PromptAnswerResult>
         }
     }
 }

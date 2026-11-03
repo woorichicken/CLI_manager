@@ -38,6 +38,9 @@ import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
 import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText } from './ChecklistStore'
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
+import { TranscriptReader } from './TranscriptReader'
+import { ConversationService } from './ConversationService'
+import type { PromptAnswer } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
@@ -356,12 +359,35 @@ const controlApiService = new ControlApiService({
         terminalEventLog.forget(sessionId)
         recentSessions.forget(sessionId)
         inbox.forget(sessionId)
+        conversationService.forget(sessionId)
     }
 })
 const controlApiServer = new ControlApiServer({
     service: controlApiService,
     store,
     appVersion: app.getVersion()
+})
+
+// Chat view: a session's conversation read from the agent's own transcript file, plus
+// what its screen says (working, a question menu). Watches only sessions a view is open on.
+const conversationService = new ConversationService({
+    session: (id) => {
+        const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
+        for (const workspace of workspaces) {
+            const session = workspace.sessions?.find((s) => s.id === id)
+            if (session) return { cwd: session.cwd || workspace.path, cliSessionId: session.cliSessionId, cliToolName: session.cliToolName }
+        }
+        return null
+    },
+    reader: new TranscriptReader({
+        claudeConfigDir: () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
+        codexHome: () => process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
+    }),
+    mirror: terminalMirror,
+    hasTerminal: (id) => terminalManager.hasTerminal(id),
+    writeInput: (id, data) => terminalManager.writeInput(id, data),
+    type: (id, text) => controlApiService.typeForChat(id, text),
+    onChange: (sessionId, revision) => broadcast('conversation-changed', { sessionId, revision })
 })
 
 // Sidebar status dots read from the screen mirrors (Settings > General). Off by default;
@@ -3299,6 +3325,52 @@ app.whenReady().then(async () => {
     ipcMain.handle('remove-checklist-item', (_e, id: unknown, itemId: unknown): boolean =>
         typeof id === 'string' && typeof itemId === 'string' && checklists.removeItem(id, itemId) !== null
     )
+    // Chat view (ConversationService). A window's subscriptions end with it.
+    const chatSubscriptions = new Map<number, Map<string, number>>()
+    ipcMain.handle('conversation-get', (_e, sessionId: string, limit?: number) =>
+        typeof sessionId === 'string' ? conversationService.getConversation(sessionId, typeof limit === 'number' ? limit : undefined) : null
+    )
+    ipcMain.handle('conversation-subscribe', (event, sessionId: string): void => {
+        if (typeof sessionId !== 'string') return
+        const sender = event.sender
+        let subs = chatSubscriptions.get(sender.id)
+        if (!subs) {
+            subs = new Map()
+            chatSubscriptions.set(sender.id, subs)
+            sender.once('destroyed', () => {
+                for (const [id, count] of chatSubscriptions.get(sender.id) ?? []) {
+                    for (let i = 0; i < count; i++) conversationService.unsubscribe(id)
+                }
+                chatSubscriptions.delete(sender.id)
+            })
+        }
+        subs.set(sessionId, (subs.get(sessionId) ?? 0) + 1)
+        conversationService.subscribe(sessionId)
+    })
+    ipcMain.handle('conversation-unsubscribe', (event, sessionId: string): void => {
+        const subs = chatSubscriptions.get(event.sender.id)
+        const count = subs?.get(sessionId) ?? 0
+        if (!subs || count === 0) return
+        if (count === 1) subs.delete(sessionId)
+        else subs.set(sessionId, count - 1)
+        conversationService.unsubscribe(sessionId)
+    })
+    ipcMain.handle('chat-send', (_e, sessionId: string, text: string) =>
+        typeof sessionId === 'string' && typeof text === 'string'
+            ? conversationService.send(sessionId, text)
+            : { status: 'rejected', reason: 'empty', message: 'Nothing to send.' }
+    )
+    ipcMain.handle('chat-cancel-queued', (_e, sessionId: string): void => {
+        if (typeof sessionId === 'string') conversationService.cancelQueued(sessionId)
+    })
+    ipcMain.handle('prompt-answer', (_e, sessionId: string, answer: PromptAnswer) => {
+        const valid = typeof sessionId === 'string' && answer && typeof answer.signature === 'string' &&
+            (('optionIndex' in answer && Number.isInteger(answer.optionIndex)) || ('customText' in answer && typeof answer.customText === 'string'))
+        return valid
+            ? conversationService.answerPrompt(sessionId, answer)
+            : { status: 'rejected', reason: 'bad_answer', message: 'Pick an option or type an answer.' }
+    })
+
     ipcMain.handle('peek-sessions', (_e, sessionIds: string[]) =>
         controlApiService.peekSessions(Array.isArray(sessionIds) ? sessionIds.filter((id) => typeof id === 'string') : [])
     )

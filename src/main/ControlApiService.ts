@@ -627,6 +627,16 @@ export class ControlApiService {
         return this.describe(workspace, session)
     }
 
+    /**
+     * The Chat view's send (ConversationService): the API's own typing path —
+     * bracketed paste for several lines, Enter retried while the prompt stays in
+     * the box, text refused (409 awaiting_input) while a question is on screen —
+     * but the person is typing, not an AI, so the session gets no AI mark.
+     */
+    async typeForChat(sessionId: string, text: string): Promise<boolean> {
+        return this.typeAndSubmit(sessionId, { text, submit: true })
+    }
+
     /** Returns false only when the text is provably still sitting unsubmitted in the input box. */
     private async typeAndSubmit(sessionId: string, input: SendInputInput): Promise<boolean> {
         this.requireSession(sessionId)
