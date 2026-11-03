@@ -1,3 +1,4 @@
+import { ChatViewSettings } from './ChatViewSettings'
 import React, { useState, useEffect } from 'react'
 import { UserSettings, EditorType, TerminalTemplate, HooksSettings, LoopDetectionConfig, LoopCountMode, DEFAULT_LOOP_DETECTION } from '../../../shared/types'
 import { X, Check, AlertCircle, CircleAlert, Plus, Trash2, Code2, Play, Package, GitBranch, Terminal, Settings as SettingsIcon, Bell, Monitor, Github, FolderOpen, Folder, Download, RefreshCw, Loader2, Home, Keyboard, Bug, Webhook, HelpCircle, ExternalLink, GripVertical, Bot } from 'lucide-react'
@@ -290,6 +291,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                 {categories.map(category => (
                                     <button
                                         key={category.id}
+                                        data-testid={`settings-category-${category.id}`}
                                         onClick={() => setActiveCategory(category.id)}
                                         className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors ${activeCategory === category.id
                                                 ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
@@ -1008,6 +1010,9 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Chat view (the Terminal / Chat switch in agent sessions' headers) */}
+                                    <ChatViewSettings settings={settings} setSettings={setSettings} />
 
                                     {/* Terminal Preview */}
                                     <div className="mt-6 pt-6 border-t border-white/10">

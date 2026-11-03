@@ -1,3 +1,4 @@
+import type { ChatPreferences } from './conversation'
 export type NotificationStatus = 'none' | 'info' | 'error' | 'success' | 'warning'
 
 // Session status for Claude Code monitoring (claude-squad 방식)
@@ -228,6 +229,8 @@ export interface UserSettings {
     loopDetection?: LoopDetectionConfig
     // Local HTTP/MCP API that lets an AI open and drive terminal sessions
     controlApi?: ControlApiSettings
+    // Chat view (Settings › Terminal › Chat view): Enter behavior, quick replies
+    chat?: ChatPreferences
 }
 
 // Hooks settings for AI tool session monitoring
@@ -331,6 +334,7 @@ export type ShortcutAction =
     | 'toggleMemo' | 'toggleRelated' | 'toggleChecklists'
     | 'revealInFinder' | 'openInEditor'
     | 'memoNewPage' | 'memoPrevPage' | 'memoNextPage' | 'memoDeletePage' | 'memoCopyPage'
+    | 'toggleChatView' | 'focusChatInput' | 'scrollPaneUp' | 'scrollPaneDown'
 
 /** The memo actions a shortcut runs on the active session's memo (its header buttons). */
 export type MemoShortcutAction = Extract<ShortcutAction, `memo${string}`>
@@ -369,9 +373,15 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     memoNextPage:    { key: 'ArrowRight', modifiers: ['mod', 'alt'], code: 'ArrowRight' },
     memoDeletePage:  { key: 'Backspace', modifiers: ['mod', 'alt'], code: 'Backspace' },
     memoCopyPage:    { key: 'C', modifiers: ['mod', 'alt'], code: 'c' },
+    // Chat view. ovis uses Mod+Shift+J (Checklists here) and Mod+Shift+E (Open in Editor here), so:
+    // M for messages, I for input. Mod+Shift chords never reach the terminal.
+    toggleChatView:  { key: 'M', modifiers: ['mod', 'shift'], code: 'm' },
+    focusChatInput:  { key: 'I', modifiers: ['mod', 'shift'], code: 'i' },
+    scrollPaneUp:    { key: 'PageUp', modifiers: ['mod', 'shift'], code: 'PageUp' },
+    scrollPaneDown:  { key: 'PageDown', modifiers: ['mod', 'shift'], code: 'PageDown' },
 }
 
-export type ShortcutGroup = 'navigation' | 'splitView' | 'search' | 'ui' | 'actions' | 'memo'
+export type ShortcutGroup = 'navigation' | 'splitView' | 'search' | 'ui' | 'actions' | 'memo' | 'chat'
 
 export interface ShortcutInfo {
     label: string
@@ -404,6 +414,10 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
     memoNextPage:    { label: 'Next Memo Page',      description: 'Show the next memo page',                  group: 'memo' },
     memoDeletePage:  { label: 'Delete Memo Page',    description: 'Delete the page shown — press twice when it has text', group: 'memo' },
     memoCopyPage:    { label: 'Copy Memo Page',      description: 'Copy the page shown to the clipboard',     group: 'memo' },
+    toggleChatView:  { label: 'Terminal / Chat',     description: 'Switch the session between its terminal and its chat', group: 'chat' },
+    focusChatInput:  { label: 'Focus Message Box',   description: "Put the cursor in the chat's message box (the terminal in Terminal view)", group: 'chat' },
+    scrollPaneUp:    { label: 'Scroll Up a Page',    description: 'Scroll the chat (or the terminal) up a page, keeping one line', group: 'chat' },
+    scrollPaneDown:  { label: 'Scroll Down a Page',  description: 'Scroll the chat (or the terminal) down a page, keeping one line', group: 'chat' },
 }
 
 export const SHORTCUT_GROUP_NAMES: Record<ShortcutGroup, string> = {
@@ -413,6 +427,7 @@ export const SHORTCUT_GROUP_NAMES: Record<ShortcutGroup, string> = {
     ui: 'UI',
     actions: 'Actions',
     memo: 'Memo',
+    chat: 'Chat View',
 }
 
 // ============================================

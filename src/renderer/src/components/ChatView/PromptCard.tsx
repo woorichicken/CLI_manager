@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { HelpCircle, ShieldQuestion, Terminal as TerminalIcon } from 'lucide-react'
+import { Check, HelpCircle, ShieldQuestion, Terminal as TerminalIcon, X } from 'lucide-react'
 import type { ChatTransport, PromptAnswer, PromptMenu } from '../../../../shared/conversation'
 
 /**
@@ -14,13 +14,20 @@ export function PromptCard({
     prompt,
     transport,
     onOpenTerminal,
-    onAnswered
+    onAnswered,
+    picked = null,
+    onConfirmPick,
+    onCancelPick
 }: {
     sessionId: string
     prompt: PromptMenu
     transport: ChatTransport
     onOpenTerminal: () => void
     onAnswered: () => void
+    /** an option number typed in the composer, waiting for Enter (ovis "type its number") */
+    picked?: number | null
+    onConfirmPick?: () => void
+    onCancelPick?: () => void
 }) {
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -65,7 +72,7 @@ export function PromptCard({
                         <button
                             key={option.index}
                             type="button"
-                            className={`chat-prompt-option${option.selected ? ' is-selected' : ''}`}
+                            className={`chat-prompt-option${option.selected ? ' is-selected' : ''}${picked !== null && option.number === picked ? ' is-picked' : ''}`}
                             data-testid="chat-prompt-option"
                             data-index={option.index}
                             disabled={busy || !prompt.answerable}
@@ -98,6 +105,19 @@ export function PromptCard({
                         Answer
                     </button>
                 </form>
+            )}
+            {picked !== null && (
+                <div className="chat-prompt-picked" data-testid="chat-prompt-picked" role="status">
+                    <span>
+                        Option {picked} picked — <kbd>Enter</kbd> confirms · <kbd>Esc</kbd> cancels
+                    </span>
+                    <button type="button" data-testid="chat-prompt-confirm" disabled={busy} onClick={onConfirmPick}>
+                        <Check size={12} aria-hidden="true" /> Confirm
+                    </button>
+                    <button type="button" onClick={onCancelPick} aria-label="Cancel">
+                        <X size={12} aria-hidden="true" />
+                    </button>
+                </div>
             )}
             {error && (
                 <p className="chat-prompt-error" role="alert" data-testid="chat-prompt-error">

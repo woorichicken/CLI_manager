@@ -1,24 +1,56 @@
 // From ovis (https://github.com/devswha/ovis, 3e51902) — MIT, Copyright (c) 2026 devswha. Modified.
 // Source: src/components/Markdown.tsx — Inline, List, CodeBlock, Blocks and Markdown, cut down to what the chat
 // draws here. Not ported: KaTeX math and Mermaid/SVG figures (shown as their source / a code block), markdown
-// images (shown as their link), the file viewer, skill chips, the web panel, i18n. Links open in the system
-// browser through the app's own link handling (target=_blank → shell.openExternal in main).
+// images (shown as their link), skill chips, the web panel, i18n. Links open in the system browser through
+// the app's own link handling (target=_blank → shell.openExternal in main). File paths open through the
+// chat's actions (ChatActionsContext → the app's file preview), as ovis FilePathLink does.
 import { memo, useMemo, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
+import { useChatActions } from '../chatContext'
+import { codeIsFilePath, FILE_LINK_COUNT, FILE_LINK_LIMIT, splitFilePaths } from '../chatLib'
 import { foldCode, parseMarkdown, type InlineNode, type ListBlock, type MarkdownBlock } from './parseMarkdown'
 import { languageForFence } from './highlight'
 import { HighlightedCode } from './HighlightedCode'
 
+/** A file path the chat can open: a button that reads as the text or code it replaced. */
+export function FilePathLink({ path, code, open }: { path: string; code: boolean; open: (path: string) => void }) {
+    return (
+        <button type="button" className={`chat-file-link${code ? ' is-code' : ''}`} title={`Open ${path}`} data-testid="chat-file-link" onClick={() => open(path)}>
+            {code ? <code>{path}</code> : path}
+        </button>
+    )
+}
+
+/** `text` with the file paths in it as links (`saved to docs/demo.mp4`). Plain where nothing can open one. */
+export function LinkedText({ text }: { text: string }) {
+    const actions = useChatActions()
+    if (!actions || text.length > FILE_LINK_LIMIT) return <>{text}</>
+    const parts = splitFilePaths(text)
+    if (parts.length === 1 && typeof parts[0] === 'string') return <>{text}</>
+    if (parts.filter((part) => typeof part !== 'string').length > FILE_LINK_COUNT) return <>{text}</>
+    return (
+        <>
+            {parts.map((part, index) =>
+                typeof part === 'string' ? <span key={index}>{part}</span> : <FilePathLink key={index} path={part.path} code={false} open={actions.openPath} />
+            )}
+        </>
+    )
+}
+
 /** `interactive` is false inside a link label: nothing clickable nests in another. */
 function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactive?: boolean }) {
+    const actions = useChatActions()
     return (
         <>
             {nodes.map((node, index) => {
                 const key = `${node.type}-${index}`
                 switch (node.type) {
                     case 'text':
-                        return <span key={key}>{node.value}</span>
+                        return interactive && actions ? <LinkedText key={key} text={node.value} /> : <span key={key}>{node.value}</span>
                     case 'code':
+                        if (interactive && actions && codeIsFilePath(node.value)) {
+                            return <FilePathLink key={key} path={node.value} code open={actions.openPath} />
+                        }
                         // agents often put an address in backticks: it stays code to the eye, and opens
                         if (interactive && /^https?:\/\/\S+$/i.test(node.value)) {
                             return (
@@ -60,6 +92,13 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                         )
                     // a link to a local file: the path shows after its words, as Codex's terminal does
                     case 'file':
+                        if (interactive && actions) {
+                            return (
+                                <button key={key} type="button" className="chat-file-link" title={`Open ${node.path}`} data-testid="chat-file-link" onClick={() => actions.openPath(node.path)}>
+                                    <Inline nodes={node.children} interactive={false} />
+                                </button>
+                            )
+                        }
                         return (
                             <span key={key}>
                                 <Inline nodes={node.children} interactive={false} /> (<code>{node.path}</code>)

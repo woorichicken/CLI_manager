@@ -32,7 +32,7 @@ function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
     return { ...DEFAULT_SHORTCUTS, ...settings.keyboard?.shortcuts }
 }
 
-const GROUP_ORDER: ShortcutGroup[] = ['navigation', 'splitView', 'search', 'ui', 'actions', 'memo']
+const GROUP_ORDER: ShortcutGroup[] = ['navigation', 'splitView', 'search', 'ui', 'actions', 'chat', 'memo']
 
 function ShortcutRow({
     action,

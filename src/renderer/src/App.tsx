@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Sidebar } from './components/Sidebar/index'
-import { TerminalView, requestOpenTerminalPath } from './components/TerminalView'
+import { TerminalView, requestOpenTerminalPath, requestTerminalPage } from './components/TerminalView'
 import { SessionMemo, SessionMemoHandle } from './components/SessionMemo'
 import { StatusBar } from './components/StatusBar'
 import { Settings } from './components/Settings'
@@ -15,7 +15,10 @@ import { SplitTerminalHeader } from './components/SplitTerminalHeader'
 import { SessionBreadcrumb } from './components/SessionBreadcrumb'
 import { SessionViewToggle } from './components/SessionViewToggle'
 import { SessionChatSlot } from './components/SessionChatSlot'
+import { ChatFilePreview } from './components/ChatFilePreview'
 import { isAgentSession } from './utils/agentSession'
+import { getSessionViewMode, setSessionViewMode } from './hooks/useSessionViewMode'
+import { sendChatCommand } from './components/ChatView/chatContext'
 import { buildSessionBreadcrumb } from './utils/sessionBreadcrumb'
 import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
 import { HeaderChecklists } from './components/Checklists/HeaderChecklists'
@@ -1191,6 +1194,26 @@ function App() {
             }
         },
         onOpenSessionPath: requestOpenTerminalPath,
+        // Chat view (Settings › Keyboard › Chat View). The session in view; only agent sessions have a chat.
+        onToggleChatView: (sessionId) => {
+            const session = workspaces.flatMap(w => w.sessions ?? []).find(s => s.id === sessionId)
+            if (!isAgentSession(session)) return
+            const next = getSessionViewMode(sessionId) === 'chat' ? 'terminal' : 'chat'
+            setSessionViewMode(sessionId, next)
+            // the keys follow the eyes: the chat's box, or the terminal
+            window.setTimeout(() => {
+                if (next === 'chat') sendChatCommand(sessionId, 'focus')
+                else document.querySelector<HTMLTextAreaElement>(`[data-session-id="${CSS.escape(sessionId)}"] .xterm-helper-textarea`)?.focus()
+            }, 60)
+        },
+        onFocusChatInput: (sessionId) => {
+            if (getSessionViewMode(sessionId) === 'chat' && sendChatCommand(sessionId, 'focus')) return
+            document.querySelector<HTMLTextAreaElement>(`[data-session-id="${CSS.escape(sessionId)}"] .xterm-helper-textarea`)?.focus()
+        },
+        onScrollPane: (sessionId, direction) => {
+            if (getSessionViewMode(sessionId) === 'chat' && sendChatCommand(sessionId, direction < 0 ? 'pageUp' : 'pageDown')) return
+            requestTerminalPage(sessionId, direction)
+        },
     })
 
     const handleAddWorktreeWorkspace = async (parentWorkspaceId: string, branchName: string) => {
@@ -1919,6 +1942,7 @@ function App() {
                                             visible={isVisible && !isInGridView}
                                             enabled={isAgentSession(session)}
                                             fontSize={settings.fontSize}
+                                            preferences={settings.chat}
                                         />
                                         <SessionMemo
                                             ref={(handle) => {
@@ -2091,6 +2115,9 @@ function App() {
                 onFileSelect={handleFileSelect}
                 initialMode={fileSearchMode}
             />
+
+            {/* Files the Chat view names: pictures and text previewed, the rest in the Mac's own app */}
+            <ChatFilePreview />
 
             {/* Feedback widget — dev builds, or a machine unlocked in Settings > Feedback */}
             <FeedbackGate />

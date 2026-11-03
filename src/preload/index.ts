@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
-import type { ChatSendResult, ConversationSnapshot, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { AttachResult, ChatCommand, ChatSendResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 
 // Custom APIs for renderer
 const api = {
@@ -356,6 +356,14 @@ const api = {
     },
     sendChatMessage: (sessionId: string, text: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send', sessionId, text),
     cancelQueuedChat: (sessionId: string): Promise<void> => ipcRenderer.invoke('chat-cancel-queued', sessionId),
+    discardQueuedChat: (sessionId: string, id: string): Promise<void> => ipcRenderer.invoke('chat-discard-queued', sessionId, id),
+    sendQueuedChatNow: (sessionId: string, id: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send-queued-now', sessionId, id),
+    interruptChat: (sessionId: string): Promise<InterruptResult> => ipcRenderer.invoke('chat-interrupt', sessionId),
+    getChatImage: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-image', sessionId, ref),
+    getChatToolOutput: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-tool-output', sessionId, ref),
+    listChatCommands: (sessionId: string): Promise<ChatCommand[]> => ipcRenderer.invoke('chat-commands', sessionId),
+    saveChatAttachment: (name: string, bytes: Uint8Array): Promise<AttachResult> => ipcRenderer.invoke('chat-save-attachment', name, bytes),
+    openChatPath: (target: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target),
     answerPrompt: (sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult> =>
         ipcRenderer.invoke('prompt-answer', sessionId, answer)
 }

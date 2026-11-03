@@ -1,10 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDown, Clock, Loader2, Terminal as TerminalIcon, X } from 'lucide-react'
-import type { ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown, Clock, Loader2, Terminal as TerminalIcon } from 'lucide-react'
+import type { ChatCommand, ChatPreferences, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
+import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
-import { Composer } from './Composer'
+import { Composer, type ComposerHandle } from './Composer'
+import { ArtifactsChip, ContextChip, ModelChip, PlanChip } from './ComposerChips'
+import { ImageLightbox } from './ChatImages'
 import { PromptCard } from './PromptCard'
+import { QueuedMessages } from './QueuedMessages'
 import { useConversation } from './useConversation'
+import { useElapsed } from './WorkBlock'
+import { ChatActionsContext, onChatCommand, type ChatActions, type GalleryImage } from './chatContext'
+import { artifactLinks, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
 import './chat.css'
 
 /**
@@ -20,31 +27,94 @@ import './chat.css'
 export interface ChatViewProps {
     sessionId: string
     transport: ChatTransport
-    onOpenTerminal: () => void
+    /** `command` names what was sent when a command only the terminal can show opened it */
+    onOpenTerminal: (command?: string) => void
     fontSize?: number
+    preferences?: ChatPreferences
 }
 
 /** Within this many pixels of the end, new turns keep the view pinned to the bottom. */
 const STICK_PX = 80
+/** "Show earlier" asks for this many more turns. */
+const MORE_TURNS = 200
+/** A sent message waits faded this long for its turn; a clock joins it after CLOCK_MS. */
+const SENT_WAIT_MS = 60_000
+const CLOCK_MS = 5_000
+/** The agent's clock and this one may differ by a little. */
+const CLOCK_SKEW_MS = 10_000
+/** The rail of sent messages shows from this many. */
+const RAIL_MIN = 4
+/** The rail shows the newest this many. */
+const RAIL_MAX = 40
+/** The rail needs this much room left of the column (ovis: 32px margin). */
+const RAIL_MARGIN_PX = 32
 
 const NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14 }: ChatViewProps) {
-    const { snapshot, refresh } = useConversation(transport, sessionId)
+/** Where each session's chat was scrolled (ovis chatScrollMemory): back to the same place, unless it was at the end. */
+const scrollMemory = new Map<string, { top: number; pinned: boolean }>()
+
+/** Each session's command list, for telling which sent commands open the terminal. */
+const commandLists = new Map<string, Promise<ChatCommand[]>>()
+function commandsFor(transport: ChatTransport, sessionId: string): Promise<ChatCommand[]> {
+    let list = commandLists.get(sessionId)
+    if (!list) {
+        list = transport.listCommands(sessionId).catch(() => [])
+        commandLists.set(sessionId, list)
+    }
+    return list
+}
+
+interface SentWaiting {
+    id: number
+    text: string
+    at: number
+}
+let sentSequence = 0
+
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {} }: ChatViewProps) {
+    const [limit, setLimit] = useState(CHAT_TURN_LIMIT)
+    const { snapshot, refresh } = useConversation(transport, sessionId, limit)
     const scroller = useRef<HTMLDivElement>(null)
+    const column = useRef<HTMLDivElement>(null)
+    const composer = useRef<ComposerHandle>(null)
     const pinned = useRef(true)
     const [showJump, setShowJump] = useState(false)
+    const [sent, setSent] = useState<SentWaiting[]>([])
+    const [now, setNow] = useState(() => Date.now())
+    const [picked, setPicked] = useState<number | null>(null)
+    const [gallery, setGallery] = useState<{ images: GalleryImage[]; index: number } | null>(null)
+    const [railRoom, setRailRoom] = useState(false)
 
-    // Opening a chat starts at its end.
+    // Opening a chat starts where it was left, or at its end.
     useEffect(() => {
-        pinned.current = true
+        const remembered = scrollMemory.get(sessionId)
+        pinned.current = remembered?.pinned ?? true
+        setLimit(CHAT_TURN_LIMIT)
+        setSent([])
+        setPicked(null)
+        setGallery(null)
+        return () => {
+            const element = scroller.current
+            if (element) scrollMemory.set(sessionId, { top: element.scrollTop, pinned: pinned.current })
+        }
     }, [sessionId])
 
+    const restored = useRef<string | null>(null)
     useLayoutEffect(() => {
         const element = scroller.current
-        if (!element || !pinned.current) return
-        element.scrollTop = element.scrollHeight
-    }, [snapshot])
+        if (!element || !snapshot) return
+        if (restored.current !== sessionId) {
+            restored.current = sessionId
+            const remembered = scrollMemory.get(sessionId)
+            if (remembered && !remembered.pinned) {
+                element.scrollTop = remembered.top
+                setShowJump(true)
+                return
+            }
+        }
+        if (pinned.current) element.scrollTop = element.scrollHeight
+    }, [snapshot, sent, sessionId])
 
     const onScroll = (): void => {
         const element = scroller.current
@@ -62,83 +132,301 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14 }
         setShowJump(false)
     }
 
-    const agentName = snapshot?.agent ? NAMES[snapshot.agent] : 'the agent'
+    /** One page, keeping one line of the last page in view (ovis pageScrollDistance). */
+    const page = useCallback((direction: 1 | -1): void => {
+        const element = scroller.current
+        if (!element) return
+        const line = parseFloat(getComputedStyle(element).lineHeight) || 20
+        element.scrollTop += direction * Math.max(1, element.clientHeight - line)
+        onScroll()
+    }, [])
+
+    // The app's shortcuts reach this session's chat through the bus (App → sendChatCommand).
+    useEffect(
+        () =>
+            onChatCommand(sessionId, (command) => {
+                if (command === 'focus') composer.current?.focus()
+                else page(command === 'pageUp' ? -1 : 1)
+            }),
+        [sessionId, page]
+    )
+
+    // The rail needs room beside the column.
+    useLayoutEffect(() => {
+        const element = scroller.current
+        if (!element || typeof ResizeObserver === 'undefined') return
+        const measure = (): void => {
+            const columnWidth = column.current?.getBoundingClientRect().width ?? 0
+            setRailRoom((element.clientWidth - columnWidth) / 2 >= RAIL_MARGIN_PX)
+        }
+        measure()
+        const observer = new ResizeObserver(measure)
+        observer.observe(element)
+        return () => observer.disconnect()
+    }, [])
+
+    // A sent message waits faded until its turn is written, at most a minute.
+    useEffect(() => {
+        if (sent.length === 0) return
+        const timer = window.setInterval(() => setNow(Date.now()), 1000)
+        return () => window.clearInterval(timer)
+    }, [sent.length])
+    useEffect(() => {
+        if (!snapshot || sent.length === 0) return
+        // a user turn with the same words, written after it was sent (a clock a few seconds off still counts)
+        const written = snapshot.turns
+            .filter((turn) => turn.role === 'user')
+            .flatMap((turn) => turn.parts.flatMap((part) => (part.kind === 'text' ? [{ text: part.text.trim(), at: turn.ts ? Date.parse(turn.ts) : NaN }] : [])))
+        const arrived = (item: SentWaiting): boolean =>
+            written.some((turn) => turn.text === item.text.trim() && (!Number.isFinite(turn.at) || turn.at >= item.at - CLOCK_SKEW_MS))
+        setSent((current) => {
+            const next = current.filter((item) => !arrived(item) && now - item.at < SENT_WAIT_MS)
+            return next.length === current.length ? current : next
+        })
+    }, [snapshot, sent.length, now])
+
+    // A picked number belongs to one menu.
+    const signature = snapshot?.prompt?.signature ?? null
+    useEffect(() => setPicked(null), [signature])
+
+    const cwd = snapshot?.cwd
+    const home = snapshot?.home
+    const actions = useMemo<ChatActions>(
+        () => ({
+            sessionId,
+            transport,
+            openPath: (target: string) => {
+                const { path, line } = fileLineTarget(target)
+                transport.openFile(sessionId, resolveChatPath(path, cwd, home), line ?? undefined)
+            },
+            openGallery: (images, index) => setGallery({ images, index })
+        }),
+        [sessionId, transport, cwd, home]
+    )
+
+    const sendText = useCallback(
+        async (text: string): Promise<ChatSendResult> => {
+            // the person's words show at once, faded, while they are typed into the terminal
+            const bubble = isCommandText(text) ? null : { id: ++sentSequence, text, at: Date.now() }
+            if (bubble) {
+                pinned.current = true
+                setSent((current) => [...current, bubble])
+            }
+            const result = await transport.send(sessionId, text)
+            // refused, or waiting in the queue (shown there): not on its way
+            if (bubble && result.status !== 'sent') setSent((current) => current.filter((item) => item.id !== bubble.id))
+            if (result.status === 'sent' && !bubble) {
+                const command = terminalCommand(text, await commandsFor(transport, sessionId))
+                if (command) onOpenTerminal(command)
+            }
+            refresh()
+            return result
+        },
+        [onOpenTerminal, refresh, sessionId, transport]
+    )
+
+    const interrupt = useCallback(async (): Promise<string | null> => {
+        try {
+            const result = await transport.interrupt(sessionId)
+            refresh()
+            return result.status === 'stopped' ? null : result.message
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error)
+        }
+    }, [refresh, sessionId, transport])
+
+    const confirmPick = useCallback(async (): Promise<void> => {
+        const prompt = snapshot?.prompt
+        const option = prompt?.options.find((item) => item.number === picked)
+        setPicked(null)
+        if (!prompt || !option) return
+        await transport.answerPrompt(sessionId, { signature: prompt.signature, optionIndex: option.index }).catch(() => undefined)
+        refresh()
+    }, [picked, refresh, sessionId, snapshot?.prompt, transport])
+
+    const agent = snapshot?.agent ?? null
+    const agentName = agent ? NAMES[agent] : 'the agent'
+    const prompt = snapshot?.prompt ?? null
+    const working = Boolean(snapshot?.working && !prompt)
+    const turns = snapshot?.turns ?? []
+    const todos = useMemo(() => latestTodos(turns), [turns])
+    const artifacts = useMemo(() => artifactLinks(turns), [turns])
+    const lastUser = useMemo(() => {
+        for (let index = turns.length - 1; index >= 0; index--) if (turns[index].role === 'user') return turns[index].ts
+        return null
+    }, [turns])
+    const elapsed = useElapsed(working ? lastUser : null)
+    const promptOptions = prompt ? (prompt.answerable ? prompt.options.flatMap((option) => (option.number !== null && !option.custom ? [option.number] : [])) : []) : null
+
+    const rail = useMemo(
+        () =>
+            turns.flatMap((turn, index) => {
+                if (turn.role !== 'user') return []
+                const words = turn.parts.flatMap((part) => (part.kind === 'text' && !INTERRUPTED_TEXT.test(part.text.trim()) ? [part.text] : [])).join(' ')
+                return words ? [{ index, words }] : []
+            }),
+        [turns]
+    )
+    const jumpTo = (index: number): void => {
+        const target = scroller.current?.querySelector(`[data-turn-index="${index}"]`)
+        if (!target) return
+        pinned.current = false
+        target.scrollIntoView({ block: 'start' })
+    }
+
     return (
-        <div className="chat-view" data-testid="chat-view" data-session-id={sessionId} style={{ fontSize: `${fontSize}px` }}>
-            <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
-                <div className="chat-column">
-                    {snapshot === null ? (
-                        <div className="chat-empty">
-                            <Loader2 size={16} className="animate-spin" /> Reading the conversation…
-                        </div>
-                    ) : snapshot.unavailable ? (
-                        <Unavailable snapshot={snapshot} onOpenTerminal={onOpenTerminal} />
-                    ) : (
-                        <Turns snapshot={snapshot} />
-                    )}
-                    {snapshot && snapshot.queued.length > 0 && (
-                        <div className="chat-queued" data-testid="chat-queued">
-                            {snapshot.queued.map((text, index) => (
-                                <div key={index} className="chat-user-bubble is-queued">
-                                    {text}
-                                </div>
-                            ))}
-                            <div className="chat-queued-note">
-                                <Clock size={12} aria-hidden="true" /> Sends when {agentName} finishes this turn
-                                <button type="button" className="chat-link-button" onClick={() => void transport.cancelQueued(sessionId).then(refresh)}>
-                                    <X size={12} aria-hidden="true" /> Cancel
-                                </button>
+        <ChatActionsContext.Provider value={actions}>
+            <div
+                className="chat-view"
+                data-testid="chat-view"
+                data-session-id={sessionId}
+                style={{ fontSize: `${fontSize}px` }}
+                onKeyDownCapture={(event) => {
+                    // plain PageUp/PageDown read the chat, even from the message box (its draft and caret stay)
+                    if ((event.key === 'PageUp' || event.key === 'PageDown') && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+                        event.preventDefault()
+                        page(event.key === 'PageUp' ? -1 : 1)
+                    }
+                }}
+                onDragOver={(event) => {
+                    if (event.dataTransfer.types.includes('Files')) event.preventDefault()
+                }}
+                onDrop={(event) => {
+                    if (event.dataTransfer.files.length === 0) return
+                    event.preventDefault()
+                    composer.current?.addFiles(Array.from(event.dataTransfer.files))
+                }}
+            >
+                {railRoom && rail.length >= RAIL_MIN && (
+                    <nav className="chat-rail" aria-label="Your messages" data-testid="chat-rail">
+                        {rail.slice(-RAIL_MAX).map((item) => (
+                            <button key={item.index} type="button" className="chat-rail-dash" data-testid="chat-rail-dash" title={item.words.slice(0, 120)} aria-label={`Go to: ${item.words.slice(0, 60)}`} onClick={() => jumpTo(item.index)} />
+                        ))}
+                    </nav>
+                )}
+                <div className="chat-scroll" ref={scroller} onScroll={onScroll} data-testid="chat-scroll">
+                    <div className="chat-column" ref={column}>
+                        {snapshot === null ? (
+                            <div className="chat-empty">
+                                <Loader2 size={16} className="animate-spin" /> Reading the conversation…
                             </div>
-                        </div>
-                    )}
-                    {snapshot?.working && !snapshot.prompt && (
-                        <div className="chat-working" data-testid="chat-working">
-                            <Loader2 size={13} className="animate-spin text-blue-300" aria-hidden="true" /> {agentName} is working…
-                        </div>
-                    )}
+                        ) : snapshot.unavailable ? (
+                            <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
+                        ) : (
+                            <Turns snapshot={snapshot} onShowEarlier={() => (pinned.current = false, setLimit((current) => current + MORE_TURNS))} />
+                        )}
+                        {sent.length > 0 && (
+                            <div className="chat-sent" data-testid="chat-sent-waiting">
+                                {sent.map((item) => (
+                                    <div key={item.id} className="chat-turn chat-turn-user">
+                                        <div className="chat-user-bubble is-sending" data-testid="chat-sent-bubble">
+                                            {item.text}
+                                            {now - item.at >= CLOCK_MS && <Clock size={11} className="chat-sent-clock" aria-label="Not written yet" data-testid="chat-sent-clock" />}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {snapshot && (
+                            <QueuedMessages
+                                sessionId={sessionId}
+                                transport={transport}
+                                queued={snapshot.queued}
+                                agentName={agentName}
+                                onEdit={(text) => composer.current?.editText(text)}
+                                onChanged={refresh}
+                            />
+                        )}
+                        {working && (
+                            <div className="chat-working" data-testid="chat-working">
+                                <Loader2 size={13} className="animate-spin text-blue-300" aria-hidden="true" /> {agentName} is working…
+                                {elapsed && (
+                                    <span className="chat-working-time" data-testid="chat-working-time">
+                                        {elapsed}
+                                    </span>
+                                )}
+                                <span className="chat-working-hint">Esc stops</span>
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
-            {showJump && (
-                <button type="button" className="chat-jump" onClick={jumpToEnd} aria-label="Jump to the latest message">
-                    <ArrowDown size={14} />
-                </button>
-            )}
-            <div className="chat-bottom">
-                <div className="chat-column">
-                    {snapshot?.prompt && (
-                        <PromptCard sessionId={sessionId} prompt={snapshot.prompt} transport={transport} onOpenTerminal={onOpenTerminal} onAnswered={refresh} />
-                    )}
-                    <Composer
-                        sessionId={sessionId}
-                        transport={transport}
-                        agentName={agentName}
-                        disabled={Boolean(snapshot?.prompt)}
-                        disabledReason="Answer the question above first"
-                        onSent={refresh}
-                    />
+                {showJump && (
+                    <button type="button" className="chat-jump" onClick={jumpToEnd} aria-label="Jump to the latest message">
+                        <ArrowDown size={14} />
+                    </button>
+                )}
+                <div className="chat-bottom">
+                    <div className="chat-column">
+                        {prompt && (
+                            <PromptCard
+                                sessionId={sessionId}
+                                prompt={prompt}
+                                transport={transport}
+                                onOpenTerminal={() => onOpenTerminal()}
+                                onAnswered={refresh}
+                                picked={picked}
+                                onConfirmPick={() => void confirmPick()}
+                                onCancelPick={() => setPicked(null)}
+                            />
+                        )}
+                        <Composer
+                            ref={composer}
+                            sessionId={sessionId}
+                            transport={transport}
+                            agentName={agentName}
+                            codex={agent === 'codex'}
+                            working={working}
+                            promptOptions={promptOptions}
+                            pendingPick={picked !== null}
+                            onPick={setPicked}
+                            onConfirmPick={() => void confirmPick()}
+                            onCancelPick={() => setPicked(null)}
+                            preferences={preferences}
+                            onSend={sendText}
+                            onInterrupt={interrupt}
+                            status={
+                                <>
+                                    <PlanChip items={todos} />
+                                    <ArtifactsChip links={artifacts} onOpen={(url) => transport.openLink(url)} />
+                                    <span className="chat-status-spacer" />
+                                    <ModelChip agent={agent} meta={snapshot?.meta ?? null} working={working} onCommand={(text) => void sendText(text)} />
+                                    <ContextChip meta={snapshot?.meta ?? null} canCompact={!working && !prompt} onCompact={() => void sendText('/compact')} />
+                                </>
+                            }
+                        />
+                    </div>
                 </div>
+                {gallery && <ImageLightbox images={gallery.images} start={gallery.index} onClose={() => setGallery(null)} />}
             </div>
-        </div>
+        </ChatActionsContext.Provider>
     )
 }
 
-function Turns({ snapshot }: { snapshot: ConversationSnapshot }) {
+function Turns({ snapshot, onShowEarlier }: { snapshot: ConversationSnapshot; onShowEarlier: () => void }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
     return (
         <>
             {(snapshot.truncated || hidden > 0) && (
                 <div className="chat-older-note" data-testid="chat-older-note">
-                    {snapshot.truncated
-                        ? 'Earlier turns are not shown — the conversation file is large. Scroll the terminal for them.'
-                        : `Showing the last ${snapshot.turns.length} of ${snapshot.totalTurns} turns.`}
+                    {hidden > 0 ? (
+                        <>
+                            Showing the last {snapshot.turns.length} of {snapshot.totalTurns} turns.{' '}
+                            <button type="button" className="chat-link-button" data-testid="chat-show-earlier" onClick={onShowEarlier}>
+                                Show earlier
+                            </button>
+                        </>
+                    ) : (
+                        'Earlier turns are not shown — the conversation file is large. Scroll the terminal for them.'
+                    )}
                 </div>
             )}
             {snapshot.turns.length === 0 && <div className="chat-empty">No messages yet. Send one below.</div>}
             {snapshot.turns.map((turn, index) => (
                 <ChatTurn
-                    key={`${index}-${turn.ts ?? ''}`}
+                    key={`${snapshot.totalTurns - snapshot.turns.length + index}-${turn.ts ?? ''}`}
                     turn={turn}
+                    index={index}
                     last={index === snapshot.turns.length - 1}
                     working={snapshot.working}
                     waiting={snapshot.prompt !== null}

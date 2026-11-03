@@ -7,7 +7,7 @@ import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
  * one per change notice. Notices that arrive while a fetch is in flight fold
  * into one more fetch after it, so a busy turn never queues dozens of reads.
  */
-export function useConversation(transport: ChatTransport, sessionId: string): {
+export function useConversation(transport: ChatTransport, sessionId: string, limit: number = CHAT_TURN_LIMIT): {
     snapshot: ConversationSnapshot | null
     refresh: () => void
 } {
@@ -18,7 +18,6 @@ export function useConversation(transport: ChatTransport, sessionId: string): {
     useEffect(() => {
         const local = { inFlight: false, again: false, live: true }
         state.current = local
-        setSnapshot(null)
         const fetchNow = (): void => {
             if (local.inFlight) {
                 local.again = true
@@ -26,7 +25,7 @@ export function useConversation(transport: ChatTransport, sessionId: string): {
             }
             local.inFlight = true
             transport
-                .getConversation(sessionId, CHAT_TURN_LIMIT)
+                .getConversation(sessionId, limit)
                 .then((next) => {
                     if (local.live) setSnapshot(next)
                 })
@@ -46,7 +45,10 @@ export function useConversation(transport: ChatTransport, sessionId: string): {
             local.live = false
             unsubscribe()
         }
-    }, [transport, sessionId])
+    }, [transport, sessionId, limit])
+
+    // a different session starts empty; a longer limit keeps the turns on screen until the next read
+    useEffect(() => setSnapshot(null), [transport, sessionId])
 
     return { snapshot, refresh: () => refreshRef.current() }
 }

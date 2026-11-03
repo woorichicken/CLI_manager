@@ -42,6 +42,12 @@ interface UseKeyboardShortcutsConfig {
     onMemoAction: (action: MemoShortcutAction) => void
     /** The selected path in that session's terminal, or its folder, in Finder or the editor. */
     onOpenSessionPath: (sessionId: string, target: 'finder' | 'editor') => void
+    /** Chat view: Terminal ⇄ Chat on the session in view (agent sessions only). */
+    onToggleChatView: (sessionId: string) => void
+    /** Chat view: the message box (or the terminal in Terminal view). */
+    onFocusChatInput: (sessionId: string) => void
+    /** One page of the chat, or of the terminal's scrollback. */
+    onScrollPane: (sessionId: string, direction: 1 | -1) => void
 }
 
 function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
@@ -122,6 +128,9 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onToggleMemo,
         onMemoAction,
         onOpenSessionPath,
+        onToggleChatView,
+        onFocusChatInput,
+        onScrollPane,
     } = config
 
     // Chord mode state (for Cmd+T → number sequences)
@@ -297,6 +306,26 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                 return
             }
 
+            // Chat view, also from its message box (a textarea): ⌘⇧ never types a character there
+            if (!settingsOpen && !fileSearchOpen) {
+                const chatActions: [ShortcutAction, (sessionId: string) => void][] = [
+                    ['toggleChatView', onToggleChatView],
+                    ['focusChatInput', onFocusChatInput],
+                    ['scrollPaneUp', (sessionId) => onScrollPane(sessionId, -1)],
+                    ['scrollPaneDown', (sessionId) => onScrollPane(sessionId, 1)],
+                ]
+                for (const [action, run] of chatActions) {
+                    if (!matchShortcut(e, shortcuts[action])) continue
+                    const sessionId = activeSessionId()
+                    if (!sessionId) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    console.log(`[Shortcuts] matched: ${action}`)
+                    run(sessionId)
+                    return
+                }
+            }
+
             // Memo pages, also while typing in the memo: ⌥⌘ never types a character there. AltGr reports
             // Ctrl+Alt off macOS and types characters, so it is left alone. A held key's repeats are not
             // presses: a held delete would confirm its own first press.
@@ -463,6 +492,9 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onToggleMemo,
         onMemoAction,
         onOpenSessionPath,
+        onToggleChatView,
+        onFocusChatInput,
+        onScrollPane,
         cancelChordMode,
         createSessionWithTemplateIndex,
     ])

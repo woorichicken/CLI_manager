@@ -124,8 +124,31 @@ export interface PromptMenu {
     signature: string
 }
 
+/** The model the conversation runs on, read from its own records (ovis `ConversationMetadata`). */
+export interface ConversationMeta {
+    /** the model id as the agent recorded it (`claude-opus-…`, `gpt-…`), or the words of a `/model` change not yet answered on */
+    model: string | null
+    /** reasoning effort / thinking level as recorded (Claude 2.1.3xx `effort`, Codex `turn_context.effort`); null when not recorded */
+    effort: string | null
+    /**
+     * How much of the model's context the last request filled, in tokens. `window` is the model's
+     * context size when the record says it (Codex `model_context_window`); Claude's records do not.
+     */
+    context?: { used: number; window: number | null }
+}
+
+/** A message sent from the chat while the agent worked, waiting for the turn to end. */
+export interface QueuedMessage {
+    id: string
+    text: string
+}
+
 export interface ConversationSnapshot {
     sessionId: string
+    /** the session's working folder: relative paths in the chat resolve against it */
+    cwd?: string
+    /** the home folder of the Mac running the agent: `~/` paths resolve against it */
+    home?: string
     /** which agent's transcript; null when the session has no conversation linked yet */
     agent: ConversationAgent | null
     /** why there is nothing to show (no conversation id, file not found, read failed) */
@@ -140,8 +163,10 @@ export interface ConversationSnapshot {
     working: boolean
     /** a question menu on screen, or null */
     prompt: PromptMenu | null
-    /** text sent from the chat while the agent worked, waiting for the turn to end */
-    queued: string[]
+    /** messages sent from the chat while the agent worked, waiting for the turn to end, oldest first */
+    queued: QueuedMessage[]
+    /** model · effort · context, from the transcript; null before the first answer records them */
+    meta: ConversationMeta | null
     /** bumps on every change, so a subscriber can skip a fetch it already has */
     revision: number
 }
@@ -151,6 +176,49 @@ export type ChatSendResult =
     /** the agent was working: main sends it when the turn ends */
     | { status: 'queued' }
     | { status: 'rejected'; reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session'; message: string }
+
+export type InterruptResult =
+    | { status: 'stopped' }
+    | { status: 'rejected'; reason: 'not_working' | 'not_running'; message: string }
+
+/** What a picked or pasted file became: a path the agent can read (`@path` in the message). */
+export type AttachResult =
+    | { status: 'attached'; path: string }
+    | { status: 'rejected'; reason: 'too_large' | 'unreadable' | 'not_running'; message: string }
+
+/** One `/` command the session's agent offers, for the composer's completion menu. */
+export interface ChatCommand {
+    /** without the leading `/` (Claude `review`, `plugin:skill`; Codex `prompts:name`) */
+    name: string
+    description: string
+    /** where it comes from, for the menu's groups */
+    source: 'builtin' | 'skill' | 'command' | 'project' | 'prompt'
+    /** typed with this (Codex skills: `$`); `/` when absent */
+    trigger?: '$'
+    /**
+     * Only the terminal can show what it opens (a panel, a picker): the chat shows the terminal after
+     * sending it — `always`, or only when sent `bare` (no argument).
+     */
+    terminal?: 'always' | 'bare'
+}
+
+/** The chat's own preferences (Settings › Terminal › Chat view), handed to the view as a prop. */
+export interface ChatPreferences {
+    /** Enter sends (Shift+Enter breaks the line); off: Enter breaks the line and ⌘/Ctrl+Enter sends. Default on. */
+    enterSends?: boolean
+    /** Show one-tap replies over the empty box. Default off, as in ovis. */
+    showQuickReplies?: boolean
+    /** The replies, in order. Default: continue · yes · no · retry. */
+    quickReplies?: string[]
+}
+
+export const DEFAULT_QUICK_REPLIES = ['continue', 'yes', 'no', 'retry']
+
+/** A file is attached by its path; one the app has to store first (a pasted picture) may be this big. */
+export const MAX_ATTACH_BYTES = 32 * 1024 * 1024
+
+/** The longest message the chat sends (main refuses longer). */
+export const MAX_CHAT_TEXT_LENGTH = 100_000
 
 export type PromptAnswer =
     | { signature: string; optionIndex: number }
@@ -171,8 +239,29 @@ export interface ChatTransport {
     /** Calls `onChange` whenever the conversation, the working state or the question changes. */
     subscribe(sessionId: string, onChange: (revision: number) => void): () => void
     send(sessionId: string, text: string): Promise<ChatSendResult>
+    /** Drops every queued message. */
     cancelQueued(sessionId: string): Promise<void>
+    /** Drops one queued message. */
+    discardQueued(sessionId: string, id: string): Promise<void>
+    /** Sends one queued message now, while the agent still works (the agent decides when it reads it). */
+    sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult>
+    /** Stops the agent's turn (Esc to its terminal) — refused unless its screen shows a turn in progress. */
+    interrupt(sessionId: string): Promise<InterruptResult>
     answerPrompt(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult>
+    /** A file to mention in a message: its own path when it has one, else stored by the app first. */
+    attachFile(sessionId: string, file: File): Promise<AttachResult>
+    /** A picture the transcript holds (`ref` from an image part or a tool's `images`), as a data: URL. */
+    getImage(sessionId: string, ref: string): Promise<string | null>
+    /** The whole output of a tool whose output the chat cut (`output_ref`). */
+    getToolOutput(sessionId: string, ref: string): Promise<string | null>
+    /** The `/` commands the session's agent offers. */
+    listCommands(sessionId: string): Promise<ChatCommand[]>
+    /** Files under the session's folder whose name or path matches, as paths relative to it. */
+    searchFiles(sessionId: string, query: string): Promise<string[]>
+    /** Shows a file the chat names (absolute, or relative to the session's folder), at a line when given. */
+    openFile(sessionId: string, path: string, line?: number): void
+    /** Opens a web address outside the app. */
+    openLink(url: string): void
 }
 
 /** How many turns a Chat view asks for first. */

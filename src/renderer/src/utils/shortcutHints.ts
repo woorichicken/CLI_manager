@@ -6,6 +6,7 @@ import { isMac } from './platform'
 const KEY_SYMBOLS: Record<string, string> = {
     ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
     Backspace: isMac ? '⌫' : 'Backspace', Delete: isMac ? '⌦' : 'Delete', Enter: isMac ? '↩' : 'Enter',
+    PageUp: isMac ? '⇞' : 'PageUp', PageDown: isMac ? '⇟' : 'PageDown',
 }
 
 function formatModifier(mod: string): string {

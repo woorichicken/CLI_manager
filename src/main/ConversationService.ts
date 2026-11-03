@@ -1,12 +1,15 @@
 import type {
+    ChatCommand,
     ChatSendResult,
     ConversationAgent,
     ConversationSnapshot,
+    InterruptResult,
     PromptAnswer,
     PromptAnswerResult,
-    PromptMenu
+    PromptMenu,
+    QueuedMessage
 } from '../shared/conversation'
-import { CHAT_TURN_LIMIT } from '../shared/conversation'
+import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH } from '../shared/conversation'
 import { answerSteps, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 
@@ -25,7 +28,9 @@ import type { TranscriptReader } from './TranscriptReader'
 const POLL_MS = 700
 /** Text sent while the agent works waits for this much quiet after the turn ends. */
 const QUEUE_QUIET_MS = 1500
-const MAX_TEXT_LENGTH = 100_000
+const MAX_TEXT_LENGTH = MAX_CHAT_TEXT_LENGTH
+/** What the agent's terminal takes as "stop this turn" (Claude Code and Codex both print "esc to interrupt"). */
+const INTERRUPT_KEY = '\x1b'
 /** Between the keys of a card's answer, as the Control API spaces keys. */
 const KEY_GAP_MS = 60
 const BUSY = /esc to interrupt/i
@@ -54,6 +59,10 @@ export interface ConversationServiceDeps {
     /** ControlApiService.typeForChat — throws ControlApiError (409 awaiting_input …) */
     type(id: string, text: string): Promise<boolean>
     onChange(sessionId: string, revision: number): void
+    /** The `/` commands an agent offers in a folder (chatCommands.ts). */
+    listCommands?(agent: ConversationAgent, cwd: string | undefined): ChatCommand[]
+    /** The Mac's home folder, for `~/` paths in the chat. */
+    home?: string
 }
 
 interface Watched {
@@ -64,15 +73,18 @@ interface Watched {
     lastScreenAt: number
     working: boolean
     prompt: PromptMenu | null
-    queue: string[]
+    queue: QueuedMessage[]
     sending: boolean
 }
+
+let queueSequence = 0
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 export class ConversationService {
     private readonly watched = new Map<string, Watched>()
     private timer: NodeJS.Timeout | null = null
+    private polling = false
 
     constructor(private readonly deps: ConversationServiceDeps) {}
 
@@ -96,15 +108,18 @@ export class ConversationService {
 
     async getConversation(sessionId: string, limit = CHAT_TURN_LIMIT): Promise<ConversationSnapshot> {
         const entry = this.entry(sessionId)
-        this.readScreen(sessionId, entry, true)
+        await this.refreshScreen(sessionId, entry)
+        const info = this.deps.session(sessionId)
         const base = {
             sessionId,
+            ...(info?.cwd ? { cwd: info.cwd } : {}),
+            ...(this.deps.home ? { home: this.deps.home } : {}),
             working: entry.working,
             prompt: entry.prompt,
-            queued: [...entry.queue],
-            revision: entry.revision
+            queued: entry.queue.map((message) => ({ ...message })),
+            revision: entry.revision,
+            meta: null
         }
-        const info = this.deps.session(sessionId)
         const agent = agentOf(info)
         if (!info?.cliSessionId || agent === null) {
             this.dropIfIdle(sessionId, entry)
@@ -115,7 +130,7 @@ export class ConversationService {
             this.dropIfIdle(sessionId, entry)
             if (read === null) return { ...base, agent, unavailable: 'not-found', turns: [], totalTurns: 0, truncated: false }
             const turns = read.turns.slice(-Math.max(1, Math.min(limit, 2000)))
-            return { ...base, agent, turns, totalTurns: read.turns.length, truncated: read.truncated }
+            return { ...base, agent, turns, totalTurns: read.turns.length, truncated: read.truncated, meta: read.meta }
         } catch (error) {
             console.error('[conversation] read failed', sessionId, error)
             this.dropIfIdle(sessionId, entry)
@@ -134,20 +149,22 @@ export class ConversationService {
         if (!this.deps.hasTerminal(sessionId)) return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
         if (this.deps.mirror.hasExited(sessionId)) return { status: 'rejected', reason: 'exited', message: 'The shell in this session has exited.' }
 
-        await this.deps.mirror.flush(sessionId)
         const entry = this.entry(sessionId)
-        this.readScreen(sessionId, entry, true)
+        await this.refreshScreen(sessionId, entry, true)
         const blocked = this.blockedReason(sessionId, entry)
         if (blocked) {
             this.dropIfIdle(sessionId, entry)
             return blocked
         }
-        if (entry.working || entry.queue.length > 0) {
-            entry.queue.push(text)
+        // working, others waiting, or another message still being typed: it waits its turn,
+        // so two sends never type into the terminal at once
+        if (entry.working || entry.queue.length > 0 || entry.sending) {
+            entry.queue.push({ id: `q${++queueSequence}`, text })
             this.bump(sessionId, entry)
             this.ensureTimer()
             return { status: 'queued' }
         }
+        entry.sending = true
         try {
             await this.deps.type(sessionId, text)
             this.bump(sessionId, entry)
@@ -155,6 +172,7 @@ export class ConversationService {
         } catch (error) {
             return rejection(error)
         } finally {
+            entry.sending = false
             this.dropIfIdle(sessionId, entry)
         }
     }
@@ -165,6 +183,104 @@ export class ConversationService {
         entry.queue.length = 0
         this.bump(sessionId, entry)
         this.dropIfIdle(sessionId, entry)
+    }
+
+    /** Drops one queued message (its ✕). */
+    discardQueued(sessionId: string, id: string): void {
+        const entry = this.watched.get(sessionId)
+        const index = entry?.queue.findIndex((message) => message.id === id) ?? -1
+        if (!entry || index < 0) return
+        entry.queue.splice(index, 1)
+        this.bump(sessionId, entry)
+        this.dropIfIdle(sessionId, entry)
+    }
+
+    /**
+     * "↑ Send now": types one queued message while the agent still works. The agent decides when
+     * it reads it (Claude Code holds it for its next step). Refused like any send while a question
+     * is on screen or the terminal's input line holds text — then it stays queued.
+     */
+    async sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult> {
+        const entry = this.watched.get(sessionId)
+        const message = entry?.queue.find((item) => item.id === id)
+        if (!entry || !message) return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
+        if (!this.deps.hasTerminal(sessionId)) return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
+        if (this.deps.mirror.hasExited(sessionId)) return { status: 'rejected', reason: 'exited', message: 'The shell in this session has exited.' }
+        if (entry.sending) return { status: 'rejected', reason: 'input_busy', message: 'Another message is being typed into the terminal.' }
+        await this.refreshScreen(sessionId, entry, true)
+        const blocked = this.blockedReason(sessionId, entry)
+        if (blocked) return blocked
+        const index = entry.queue.indexOf(message)
+        if (index < 0) return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
+        entry.queue.splice(index, 1)
+        entry.sending = true
+        try {
+            await this.deps.type(sessionId, message.text)
+            return { status: 'sent' }
+        } catch (error) {
+            entry.queue.splice(Math.min(index, entry.queue.length), 0, message)
+            return rejection(error)
+        } finally {
+            entry.sending = false
+            this.bump(sessionId, entry)
+            this.dropIfIdle(sessionId, entry)
+        }
+    }
+
+    /**
+     * Stop: Esc to the agent's terminal — only while its screen shows a turn in progress
+     * ("esc to interrupt"). At rest Esc would land in whatever the agent shows (a menu, the input
+     * box), so it is refused then.
+     */
+    async interrupt(sessionId: string): Promise<InterruptResult> {
+        if (!this.deps.hasTerminal(sessionId) || this.deps.mirror.hasExited(sessionId)) {
+            return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
+        }
+        const entry = this.entry(sessionId)
+        await this.refreshScreen(sessionId, entry, true)
+        if (!entry.working) {
+            this.dropIfIdle(sessionId, entry)
+            return { status: 'rejected', reason: 'not_working', message: 'The agent is not working on a turn.' }
+        }
+        this.deps.writeInput(sessionId, INTERRUPT_KEY)
+        this.bump(sessionId, entry)
+        this.dropIfIdle(sessionId, entry)
+        return { status: 'stopped' }
+    }
+
+    /** A picture the conversation holds (an image part's or a tool's `ref`), as a data: URL. */
+    async getImage(sessionId: string, ref: string): Promise<string | null> {
+        return this.withReader(sessionId, () => this.deps.reader.image(sessionId, ref))
+    }
+
+    /** The whole output of a tool call the chat cut. */
+    async getToolOutput(sessionId: string, ref: string): Promise<string | null> {
+        return this.withReader(sessionId, () => this.deps.reader.toolOutput(sessionId, ref))
+    }
+
+    /** The `/` commands the session's agent offers in its folder. */
+    listCommands(sessionId: string): ChatCommand[] {
+        const info = this.deps.session(sessionId)
+        const agent = agentOf(info)
+        if (!agent || !this.deps.listCommands) return []
+        return this.deps.listCommands(agent, info?.cwd)
+    }
+
+    /** Runs `find` with the session's transcript read (a view that is not open may have none yet). */
+    private async withReader(sessionId: string, find: () => Promise<string | null>): Promise<string | null> {
+        const info = this.deps.session(sessionId)
+        const agent = agentOf(info)
+        if (!info?.cliSessionId || !agent) return null
+        const entry = this.entry(sessionId)
+        try {
+            this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
+            return await find()
+        } catch (error) {
+            console.error('[conversation] record lookup failed', sessionId, error)
+            return null
+        } finally {
+            this.dropIfIdle(sessionId, entry)
+        }
     }
 
     /**
@@ -180,7 +296,7 @@ export class ConversationService {
         const current = readPrompt(this.deps.mirror.screen(sessionId), agentOf(this.deps.session(sessionId)) ?? 'claude')
         if (!current || current.signature !== answer.signature) {
             const entry = this.entry(sessionId)
-            this.readScreen(sessionId, entry, true)
+            await this.refreshScreen(sessionId, entry, true)
             this.bump(sessionId, entry)
             this.dropIfIdle(sessionId, entry)
             return { status: 'rejected', reason: 'prompt_changed', message: 'The question on screen changed. Look at it again before answering.' }
@@ -240,10 +356,16 @@ export class ConversationService {
         if (entry.subscribers > 0) this.deps.onChange(sessionId, entry.revision)
     }
 
-    /** Working and the menu, re-read only when the terminal printed since the last read. */
-    private readScreen(sessionId: string, entry: Watched, force = false): void {
+    /**
+     * Working and the menu, re-read only when the terminal printed since the last read (`force`:
+     * always). The mirror parses what arrives asynchronously: it is flushed first, and only the
+     * output time it was flushed up to counts as read — a screen read before it is drawn would be
+     * kept until the next output (a question card staying after its answer, or never showing).
+     */
+    private async refreshScreen(sessionId: string, entry: Watched, force = false): Promise<void> {
         const outputAt = this.deps.mirror.lastOutputAt(sessionId)
         if (!force && outputAt === entry.lastScreenAt) return
+        await this.deps.mirror.flush(sessionId)
         entry.lastScreenAt = outputAt
         const screen = this.deps.mirror.screen(sessionId)
         entry.working = screen.some((line) => BUSY.test(line))
@@ -262,12 +384,23 @@ export class ConversationService {
     }
 
     private async poll(): Promise<void> {
+        // a round waits on flushes and typing: the next tick does not start another beside it
+        if (this.polling) return
+        this.polling = true
+        try {
+            await this.pollRound()
+        } finally {
+            this.polling = false
+        }
+    }
+
+    private async pollRound(): Promise<void> {
         for (const [sessionId, entry] of [...this.watched]) {
             if (!this.deps.session(sessionId)) {
                 this.forget(sessionId)
                 continue
             }
-            this.readScreen(sessionId, entry)
+            await this.refreshScreen(sessionId, entry)
             let transcriptChanged = false
             const info = this.deps.session(sessionId)
             const agent = agentOf(info)
@@ -278,7 +411,7 @@ export class ConversationService {
                     console.error('[conversation] poll read failed', sessionId, error)
                 }
             }
-            const key = JSON.stringify([info?.cliSessionId ?? null, entry.working, entry.prompt?.signature ?? null, entry.queue])
+            const key = JSON.stringify([info?.cliSessionId ?? null, entry.working, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
             if (transcriptChanged || key !== entry.lastKey) {
                 entry.lastKey = key
                 this.bump(sessionId, entry)
@@ -299,13 +432,13 @@ export class ConversationService {
         }
         await this.deps.mirror.flush(sessionId)
         if (this.blockedReason(sessionId, entry)) return
-        const text = entry.queue.shift()!
+        const message = entry.queue.shift()!
         entry.sending = true
         try {
-            await this.deps.type(sessionId, text)
+            await this.deps.type(sessionId, message.text)
         } catch (error) {
             // A question appeared between the check and the typing: put it back and wait.
-            if ((error as { code?: string }).code === 'awaiting_input') entry.queue.unshift(text)
+            if ((error as { code?: string }).code === 'awaiting_input') entry.queue.unshift(message)
             else console.error('[conversation] queued send failed', sessionId, error)
         } finally {
             entry.sending = false

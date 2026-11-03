@@ -1,6 +1,10 @@
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readSync, statSync } from 'fs'
+import { open as openFile } from 'fs/promises'
 import { join } from 'path'
-import type { ConversationAgent, ConversationTurn } from '../shared/conversation'
+import type { ConversationAgent, ConversationMeta, ConversationTurn } from '../shared/conversation'
+import { CLAUDE_IMAGE_REF } from './transcript/claudeTranscript'
+import { inlineImageType } from './transcript/images'
+import { foldMetadata } from './transcript/metadata'
 import { createClaudeTranscriptParser } from './transcript/claudeTranscript'
 import { createCodexTranscriptParser } from './transcript/codexTranscript'
 import type { TranscriptParser } from './transcript/records'
@@ -35,13 +39,24 @@ export interface TranscriptRead {
     truncated: boolean
     /** the parser took new bytes (or started over) since the previous read */
     changed: boolean
+    /** model · effort · context as the records read so far name them */
+    meta: ConversationMeta | null
 }
+
+/** Chunk of a backward search for one record (`findRecord`). */
+const FIND_CHUNK_BYTES = 4 * 1024 * 1024
+/** A record longer than this is not looked for (a line that long would be a corrupt file). */
+const MAX_RECORD_BYTES = 64 * 1024 * 1024
+/** Whole tool output handed back at most (the rest is in the file). */
+const MAX_TOOL_OUTPUT_CHARS = 2_000_000
 
 export interface TranscriptReaderDeps {
     claudeConfigDir: () => string
     codexHome: () => string
     /** Tests shrink it; the app uses MAX_FIRST_READ_BYTES. */
     firstReadBytes?: number
+    /** Tests shrink it so a record straddles chunks; the app uses FIND_CHUNK_BYTES. */
+    findChunkBytes?: number
 }
 
 interface FileCursor {
@@ -59,6 +74,7 @@ interface ReadState {
     parser: TranscriptParser
     truncated: boolean
     turns: ConversationTurn[] | null
+    meta: ConversationMeta | null
 }
 
 /** Claude's folder name for a project: every character that is not a letter or digit becomes "-". */
@@ -133,7 +149,119 @@ export class TranscriptReader {
             state.turns = state.parser.snapshot(tail)
             changed = true
         }
-        return { turns: state.turns, truncated: state.truncated, changed }
+        return { turns: state.turns, truncated: state.truncated, changed, meta: state.meta }
+    }
+
+    /**
+     * A picture the transcript holds inline, by the ref the parser gave it (`<entry uuid>:<block>`
+     * for a prompt's picture, `<entry uuid>:<block>:<part>` for one a tool returned), as a data: URL.
+     * Claude only: the Codex reader names no pictures it can read back. Null when not found.
+     */
+    async image(key: string, ref: string): Promise<string | null> {
+        const state = this.states.get(key)
+        const match = CLAUDE_IMAGE_REF.exec(ref)
+        if (!state || state.agent !== 'claude' || !match) return null
+        const [, uuid, first, second] = match
+        const entry = await this.findRecord(state.files.map((cursor) => cursor.path), `"${uuid}"`, (value) => value.uuid === uuid)
+        const content = asRecord(entry?.message).content
+        if (!Array.isArray(content)) return null
+        let block: unknown = content[Number(first)]
+        if (second !== undefined) {
+            const inner = asRecord(block).content
+            block = Array.isArray(inner) ? inner[Number(second)] : undefined
+        }
+        const source = asRecord(asRecord(block).source)
+        const type = inlineImageType(source.media_type, source.data)
+        return type && typeof source.data === 'string' ? `data:${type};base64,${source.data}` : null
+    }
+
+    /**
+     * The whole output of a tool call the chat cut (`output_ref`: Claude's `tool_use_id`, Codex's
+     * `call_id`). Null when not found.
+     */
+    async toolOutput(key: string, ref: string): Promise<string | null> {
+        const state = this.states.get(key)
+        if (!state || !/^[\w.:-]{1,200}$/.test(ref)) return null
+        const files = state.files.map((cursor) => cursor.path)
+        let text: string | null = null
+        if (state.agent === 'claude') {
+            const entry = await this.findRecord(files, `"${ref}"`, (value) => {
+                const content = asRecord(value.message).content
+                return Array.isArray(content) && content.some((block) => asRecord(block).tool_use_id === ref)
+            })
+            const content = asRecord(entry?.message).content
+            const block = Array.isArray(content) ? content.find((item) => asRecord(item).tool_use_id === ref) : undefined
+            text = resultText(asRecord(block).content)
+        } else {
+            const entry = await this.findRecord(files, `"${ref}"`, (value) => {
+                const payload = asRecord(value.payload)
+                return payload.call_id === ref && typeof payload.type === 'string' && payload.type.endsWith('_output')
+            })
+            const output = asRecord(entry?.payload).output
+            text = typeof output === 'string' ? output : resultText(asRecord(output).content ?? output)
+        }
+        if (text === null) return null
+        return text.length > MAX_TOOL_OUTPUT_CHARS ? `${text.slice(0, MAX_TOOL_OUTPUT_CHARS)}\n… (${text.length.toLocaleString()} characters in all)` : text
+    }
+
+    /**
+     * The newest record holding `needle` (a quoted id — written with or without a space after the
+     * key's colon) that `accept` takes, searched from the end of the last
+     * file backwards (the chat asks for recent things). Reads in 4MB chunks off the main thread's
+     * event loop; a 200MB transcript is about a second when the record is at its start.
+     */
+    private async findRecord(files: string[], needle: string, accept: (value: Record<string, unknown>) => boolean): Promise<Record<string, unknown> | null> {
+        const wanted = Buffer.from(needle)
+        for (let fileIndex = files.length - 1; fileIndex >= 0; fileIndex--) {
+            let handle
+            try {
+                handle = await openFile(files[fileIndex], 'r')
+            } catch {
+                continue
+            }
+            try {
+                let position = (await handle.stat()).size
+                // bytes of a line that started before the chunk now read
+                let tail = Buffer.alloc(0)
+                while (position > 0) {
+                    const start = Math.max(0, position - (this.deps.findChunkBytes ?? FIND_CHUNK_BYTES))
+                    const chunk = Buffer.alloc(position - start)
+                    await handle.read(chunk, 0, chunk.length, start)
+                    position = start
+                    const data = tail.length > 0 ? Buffer.concat([chunk, tail]) : chunk
+                    let complete = data
+                    if (start > 0) {
+                        const newline = data.indexOf(0x0a)
+                        if (newline < 0) {
+                            if (data.length > MAX_RECORD_BYTES) return null
+                            tail = data
+                            continue
+                        }
+                        complete = data.subarray(newline + 1)
+                        tail = data.subarray(0, newline + 1)
+                    } else {
+                        tail = Buffer.alloc(0)
+                    }
+                    // newest line first
+                    let end = complete.length
+                    while (end > 0) {
+                        const lineStart = complete.lastIndexOf(0x0a, end - 1)
+                        const line = complete.subarray(lineStart + 1, end)
+                        end = lineStart < 0 ? 0 : lineStart
+                        if (line.indexOf(wanted) < 0) continue
+                        try {
+                            const value = asRecord(JSON.parse(line.toString('utf8')))
+                            if (accept(value)) return value
+                        } catch {
+                            // a cut or corrupt line: keep looking
+                        }
+                    }
+                }
+            } finally {
+                await handle.close()
+            }
+        }
+        return null
     }
 
     forget(key: string): void {
@@ -148,7 +276,8 @@ export class TranscriptReader {
             locatedAt: Date.now(),
             parser: agent === 'claude' ? createClaudeTranscriptParser() : createCodexTranscriptParser(),
             truncated: false,
-            turns: null
+            turns: null,
+            meta: null
         }
     }
 
@@ -194,6 +323,7 @@ export class TranscriptReader {
             const text = this.readLines(cursor, size)
             if (text.length > 0) {
                 state.parser.write(text)
+                state.meta = foldMetadata(text, state.agent, state.meta)
                 fed = true
             } else if (cursor.carry.length > 0) {
                 // only a partial line arrived: the snapshot's preview shows it
@@ -297,4 +427,14 @@ export class TranscriptReader {
         // `rollout-<time>-…`: the name sorts by start time; segments of one thread follow it.
         return found.sort((a, b) => a.split('/').pop()!.localeCompare(b.split('/').pop()!))
     }
+}
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+
+/** A tool result's words: a string, or the text blocks of a content list. */
+function resultText(content: unknown): string | null {
+    if (typeof content === 'string') return content
+    if (!Array.isArray(content)) return null
+    return content.map((block) => (typeof asRecord(block).text === 'string' ? (asRecord(block).text as string) : '')).join('')
 }

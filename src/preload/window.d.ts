@@ -1,6 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
-import type { ChatSendResult, ConversationSnapshot, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { AttachResult, ChatCommand, ChatSendResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 
 declare global {
     interface Window {
@@ -242,6 +242,14 @@ declare global {
             onConversationChanged: (callback: (change: { sessionId: string; revision: number }) => void) => () => void
             sendChatMessage: (sessionId: string, text: string) => Promise<ChatSendResult>
             cancelQueuedChat: (sessionId: string) => Promise<void>
+            discardQueuedChat: (sessionId: string, id: string) => Promise<void>
+            sendQueuedChatNow: (sessionId: string, id: string) => Promise<ChatSendResult>
+            interruptChat: (sessionId: string) => Promise<InterruptResult>
+            getChatImage: (sessionId: string, ref: string) => Promise<string | null>
+            getChatToolOutput: (sessionId: string, ref: string) => Promise<string | null>
+            listChatCommands: (sessionId: string) => Promise<ChatCommand[]>
+            saveChatAttachment: (name: string, bytes: Uint8Array) => Promise<AttachResult>
+            openChatPath: (target: string) => Promise<{ success: boolean; error?: string }>
             answerPrompt: (sessionId: string, answer: PromptAnswer) => Promise<PromptAnswerResult>
         }
     }

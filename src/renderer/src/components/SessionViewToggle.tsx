@@ -1,5 +1,6 @@
 import { MessageSquareText, SquareTerminal } from 'lucide-react'
 import { setSessionViewMode, useSessionViewMode } from '../hooks/useSessionViewMode'
+import { useShortcutHint } from '../utils/shortcutHints'
 
 /**
  * "Terminal | Chat" in a session header (single view and split panes). The
@@ -10,6 +11,7 @@ import { setSessionViewMode, useSessionViewMode } from '../hooks/useSessionViewM
  */
 export function SessionViewToggle({ sessionId, compact = false }: { sessionId: string; compact?: boolean }) {
     const mode = useSessionViewMode(sessionId)
+    const hint = useShortcutHint()
     const button = (value: 'terminal' | 'chat', label: string, Icon: typeof SquareTerminal) => {
         const active = mode === value
         return (
@@ -17,7 +19,7 @@ export function SessionViewToggle({ sessionId, compact = false }: { sessionId: s
                 type="button"
                 data-testid={`view-toggle-${value}`}
                 aria-pressed={active}
-                title={value === 'chat' ? 'Chat — read and reply like a chat' : 'Terminal'}
+                title={hint(value === 'chat' ? 'Chat — read and reply like a chat' : 'Terminal', 'toggleChatView')}
                 onClick={(event) => {
                     event.stopPropagation()
                     setSessionViewMode(sessionId, value)

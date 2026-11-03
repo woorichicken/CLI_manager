@@ -40,6 +40,8 @@ import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
 import { TranscriptReader } from './TranscriptReader'
 import { ConversationService } from './ConversationService'
+import { createChatCommandLister } from './chatCommands'
+import { saveChatAttachment } from './chatAttachments'
 import type { PromptAnswer } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import type { FeedbackRelayRequest } from '../shared/types'
@@ -370,6 +372,8 @@ const controlApiServer = new ControlApiServer({
 
 // Chat view: a session's conversation read from the agent's own transcript file, plus
 // what its screen says (working, a question menu). Watches only sessions a view is open on.
+const claudeConfigDir = (): string => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+const codexHome = (): string => process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
 const conversationService = new ConversationService({
     session: (id) => {
         const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
@@ -379,10 +383,9 @@ const conversationService = new ConversationService({
         }
         return null
     },
-    reader: new TranscriptReader({
-        claudeConfigDir: () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
-        codexHome: () => process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
-    }),
+    reader: new TranscriptReader({ claudeConfigDir, codexHome }),
+    listCommands: createChatCommandLister({ home: os.homedir(), claudeConfigDir, codexHome }),
+    home: os.homedir(),
     mirror: terminalMirror,
     hasTerminal: (id) => terminalManager.hasTerminal(id),
     writeInput: (id, data) => terminalManager.writeInput(id, data),
@@ -3362,6 +3365,38 @@ app.whenReady().then(async () => {
     )
     ipcMain.handle('chat-cancel-queued', (_e, sessionId: string): void => {
         if (typeof sessionId === 'string') conversationService.cancelQueued(sessionId)
+    })
+    ipcMain.handle('chat-discard-queued', (_e, sessionId: unknown, id: unknown): void => {
+        if (typeof sessionId === 'string' && typeof id === 'string') conversationService.discardQueued(sessionId, id)
+    })
+    ipcMain.handle('chat-send-queued-now', (_e, sessionId: unknown, id: unknown) =>
+        typeof sessionId === 'string' && typeof id === 'string'
+            ? conversationService.sendQueuedNow(sessionId, id)
+            : { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
+    )
+    ipcMain.handle('chat-interrupt', (_e, sessionId: unknown) =>
+        typeof sessionId === 'string'
+            ? conversationService.interrupt(sessionId)
+            : { status: 'rejected', reason: 'not_running', message: 'No such session.' }
+    )
+    ipcMain.handle('chat-image', (_e, sessionId: unknown, ref: unknown) =>
+        typeof sessionId === 'string' && typeof ref === 'string' ? conversationService.getImage(sessionId, ref) : null
+    )
+    ipcMain.handle('chat-tool-output', (_e, sessionId: unknown, ref: unknown) =>
+        typeof sessionId === 'string' && typeof ref === 'string' ? conversationService.getToolOutput(sessionId, ref) : null
+    )
+    ipcMain.handle('chat-commands', (_e, sessionId: unknown) =>
+        typeof sessionId === 'string' ? conversationService.listCommands(sessionId) : []
+    )
+    // A pasted picture has no path of its own: it is stored for the agent to read (`@path` in the message).
+    ipcMain.handle('chat-save-attachment', (_e, name: unknown, bytes: unknown) =>
+        saveChatAttachment(path.join(os.tmpdir(), 'climanager-chat'), typeof name === 'string' ? name : 'pasted', bytes)
+    )
+    // A file the chat names that the preview cannot show (a PDF, a video): the Mac's own app for it.
+    ipcMain.handle('chat-open-path', async (_e, target: unknown): Promise<{ success: boolean; error?: string }> => {
+        if (typeof target !== 'string' || !path.isAbsolute(target) || !existsSync(target)) return { success: false, error: 'File not found' }
+        const error = await shell.openPath(target)
+        return error ? { success: false, error } : { success: true }
     })
     ipcMain.handle('prompt-answer', (_e, sessionId: string, answer: PromptAnswer) => {
         const valid = typeof sessionId === 'string' && answer && typeof answer.signature === 'string' &&

@@ -40,6 +40,8 @@ export function getSessionViewMode(sessionId: string): SessionViewMode {
 }
 
 export function setSessionViewMode(sessionId: string, mode: SessionViewMode): void {
+    // going back to the chat (by any way) ends a peek
+    if (mode === 'chat') setSessionPeek(sessionId, null)
     if (getSessionViewMode(sessionId) === mode) return
     const next = { ...modes }
     // Terminal is the default: only Chat is stored, so closed sessions leave little behind.
@@ -57,4 +59,32 @@ function subscribe(listener: () => void): () => void {
 
 export function useSessionViewMode(sessionId: string | undefined): SessionViewMode {
     return useSyncExternalStore(subscribe, () => (sessionId ? getSessionViewMode(sessionId) : 'terminal'))
+}
+
+/*
+ * "Peek": a command only the terminal can show (`/config`, a bare `/model`) was sent from the
+ * chat, so the session switched to its terminal. The terminal then carries a "Back to Chat" bar
+ * until the person goes back or keeps the terminal (ovis terminalPeek). Not remembered across
+ * restarts — it belongs to one moment.
+ */
+const peeks = new Map<string, string>()
+const peekListeners = new Set<() => void>()
+let peekVersion = 0
+
+export function setSessionPeek(sessionId: string, command: string | null): void {
+    if (command === null ? !peeks.has(sessionId) : peeks.get(sessionId) === command) return
+    if (command === null) peeks.delete(sessionId)
+    else peeks.set(sessionId, command)
+    peekVersion++
+    for (const listener of peekListeners) listener()
+}
+
+function subscribePeek(listener: () => void): () => void {
+    peekListeners.add(listener)
+    return () => peekListeners.delete(listener)
+}
+
+export function useSessionPeek(sessionId: string | undefined): string | null {
+    useSyncExternalStore(subscribePeek, () => peekVersion)
+    return sessionId ? peeks.get(sessionId) ?? null : null
 }
