@@ -157,7 +157,7 @@ rules stay in the root; this file is the inventory.
   `X-Forwarded-For` 가 tailnet 주소면 주인(치기). 그 밖은 짝지은 기기 쿠키(`climanager_phone`, HttpOnly·SameSite=Strict)만 —
   `PhoneDevices`: 6자리 · 10분 · 5회 틀리면 폐기 · 「can type / view only」 · 해시만 `userData/phone/devices.json`(0600). Host 는 loopback·`*.ts.net`·
   tailnet 주소만(421), 바꾸는 요청·소켓은 Origin 이 같은 곳만(403)
-- **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/sessions`(작업 공간·폴더·세션 폴더·세션 +
+- **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/sessions`(세션 한 줄 목록 + 세션 폴더 이름 +
   상태 점·질문 줄) · `/api/phone/chat/<id>/<conversation|send|answer|interrupt|cancel-queued|discard-queued|send-queued-now|attach|image|tool-output|commands>`
   · WS `/api/phone/chat/<id>/events`(revision) · WS `/api/phone/terminal?session=<id>` · `POST /api/phone/push/<subscribe|unsubscribe|test>`.
   만들기·지우기·이름 바꾸기·크기 바꾸기 경로는 없다. 치는 경로는 `drive` 만, 그리고 세션 사건 기록에 `phone-input`(무엇을 했는지만, 글은 안 남김)
@@ -173,8 +173,16 @@ rules stay in the root; this file is the inventory.
   짝짓기·알림). Chat 은 데스크톱 `ChatView` 에 `phoneChatTransport`(fetch + WS)를 준다. 서버는 `out/renderer/.vite/manifest.json` 으로 phone.html 이
   싣는 청크만 낸다(데스크톱 입구·피드백 위젯 청크는 404). 매니페스트·서비스 워커·아이콘은 `src/renderer/public/phone/`
 - 끄기: 설정 스위치 · 사이드바 「Phone on · n connected」의 ✕ · 앱 종료 → 서버 닫힘 + 모든 소켓 끊김. 기기 끊기는 그 기기 소켓·알림까지
-- 회귀: `t75-phone-unit.spec.ts`(접근 표·짝짓기·알림 규칙·키 바·카드 가리기) · `t76-phone.spec.ts`(앱 + 폰 창 — 가짜 Tailscale 상태 파일
-  `CLIMANAGER_PHONE_TAILSCALE_STATUS`, 알림은 `CLIMANAGER_PHONE_PUSH_LOG`, 둘 다 시험 userData 일 때만 읽는다)
+- **세션 목록 순서 = Mac 사이드바 「All sessions」(List) 위→아래**(2회차). 따로 정렬하지 않는다 — main(`phoneSetup.listSessions`)이 사이드바의
+  함수를 그대로 부른다: 사이드바가 세션을 그리는 순서(`sessionsInSidebarOrder` — 렌더러가 `sidebar-session-order` 로 알려 준 id 순서, 작업 공간
+  끌어 옮기기는 렌더러에만 있으므로) → 고정 먼저·최근 본 순(`orderForAllSessions` + `RecentSessions`) → 세션 폴더 먼저(`groupBySessionFolder`,
+  `SidebarAllSessions` 도 같은 함수). 폰(`sessionListLines.ts`)은 받은 순서를 그대로 그리고 Mac 처럼 폴더 머리글·고정 아래 줄만 끼운다. 렌더러 보고가
+  오기 전에는 불러오는 순서(`workspacesInLoadOrder` — `get-workspaces` 와 같은 함수)
+- **터미널 확대**: −/+/핀치로 고른 배율은 그 폰의 `localStorage`(`phone-terminal-zoom`)에 남는다(기기마다 따로). 없으면 폭 맞춤(기본). 좁은 화면에서
+  고른 배율이 돌린 화면의 폭 맞춤보다 작으면 폭 맞춤으로 보인다
+- 회귀: `t75-phone-unit.spec.ts`(접근 표·짝짓기·알림 규칙·키 바·카드 가리기·목록 순서) · `t76-phone.spec.ts`(앱 + 폰 창 — 가짜 Tailscale 상태 파일
+  `CLIMANAGER_PHONE_TAILSCALE_STATUS`, 알림은 `CLIMANAGER_PHONE_PUSH_LOG`, 둘 다 시험 userData 일 때만 읽는다) · `t77-phone-text-size.spec.ts`
+  (글씨 크기 세 모드 측정·확대 기억·Mac PTY 크기 그대로)
 
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
@@ -330,6 +338,7 @@ User Action (Renderer)
 - `get-session-relations` → 보이는 관계(`dismissed` 제외) · `session-relations` (main → renderer): 바뀔 때마다 전체 목록
 - `add-session-relation(from, to)` / `remove-session-relation(a, b)`: 손으로 추가·빼기(빼기는 `dismissed` 표시)
 - `get-recent-sessions` → 최근 본 세션 id(최신이 앞, 최대 20 — `RECENT_SESSIONS_MAX`) · `push-recent-session(id)`: 렌더러가 보는 세션(분할이면 포커스된 칸)이 바뀔 때 보고. 저장 키 `recentSessions`(config.json). 닫힘·시작 때 정리, 없는 세션은 탭이 숨김
+- `sidebar-session-order(ids)`(renderer → main, `send`): 사이드바가 세션을 그리는 순서(`sessionsInSidebarOrder`)의 id. 순서가 바뀔 때만, 주 창만 보낸다. main 은 메모리에만 두고 폰 세션 목록의 첫 단계로 쓴다
 - `peek-sessions(ids)` → `SessionPeek[]`: 상태·질문 대기·마지막 줄. 읽기만 한다 — API 읽기와 달리 AI 표시를 붙이지 않는다
 
 #### Inbox
