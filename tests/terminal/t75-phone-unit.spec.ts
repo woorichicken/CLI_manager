@@ -7,7 +7,11 @@ import { PAIRING_CODE_ATTEMPTS, PAIRING_CODE_TTL_MS, PhoneDevices } from '../../
 import { PhonePush } from '../../src/main/phone/PhonePush'
 import { maskSnapshot } from '../../src/main/phone/phoneApi'
 import { controlCharacter, KEY_BAR_ITEMS, keyBarLabel, keySequence } from '../../src/renderer/src/phone/keyBar'
+import { listLines } from '../../src/renderer/src/phone/sessionListLines'
+import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder } from '../../src/renderer/src/utils/sessionNavigation'
 import type { ConversationSnapshot } from '../../src/shared/conversation'
+import type { PhoneSession } from '../../src/shared/phone'
+import type { TerminalSession, Workspace } from '../../src/shared/types'
 
 /**
  * T75 — the phone connection's rules, without Electron.
@@ -273,5 +277,42 @@ test.describe('T75 key bar and masking', () => {
         // nothing to mask without a card
         const plain = { ...snapshot, prompt: null }
         expect(maskSnapshot(plain, mask)).toBe(plain)
+    })
+})
+
+test.describe('T75 session list order', () => {
+    const session = (id: string, extra: Partial<TerminalSession> = {}): TerminalSession => ({ id, name: id, cwd: '/tmp', type: 'regular', ...extra })
+    const workspace = (id: string, sessions: TerminalSession[], extra: Partial<Workspace> = {}): Workspace =>
+        ({ id, name: `ws ${id}`, path: '/tmp', sessions, createdAt: 0, ...extra } as Workspace)
+
+    test("the Mac's All sessions List: session folders first, pinned then recently viewed; the phone draws it unchanged", () => {
+        const workspaces = [
+            workspace('home', [session('h1')], { isHome: true }),
+            workspace('a', [session('a1', { sessionFolderId: 'sf' }), session('a2', { isPinned: true }), session('a3')]),
+            // a folder that no longer exists counts as none, as on the Mac
+            workspace('b', [session('b1', { sessionFolderId: 'sf', isPinned: true }), session('b2', { sessionFolderId: 'gone' })])
+        ]
+        const entries = orderForAllSessions(sessionsInSidebarOrder(workspaces, [], true, true), ['a3', 'a1'])
+        const grouped = groupBySessionFolder(entries, [{ id: 'sf', name: 'Agents' }])
+        const ordered = [...grouped.folders.flatMap((group) => group.rows), ...grouped.unfiled]
+        // folder: pinned b1, then a1 (looked at); the rest: pinned a2, then a3 (looked at), then sidebar order
+        expect(ordered.map((entry) => entry.session.id)).toEqual(['b1', 'a1', 'a2', 'a3', 'h1', 'b2'])
+
+        const phoneSession = ({ workspace: w, session: s }: (typeof ordered)[number]): PhoneSession => ({
+            id: s.id,
+            name: s.name,
+            workspaceId: w.id,
+            workspaceName: w.name,
+            agent: null,
+            state: 'idle',
+            ...(s.sessionFolderId === 'sf' ? { sessionFolderId: 'sf' } : {}),
+            ...(s.isPinned ? { pinned: true } : {})
+        })
+        const drawn = (sessionFolders: Array<{ id: string; name: string }>) =>
+            listLines({ sessions: ordered.map(phoneSession), sessionFolders }).map((line) =>
+                line.kind === 'row' ? line.session.id : line.kind === 'folder' ? `# ${line.title}` : '---')
+        expect(drawn([{ id: 'sf', name: 'Agents' }])).toEqual(['# Agents', 'b1', '---', 'a1', '# No folder', 'a2', '---', 'a3', 'h1', 'b2'])
+        // no session folders on the Mac: no headings, only the pinned line
+        expect(drawn([]).filter((line) => line.startsWith('#'))).toEqual([])
     })
 })

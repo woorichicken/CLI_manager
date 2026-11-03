@@ -17,8 +17,8 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  * Checked: off by default (nothing listens) → Settings › Phone on (serve command, QR,
  * sidebar badge) · access (owner in, no header / another login 401, Funnel 403, bad Host
  * 421, cross-origin POST 403, /v1 and /mcp do not exist, only phone assets served) ·
- * pairing on the phone with the Mac's code · list grouped by workspace and by session
- * folder with status dots · Chat (the desktop Chat view, sending typed into the Mac's
+ * pairing on the phone with the Mac's code · the list in the Mac's All sessions order (row
+ * for row with the sidebar's DOM, also after the order moves) with status dots · Chat (the desktop Chat view, sending typed into the Mac's
  * terminal, logged as from the phone) · question card answered from the phone · Terminal
  * at the Mac's size with the key bar and input line · a resize message refused · the Mac's
  * pty size unchanged and no `resized` event after the phone attached and left · view-only
@@ -112,7 +112,7 @@ test('T76 phone: off by default, access, pairing, list, Chat, card, Terminal + k
                 folderId: 'f-work',
                 sessions: [
                     { id: CLAUDE, name: 'T76 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 1500`, sessionFolderId: 'sf-agents' },
-                    { id: SHELL, name: 'T76 Shell' }
+                    { id: SHELL, name: 'T76 Shell', isPinned: true }
                 ]
             },
             {
@@ -225,21 +225,43 @@ test('T76 phone: off by default, access, pairing, list, Chat, card, Terminal + k
     await expect(page.getByTestId('phone-device')).toContainText('Test iPhone')
     // the paired phone and the owner (the serve-shaped requests above, within the last minute)
     await expect(page.getByTestId('phone-badge')).toContainText('Phone on · 2 connected', { timeout: 10_000 })
-    const groups = phone.getByTestId('phone-group')
-    const projectGroup = phone.locator('[data-testid="phone-group"][data-group-title="T76 project"]')
-    await expect(projectGroup).toBeVisible()
-    await expect(projectGroup.getByTestId('phone-session-row')).toHaveCount(2)
-    await expect(projectGroup.locator('.phone-group-sub')).toContainText('Work')
-    await expect(phone.locator('[data-testid="phone-group"][data-group-title="T76 second"]')).toBeVisible()
-    await expect(phone.locator(`[data-testid="phone-session-row"][data-session-id="${CLAUDE}"]`)).toBeVisible()
+    // One list in the Mac's order — the sidebar's All sessions (List) top to bottom, compared row
+    // for row with the desktop's own DOM. No Workspaces / Folders switch any more.
+    await expect(phone.getByTestId('phone-group-workspaces')).toHaveCount(0)
+    await expect(phone.getByTestId('phone-group-folders')).toHaveCount(0)
+    const phoneOrder = (): Promise<string[]> =>
+        phone.locator('[data-testid="phone-session-row"]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-session-id') ?? ''))
+    const macOrder = (): Promise<string[]> =>
+        page.locator('[data-testid="sidebar-all-sessions"] [data-session-item]').evaluateAll((rows) => [...new Set(rows.map((row) => row.getAttribute('data-session-item') ?? ''))])
+    // Settings (still open from pairing) covers the sidebar: closed for this, opened again after
+    await page.locator('h2:has-text("Settings") + button').click()
+    await expect(page.getByTestId('phone-settings')).toHaveCount(0)
+    await page.getByTestId('sidebar-view-toggle').click()
+    await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
+    const firstOrder = await macOrder()
+    expect(firstOrder).toEqual(expect.arrayContaining([CLAUDE, CLAUDE2, SHELL]))
+    await expect.poll(phoneOrder, { timeout: 10_000 }).toEqual(firstOrder)
+    // as on the Mac: the session folder first, then the rest with the pinned shell on top and a line under it
+    expect([...firstOrder.slice(0, 2)].sort()).toEqual([CLAUDE, CLAUDE2].sort())
+    expect(firstOrder[2]).toBe(SHELL)
+    await expect(phone.getByTestId('phone-list-folder')).toHaveText(['Agents', 'No folder'])
+    await expect(phone.getByTestId('phone-pinned-divider')).toHaveCount(1)
+    await expect(phone.locator(`[data-testid="phone-session-row"][data-session-id="${CLAUDE2}"] [data-testid="phone-row-workspace"]`)).toHaveText('T76 second')
     await shot(phone, 'phone-list-390.png')
-    await phone.getByTestId('phone-group-folders').click()
-    await expect(groups.first()).toHaveAttribute('data-group-title', 'Agents')
-    await expect(groups.first().getByTestId('phone-session-row')).toHaveCount(2)
-    await expect(groups.nth(1)).toHaveAttribute('data-group-title', 'No folder')
-    await expect(groups).toHaveCount(2)
-    await shot(phone, 'phone-list-folders-390.png')
-    await phone.getByTestId('phone-group-workspaces').click()
+    await appShot(page, 'mac-all-sessions-1280.png')
+    // the Mac's order moves — a session looked at goes up — and the phone follows it, both ways
+    for (const looked of [CLAUDE2, CLAUDE]) {
+        await page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${looked}"]`).first().click()
+        // the sidebar holds its rows still while the pointer is over the list; off it, it catches up
+        await page.mouse.move(900, 500)
+        await expect.poll(async () => (await macOrder())[0], { timeout: 10_000 }).toBe(looked)
+        const moved = await macOrder()
+        await expect.poll(phoneOrder, { timeout: 10_000 }).toEqual(moved)
+    }
+    await page.getByTestId('sidebar-view-toggle').click()
+    await page.locator('[title^="Settings"]').first().click()
+    await page.getByTestId('settings-category-phone').click()
+    await expect(page.getByTestId('phone-settings')).toBeVisible()
     // no make / delete / rename anywhere on the page
     await expect(phone.getByRole('button', { name: /new session|delete|rename/i })).toHaveCount(0)
 
