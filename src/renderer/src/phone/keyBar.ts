@@ -8,13 +8,15 @@
  * the next key — an arrow here, or a letter typed in the input line.
  */
 
-export type KeyBarKey = 'Escape' | 'Tab' | 'Enter' | 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'ctrl-c'
+export type KeyBarKey = 'Escape' | 'Tab' | 'BackTab' | 'Enter' | 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'ctrl-c'
 
 export type KeyBarItem = { type: 'key'; key: KeyBarKey } | { type: 'modifier'; modifier: 'ctrl' }
 
 export const KEY_BAR_ITEMS: KeyBarItem[] = [
     { type: 'key', key: 'Escape' },
     { type: 'key', key: 'Tab' },
+    // Shift+Tab: Claude Code cycles its modes with it («shift+tab to cycle») — ovis reaches it with a held Shift
+    { type: 'key', key: 'BackTab' },
     { type: 'modifier', modifier: 'ctrl' },
     { type: 'key', key: 'ArrowUp' },
     { type: 'key', key: 'ArrowDown' },
@@ -27,6 +29,7 @@ export const KEY_BAR_ITEMS: KeyBarItem[] = [
 const CAPS: Record<KeyBarKey | 'ctrl', string> = {
     Escape: 'Esc',
     Tab: 'Tab',
+    BackTab: '⇧Tab',
     Enter: '⏎',
     ArrowUp: '↑',
     ArrowDown: '↓',
@@ -54,6 +57,8 @@ export function keySequence(key: KeyBarKey, applicationCursorKeys: boolean, ctrl
             return '\x1b'
         case 'Tab':
             return '\t'
+        case 'BackTab':
+            return '\x1b[Z'
         case 'Enter':
             return '\r'
         case 'ctrl-c':

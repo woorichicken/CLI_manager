@@ -219,6 +219,20 @@ test('T78 phone quality: in-app alert, touch chat, key hold-repeat, wrap to scre
     })(), 900)
     await page.waitForTimeout(500)
     expect(count(await termText(page, SHELL), '^[') - escBefore).toBe(1)
+    // ⇧Tab (Claude Code's mode cycle) arrives as CSI Z, and the whole bar fits a 390 phone: ⏎ is not cut
+    await touch(cdp, phone, await (async () => {
+        const b = await phone.locator('.phone-key[data-key="BackTab"]').boundingBox()
+        return { x: b!.x + b!.width / 2, y: b!.y + b!.height / 2 }
+    })())
+    await expect.poll(async () => count(await termText(page, SHELL), '^[[Z'), { timeout: 5000 }).toBe(1)
+    const bar = await phone.getByTestId('phone-key-bar').locator('.phone-key-row').evaluate((row) => {
+        const keys = Array.from(row.querySelectorAll<HTMLElement>('.phone-key'))
+        const last = keys[keys.length - 1].getBoundingClientRect()
+        return { keys: keys.length, lastRight: last.right, width: window.innerWidth, minWidth: Math.min(...keys.map((key) => key.getBoundingClientRect().width)) }
+    })
+    expect(bar.keys).toBe(10)
+    expect(bar.lastRight).toBeLessThanOrEqual(bar.width)
+    await capture(cdp, 't78-key-bar.png')
     await writeToTerminal(page, SHELL, '\x03')
 
     // ---- 4. wrap to screen ------------------------------------------------------------------

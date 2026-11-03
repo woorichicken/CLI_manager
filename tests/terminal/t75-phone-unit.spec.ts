@@ -236,9 +236,11 @@ test.describe('T75 alerts', () => {
 
 test.describe('T75 key bar and masking', () => {
     test('key bar: ovis order, sequences, Ctrl + letter', () => {
-        expect(KEY_BAR_ITEMS.map(keyBarLabel)).toEqual(['Esc', 'Tab', 'Ctrl', '↑', '↓', '←', '→', '^C', '⏎'])
+        expect(KEY_BAR_ITEMS.map(keyBarLabel)).toEqual(['Esc', 'Tab', '⇧Tab', 'Ctrl', '↑', '↓', '←', '→', '^C', '⏎'])
         expect(keySequence('Escape', false, false)).toBe('\x1b')
         expect(keySequence('Tab', false, false)).toBe('\t')
+        // Claude Code's «shift+tab to cycle» — xterm sends CSI Z for it
+        expect(keySequence('BackTab', false, false)).toBe('\x1b[Z')
         expect(keySequence('ctrl-c', false, false)).toBe('\x03')
         expect(keySequence('Enter', false, false)).toBe('\r')
         expect(keySequence('ArrowUp', false, false)).toBe('\x1b[A')

@@ -475,17 +475,17 @@ body.phone-body #root {
     -webkit-touch-callout: none;
     user-select: none;
     touch-action: manipulation;
-    /* nine keys share the width of a 390 phone; wider screens just get wider keys */
-    flex: 1 0 auto;
-    min-width: 34px;
+    /* ten keys share the width of a 390 phone equally (⇧Tab is the widest label); wider screens get wider keys */
+    flex: 1 1 0;
+    min-width: 0;
     height: 36px;
-    padding: 0 6px;
+    padding: 0 1px;
     border-radius: 7px;
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--border-color);
-    font-size: 13px;
+    font-size: 12.5px;
+    white-space: nowrap;
     color: var(--text-primary);
-    flex-shrink: 0;
 }
 .phone-key[aria-pressed='true'] {
     background: rgba(59, 130, 246, 0.45);
