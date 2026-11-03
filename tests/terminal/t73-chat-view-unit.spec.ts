@@ -525,7 +525,7 @@ test.describe('T73 r2 attachments and the composer helpers', () => {
         expect(activeTrigger('look at @src/ma', 15, false)).toEqual({ kind: 'file', query: 'src/ma', start: 8 })
         expect(activeTrigger('mail a@b', 8, false)).toBeNull()
         expect(fileMention('/tmp/a.png')).toBe('@/tmp/a.png')
-        expect(fileMention('/Users/x/My Docs/a.png')).toBe('@"/Users/x/My Docs/a.png"')
+        expect(fileMention('/w/x/My Docs/a.png')).toBe('@"/w/x/My Docs/a.png"')
 
         expect(splitFilePaths('saved to docs/demo.mp4 and src/a.ts:12.')).toEqual(['saved to ', { path: 'docs/demo.mp4' }, ' and ', { path: 'src/a.ts:12' }, '.'])
         expect(splitFilePaths('and/or e.g. 1.2.3')).toEqual(['and/or e.g. 1.2.3'])
@@ -533,7 +533,7 @@ test.describe('T73 r2 attachments and the composer helpers', () => {
         expect(codeIsFilePath('process.env')).toBe(false)
         expect(fileLineTarget('src/a.ts#L40')).toEqual({ path: 'src/a.ts', line: 40 })
         expect(resolveChatPath('src/../lib/a.ts', '/w/app')).toBe('/w/app/lib/a.ts')
-        expect(resolveChatPath('~/x.md', '/w', '/Users/me')).toBe('/Users/me/x.md')
+        expect(resolveChatPath('~/x.md', '/w', '/h/me')).toBe('/h/me/x.md')
         expect(resolveChatPath('/abs/x', '/w')).toBe('/abs/x')
 
         const before = 'a\nb\nc'
