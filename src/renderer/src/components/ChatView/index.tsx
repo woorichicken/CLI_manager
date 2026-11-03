@@ -141,6 +141,7 @@ function Turns({ snapshot }: { snapshot: ConversationSnapshot }) {
                     turn={turn}
                     last={index === snapshot.turns.length - 1}
                     working={snapshot.working}
+                    waiting={snapshot.prompt !== null}
                     agent={agent}
                 />
             ))}

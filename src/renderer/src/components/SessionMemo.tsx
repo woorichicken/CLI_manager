@@ -322,7 +322,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
                 {/* Toggle button - always visible at top-right */}
                 <button
                     onClick={handleToggle}
-                    className={`absolute top-2 right-14 z-30 w-7 h-7 flex items-center justify-center rounded-md transition-all duration-200 ${
+                    className={`absolute top-2 right-14 z-[46] w-7 h-7 flex items-center justify-center rounded-md transition-all duration-200 ${
                         isOpen
                             ? 'bg-yellow-500/30 text-yellow-300'
                             : hasAnyText
@@ -336,7 +336,7 @@ export const SessionMemo = forwardRef<SessionMemoHandle, SessionMemoProps>(
 
                 {/* Memo panel */}
                 {isOpen && (
-                    <div className="absolute top-1 right-1 z-30 w-72 bg-gray-900/95 backdrop-blur-sm border border-gray-700/50 rounded-lg shadow-2xl flex flex-col overflow-hidden">
+                    <div className="absolute top-1 right-1 z-[46] w-72 bg-gray-900/95 backdrop-blur-sm border border-gray-700/50 rounded-lg shadow-2xl flex flex-col overflow-hidden">
                         {/* Header */}
                         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50">
                             <span className="text-xs text-gray-400 font-medium">Memo</span>

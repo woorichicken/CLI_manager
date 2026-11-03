@@ -12,11 +12,14 @@ export const ChatTurn = memo(function ChatTurn({
     turn,
     last,
     working,
+    waiting,
     agent
 }: {
     turn: ConversationTurn
     last: boolean
     working: boolean
+    /** a question menu is on screen: the running turn waits on the person */
+    waiting: boolean
     agent: ConversationAgent
 }) {
     if (turn.role === 'user') {
@@ -26,7 +29,7 @@ export const ChatTurn = memo(function ChatTurn({
             </div>
         )
     }
-    const live = isLiveWorkTurn(turn, last, working)
+    const live = isLiveWorkTurn(turn, last, working || waiting)
     const segments = turnSegments(turn.parts)
     const settledOpen = workStartsOpen(false, turn.parts)
     return (
@@ -48,6 +51,7 @@ export const ChatTurn = memo(function ChatTurn({
                         key={`w-${segment.start}`}
                         parts={segment.parts}
                         live={live && lastSegment}
+                        waiting={waiting && live && lastSegment}
                         startsOpen={(live && lastSegment) || (lastSegment && settledOpen)}
                         startTs={turn.ts}
                         endTs={turn.end_ts}

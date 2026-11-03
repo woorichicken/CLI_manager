@@ -155,7 +155,9 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     // the command, the tab title. Dashed rules inside the dialog are skipped, not edges.
     let top = questionAt - 1
     while (top >= 0 && !INPUT_BOX_RULE.test(above[top].trim()) && !/^[❯>⏺●⎿]/.test(above[top].trim()) && questionAt - top <= CONTEXT_MAX_LINES * 2) top--
-    const context = (questionAt > 0 ? above.slice(top + 1, questionAt) : [])
+    // No edge found (Codex draws none): the rows above are the agent's output, not the dialog's.
+    const edgeFound = top >= 0 && questionAt - top <= CONTEXT_MAX_LINES * 2
+    const context = (questionAt > 0 && edgeFound ? above.slice(top + 1, questionAt) : [])
         .map((line) => line.trim())
         .filter((line) => line && !SEPARATOR.test(line) && !/^Tip:/i.test(line))
         .slice(-CONTEXT_MAX_LINES)

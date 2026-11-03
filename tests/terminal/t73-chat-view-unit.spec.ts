@@ -77,7 +77,7 @@ test.describe('T73 Claude transcript parsing (ported from ovis)', () => {
 
     test('compacted.jsonl: the compaction summary is a compact part between the turns', () => {
         const turns = parseClaudeTranscript(read(claudeFile('compacted.jsonl')))
-        const summary = records(claudeFile('compacted.jsonl')).find((e) => e.isCompactSummary).message.content
+        const summary = records(claudeFile("compacted.jsonl")).find((e) => e.isCompactSummary)!.message.content
         const compact = turns.find((t) => t.parts.some((p) => p.kind === 'compact'))
         expect(texts(compact, 'compact')).toEqual([summary])
     })
@@ -111,7 +111,7 @@ test.describe('T73 Claude transcript parsing (ported from ovis)', () => {
 
     test('queued.jsonl: a message typed mid-turn (queued_command) is a user turn', () => {
         const turns = parseClaudeTranscript(read(claudeFile('queued.jsonl')))
-        const queued = records(claudeFile('queued.jsonl')).find((e) => e.type === 'attachment').attachment.prompt
+        const queued = records(claudeFile('queued.jsonl')).find((e) => e.type === 'attachment')!.attachment.prompt
         expect(userTexts(turns)).toContain(queued)
     })
 
@@ -264,6 +264,8 @@ test.describe('T73 question menus off the screen (promptScreen)', () => {
 
         const codex = readPrompt(['Do you trust the contents of this directory?', '› 1. Yes, continue', '  2. No, quit', 'Press enter to continue'], 'codex')!
         expect([codex.kind, codex.answerable, codex.options.length]).toEqual(['trust', false, 2])
+        // no dialog edge above it: the agent's output above is not the question's context
+        expect(readPrompt(['ANSWER[2]: ASK', 'Do you trust the contents of this directory?', '› 1. Yes, continue', '  2. No, quit', 'Press enter to continue'], 'codex')!.context).toEqual([])
         expect(() => answerSteps(codex, { signature: codex.signature, optionIndex: 0 })).toThrow()
 
         const multi = readPrompt(['Which ones?', '❯ 1. [ ] Red', '  2. [✔] Blue', '  3. Submit', 'Enter to select · ↑/↓ to navigate · Esc to cancel'], 'claude')!

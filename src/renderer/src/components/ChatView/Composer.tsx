@@ -117,7 +117,8 @@ export function Composer({
                     rows={1}
                     value={text}
                     data-testid="chat-composer"
-                    placeholder={disabled ? disabledReason : `Message ${agentName} — Enter to send, Shift+Enter for a new line`}
+                    placeholder={disabled ? disabledReason : `Message ${agentName} (Enter to send)`}
+                    title="Enter sends · Shift+Enter starts a new line"
                     disabled={disabled}
                     onChange={(event) => {
                         setText(event.target.value)

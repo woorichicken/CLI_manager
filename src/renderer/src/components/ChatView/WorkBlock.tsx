@@ -13,12 +13,15 @@ import { TaskResultCard } from './TurnParts'
 export const WorkBlock = memo(function WorkBlock({
     parts,
     live,
+    waiting = false,
     startsOpen,
     startTs,
     endTs
 }: {
     parts: ConversationPart[]
     live: boolean
+    /** the agent stopped on a question (the card below): not "working" */
+    waiting?: boolean
     startsOpen: boolean
     startTs: string | null
     endTs?: string
@@ -28,13 +31,13 @@ export const WorkBlock = memo(function WorkBlock({
     const failed = workFailed(parts)
     const duration = live ? null : formatWorkDuration(startTs, endTs)
     const summary = workSummary(parts)
-    const head = live ? 'Working…' : duration ? `Worked for ${duration}` : 'Worked'
+    const head = waiting ? 'Waiting for your answer' : live ? 'Working…' : duration ? `Worked for ${duration}` : 'Worked'
     const visible = parts.filter((part) => part.kind !== 'skill')
     return (
         <div className="chat-work" data-testid="chat-work-block" data-open={isOpen ? 'true' : 'false'}>
             <button type="button" className="chat-work-head" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}>
                 {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                {live && <Loader2 size={12} className="animate-spin text-blue-300" aria-hidden="true" />}
+                {live && !waiting && <Loader2 size={12} className="animate-spin text-blue-300" aria-hidden="true" />}
                 <span className="chat-work-title">{head}</span>
                 {summary && <span className="chat-work-summary">· {summary}</span>}
                 {failed > 0 && (

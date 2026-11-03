@@ -1515,8 +1515,10 @@ function App() {
             <div className="flex-1 glass-panel m-2 ml-0 rounded-lg overflow-hidden flex flex-col">
                 {/* Header - minimized in split view */}
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} border-b border-white/10 flex items-center px-4 draggable justify-between relative z-10 transition-all`}>
-                    {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers */}
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers.
+                        overflow-hidden: when the right row needs the whole width (390 wide), this side is cut rather than
+                        drawn under it; the sidebar button keeps its room (found-defects 「390 헤더 겹침」) */}
+                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden" style={!isSidebarOpen ? { minWidth: 32 } : undefined}>
                         {!isSidebarOpen && (
                             <button
                                 onClick={() => setIsSidebarOpen(true)}
@@ -1550,10 +1552,6 @@ function App() {
                                 Select a workspace to get started
                             </span>
                         ))}
-                        {/* Terminal | Chat — read the live session: cliToolName arrives after the CLI starts */}
-                        {!splitLayout && activeSession && isAgentSession(activeLiveSession) && (
-                            <SessionViewToggle sessionId={activeSession.id} />
-                        )}
                         {/* Read the live session, not activeSession: that object is not refreshed when the AI flag changes */}
                         {!splitLayout && activeAiControl && activeSession && (
                             <span
@@ -1566,7 +1564,14 @@ function App() {
                             </span>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 no-drag shrink-0">
+                    {/* A row wider than the header scrolls sideways (no bar) instead of covering the left side */}
+                    <div className="flex items-center gap-2 no-drag min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                        {/* Terminal | Chat — first on the right, where the button row never covers it (found-defects:
+                            at 390 the row pushes into the left group). Read the live session: cliToolName arrives
+                            after the CLI starts. */}
+                        {!splitLayout && activeSession && isAgentSession(activeLiveSession) && (
+                            <SessionViewToggle sessionId={activeSession.id} />
+                        )}
                         {/* Checklists belong to no session, so they stay in split view too */}
                         <HeaderChecklists
                             open={checklistsOpen}
