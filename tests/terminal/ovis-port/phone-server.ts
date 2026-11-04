@@ -412,7 +412,6 @@ test.describe('ovis server/push.test.ts', () => {
         })
 
         test('rejects endpoints and keys a push service could never have issued', () => {
-            test.fail(true, 'ovis-port bug: isSubscription() checks only that keys are strings under a length cap — a 40-char p256dh and auth "AAAA" are accepted')
             const { push } = pushRig()
             const { endpoint, keys } = subscriptionFixture()
             const accepts = (value: unknown): boolean => push.subscribe(value, 'tailscale:o')

@@ -176,8 +176,10 @@ test.describe('T75 alerts', () => {
         expect(sent()).toHaveLength(0)
         expect(await push.test()).toMatchObject({ status: 'none' })
 
-        expect(push.subscribe({ endpoint: 'http://not-https.example/x', keys: { p256dh: 'p', auth: 'a' } }, 'tailscale:o')).toBe(false)
-        expect(push.subscribe({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p', auth: 'a' } }, 'tailscale:o')).toBe(true)
+        expect(push.subscribe({ endpoint: 'http://not-https.example/x', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } }, 'tailscale:o')).toBe(false)
+        // keys no push service issued (F06: p256dh is 65 bytes, auth 16) are refused
+        expect(push.subscribe({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p', auth: 'a' } }, 'tailscale:o')).toBe(false)
+        expect(push.subscribe({ endpoint: 'https://push.example/abc', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } }, 'tailscale:o')).toBe(true)
         expect(push.count()).toBe(1)
         expect(fs.statSync(path.join(dir, 'push.json')).mode & 0o777).toBe(0o600)
         // the VAPID key pair is made on first use, in a 0600 file
@@ -225,7 +227,7 @@ test.describe('T75 alerts', () => {
         expect(sent()[2].payload.title).toBe('CLI Manager')
 
         // a revoked device's subscriptions go with it; the owner's stay
-        push.subscribe({ endpoint: 'https://push.example/dev', keys: { p256dh: 'p', auth: 'a' } }, 'device:d1')
+        push.subscribe({ endpoint: 'https://push.example/dev', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } }, 'device:d1')
         expect(push.count()).toBe(2)
         push.forgetOwner('device:d1')
         expect(push.count()).toBe(1)

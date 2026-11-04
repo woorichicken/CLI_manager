@@ -246,9 +246,24 @@ function clip(text: string): string {
     return line.length > 140 ? `${line.slice(0, 139)}…` : line
 }
 
+/** Bytes a base64url key decodes to; -1 when it is not base64url at all. */
+function decodedLength(value: unknown): number {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+=*$/.test(value)) return -1
+    return Buffer.from(value, 'base64url').length
+}
+
+/**
+ * The PushSubscription JSON a browser produces: an https endpoint, p256dh an uncompressed P-256
+ * point (65 bytes), auth a 16-byte secret (RFC 8291). Anything else no push service issued, and
+ * web-push would only fail on it at send time (ovis server/push.ts:255-276, MIT).
+ */
 function isSubscription(value: unknown): value is PhonePushSubscription {
     const v = value as PhonePushSubscription | null
-    return !!v && typeof v.endpoint === 'string' && /^https:\/\//.test(v.endpoint) && v.endpoint.length < 2048
-        && !!v.keys && typeof v.keys.p256dh === 'string' && typeof v.keys.auth === 'string'
-        && v.keys.p256dh.length < 256 && v.keys.auth.length < 128
+    if (!v || typeof v !== 'object' || typeof v.endpoint !== 'string' || v.endpoint.length >= 2048) return false
+    try {
+        if (new URL(v.endpoint).protocol !== 'https:') return false
+    } catch {
+        return false
+    }
+    return !!v.keys && decodedLength(v.keys.p256dh) === 65 && decodedLength(v.keys.auth) === 16
 }
