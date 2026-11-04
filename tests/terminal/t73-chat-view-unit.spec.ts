@@ -501,6 +501,19 @@ test.describe('T73 r2 `/` commands an agent offers (ported ovis command tables)'
         expect(list.find((command) => command.name === 'model')).toMatchObject({ terminal: 'bare' })
         expect(list.find((command) => command.name === 'status')).toMatchObject({ terminal: 'always' })
     })
+
+    test('Codex: 300 skills with scripts/references folders are all listed', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 't73-codex-many-'))
+        const codex = path.join(home, '.codex')
+        const SKILL_COUNT = 300
+        for (let i = 0; i < SKILL_COUNT; i++) {
+            const folder = path.join(codex, 'skills', `skill-${String(i).padStart(3, '0')}`)
+            for (const sub of ['scripts', 'references', 'assets']) fs.mkdirSync(path.join(folder, sub), { recursive: true })
+            fs.writeFileSync(path.join(folder, 'SKILL.md'), `---\nname: skill-${i}\ndescription: d\n---\n`)
+        }
+        const list = createChatCommandLister({ home, claudeConfigDir: () => path.join(home, '.claude'), codexHome: () => codex })('codex', undefined)
+        expect(list.filter((command) => command.trigger === '$')).toHaveLength(SKILL_COUNT)
+    })
 })
 
 test.describe('T73 r2 attachments and the composer helpers', () => {
