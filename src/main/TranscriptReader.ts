@@ -8,6 +8,7 @@ import { foldMetadata } from './transcript/metadata'
 import { createClaudeTranscriptParser } from './transcript/claudeTranscript'
 import { createCodexTranscriptParser } from './transcript/codexTranscript'
 import type { TranscriptParser } from './transcript/records'
+import { claudeForks, followClaudeBranch, newClaudeBranch, type ClaudeBranch } from './transcript/claudeBranch'
 
 /**
  * Reads an agent's own transcript file into chat turns, and keeps reading it
@@ -86,6 +87,13 @@ interface ReadState {
     truncated: boolean
     turns: ConversationTurn[] | null
     meta: ConversationMeta | null
+    /**
+     * Claude only: the conversation's branch (a /rewind leaves the turns it went back over in the
+     * file, F10), where the read began (`floor`), and the forks the parser was last fed without.
+     */
+    branch: ClaudeBranch | null
+    floor: number
+    forksKey: string
 }
 
 /** Claude's folder name for a project: every character that is not a letter or digit becomes "-". */
@@ -288,7 +296,10 @@ export class TranscriptReader {
             parser: agent === 'claude' ? createClaudeTranscriptParser() : createCodexTranscriptParser(),
             truncated: false,
             turns: null,
-            meta: null
+            meta: null,
+            branch: agent === 'claude' ? newClaudeBranch() : null,
+            floor: 0,
+            forksKey: '[]'
         }
     }
 
@@ -321,6 +332,7 @@ export class TranscriptReader {
                 if (start > 0 && start < sizes[index]) this.skipToNextLine(state.files[index])
                 state.truncated = true
             }
+            state.floor = state.files[0]?.offset ?? 0
         }
 
         for (let i = 0; i < state.files.length; i++) {
@@ -337,11 +349,17 @@ export class TranscriptReader {
                 cursor.mtimeMs = stat.mtimeMs
             }
             if (size === cursor.offset) continue
-            const text = this.readLines(cursor, size)
+            const lineStart = cursor.offset - cursor.carry.length
+            const bytes = this.readLines(cursor, size)
             this.keepMark(cursor)
-            if (text.length > 0) {
-                state.parser.write(text)
-                state.meta = foldMetadata(text, state.agent, state.meta)
+            if (bytes.length > 0) {
+                if (state.branch && i === 0 && this.followBranch(state, bytes, lineStart)) {
+                    this.refeedWithoutForks(state, cursor)
+                } else {
+                    const text = bytes.toString('utf8')
+                    state.parser.write(text)
+                    state.meta = foldMetadata(text, state.agent, state.meta)
+                }
                 fed = true
             } else if (cursor.carry.length > 0) {
                 // only a partial line arrived: the snapshot's preview shows it
@@ -385,6 +403,52 @@ export class TranscriptReader {
         }
     }
 
+    /**
+     * Follows the Claude branch over complete lines starting at byte `start` of the file. True when
+     * the forks it hides changed: the parser, fed what is no longer on the branch, starts over.
+     */
+    private followBranch(state: ReadState, bytes: Buffer, start: number): boolean {
+        const branch = state.branch!
+        for (let offset = 0; offset < bytes.length; ) {
+            const newline = bytes.indexOf(0x0a, offset)
+            const end = newline < 0 ? bytes.length : newline
+            followClaudeBranch(branch, bytes.subarray(offset, end), start + offset, start + end + 1, state.floor)
+            offset = end + 1
+        }
+        const key = JSON.stringify(claudeForks(branch).filter(([, end]) => end > state.floor))
+        if (key === state.forksKey) return false
+        state.forksKey = key
+        return true
+    }
+
+    /** A fresh parser fed the file from the read's start to the cursor, without the hidden forks. */
+    private refeedWithoutForks(state: ReadState, cursor: FileCursor): void {
+        const forks = JSON.parse(state.forksKey) as [number, number][]
+        const end = cursor.offset - cursor.carry.length
+        const kept: Buffer[] = []
+        const fd = openSync(cursor.path, 'r')
+        try {
+            let from = state.floor
+            const take = (to: number): void => {
+                if (to <= from) return
+                const buffer = Buffer.alloc(to - from)
+                const length = readSync(fd, buffer, 0, buffer.length, from)
+                kept.push(buffer.subarray(0, length))
+            }
+            for (const [forkStart, forkEnd] of [...forks].sort((a, b) => a[0] - b[0])) {
+                take(Math.min(forkStart, end))
+                from = Math.max(from, forkEnd)
+            }
+            take(end)
+        } finally {
+            closeSync(fd)
+        }
+        const text = Buffer.concat(kept).toString('utf8')
+        state.parser = createClaudeTranscriptParser()
+        state.parser.write(text)
+        state.meta = foldMetadata(text, state.agent, null)
+    }
+
     /** Moves the cursor past the next newline. */
     private skipToNextLine(cursor: FileCursor): void {
         const fd = openSync(cursor.path, 'r')
@@ -406,7 +470,7 @@ export class TranscriptReader {
     }
 
     /** The complete lines between the cursor and `size`; the unfinished rest stays in `carry`. */
-    private readLines(cursor: FileCursor, size: number): string {
+    private readLines(cursor: FileCursor, size: number): Buffer {
         const fd = openSync(cursor.path, 'r')
         const parts: Buffer[] = [cursor.carry]
         try {
@@ -426,10 +490,10 @@ export class TranscriptReader {
         const lastNewline = all.lastIndexOf(0x0a)
         if (lastNewline < 0) {
             cursor.carry = all
-            return ''
+            return Buffer.alloc(0)
         }
         cursor.carry = all.subarray(lastNewline + 1)
-        return all.subarray(0, lastNewline + 1).toString('utf8')
+        return all.subarray(0, lastNewline + 1)
     }
 
     private locateClaude(id: string, cwd?: string): string[] {

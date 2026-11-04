@@ -368,3 +368,50 @@ test.describe('T79 F12 a transcript replaced by another file is read again, not 
         expect(prompts(next.turns)).toEqual(['apple', 'banana'])
     })
 })
+
+test.describe('T79 F10 a rewound Claude conversation shows the branch it follows now (ovis reader preprocessing)', () => {
+    const recorded = fs.readFileSync(path.join(__dirname, 'fixtures', 'transcripts', 'ovis', 'claude-rewind-2.1.304-fork.jsonl'), 'utf8')
+    const lines = recorded.split('\n').filter(Boolean)
+    const id = '00000000-0000-4000-8000-0000000000f2'
+
+    test('recorded on 2.1.304: after the restore only "cherry" is in the conversation', () => {
+        const { reader, file } = claudeHome(id)
+        fs.writeFileSync(file, recorded)
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['cherry'])
+    })
+
+    test('read live: apple and banana, then the fork hides them; a fresh read agrees', () => {
+        const { reader, file } = claudeHome(id)
+        const fork = lines.findIndex((line) => line.includes('"content":"cherry"'))
+        fs.writeFileSync(file, `${lines.slice(0, fork).join('\n')}\n`)
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['apple', 'banana'])
+        fs.appendFileSync(file, `${lines.slice(fork).join('\n')}\n`)
+        const warm = reader.read('s', 'claude', id)!
+        expect(warm.changed).toBe(true)
+        expect(prompts(warm.turns)).toEqual(['cherry'])
+        const cold = new TranscriptReader({ claudeConfigDir: () => path.dirname(path.dirname(path.dirname(file))), codexHome: () => '/nonexistent' })
+        expect(cold.read('s', 'claude', id)!.turns).toEqual(warm.turns)
+    })
+
+    test('rewound to the middle: the prompts before the point stay, the ones after it go', () => {
+        const { reader, file } = claudeHome(id)
+        const apple = claudeExchange('apple', 'Apple noted.', null)
+        const banana = claudeExchange('banana', 'Banana noted.', apple.last)
+        const cherry = claudeExchange('cherry', 'Cherry noted.', apple.last)
+        fs.writeFileSync(file, [...apple.lines, ...banana.lines].join('\n') + '\n')
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['apple', 'banana'])
+        fs.appendFileSync(file, cherry.lines.join('\n') + '\n')
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['apple', 'cherry'])
+        const date = claudeExchange('date', 'Date noted.', cherry.last)
+        fs.appendFileSync(file, date.lines.join('\n') + '\n')
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['apple', 'cherry', 'date'])
+    })
+
+    test('an ordinary next prompt (hanging from the last answer) moves nothing', () => {
+        const { reader, file } = claudeHome(id)
+        const apple = claudeExchange('apple', 'Apple noted.', null)
+        const banana = claudeExchange('banana', 'Banana noted.', apple.last)
+        fs.writeFileSync(file, [...apple.lines, ...banana.lines].join('\n') + '\n')
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['apple', 'banana'])
+    })
+})
