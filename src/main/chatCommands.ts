@@ -143,6 +143,10 @@ function frontmatter(path: string): Record<string, string> | null {
     if (text === null) return null
     const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
     const fields: Record<string, string> = {}
+    // No `description:`: the body's first non-empty line says what it is, as Claude Code shows it
+    // (ovis server/skills/walk.ts:127-145 description(), MIT). Read off the head only.
+    const body = (match ? text.slice(match[0].length).replace(/^[^\n]*\n?/, '') : text).split(/\r?\n/).find((line) => line.trim())?.trim()
+    if (body) fields[BODY_LINE] = body
     if (!match) return fields
     let key: string | null = null
     for (const line of match[1].split(/\r?\n/)) {
@@ -156,6 +160,9 @@ function frontmatter(path: string): Record<string, string> | null {
     }
     return fields
 }
+
+/** Key the body's first line is kept under (no frontmatter field has this name). */
+const BODY_LINE = '\0body'
 
 const isOff = (value: string | undefined): boolean => value !== undefined && ['false', 'no', 'off', '0'].includes(value.trim().toLowerCase())
 
@@ -172,7 +179,7 @@ function isDirectory(path: string): boolean {
 }
 
 /** `<root>/<name>/SKILL.md` (Claude: one level; Codex: down to `depth`). */
-function skillsIn(root: string, budget: Budget, depth = 1): { name: string; description: string }[] {
+function skillsIn(root: string, budget: Budget, depth = 1, codex = false): { name: string; description: string }[] {
     const found: { name: string; description: string }[] = []
     const visit = (directory: string, level: number): void => {
         if (budget.folders <= 0 || !isDirectory(directory)) return
@@ -180,7 +187,9 @@ function skillsIn(root: string, budget: Budget, depth = 1): { name: string; desc
         const file = join(directory, 'SKILL.md')
         if (level > 0 && existsSync(file)) {
             const fields = frontmatter(file)
-            if (fields && !isOff(fields['user-invocable'])) found.push({ name: fields.name || basename(directory), description: fields.description ?? '' })
+            // Codex lists a skill only with a frontmatter description, the body is no stand-in (ovis skills/codex.ts:82-85)
+            const description = codex ? fields?.description ?? '' : fields?.description || fields?.[BODY_LINE] || ''
+            if (fields && !isOff(fields['user-invocable'])) found.push({ name: fields.name || basename(directory), description })
             // A skill folder holds its scripts/references, not more skills — walking them spent the folder budget, so a
             // 300-skill ~/.codex/skills listed only about half (new-worktree, park-finding missing)
             return
@@ -215,7 +224,7 @@ function commandsIn(root: string, budget: Budget): { name: string; description: 
             const path = join(directory, entry)
             if (entry.endsWith('.md') && !isDirectory(path)) {
                 const fields = frontmatter(path)
-                if (fields && !isOff(fields['user-invocable'])) found.push({ name: [...prefix, entry.slice(0, -3)].join(':'), description: fields.description ?? '' })
+                if (fields && !isOff(fields['user-invocable'])) found.push({ name: [...prefix, entry.slice(0, -3)].join(':'), description: fields.description || fields[BODY_LINE] || '' })
             } else if (prefix.length < 3) {
                 visit(path, [...prefix, entry])
             }
@@ -323,7 +332,7 @@ export function createChatCommandLister(dirs: ChatCommandDirs): (agent: Conversa
                 join(codexHome, 'skills', '.system')
             ]
             for (const root of roots) {
-                for (const skill of skillsIn(root, budget, 6)) {
+                for (const skill of skillsIn(root, budget, 6, true)) {
                     if (skill.description) all.push({ name: skill.name, description: skill.description, source: 'skill', trigger: '$' })
                 }
             }

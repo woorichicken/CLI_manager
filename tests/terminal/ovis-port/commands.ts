@@ -64,7 +64,6 @@ test.describe('ovis server/skills/claude.test.ts', () => {
         })
 
         test('loads personal and nearest ancestor skills before commands, without descendants — description from the body', () => {
-            test.fail(true, 'ovis-port bug: a skill/command without a `description` frontmatter gets an empty description instead of the body text (chatCommands.ts frontmatter(): fields.description ?? empty)')
             const { home, repo, cwd } = fixture()
             skill(path.join(repo, '.claude/skills'), 'parent')
             put(path.join(repo, '.claude/commands/team/check.md'), 'Check')
