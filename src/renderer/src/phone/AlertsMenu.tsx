@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, BellOff, BellRing } from 'lucide-react'
 import { testPush } from './api'
-import { alertsState, disableAlerts, enableAlerts, type AlertsState } from './push'
+import { alertsState, disableAlerts, enableAlerts, testAlertMessage, type AlertsState } from './push'
 
 /**
  * Alerts for this phone: on/off and a test. The Mac sends one when a session asks a
@@ -39,7 +39,7 @@ export function AlertsMenu({ publicKey }: { publicKey: string }) {
     const test = async (): Promise<void> => {
         setMessage('Sending…')
         const result = await testPush().catch((error) => ({ status: 'failed' as const, message: String(error) }))
-        setMessage(result.status === 'sent' ? `Sent to ${result.devices} device${result.devices === 1 ? '' : 's'}.` : result.message)
+        setMessage(testAlertMessage(result))
     }
 
     const Icon = state === 'on' ? BellRing : state === 'off' || state === null ? Bell : BellOff

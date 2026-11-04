@@ -1,4 +1,4 @@
-import type { PhonePushSubscription } from '../../../shared/phone'
+import type { PhonePushSubscription, PhoneTestPushResult } from '../../../shared/phone'
 import { subscribePush, unsubscribePush } from './api'
 
 /**
@@ -8,6 +8,17 @@ import { subscribePush, unsubscribePush } from './api'
  */
 
 export type AlertsState = 'on' | 'off' | 'unsupported' | 'denied'
+
+/**
+ * What «Send a test alert» says back. The service worker shows no alert while this page is in front
+ * (sw.js: the page already shows it), so a test tapped here appears only once the phone is locked
+ * or another app is up — said, so «Sent to 1 device» with nothing on screen does not read as broken.
+ */
+export function testAlertMessage(result: PhoneTestPushResult): string {
+    if (result.status !== 'sent') return result.message
+    const devices = `${result.devices} device${result.devices === 1 ? '' : 's'}`
+    return `Sent to ${devices}. Alerts show while this page is in the background — lock the phone or switch apps to see it.`
+}
 
 function supported(): boolean {
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
