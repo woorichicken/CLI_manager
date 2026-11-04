@@ -251,3 +251,55 @@ test.describe('T79 F08 the 51st pairing revokes the oldest device', () => {
         expect(revoked).toEqual([ids[0]])
     })
 })
+
+test.describe('T79 F05 a SKILL.md that is not a plain file cannot stall main', () => {
+    // The `/` menu read every SKILL.md whole, then kept 16 KB. A project can hold a FIFO (open waits for a writer
+    // forever) or a link to /dev/zero (a read that never ends): Electron main stops. The lister runs in a child
+    // node so a hang is a timeout here, not a stuck test runner.
+    const list = (project: string, home: string): { status: number | null; names: string[] } => {
+        const dir = tmp('lister')
+        // package.json says commonjs: an .mts copy lets node load the TypeScript as a module
+        fs.copyFileSync(path.join(ROOT, 'src/main/chatCommands.ts'), path.join(dir, 'chatCommands.mts'))
+        const runner = path.join(dir, 'run.mjs')
+        fs.writeFileSync(
+            runner,
+            [
+                `const { createChatCommandLister } = await import(${JSON.stringify(path.join(dir, 'chatCommands.mts'))})`,
+                `const list = createChatCommandLister({ home: ${JSON.stringify(home)}, claudeConfigDir: () => ${JSON.stringify(path.join(home, '.claude'))}, codexHome: () => ${JSON.stringify(path.join(home, '.codex'))} })`,
+                `console.log(JSON.stringify(list('claude', ${JSON.stringify(project)}).filter((c) => c.source !== 'builtin').map((c) => c.name)))`
+            ].join('\n')
+        )
+        const run = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', runner], { timeout: 8000, encoding: 'utf8' })
+        return { status: run.status, names: run.status === 0 ? (JSON.parse(run.stdout.trim()) as string[]) : [] }
+    }
+    const project = (): { root: string; home: string; skill: (name: string) => string } => {
+        const root = tmp('project')
+        fs.mkdirSync(path.join(root, '.git'))
+        const home = tmp('home')
+        const skill = (name: string): string => {
+            fs.mkdirSync(path.join(root, '.claude', 'skills', name), { recursive: true })
+            return path.join(root, '.claude', 'skills', name, 'SKILL.md')
+        }
+        fs.writeFileSync(skill('fine'), '---\nname: fine\ndescription: An ordinary skill\n---\nBody\n')
+        return { root, home, skill }
+    }
+
+    test('a FIFO is skipped, a link to /dev/zero is skipped, a huge file is read only as far as its head', () => {
+        const fifo = project()
+        execFileSync('mkfifo', [fifo.skill('fifo')])
+        const first = list(fifo.root, fifo.home)
+        expect(first.status, 'the lister hung on a FIFO SKILL.md').toBe(0)
+        expect(first.names).toEqual(['fine'])
+
+        // only once a FIFO cannot hang it: the old code would read /dev/zero until memory ran out
+        const zero = project()
+        fs.symlinkSync('/dev/zero', zero.skill('zero'))
+        // frontmatter at the top of a 40 MB file still counts; nothing past the head is needed
+        const big = zero.skill('big')
+        fs.writeFileSync(big, '---\nname: big\ndescription: Large\n---\n')
+        fs.appendFileSync(big, Buffer.alloc(40 * 1024 * 1024, 'x'))
+        const second = list(zero.root, zero.home)
+        expect(second.status, 'the lister hung on /dev/zero').toBe(0)
+        expect([...second.names].sort()).toEqual(['big', 'fine'])
+    })
+})
