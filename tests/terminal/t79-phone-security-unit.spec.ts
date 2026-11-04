@@ -36,6 +36,7 @@ async function startServer(): Promise<{
     typed: string[]
     sent: string[]
     subscribed: string[]
+    revokedHook: Array<string | null>
     stop: () => Promise<void>
 }> {
     const dir = tmp('server')
@@ -43,6 +44,7 @@ async function startServer(): Promise<{
     const typed: string[] = []
     const sent: string[] = []
     const subscribed: string[] = []
+    const revokedHook: Array<string | null> = []
     const events = new EventEmitter()
     const push = {
         forgetOwner: () => undefined,
@@ -82,11 +84,12 @@ async function startServer(): Promise<{
             },
             events: events as never
         },
-        subscribeConversation: () => () => undefined
+        subscribeConversation: () => () => undefined,
+        onDeviceRevoked: (id) => revokedHook.push(id)
     })
     const state = await server.apply({ enabled: true, port: 0 } as never)
     expect(state.running).toBe(true)
-    return { server, devices, port: state.port!, typed, sent, subscribed, stop: () => server.stop() }
+    return { server, devices, port: state.port!, typed, sent, subscribed, revokedHook, stop: () => server.stop() }
 }
 
 /** Pairs a `drive` device and returns its cookie. */
@@ -377,5 +380,20 @@ test.describe('T79 F22 Codex `$` lists every skill folder ovis loads', () => {
         const skills = list('codex', project).filter((c) => c.trigger === '$').map((c) => c.name)
         // ovis server/skills/codex.ts:207-213 order: project .agents, project .codex, ~/.agents, CODEX_HOME, .system
         expect(skills).toEqual(['project-agents-skill', 'project-codex-skill', 'user-agents-skill', 'user-codex-skill', 'bundled-skill'])
+    })
+})
+
+test.describe('T79 F03 hook — a revoke is told to whoever holds work for that device', () => {
+    test('Disconnect and Disconnect all call onDeviceRevoked (the 51st pairing goes through the same revoke listener, F08)', async () => {
+        const h = await startServer()
+        try {
+            const first = pairDevice(h.devices)
+            h.devices.revoke(first.id)
+            pairDevice(h.devices)
+            h.devices.revokeAll()
+            expect(h.revokedHook).toEqual([first.id, null])
+        } finally {
+            await h.stop()
+        }
     })
 })

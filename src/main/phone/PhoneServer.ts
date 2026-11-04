@@ -71,6 +71,11 @@ export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' |
     onStateChange(): void
     /** a status poller for alerts, started and stopped with the server */
     statusPoller: { start(): void; stop(): void }
+    /**
+     * A paired device lost access (`null`: every device) — Disconnect, Disconnect all, or pushed out by the
+     * 51st pairing. Its sockets are already closing; work it left behind (a Chat queue it filled) should go too.
+     */
+    onDeviceRevoked?(deviceId: string | null): void
 }
 
 export interface PhoneRequestAccess {
@@ -98,6 +103,7 @@ export class PhoneServer {
                 if (deviceId === null ? socket.deviceId !== undefined : socket.deviceId === deviceId) socket.ws.close(4401, 'revoked')
             }
             deps.push.forgetOwner(deviceId === null ? null : `device:${deviceId}`)
+            deps.onDeviceRevoked?.(deviceId)
         })
         deps.devices.onChange(() => deps.onStateChange())
     }
