@@ -39,7 +39,7 @@ const CHIP_BADGE = 'px-1 rounded-sm text-[9px] leading-[13px] font-medium'
  * sits below the terminal's own overlays in stacking order.
  */
 export function HeaderChecklists({ open, onOpenChange, compact, workspaces, activeWorkspaceId, viewedSessionId, onShowSession }: HeaderChecklistsProps) {
-    const nav = useCurrentChecklist()
+    const nav = useCurrentChecklist(activeWorkspaceId)
     const hint = useShortcutHint()
     const { current } = nav
     const chipRef = useRef<HTMLButtonElement>(null)

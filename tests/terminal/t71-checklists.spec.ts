@@ -405,4 +405,59 @@ test.describe('T71 header checklists', () => {
         await expect(chip(page2)).toHaveAttribute('data-checklist-id', second.json.checklist.id)
         await expect(chip(page2)).toHaveAttribute('data-progress', '0/2')
     })
+
+    test('the header follows the project of the session in view (9ddedfe3)', async () => {
+        ctx = await launch()
+        const { app, page } = ctx
+        const shots = shotsDir()
+        await resizeMainWindow(app, 1280, 800)
+        await activateSession(page, 'T71 worker')
+        const api = await apiFor(homeDir)
+        const make = async (title: string, project: string): Promise<string> => {
+            const made = await api<{ checklist: ApiChecklist }>('POST', '/v1/checklists', { title, project, items: ['one'] })
+            expect(made.status, JSON.stringify(made.json)).toBe(201)
+            return made.json.checklist.id
+        }
+        const here = await make('T71WS work', 'T71WS')
+        const there = await make('Other work', 'T71Other')
+        await expect(chip(page)).not.toHaveAttribute('data-checklist-id', '')
+
+        // Moving to a session of the other project brings up that project's checklist, and back.
+        const inView = (): Promise<string[]> => page.evaluate(() =>
+            Array.from(document.querySelectorAll('[data-session-id]'))
+                .filter((el) => getComputedStyle(el).visibility === 'visible')
+                .map((el) => el.getAttribute('data-session-id') ?? '')
+        )
+        await activateSession(page, 'T71 other')
+        await expect.poll(inView).toEqual([OTHER])
+        // Shot before the check, so the same step also shows the old header (which stayed put).
+        if (shots) await page.screenshot({ path: path.join(shots, 'header-follow-other-1280.png'), clip: { x: 0, y: 0, width: 1280, height: 110 } })
+        await expect(chip(page)).toHaveAttribute('data-checklist-id', there)
+        await activateSession(page, 'T71 worker')
+        await expect(chip(page)).toHaveAttribute('data-checklist-id', here)
+        if (shots) await page.screenshot({ path: path.join(shots, 'header-follow-t71ws-1280.png'), clip: { x: 0, y: 0, width: 1280, height: 110 } })
+
+        // A checklist picked by hand stays while the project does not change.
+        await chip(page).click()
+        while ((await page.getByTestId('checklist-title').textContent()) !== 'Other work') {
+            await page.getByTestId('checklist-next').click()
+        }
+        await page.keyboard.press('Escape')
+        await expect(chip(page)).toHaveAttribute('data-checklist-id', there)
+        await activateSession(page, 'T71 lead')
+        await expect(chip(page)).toHaveAttribute('data-checklist-id', there)
+
+        // A project with no checklist keeps the one on screen.
+        await chip(page).click()
+        await page.getByTestId('checklist-project').selectOption('')
+        await page.keyboard.press('Escape')
+        await activateSession(page, 'T71 other')
+        await expect(chip(page)).toHaveAttribute('data-checklist-id', there)
+
+        // 390 wide: the chip is still the followed one.
+        await page.locator('button[title^="Close Sidebar"]').click()
+        await resizeMainWindow(app, 390, 800)
+        await expect(chip(page)).toHaveAttribute('data-checklist-id', there)
+        if (shots) await page.screenshot({ path: path.join(shots, 'header-follow-390.png'), clip: { x: 0, y: 0, width: 390, height: 110 } })
+    })
 })
