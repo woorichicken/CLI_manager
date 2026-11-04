@@ -32,6 +32,10 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 - Impact: 좁은 창에서만. 버튼은 눌리지만 무엇을 누르는지 읽기 어렵다.
 - Workaround: 창을 넓힌다.
 - Fix direction: 좁을 때 Related 는 아이콘만(이미 분할 칸 헤더의 `compact`), 또는 왼쪽 묶음에 `overflow-hidden`.
+- 재발(2026-11-05 fb-1105, v1.24.0 = `origin/main`): 같은 390·사이드바 닫힘에서 이번엔 **체크리스트 칩의 「0/1」 위에 인박스 종**이 겹쳐
+  「0/1🔔」로 보였다. 고치기 전 코드와 고친 코드 캡처가 같아 그 회차 변경(헤더 칩이 프로젝트를 따라감)과는 무관하다.
+  캡처 `~/Downloads/_batches/fb-1105/review/solhun-web-page/before-follow/header-follow-other-390.png`. 칩이 들어오며 위 「더 빠듯해진다」가 실제가 됐다 —
+  고칠 때 Related 와 칩·종을 한 번에 본다.
 
 ---
 
