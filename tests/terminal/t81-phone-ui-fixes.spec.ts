@@ -456,8 +456,11 @@ test('T81 G3 the phone terminal draws with its own font: Hangul exactly two Lati
     const measured = await phone.evaluate(() => {
         const context = document.createElement('canvas').getContext('2d')!
         context.font = '13px "CLIM Phone Mono"'
-        const font = Array.from(document.fonts).find((face) => face.family.replace(/"/g, '') === 'CLIM Phone Mono')
-        return { latin: context.measureText('A').width, hangul: context.measureText('한').width, status: font?.status ?? null }
+        let status: string | null = null
+        document.fonts.forEach((face) => {
+            if (face.family.replace(/"/g, '') === 'CLIM Phone Mono') status = face.status
+        })
+        return { latin: context.measureText('A').width, hangul: context.measureText('한').width, status }
     })
     expect(measured.status).toBe('loaded')
     expect(measured.hangul / measured.latin).toBeCloseTo(2, 2)
