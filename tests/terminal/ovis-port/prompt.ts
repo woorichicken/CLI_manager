@@ -327,7 +327,6 @@ cancel
         })
 
         test('does not take an answered menu above later output for an open one', () => {
-            test.fail(true, "ovis-port bug: a menu still on screen above later output (Done. / prompt) is read as open; no check that nothing follows it")
             expect(parse(narrow + '\n● Done.\n\n> ')).toBeNull()
         })
     })
@@ -426,7 +425,6 @@ Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questi
         })
 
         test('does not take an answered form above later output for an open one', () => {
-            test.fail(true, "ovis-port bug: a menu still on screen above later output (Done. / prompt) is read as open; no check that nothing follows it")
             expect(parse(withPreview + '\n● Done.\n\n> ')).toBeNull()
         })
 
@@ -526,7 +524,6 @@ ${after}`
         })
 
         test('is gone once the menu is answered and Claude draws under it', () => {
-            test.fail(true, "ovis-port bug: a trust dialog still on screen above later output is read as open")
             expect(parse(trust(1, ' ▐▛███▛█   Claude Code v2.1.285\n❯ Try "fix typecheck errors"\n'))).toBeNull()
         })
 
@@ -658,7 +655,6 @@ ${after}`
         })
 
         test("an answered approval above another program's bare Esc to cancel hint is no card", () => {
-            test.fail(true, "ovis-port bug: an answered approval above another program's Esc to cancel hint is read as open")
             const screen = [RULE, ' Bash command', ' sudo -v', '', ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No', '', ' Esc to cancel · Tab to amend', 'Password:', 'Esc to cancel', ''].join('\n')
             expect(parse(screen)).toBeNull()
         })

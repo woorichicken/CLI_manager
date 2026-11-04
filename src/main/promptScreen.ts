@@ -160,6 +160,29 @@ function readConfirmMenu(lines: string[]): ConfirmMenu | 'unsure' | null {
     }
 }
 
+/** A rule drawn under a dialog: a full one, or Claude's with the tab title in it ("──── title ─"). */
+const TRAILING_RULE = /^[─━╌]{8,}/
+
+/** The rest of a key hint a narrow pane wrapped onto the next row ("cancel"). */
+const HINT_CONTINUATION = /^[A-Za-z][A-Za-z0-9 ·/↑↓←→+]*$/
+
+/**
+ * Whether the menu's key hint is the last thing drawn (rows are the non-blank rows, top to bottom).
+ * The hint is the first footer row under the last option (the last "Enter to confirm" for an
+ * unnumbered menu). No hint found: nothing to tell by, the menu is taken as drawn.
+ * (ovis server/prompt.test.ts "is gone once the menu is answered", MIT)
+ */
+function menuIsLast(rows: string[], lastOptionRow: number, unnumbered: boolean): boolean {
+    let hint = -1
+    if (unnumbered) {
+        for (let row = rows.length - 1; row >= 0 && hint < 0; row--) if (/Enter to confirm/i.test(rows[row])) hint = row
+    } else {
+        hint = rows.findIndex((line, row) => row > lastOptionRow && FOOTER.test(line))
+    }
+    if (hint < 0) return true
+    return rows.slice(hint + 1).every((line) => TRAILING_RULE.test(line.trim()) || HINT_CONTINUATION.test(line.trim()))
+}
+
 function kindOf(text: string, options: PromptOption[]): PromptKind {
     if (/trust this folder|Do you trust the contents of this directory/i.test(text)) return 'trust'
     if (options.some((option) => option.custom) || /Enter to select/i.test(text)) return 'question'
@@ -244,6 +267,10 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
         .map((line) => line.trim())
         .filter((line) => line && !SEPARATOR.test(line) && !/^Tip:/i.test(line))
         .slice(-CONTEXT_MAX_LINES)
+
+    // An answered menu stays on screen above what came next ("● Done.", the welcome banner): open only
+    // while nothing but its own key hint (wrapped, perhaps) and a rule sits under its hint row.
+    if (agent === 'claude' && !menuIsLast(rows, confirm ? -1 : lastOptionRow, confirm !== null)) return null
 
     const multi = options.some((option) => CHECKBOX.test(option.label))
     const kind = kindOf([text, ...options.map((option) => option.label)].join('\n'), options)
