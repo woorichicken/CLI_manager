@@ -5,7 +5,8 @@ import { validSecret } from './secretPrompt'
 /**
  * The input line while the Mac's terminal asks for a password (sudo, ssh, a passphrase): a password
  * field whose value lives only in the DOM — no React state, no draft, no retry copy — wiped when it
- * is sent, when the page is hidden or left, and when the prompt goes away (this unmounts).
+ * is sent, when the page is hidden or left, when the prompt goes away (this unmounts), and when
+ * another prompt takes its place or the connection changes.
  * After ovis src/components/SecretInput.tsx (MIT).
  */
 export function PhoneSecretInput({ prompt, connected, onSend }: { prompt: string; connected: boolean; onSend: (value: string) => boolean }) {
@@ -27,6 +28,17 @@ export function PhoneSecretInput({ prompt, connected, onSend }: { prompt: string
             window.removeEventListener('pagehide', clear)
         }
     }, [])
+
+    // Another prompt in this one's place (ssh to another host, sudo after ssh), or the connection
+    // dropped and came back: what was typed was for the prompt before — never sent to the new one
+    // (round2 N02). The cleanup runs before the effect for the new prompt.
+    useEffect(
+        () => () => {
+            if (input.current) input.current.value = ''
+            setError(null)
+        },
+        [prompt, connected]
+    )
 
     return (
         <form

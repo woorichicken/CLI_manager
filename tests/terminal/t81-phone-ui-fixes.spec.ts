@@ -19,6 +19,7 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  *  G2  the View | Type switch draws no focus ring on a touch screen
  *  N01 (round 2) a queued message's Edit, answered after the phone moved to another session, goes
  *      back to its own session's draft — never into the other session's box
+ *  N02 (round 2) a password typed for one prompt is wiped when another prompt takes its place
  */
 
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
@@ -533,5 +534,23 @@ test('T81 N01 Edit answered after the phone moved to another session: the text g
     await expect(phone.getByTestId('phone-session-title')).toHaveText('T81 Claude')
     await expect(box).toHaveValue('only for the first agent', { timeout: 10_000 })
     await expect(phone.getByTestId('chat-queued-item')).toHaveCount(0)
+    await phone.close()
+})
+
+test('T81 N02 a password typed for one prompt is wiped when another prompt takes its place', async () => {
+    test.setTimeout(120_000)
+    const { app, page, base } = await launch()
+    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't81-n02')
+    await openTerminal(phone, cdp)
+    // the first prompt times out and the second is printed in the same write: the phone never sees no prompt
+    await writeToTerminal(page, SHELL_A, "stty -echo; printf \"alice@hosta's password: \"; read -t 6 n02a; printf \"\\r\\nbob@hostb's password: \"; read n02b; stty echo; echo; echo got-$n02b\r")
+    const secret = phone.getByTestId('phone-terminal-secret')
+    await expect(phone.locator('.phone-secret-prompt')).toHaveText("alice@hosta's password:", { timeout: 10_000 })
+    await secret.fill('alice-secret')
+    await expect(phone.locator('.phone-secret-prompt')).toHaveText("bob@hostb's password:", { timeout: 15_000 })
+    await expect(secret).toHaveValue('')
+    await secret.fill('bob-secret')
+    await secret.press('Enter')
+    await waitForBufferText(page, SHELL_A, 'got-bob-secret', 10_000)
     await phone.close()
 })

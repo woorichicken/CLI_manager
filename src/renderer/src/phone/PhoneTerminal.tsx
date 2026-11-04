@@ -298,7 +298,7 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                         ))}
                     </div>
                     {secret !== null ? (
-                        <PhoneSecretInput prompt={secret} connected={connected} onSend={(value) => term.sendLine(value, ENTER_GAP_MS)} />
+                        <PhoneSecretInput key={secret} prompt={secret} connected={connected} onSend={(value) => term.sendLine(value, ENTER_GAP_MS)} />
                     ) : (
                     <form
                         className="phone-line"
