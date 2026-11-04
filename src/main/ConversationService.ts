@@ -83,6 +83,19 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 export class ConversationService {
     private readonly watched = new Map<string, Watched>()
+    /**
+     * One lane per session for everything that writes keys (sends, Send now, the queue, card
+     * answers, Stop): the next waits until the last is typed, and checks the screen again then.
+     * Two devices answering one card at once otherwise read the same highlight and both press ↓.
+     * After ovis server/core/input.ts (createInputLane).
+     */
+    private readonly lanes = new Map<string, Promise<void>>()
+    /**
+     * The card last answered per session, and the output time when its keys went: until the
+     * terminal prints again, the same menu on screen is the one already answered (the agent has
+     * not read the keys yet).
+     */
+    private readonly lastAnswer = new Map<string, { signature: string; outputAt: number }>()
     private timer: NodeJS.Timeout | null = null
     private polling = false
 
@@ -100,9 +113,25 @@ export class ConversationService {
         this.dropIfIdle(sessionId, entry)
     }
 
+    /** Runs `work` after the session's earlier writes are done. */
+    private inLane<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
+        const before = this.lanes.get(sessionId) ?? Promise.resolve()
+        const run = before.then(work)
+        const tail = run.then(
+            () => undefined,
+            () => undefined
+        )
+        this.lanes.set(sessionId, tail)
+        void tail.then(() => {
+            if (this.lanes.get(sessionId) === tail) this.lanes.delete(sessionId)
+        })
+        return run
+    }
+
     /** The session closed: forget it, queued text included. */
     forget(sessionId: string): void {
         this.watched.delete(sessionId)
+        this.lastAnswer.delete(sessionId)
         this.deps.reader.forget(sessionId)
     }
 
@@ -158,23 +187,25 @@ export class ConversationService {
         }
         // working, others waiting, or another message still being typed: it waits its turn,
         // so two sends never type into the terminal at once
-        if (entry.working || entry.queue.length > 0 || entry.sending) {
+        if (entry.working || entry.queue.length > 0 || entry.sending || this.lanes.has(sessionId)) {
             entry.queue.push({ id: `q${++queueSequence}`, text })
             this.bump(sessionId, entry)
             this.ensureTimer()
             return { status: 'queued' }
         }
         entry.sending = true
-        try {
-            await this.deps.type(sessionId, text)
-            this.bump(sessionId, entry)
-            return { status: 'sent' }
-        } catch (error) {
-            return rejection(error)
-        } finally {
-            entry.sending = false
-            this.dropIfIdle(sessionId, entry)
-        }
+        return this.inLane(sessionId, async () => {
+            try {
+                await this.deps.type(sessionId, text)
+                this.bump(sessionId, entry)
+                return { status: 'sent' } as ChatSendResult
+            } catch (error) {
+                return rejection(error)
+            } finally {
+                entry.sending = false
+                this.dropIfIdle(sessionId, entry)
+            }
+        })
     }
 
     cancelQueued(sessionId: string): void {
@@ -201,12 +232,19 @@ export class ConversationService {
      * is on screen or the terminal's input line holds text — then it stays queued.
      */
     async sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult> {
+        if (!this.watched.get(sessionId)?.queue.some((item) => item.id === id)) {
+            return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
+        }
+        return this.inLane(sessionId, () => this.sendQueuedNowInLane(sessionId, id))
+    }
+
+    private async sendQueuedNowInLane(sessionId: string, id: string): Promise<ChatSendResult> {
+        // looked up again: what waited in the lane may have been sent, dropped or forgotten meanwhile
         const entry = this.watched.get(sessionId)
         const message = entry?.queue.find((item) => item.id === id)
         if (!entry || !message) return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
         if (!this.deps.hasTerminal(sessionId)) return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
         if (this.deps.mirror.hasExited(sessionId)) return { status: 'rejected', reason: 'exited', message: 'The shell in this session has exited.' }
-        if (entry.sending) return { status: 'rejected', reason: 'input_busy', message: 'Another message is being typed into the terminal.' }
         await this.refreshScreen(sessionId, entry, true)
         const blocked = this.blockedReason(sessionId, entry)
         if (blocked) return blocked
@@ -233,6 +271,10 @@ export class ConversationService {
      * box), so it is refused then.
      */
     async interrupt(sessionId: string): Promise<InterruptResult> {
+        return this.inLane(sessionId, () => this.interruptInLane(sessionId))
+    }
+
+    private async interruptInLane(sessionId: string): Promise<InterruptResult> {
         if (!this.deps.hasTerminal(sessionId) || this.deps.mirror.hasExited(sessionId)) {
             return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
         }
@@ -289,12 +331,19 @@ export class ConversationService {
      * person may have answered in the terminal already, or the agent moved on.
      */
     async answerPrompt(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult> {
+        return this.inLane(sessionId, () => this.answerPromptInLane(sessionId, answer))
+    }
+
+    private async answerPromptInLane(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult> {
         if (!this.deps.hasTerminal(sessionId) || this.deps.mirror.hasExited(sessionId)) {
             return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
         }
         await this.deps.mirror.flush(sessionId)
         const current = readPrompt(this.deps.mirror.screen(sessionId), agentOf(this.deps.session(sessionId)) ?? 'claude')
-        if (!current || current.signature !== answer.signature) {
+        const answered = this.lastAnswer.get(sessionId)
+        // the same menu with nothing printed since its answer went: the agent has not read those keys yet
+        const alreadyAnswered = answered?.signature === answer.signature && answered.outputAt === this.deps.mirror.lastOutputAt(sessionId)
+        if (!current || current.signature !== answer.signature || alreadyAnswered) {
             const entry = this.entry(sessionId)
             await this.refreshScreen(sessionId, entry, true)
             this.bump(sessionId, entry)
@@ -309,9 +358,17 @@ export class ConversationService {
             if (error instanceof PromptAnswerError) return { status: 'rejected', reason: 'bad_answer', message: error.message }
             throw error
         }
-        for (const [index, step] of steps.entries()) {
-            if (index > 0) await sleep(KEY_GAP_MS)
-            this.deps.writeInput(sessionId, 'key' in step ? step.key : step.text)
+        this.lastAnswer.set(sessionId, { signature: current.signature, outputAt: this.deps.mirror.lastOutputAt(sessionId) })
+        const entry = this.entry(sessionId)
+        entry.sending = true
+        try {
+            for (const [index, step] of steps.entries()) {
+                if (index > 0) await sleep(KEY_GAP_MS)
+                this.deps.writeInput(sessionId, 'key' in step ? step.key : step.text)
+            }
+        } finally {
+            entry.sending = false
+            this.dropIfIdle(sessionId, entry)
         }
         return { status: 'answered' }
     }
@@ -430,21 +487,24 @@ export class ConversationService {
             this.bump(sessionId, entry)
             return
         }
-        await this.deps.mirror.flush(sessionId)
-        if (this.blockedReason(sessionId, entry)) return
-        const message = entry.queue.shift()!
-        entry.sending = true
-        try {
-            await this.deps.type(sessionId, message.text)
-        } catch (error) {
-            // A question appeared between the check and the typing: put it back and wait.
-            if ((error as { code?: string }).code === 'awaiting_input') entry.queue.unshift(message)
-            else console.error('[conversation] queued send failed', sessionId, error)
-        } finally {
-            entry.sending = false
-            this.bump(sessionId, entry)
-            this.dropIfIdle(sessionId, entry)
-        }
+        if (this.lanes.has(sessionId)) return
+        await this.inLane(sessionId, async () => {
+            await this.refreshScreen(sessionId, entry, true)
+            if (entry.queue.length === 0 || entry.working || entry.prompt || this.blockedReason(sessionId, entry)) return
+            const message = entry.queue.shift()!
+            entry.sending = true
+            try {
+                await this.deps.type(sessionId, message.text)
+            } catch (error) {
+                // A question appeared between the check and the typing: put it back and wait.
+                if ((error as { code?: string }).code === 'awaiting_input') entry.queue.unshift(message)
+                else console.error('[conversation] queued send failed', sessionId, error)
+            } finally {
+                entry.sending = false
+                this.bump(sessionId, entry)
+                this.dropIfIdle(sessionId, entry)
+            }
+        })
     }
 }
 
