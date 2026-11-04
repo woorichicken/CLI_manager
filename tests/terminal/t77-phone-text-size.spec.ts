@@ -69,6 +69,12 @@ interface Measure {
     scrollerHeight: number
     hostLeft: number
     hostTop: number
+    /**
+     * What the fit was computed from against what is drawn now (intermittent 83 of 103 columns in
+     * landscape, 11-05): the screen width the scale used, the scroller width it used, the font xterm
+     * was told and whether the bundled one is in. Printed when a fit check fails.
+     */
+    fit: { naturalWidth: number; screenWidth: number; fitWidth: number; scrollerWidth: number; fontFamily: string; bundledFontLoaded: boolean; at: number }
 }
 
 async function ptyState(page: Page, id: string): Promise<{ size: { cols: number; rows: number } | null; resized: number }> {
@@ -149,7 +155,7 @@ test('T77 phone terminal text size: fit · 100% · landscape measured at the Mac
     const a = await measure(phone)
     expect(a.dpr).toBe(DPR)
     expect(a.scale).toBeLessThan(1)
-    expect(a.visibleCols).toBe(a.cols)
+    await expectAllColumns(phone, a)
     expect(a.sideways).toBe(false)
     await capture(cdp, shots, 't77-a-portrait-fit.png')
     await capture(cdp, shots, 't77-a-portrait-fit-crop.png', crop(a))
@@ -199,7 +205,7 @@ test('T77 phone terminal text size: fit · 100% · landscape measured at the Mac
     await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-zoom', 'fit')
     expect(await phone.evaluate((key) => localStorage.getItem(key), ZOOM_KEY)).toBeNull()
     const c = await measure(phone)
-    expect(c.visibleCols).toBe(c.cols)
+    await expectAllColumns(phone, c)
     await capture(cdp, shots, 't77-c-landscape-fit.png')
     await capture(cdp, shots, 't77-c-landscape-fit-crop.png', crop(c))
 
@@ -275,9 +281,29 @@ async function measure(phone: Page): Promise<Measure> {
             scrollerWidth: scroller.clientWidth,
             scrollerHeight: scroller.clientHeight,
             hostLeft: hostBox.left,
-            hostTop: hostBox.top
+            hostTop: hostBox.top,
+            fit: {
+                naturalWidth: Number(terminal.dataset.naturalWidth),
+                screenWidth: screen.offsetWidth,
+                fitWidth: Number(terminal.dataset.fitWidth),
+                scrollerWidth: scroller.clientWidth,
+                fontFamily: rowsElement.style.fontFamily || getComputedStyle(rowsElement).fontFamily,
+                bundledFontLoaded: document.fonts.check('13px "CLIM Phone Mono"'),
+                at: Math.round(performance.now())
+            }
         }
     })
+}
+
+/** A fit shows every column; when it does not, say which input of the scale was stale. */
+async function expectAllColumns(phone: Page, m: Measure): Promise<void> {
+    if (m.visibleCols !== m.cols) {
+        // read again a second later: a value that settles is an order problem, not a wrong formula
+        await phone.waitForTimeout(1000)
+        const later = await measure(phone)
+        console.log('[t77] fit showed', m.visibleCols, 'of', m.cols, 'columns', JSON.stringify({ then: m.fit, scale: m.scale, later: later.fit, laterScale: later.scale, laterVisible: later.visibleCols }))
+    }
+    expect(m.visibleCols, JSON.stringify({ fit: m.fit, scale: m.scale })).toBe(m.cols)
 }
 
 /** A phone of `width`×`height` points at device scale 3: the window and the emulated screen. */

@@ -230,6 +230,10 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
             data-scale={scale.toFixed(4)}
             data-zoom={zoom === null ? 'fit' : 'zoomed'}
             data-wrap={wrap ? 'on' : 'off'}
+            // what the fit scale was computed from — compared with the drawn screen when a fit shows
+            // fewer columns than the Mac's (T77 intermittent, 11-05): a stale width or a font change
+            data-natural-width={natural ? natural.width : undefined}
+            data-fit-width={fitWidth}
         >
             <div className="phone-term-toolbar">
                 <span className="phone-term-size" data-testid="phone-terminal-size" title={`The Mac's size, shown at ${Math.round(scale * 100)}%`}>
