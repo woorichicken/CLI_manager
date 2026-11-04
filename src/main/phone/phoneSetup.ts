@@ -212,14 +212,21 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         devices.cancelPairing()
         return server.state()
     })
-    ipcMain.handle('phone-revoke-device', (_e, id: unknown): PhoneState => {
-        if (typeof id === 'string') devices.revoke(id)
-        return server.state()
-    })
-    ipcMain.handle('phone-revoke-all', (): PhoneState => {
-        devices.revokeAll()
-        return server.state()
-    })
+    // a revoke the disk did not take changes nothing (PhoneDevices.revoke): say so in Settings
+    const revoking = (action: () => void): PhoneState => {
+        try {
+            action()
+            return server.state()
+        } catch (error) {
+            return { ...server.state(), error: `Not disconnected — ${error instanceof Error ? error.message : String(error)}` }
+        }
+    }
+    ipcMain.handle('phone-revoke-device', (_e, id: unknown): PhoneState =>
+        revoking(() => {
+            if (typeof id === 'string') devices.revoke(id)
+        })
+    )
+    ipcMain.handle('phone-revoke-all', (): PhoneState => revoking(() => devices.revokeAll()))
     ipcMain.handle('phone-test-push', () => push.test())
 
     return {

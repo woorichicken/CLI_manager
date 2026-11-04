@@ -3,7 +3,7 @@
 // ones only the terminal can show). The discovery is rewritten small: SKILL.md and command files in the
 // usual folders and enabled Claude plugins, without ovis's skillOverrides, managed settings, synced skills,
 // name folding or walk budget. Claude Code pinned at 2.1.301, codex-rs at rust-v0.163.0, as ovis has them.
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
+import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'fs'
 import { basename, dirname, join } from 'path'
 import type { ChatCommand, ConversationAgent } from '../shared/conversation'
 
@@ -113,14 +113,34 @@ const MAX_FOLDERS = 600
 /** One list per agent and folder for this long. */
 const CACHE_MS = 30_000
 
-function frontmatter(path: string): Record<string, string> {
-    let text: string
+/**
+ * The first MAX_HEAD_BYTES of a regular file, or null. A project can hold a FIFO (a plain open waits
+ * for a writer forever) or a link to /dev/zero (a read that never ends) named SKILL.md: main must not
+ * stop on either. The path is checked, then opened non-blocking (a regular file ignores the flag) and
+ * the descriptor checked again, so a FIFO swapped in between is refused too. Only the head is read —
+ * a huge skill file is never loaded whole. From ovis server/skills/walk.ts:68-83 (openRegular).
+ */
+function readHead(path: string): string | null {
+    let fd: number | null = null
     try {
-        const buffer = readFileSync(path)
-        text = buffer.subarray(0, MAX_HEAD_BYTES).toString('utf8')
+        if (!statSync(path).isFile()) return null
+        fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOCTTY ?? 0))
+        if (!fstatSync(fd).isFile()) return null
+        const buffer = Buffer.alloc(MAX_HEAD_BYTES)
+        let length = 0
+        for (let count = 1; count > 0 && length < buffer.length; length += count) count = readSync(fd, buffer, length, buffer.length - length, null)
+        return buffer.subarray(0, length).toString('utf8')
     } catch {
-        return {}
+        return null
+    } finally {
+        if (fd !== null) closeSync(fd)
     }
+}
+
+/** The file's frontmatter fields; null when it is no regular file (it is then not listed at all). */
+function frontmatter(path: string): Record<string, string> | null {
+    const text = readHead(path)
+    if (text === null) return null
     const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
     const fields: Record<string, string> = {}
     if (!match) return fields
@@ -160,7 +180,7 @@ function skillsIn(root: string, budget: Budget, depth = 1): { name: string; desc
         const file = join(directory, 'SKILL.md')
         if (level > 0 && existsSync(file)) {
             const fields = frontmatter(file)
-            if (!isOff(fields['user-invocable'])) found.push({ name: fields.name || basename(directory), description: fields.description ?? '' })
+            if (fields && !isOff(fields['user-invocable'])) found.push({ name: fields.name || basename(directory), description: fields.description ?? '' })
             // A skill folder holds its scripts/references, not more skills — walking them spent the folder budget, so a
             // 300-skill ~/.codex/skills listed only about half (new-worktree, park-finding missing)
             return
@@ -195,7 +215,7 @@ function commandsIn(root: string, budget: Budget): { name: string; description: 
             const path = join(directory, entry)
             if (entry.endsWith('.md') && !isDirectory(path)) {
                 const fields = frontmatter(path)
-                if (!isOff(fields['user-invocable'])) found.push({ name: [...prefix, entry.slice(0, -3)].join(':'), description: fields.description ?? '' })
+                if (fields && !isOff(fields['user-invocable'])) found.push({ name: [...prefix, entry.slice(0, -3)].join(':'), description: fields.description ?? '' })
             } else if (prefix.length < 3) {
                 visit(path, [...prefix, entry])
             }
@@ -293,8 +313,15 @@ export function createChatCommandLister(dirs: ChatCommandDirs): (agent: Conversa
                     ...(CODEX_TERMINAL.has(name) ? { terminal: 'always' as const } : CODEX_TERMINAL_BARE.has(name) ? { terminal: 'bare' as const } : {})
                 })
             }
-            // Codex runs a skill by `$name` (ovis guide.md:313)
-            const roots = [...ancestors.map((directory) => join(directory, '.codex', 'skills')), join(codexHome, 'skills'), join(dirs.home, '.agents', 'skills')]
+            // Codex runs a skill by `$name` (ovis guide.md:313). The roots and their order are ovis
+            // server/skills/codex.ts:207-213: each project folder's .agents then .codex, ~/.agents, CODEX_HOME,
+            // then the bundled .system folder (a dot folder, so the CODEX_HOME walk skips it — loaded on its own)
+            const roots = [
+                ...ancestors.flatMap((directory) => [join(directory, '.agents', 'skills'), join(directory, '.codex', 'skills')]),
+                join(dirs.home, '.agents', 'skills'),
+                join(codexHome, 'skills'),
+                join(codexHome, 'skills', '.system')
+            ]
             for (const root of roots) {
                 for (const skill of skillsIn(root, budget, 6)) {
                     if (skill.description) all.push({ name: skill.name, description: skill.description, source: 'skill', trigger: '$' })
