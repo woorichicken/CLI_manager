@@ -20,8 +20,8 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 ## Open
 
 ### E2E 전체 실행 — 회차마다 다른 1~2건이 흔들린다(부하·동시 앱)
-- Discovered: 2026-11-05 밤샘 시험(plan-ovis-1103) — 같은 브랜치 전체 실행 5회: 893·911건 중 실패 2 · 2 · 0 · 2 · 2, 실패한 건은 매번 다시 3번 돌리면 대부분 통과.
-- Evidence: 회차별 실패 — T3(녹화 파일 없음, 환경) · T20 잠자기(R1′ 「Execution context was destroyed」) · T74 r2(질문 카드 10초 623행 — 11-03 에도 1/6) · T77 가로 폭 맞춤 83/103 · T19 #5 흐린 제안(3/3 통과). 로그 `~/Downloads/_batches/plan-ovis-1103/regress/full-final{,2,3,4,5}.log`. 같은 시간에 실제 Claude 세션이 든 격리 개발판·갤럭시 장시간 시험이 함께 돌았다.
+- Discovered: 2026-11-05 밤샘 시험(plan-ovis-1103) — 같은 브랜치 전체 실행 6회: 893·911건 중 실패 2 · 2 · 0 · 2 · 2 · 1, 실패한 건은 매번 다시 3번 돌리면 대부분 통과.
+- Evidence: 회차별 실패 — T3(녹화 파일 없음, 환경) · T20 잠자기(R1′ 「Execution context was destroyed」) · T74 r2(질문 카드 10초 623행 — 11-03 에도 1/6) · T77 가로 폭 맞춤 83/103 · T19 #5 흐린 제안(3/3 통과). 로그 `~/Downloads/_batches/plan-ovis-1103/regress/full-final{,2,3,4,5,6}.log`. 같은 시간에 실제 Claude 세션이 든 격리 개발판·갤럭시 장시간 시험이 함께 돌았다.
 - Done tonight: T20 깨우기 순서(df7052c 자식 먼저 → 64ae70d 메인 먼저: 단독 4/10 → 10/10, 단 전체 실행 중 1회 재발) · T77 폭 맞춤 기준 폭을 ResizeObserver 로(0e34b09 — 원인은 계측으로 확인, 강제 재현은 못 함).
 - Why deferred: 남은 건 시험 장치·부하 문제로 보이고 제품 결함 증거가 없다. 머지를 막을 정도는 아님(실패 건은 다시 돌리면 통과).
 - Trigger: pre-push·CI 에서 같은 건이 두 번 넘게 떨어질 때, 또는 T20 을 실제 잠자기로 다시 볼 일이 생길 때.
