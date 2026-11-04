@@ -3,19 +3,19 @@
 // ones only the terminal can show). The discovery is rewritten small: SKILL.md and command files in the
 // usual folders and enabled Claude plugins, without ovis's skillOverrides, managed settings, synced skills,
 // name folding or walk budget. Claude Code pinned at 2.1.301, codex-rs at rust-v0.163.0, as ovis has them.
-import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'fs'
 import { basename, dirname, join } from 'path'
 import type { ChatCommand, ConversationAgent } from '../shared/conversation'
 
 const CLAUDE_REFERENCE: readonly string[] = [
     'add-dir', 'advisor', 'agents', 'artifacts', 'auto-mode-setup', 'autocompact', 'autofix-pr', 'background', 'batch', 'branch',
-    'btw', 'bug', 'cd', 'chrome', 'clear', 'code-review', 'color', 'compact', 'config', 'context', 'copy', 'cost', 'debug', 'desktop',
+    'btw', 'bug', 'cd', 'chrome', 'clear', 'code-review', 'color', 'compact', 'config', 'context', 'copy', 'cost', 'debug', 'design-login', 'desktop',
     'diff', 'doctor', 'effort', 'exit', 'export', 'fast', 'feedback', 'fewer-permission-prompts', 'focus', 'fork', 'goal', 'help', 'hooks',
     'ide', 'import', 'init', 'insights', 'install-github-app', 'install-slack-app', 'keybindings', 'list-agents', 'login', 'logout', 'loop',
     'mcp', 'memory', 'mobile', 'model', 'output-style', 'passes', 'permissions', 'plan', 'plugin', 'powerup', 'privacy-settings',
-    'rate-limit-options', 'recap', 'release-notes', 'reload-plugins', 'reload-skills', 'remote-control', 'remote-env', 'rename', 'resume',
+    'radio', 'rate-limit-options', 'recap', 'release-notes', 'reload-plugins', 'reload-skills', 'remote-control', 'remote-env', 'rename', 'resume',
     'review', 'rewind', 'run', 'sandbox', 'schedule', 'scroll-speed', 'security-review', 'simplify', 'skill-doctor', 'skills', 'stats',
-    'status', 'statusline', 'stop', 'subtask', 'tasks', 'teleport', 'terminal-setup', 'theme', 'tui', 'ultrareview', 'update-config',
+    'status', 'statusline', 'stickers', 'stop', 'subtask', 'tasks', 'teleport', 'terminal-setup', 'theme', 'tui', 'ultrareview', 'update-config',
     'upgrade', 'usage', 'usage-credits', 'verify', 'voice', 'web-setup', 'workflows'
 ]
 
@@ -25,12 +25,15 @@ const CLAUDE_TERMINAL: ReadonlySet<string> = new Set([
     'tasks', 'workflows', 'powerup', 'scroll-speed', 'mobile', 'passes', 'add-dir', 'cd', 'mcp', 'artifacts', 'auto-mode-setup',
     'autofix-pr', 'bug', 'chrome', 'desktop', 'feedback', 'import', 'install-github-app', 'install-slack-app', 'login', 'logout',
     'privacy-settings', 'rate-limit-options', 'remote-control', 'remote-env', 'skill-doctor', 'teleport', 'terminal-setup', 'ultrareview',
-    'upgrade', 'usage-credits', 'web-setup', 'diff', 'ide', 'copy', 'voice', 'keybindings'
+    'upgrade', 'usage-credits', 'web-setup', 'diff', 'ide', 'copy', 'voice', 'keybindings',
+    // a sign-in, the radio player, the sticker order form (ovis server/skills/claude.ts:19,25-28)
+    'design-login', 'stickers', 'radio'
 ])
 /** Bare, these open a picker or dialog; given a value they set it and return (ovis `forms`). */
 const CLAUDE_TERMINAL_BARE: ReadonlySet<string> = new Set(['model', 'effort', 'goal', 'btw', 'rewind', 'fast', 'autocompact', 'advisor', 'export'])
 
 const CLAUDE_DESCRIPTIONS: Record<string, string> = {
+    'design-login': 'Authorize design-system access', radio: 'Listen to Claude FM radio', stickers: 'Order Claude Code stickers',
     'add-dir': 'Add a new working directory', advisor: 'Let Claude consult a stronger model', agents: 'Print a reminder to ask Claude to manage subagents',
     artifacts: 'Browse published and shared artifacts', 'auto-mode-setup': 'Teach auto mode about your environment',
     autocompact: 'Set how full context gets before summarizing', 'autofix-pr': 'Monitor and autofix issues with the current pull request',
@@ -73,18 +76,22 @@ const CLAUDE_DESCRIPTIONS: Record<string, string> = {
 }
 
 const CODEX_BUILTINS: readonly string[] = [
-    'model', 'ide', 'permissions', 'keymap', 'vim', 'experimental', 'approve', 'memories', 'skills', 'import', 'hooks', 'review', 'rename',
+    'model', 'daybreak', 'ide', 'permissions', 'keymap', 'vim', 'setup-default-sandbox', 'experimental', 'approve', 'memories', 'skills', 'import', 'hooks', 'review', 'rename',
     'new', 'archive', 'delete', 'resume', 'fork', 'worktree', 'init', 'compact', 'config', 'recap', 'plan', 'voice', 'goal', 'agents', 'side',
-    'btw', 'copy', 'export', 'raw', 'tui', 'diff', 'mention', 'status', 'warnings', 'cd', 'pwd', 'usage', 'title', 'statusline', 'theme',
-    'mcp', 'plugins', 'logout', 'quit', 'exit', 'feedback', 'ps', 'stop', 'clear', 'subagents'
+    'btw', 'copy', 'export', 'raw', 'tui', 'diff', 'mention', 'status', 'daemon', 'warnings', 'cd', 'pwd', 'usage', 'title', 'statusline', 'theme',
+    'pets', 'mcp', 'plugins', 'logout', 'quit', 'exit', 'feedback', 'ps', 'stop', 'clear', 'subagents'
 ]
 const CODEX_TERMINAL: ReadonlySet<string> = new Set([
     'resume', 'permissions', 'agents', 'hooks', 'mcp', 'plugins', 'skills', 'voice', 'theme', 'config', 'keymap', 'experimental', 'approve',
     'memories', 'import', 'new', 'archive', 'delete', 'fork', 'worktree', 'side', 'btw', 'copy', 'tui', 'mention', 'warnings', 'cd', 'usage',
-    'title', 'statusline', 'feedback', 'subagents', 'vim', 'logout', 'status', 'diff', 'pwd', 'ps'
+    'title', 'statusline', 'feedback', 'subagents', 'vim', 'logout', 'setup-default-sandbox', 'daemon', 'pets'
 ])
-const CODEX_TERMINAL_BARE: ReadonlySet<string> = new Set(['model', 'review', 'rename', 'export'])
+// status/diff/pwd/ps print to the TUI only when sent bare (ovis server/skills/codex.ts:147 `forms` — a bare form
+// whose interaction is the terminal); they are not among its terminal-bound screens (`terminalBound`, :167-169)
+const CODEX_TERMINAL_BARE: ReadonlySet<string> = new Set(['model', 'review', 'rename', 'export', 'status', 'diff', 'pwd', 'ps'])
 const CODEX_DESCRIPTIONS: Record<string, string> = {
+    daybreak: 'Turn Daybreak on or off', 'setup-default-sandbox': 'Set up elevated agent sandbox',
+    daemon: 'Manage the local background server', pets: 'Choose or hide the terminal pet',
     model: 'Choose what model and reasoning effort to use', config: 'Configure Codex preferences', btw: 'Start a side conversation in an ephemeral fork',
     quit: 'Exit Codex', ide: 'Include current selection, open files, and other context from your IDE', keymap: 'Remap TUI shortcuts',
     vim: 'Toggle Vim mode for the composer', experimental: 'Toggle experimental features', approve: 'Approve one retry of a recent auto-review denial',
@@ -143,6 +150,10 @@ function frontmatter(path: string): Record<string, string> | null {
     if (text === null) return null
     const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
     const fields: Record<string, string> = {}
+    // No `description:`: the body's first non-empty line says what it is, as Claude Code shows it
+    // (ovis server/skills/walk.ts:127-145 description(), MIT). Read off the head only.
+    const body = (match ? text.slice(match[0].length).replace(/^[^\n]*\n?/, '') : text).split(/\r?\n/).find((line) => line.trim())?.trim()
+    if (body) fields[BODY_LINE] = body
     if (!match) return fields
     let key: string | null = null
     for (const line of match[1].split(/\r?\n/)) {
@@ -156,6 +167,9 @@ function frontmatter(path: string): Record<string, string> | null {
     }
     return fields
 }
+
+/** Key the body's first line is kept under (no frontmatter field has this name). */
+const BODY_LINE = '\0body'
 
 const isOff = (value: string | undefined): boolean => value !== undefined && ['false', 'no', 'off', '0'].includes(value.trim().toLowerCase())
 
@@ -171,16 +185,27 @@ function isDirectory(path: string): boolean {
     }
 }
 
+function isPlainFile(path: string): boolean {
+    try {
+        return lstatSync(path).isFile()
+    } catch {
+        return false
+    }
+}
+
 /** `<root>/<name>/SKILL.md` (Claude: one level; Codex: down to `depth`). */
-function skillsIn(root: string, budget: Budget, depth = 1): { name: string; description: string }[] {
+function skillsIn(root: string, budget: Budget, depth = 1, codex = false): { name: string; description: string }[] {
     const found: { name: string; description: string }[] = []
     const visit = (directory: string, level: number): void => {
         if (budget.folders <= 0 || !isDirectory(directory)) return
         budget.folders -= 1
         const file = join(directory, 'SKILL.md')
-        if (level > 0 && existsSync(file)) {
+        // Codex follows a linked skill folder but not a SKILL.md that is itself a link (ovis skills/codex.ts:80-81)
+        if (level > 0 && (codex ? isPlainFile(file) : existsSync(file))) {
             const fields = frontmatter(file)
-            if (fields && !isOff(fields['user-invocable'])) found.push({ name: fields.name || basename(directory), description: fields.description ?? '' })
+            // Codex lists a skill only with a frontmatter description, the body is no stand-in (ovis skills/codex.ts:82-85)
+            const description = codex ? fields?.description ?? '' : fields?.description || fields?.[BODY_LINE] || ''
+            if (fields && !isOff(fields['user-invocable'])) found.push({ name: fields.name || basename(directory), description })
             // A skill folder holds its scripts/references, not more skills — walking them spent the folder budget, so a
             // 300-skill ~/.codex/skills listed only about half (new-worktree, park-finding missing)
             return
@@ -215,7 +240,7 @@ function commandsIn(root: string, budget: Budget): { name: string; description: 
             const path = join(directory, entry)
             if (entry.endsWith('.md') && !isDirectory(path)) {
                 const fields = frontmatter(path)
-                if (fields && !isOff(fields['user-invocable'])) found.push({ name: [...prefix, entry.slice(0, -3)].join(':'), description: fields.description ?? '' })
+                if (fields && !isOff(fields['user-invocable'])) found.push({ name: [...prefix, entry.slice(0, -3)].join(':'), description: fields.description || fields[BODY_LINE] || '' })
             } else if (prefix.length < 3) {
                 visit(path, [...prefix, entry])
             }
@@ -323,7 +348,7 @@ export function createChatCommandLister(dirs: ChatCommandDirs): (agent: Conversa
                 join(codexHome, 'skills', '.system')
             ]
             for (const root of roots) {
-                for (const skill of skillsIn(root, budget, 6)) {
+                for (const skill of skillsIn(root, budget, 6, true)) {
                     if (skill.description) all.push({ name: skill.name, description: skill.description, source: 'skill', trigger: '$' })
                 }
             }

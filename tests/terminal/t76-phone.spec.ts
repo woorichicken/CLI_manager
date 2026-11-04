@@ -394,7 +394,7 @@ test('T76 phone: off by default, access, pairing, list, Chat, card, Terminal + k
     const subscribe = await fetch(`${base}/api/phone/push/subscribe`, {
         method: 'POST',
         headers: { ...SERVE, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: { endpoint: 'https://push.example/t76', keys: { p256dh: 'p256', auth: 'auth' } } })
+        body: JSON.stringify({ subscription: { endpoint: 'https://push.example/t76', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } } })
     })
     expect(subscribe.status).toBe(200)
     await expect(page.getByTestId('phone-settings')).toContainText('1 device turned alerts on', { timeout: 10_000 })

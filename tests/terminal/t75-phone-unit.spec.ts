@@ -176,8 +176,10 @@ test.describe('T75 alerts', () => {
         expect(sent()).toHaveLength(0)
         expect(await push.test()).toMatchObject({ status: 'none' })
 
-        expect(push.subscribe({ endpoint: 'http://not-https.example/x', keys: { p256dh: 'p', auth: 'a' } }, 'tailscale:o')).toBe(false)
-        expect(push.subscribe({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p', auth: 'a' } }, 'tailscale:o')).toBe(true)
+        expect(push.subscribe({ endpoint: 'http://not-https.example/x', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } }, 'tailscale:o')).toBe(false)
+        // keys no push service issued (F06: p256dh is 65 bytes, auth 16) are refused
+        expect(push.subscribe({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p', auth: 'a' } }, 'tailscale:o')).toBe(false)
+        expect(push.subscribe({ endpoint: 'https://push.example/abc', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } }, 'tailscale:o')).toBe(true)
         expect(push.count()).toBe(1)
         expect(fs.statSync(path.join(dir, 'push.json')).mode & 0o777).toBe(0o600)
         // the VAPID key pair is made on first use, in a 0600 file
@@ -225,12 +227,38 @@ test.describe('T75 alerts', () => {
         expect(sent()[2].payload.title).toBe('CLI Manager')
 
         // a revoked device's subscriptions go with it; the owner's stay
-        push.subscribe({ endpoint: 'https://push.example/dev', keys: { p256dh: 'p', auth: 'a' } }, 'device:d1')
+        push.subscribe({ endpoint: 'https://push.example/dev', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } }, 'device:d1')
         expect(push.count()).toBe(2)
         push.forgetOwner('device:d1')
         expect(push.count()).toBe(1)
         delete process.env.CLIMANAGER_PHONE_PUSH_LOG
         delete process.env.CLIMANGER_TEST_USERDATA
+    })
+})
+
+test.describe('T75 alert keys (F04)', () => {
+    test('a malformed key file is left as it is and named, never replaced by a new key pair', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t75-vapid-'))
+        const keysFile = path.join(dir, 'vapid.json')
+        const deps = { keysFile, subscriptionsFile: path.join(dir, 'push.json'), macInUse: () => false, session: () => ({ name: 'A', agent: true }) }
+        for (const broken of ['{}\n', 'not json', '{"publicKey":"only"}']) {
+            fs.writeFileSync(keysFile, broken)
+            const push = new PhonePush(deps)
+            expect(push.keysProblem()).toMatch(/malformed/)
+            expect(() => push.publicKey()).toThrow('malformed')
+            expect(await push.test()).toMatchObject({ status: 'failed', message: expect.stringMatching(/malformed/) })
+            // an alert (fire-and-forget) neither throws nor writes a key
+            expect(push.subscribe({ endpoint: 'https://push.example/abc', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } }, 'tailscale:o')).toBe(true)
+            push.onStatus([{ sessionId: 's', state: 'waiting', question: 'Proceed?' }])
+            await new Promise((resolve) => setTimeout(resolve, 20))
+            expect(fs.readFileSync(keysFile, 'utf8')).toBe(broken)
+        }
+        // deleted on purpose: a new pair is made, and the problem is gone
+        fs.rmSync(keysFile)
+        const fresh = new PhonePush(deps)
+        expect(fresh.keysProblem()).toBeNull()
+        expect(fresh.publicKey()).toMatch(/^[A-Za-z0-9_-]{80,}$/)
+        expect(fresh.keysProblem()).toBeNull()
     })
 })
 

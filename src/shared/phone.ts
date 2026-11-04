@@ -27,9 +27,10 @@ export type PhoneRefusal =
 
 /** GET /api/phone/me — who this request is. */
 export type PhoneMe =
-    | { access: 'full'; role: PhoneRole; via: PhoneVia; login?: string; deviceLabel?: string; push: PhonePushInfo }
+    | { access: 'full'; role: PhoneRole; via: PhoneVia; login?: string; deviceLabel?: string; push?: PhonePushInfo }
     | { access: 'none'; reason: PhoneRefusal }
 
+/** `push` is absent when the Mac's alert key file is malformed: the page shows no bell. */
 export interface PhonePushInfo {
     /** VAPID public key (base64url) for `pushManager.subscribe` */
     publicKey: string

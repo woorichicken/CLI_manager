@@ -1,4 +1,4 @@
-import { appendFileSync } from 'fs'
+import { appendFileSync, existsSync } from 'fs'
 import webpush from 'web-push'
 import type { PhonePushPayload, PhonePushSubscription, PhoneTestPushResult } from '../../shared/phone'
 import type { SessionScreenStatus } from '../../shared/types'
@@ -14,6 +14,9 @@ import { readPrivateJson, writePrivateJson } from './privateFile'
  *   buzzes from one of them.
  * - Keys (VAPID) and subscriptions sit in 0600 files in the app data folder. Their values
  *   are never logged. A push service answering 404/410 dropped the subscription: it is removed.
+ * - A key file that is there but unreadable is an error, never a rotation: a new key pair
+ *   would orphan every subscribed phone without a word. The file is left as it is and
+ *   Settings › Phone says so (`keysProblem`) — ovis server/push.ts:8,363 (MIT).
  *
  * Encryption and signing are the `web-push` package (RFC 8291 / 8292).
  */
@@ -71,9 +74,20 @@ export class PhonePush {
         return this.deps.now?.() ?? Date.now()
     }
 
-    /** The public key a page subscribes with; made on first use. */
+    /** The public key a page subscribes with; made on first use. Throws when the key file is malformed. */
     publicKey(): string {
         return this.vapid().publicKey
+    }
+
+    /** Why alerts cannot go out (the key file is malformed), or null. Never makes a key. */
+    keysProblem(): string | null {
+        if (this.keys || !existsSync(this.deps.keysFile)) return null
+        try {
+            this.vapid()
+            return null
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error)
+        }
     }
 
     count(): number {
@@ -133,6 +147,8 @@ export class PhonePush {
     }
 
     async test(): Promise<PhoneTestPushResult> {
+        const problem = this.keysProblem()
+        if (problem) return { status: 'failed', message: problem }
         if (this.subscriptions.length === 0) {
             return { status: 'none', message: 'No phone has turned alerts on yet. Open the page on the phone and tap Alerts.' }
         }
@@ -163,7 +179,14 @@ export class PhonePush {
             for (const s of this.subscriptions) appendFileSync(testLog, JSON.stringify({ endpoint: s.endpoint, payload }) + '\n')
             return this.subscriptions.length
         }
-        const keys = this.vapid()
+        let keys: VapidKeys
+        try {
+            keys = this.vapid()
+        } catch (error) {
+            // an alert is fire-and-forget (`void this.alert`): a throw here would be an unhandled rejection
+            console.error('[phone] alerts not sent:', error instanceof Error ? error.message : error)
+            return 0
+        }
         let ok = 0
         const gone: string[] = []
         await Promise.all(this.subscriptions.map(async (s) => {
@@ -190,10 +213,13 @@ export class PhonePush {
 
     private vapid(): VapidKeys {
         if (this.keys) return this.keys
-        const saved = readPrivateJson<VapidKeys>(this.deps.keysFile)
-        if (saved && typeof saved.publicKey === 'string' && typeof saved.privateKey === 'string') {
-            this.keys = saved
-            return saved
+        if (existsSync(this.deps.keysFile)) {
+            const saved = readPrivateJson<Partial<VapidKeys>>(this.deps.keysFile)
+            if (saved && typeof saved.publicKey === 'string' && typeof saved.privateKey === 'string') {
+                this.keys = { publicKey: saved.publicKey, privateKey: saved.privateKey }
+                return this.keys
+            }
+            throw new Error('The alert key file (vapid.json) is malformed; restore it, or delete it and turn Alerts on again on every phone.')
         }
         const fresh = webpush.generateVAPIDKeys()
         writePrivateJson(this.deps.keysFile, fresh)
@@ -220,9 +246,24 @@ function clip(text: string): string {
     return line.length > 140 ? `${line.slice(0, 139)}…` : line
 }
 
+/** Bytes a base64url key decodes to; -1 when it is not base64url at all. */
+function decodedLength(value: unknown): number {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+=*$/.test(value)) return -1
+    return Buffer.from(value, 'base64url').length
+}
+
+/**
+ * The PushSubscription JSON a browser produces: an https endpoint, p256dh an uncompressed P-256
+ * point (65 bytes), auth a 16-byte secret (RFC 8291). Anything else no push service issued, and
+ * web-push would only fail on it at send time (ovis server/push.ts:255-276, MIT).
+ */
 function isSubscription(value: unknown): value is PhonePushSubscription {
     const v = value as PhonePushSubscription | null
-    return !!v && typeof v.endpoint === 'string' && /^https:\/\//.test(v.endpoint) && v.endpoint.length < 2048
-        && !!v.keys && typeof v.keys.p256dh === 'string' && typeof v.keys.auth === 'string'
-        && v.keys.p256dh.length < 256 && v.keys.auth.length < 128
+    if (!v || typeof v !== 'object' || typeof v.endpoint !== 'string' || v.endpoint.length >= 2048) return false
+    try {
+        if (new URL(v.endpoint).protocol !== 'https:') return false
+    } catch {
+        return false
+    }
+    return !!v.keys && decodedLength(v.keys.p256dh) === 65 && decodedLength(v.keys.auth) === 16
 }

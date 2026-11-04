@@ -125,7 +125,10 @@ export function sameOrigin(origin: string | null | undefined, host: string | nul
 export function parseTailscaleOwner(statusJson: string | null): string | null {
     if (!statusJson) return null
     try {
-        const status = JSON.parse(statusJson) as {
+        // Every `UserID` kept as the digits written: Tailscale's user ids run past 2^53, where
+        // JSON.parse rounds 15633668397603135 to …136 and the id then names no user (ovis
+        // server/tailscale.ts:42-46, #526 — MIT).
+        const status = JSON.parse(statusJson.replace(/("UserID"\s*:\s*)(\d+)/g, '$1"$2"')) as {
             BackendState?: string
             Self?: { UserID?: number | string | null; Tags?: string[]; DNSName?: string }
             User?: Record<string, { LoginName?: string }>

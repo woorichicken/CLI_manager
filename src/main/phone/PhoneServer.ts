@@ -173,7 +173,11 @@ export class PhoneServer {
             devices: this.deps.devices.list(),
             pairing: this.deps.devices.activePairing(),
             connected: this.connectedCount(),
-            pushDevices: this.deps.push.count()
+            pushDevices: this.deps.push.count(),
+            ...(() => {
+                const pushError = this.deps.push.keysProblem()
+                return pushError ? { pushError } : {}
+            })()
         }
     }
 
@@ -321,7 +325,16 @@ export class PhoneServer {
             via: access.via,
             ...(access.login ? { login: access.login } : {}),
             ...(access.deviceLabel ? { deviceLabel: access.deviceLabel } : {}),
-            push: { publicKey: this.deps.push.publicKey() }
+            ...this.pushInfo()
+        }
+    }
+
+    /** The key a page subscribes with; none when the key file is malformed (Settings › Phone says why). */
+    private pushInfo(): { push?: { publicKey: string } } {
+        try {
+            return { push: { publicKey: this.deps.push.publicKey() } }
+        } catch {
+            return {}
         }
     }
 

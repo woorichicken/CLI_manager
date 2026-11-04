@@ -292,6 +292,20 @@ test.describe('T73 question menus off the screen (promptScreen)', () => {
         expect([multi.multi, multi.answerable]).toEqual([true, false])
     })
 
+    test('the real multi-line folder-trust check: its question, the folder as context, two rows (F01)', () => {
+        const lines = [
+            '❯ claude', '', '─'.repeat(80), ' Accessing workspace:', '', ' /home/user/projects/new-app', '',
+            " Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source",
+            " project, or work from your team). If not, take a moment to review what's in this folder first.", '',
+            " Claude Code'll be able to read, edit, and execute files here.", '', ' Security guide', '',
+            ' ❯ No, exit', '   Yes, I trust this folder', '', ' Enter to confirm · Esc to cancel', ''
+        ]
+        const menu = readPrompt(lines, 'claude')!
+        expect([menu.kind, menu.answerable, menu.question]).toEqual(['trust', true, 'Is this a project you created or one you trust?'])
+        expect(menu.context).toEqual(['Accessing workspace:', '/home/user/projects/new-app'])
+        expect(menu.options.map((o) => [o.label, o.selected])).toEqual([['No, exit', true], ['Yes, I trust this folder', false]])
+    })
+
     test('a numbered list in the answer above the dialog is not taken for its options', () => {
         const lines = ['⏺ Plan:', '  1. Read the file', '  2. Edit it', '  3. Run tests', ...screen('claude-2.1.312-permission.txt')]
         const menu = readPrompt(lines, 'claude')!
@@ -499,7 +513,8 @@ test.describe('T73 r2 `/` commands an agent offers (ported ovis command tables)'
         const list = createChatCommandLister({ home, claudeConfigDir: () => path.join(home, '.claude'), codexHome: () => codex })('codex', undefined)
         expect(list.find((command) => command.name === 'nested-skill')).toMatchObject({ trigger: '$', source: 'skill' })
         expect(list.find((command) => command.name === 'model')).toMatchObject({ terminal: 'bare' })
-        expect(list.find((command) => command.name === 'status')).toMatchObject({ terminal: 'always' })
+        // F06c: like ovis, status/diff/pwd/ps go to the terminal only when sent bare
+        for (const name of ['status', 'diff', 'pwd', 'ps']) expect(list.find((command) => command.name === name)).toMatchObject({ terminal: 'bare' })
     })
 
     test('Codex: 300 skills with scripts/references folders are all listed', () => {

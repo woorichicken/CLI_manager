@@ -49,6 +49,7 @@ async function startServer(): Promise<{
     const push = {
         forgetOwner: () => undefined,
         publicKey: () => 'key',
+        keysProblem: () => null,
         count: () => subscribed.length,
         onStatus: () => undefined,
         subscribe: (_s: unknown, owner: string) => {

@@ -1152,4 +1152,6 @@ export interface PhoneState {
     connected: number
     /** devices that turned alerts on */
     pushDevices: number
+    /** the alert key file is there but malformed: no alert goes out until it is restored or deleted */
+    pushError?: string
 }
