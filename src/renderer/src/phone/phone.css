@@ -9,8 +9,8 @@
  * two cells per syllable fit with no gap; Android's own fallback Hangul left one after every syllable.
  */
 @font-face {
-    font-family: 'CLIM Nanum Gothic Coding';
-    src: url('./fonts/nanum-gothic-coding-ksx1001.woff2') format('woff2');
+    font-family: 'CLIM Phone Mono';
+    src: url('./fonts/clim-phone-mono-ksx1001.woff2') format('woff2');
     font-display: block;
     unicode-range: U+0020-007E, U+AC00-D7A3;
 }

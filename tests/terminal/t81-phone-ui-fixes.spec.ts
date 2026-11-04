@@ -451,12 +451,12 @@ test('T81 G3 the phone terminal draws with its own font: Hangul exactly two Lati
     await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })
     // the font file came from the phone server (an allowed asset), and xterm switched to it
     await expect
-        .poll(() => phone.evaluate(() => document.fonts.check('13px "CLIM Nanum Gothic Coding"')), { timeout: 10_000 })
+        .poll(() => phone.evaluate(() => document.fonts.check('13px "CLIM Phone Mono"')), { timeout: 10_000 })
         .toBe(true)
     const measured = await phone.evaluate(() => {
         const context = document.createElement('canvas').getContext('2d')!
-        context.font = '13px "CLIM Nanum Gothic Coding"'
-        const font = Array.from(document.fonts).find((face) => face.family.replace(/"/g, '') === 'CLIM Nanum Gothic Coding')
+        context.font = '13px "CLIM Phone Mono"'
+        const font = Array.from(document.fonts).find((face) => face.family.replace(/"/g, '') === 'CLIM Phone Mono')
         return { latin: context.measureText('A').width, hangul: context.measureText('한').width, status: font?.status ?? null }
     })
     expect(measured.status).toBe('loaded')
@@ -464,6 +464,6 @@ test('T81 G3 the phone terminal draws with its own font: Hangul exactly two Lati
     // xterm measured its cell with it: two Latin cells hold one syllable with nothing left over
     await expect
         .poll(() => phone.locator('.xterm-rows').evaluate((rows) => getComputedStyle(rows).fontFamily), { timeout: 10_000 })
-        .toContain('CLIM Nanum Gothic Coding')
+        .toContain('CLIM Phone Mono')
     await phone.close()
 })

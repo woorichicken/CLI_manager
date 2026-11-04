@@ -136,9 +136,10 @@ It brings `asn1.js`, `http_ece`, `https-proxy-agent`, `jws` and `minimist` (all 
 ## Nanum Gothic Coding (font)
 
 - Project: Nanum fonts by NAVER — Google Fonts `Nanum Gothic Coding` (fonts.googleapis.com, version 2.000)
-- Used for: the phone page's terminal (`src/renderer/src/phone/fonts/nanum-gothic-coding-ksx1001.woff2`) —
+- Used for: the phone page's terminal (`src/renderer/src/phone/fonts/clim-phone-mono-ksx1001.woff2`) —
   cut to printable ASCII and the 2,350 Hangul syllables of KS X 1001 by `scripts/subset-phone-font.py`.
-  The cut font is a Modified Version under the license below; it keeps the original font names.
+  The cut font is a Modified Version under the license below. It is named `CLIM Phone Mono`, not by a Nanum
+  name, so that no Reserved Font Name is its primary name (condition 3).
 - License: SIL Open Font License 1.1 — Copyright © 2009 NHN Corporation. All rights reserved. Font designed
   by Sandoll Communications Inc.
 

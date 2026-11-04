@@ -30,8 +30,8 @@ export const FONT_SIZE = 13
 /** before the bundled font has loaded, and for what it does not hold (box drawing, symbols) */
 const FALLBACK_FONT = 'Menlo, "SF Mono", Monaco, "Courier New", monospace'
 /** the phone page's own font first (phone.css, G3): Hangul exactly two Latin cells wide */
-export const FONT = `"CLIM Nanum Gothic Coding", ${FALLBACK_FONT}`
-const FONT_FACE = `${FONT_SIZE}px "CLIM Nanum Gothic Coding"`
+export const FONT = `"CLIM Phone Mono", ${FALLBACK_FONT}`
+const FONT_FACE = `${FONT_SIZE}px "CLIM Phone Mono"`
 
 /**
  * xterm measures a cell once per font: a terminal opened before the font arrived would keep the

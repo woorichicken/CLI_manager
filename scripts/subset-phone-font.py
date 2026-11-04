@@ -10,7 +10,7 @@ Latin is half the width of its Hangul — exactly two cells.
 
     python3 -m pip install fonttools brotli   # or: uv pip install fonttools brotli
     python3 scripts/subset-phone-font.py NanumGothicCoding-Regular.ttf \
-        src/renderer/src/phone/fonts/nanum-gothic-coding-ksx1001.woff2
+        src/renderer/src/phone/fonts/clim-phone-mono-ksx1001.woff2
 
 The TTF comes from Google Fonts (fonts.googleapis.com/css2?family=Nanum+Gothic+Coding → fonts.gstatic.com).
 """
@@ -26,6 +26,27 @@ def ks_x_1001_hangul() -> str:
         for trail in range(0xA1, 0xFF):
             out.append(bytes([lead, trail]).decode('euc_kr'))
     return ''.join(out)
+
+
+# OFL 1.1 condition 3: a Modified Version (this cut is one) may not use a Reserved Font Name as its
+# primary name. The Nanum fonts reserve theirs, so the cut font is named for what it is here.
+FAMILY = 'CLIM Phone Mono'
+
+
+def rename(font) -> None:
+    names = font['name']
+    postscript = FAMILY.replace(' ', '') + '-Regular'
+    for record in list(names.names):
+        if record.nameID in (1, 16):
+            names.setName(FAMILY, record.nameID, record.platformID, record.platEncID, record.langID)
+        elif record.nameID in (2, 17):
+            names.setName('Regular', record.nameID, record.platformID, record.platEncID, record.langID)
+        elif record.nameID in (3, 4):
+            names.setName(f'{FAMILY} Regular' if record.nameID == 4 else f'{postscript};cut from Nanum Gothic Coding 2.000', record.nameID, record.platformID, record.platEncID, record.langID)
+        elif record.nameID == 6:
+            names.setName(postscript, record.nameID, record.platformID, record.platEncID, record.langID)
+    if 'CFF ' in font:
+        font['CFF '].cff.fontNames = [postscript]
 
 
 def main() -> None:
@@ -44,6 +65,7 @@ def main() -> None:
     subsetter = subset.Subsetter(options)
     subsetter.populate(text=ascii_printable + hangul)
     subsetter.subset(font)
+    rename(font)
     subset.save_font(font, target, options)
 
 
