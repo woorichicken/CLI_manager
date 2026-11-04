@@ -284,7 +284,6 @@ test.describe('ovis server/devices.test.ts', () => {
 
         test("reads the PC's login out of tailscale status", () => {
             // isTaggedNode() is not ported; its two asserts are not moved
-            test.fail(true, 'ovis-port bug: parseTailscaleOwner() JSON.parses the status, so a UserID past 2^53 (15633668397603135) becomes ...136 and names nobody (ovis #526)')
             const status = JSON.stringify({ Self: { UserID: 42 }, User: { '42': { LoginName: 'me@example.com' }, '43': { LoginName: 'them@example.com' } } })
             expect(parseTailscaleOwner(status)).toBe('me@example.com')
             expect(parseTailscaleOwner(JSON.stringify({ Self: { UserID: 99 }, User: {} }))).toBeNull()
