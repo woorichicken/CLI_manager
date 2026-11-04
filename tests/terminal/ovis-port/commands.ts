@@ -106,7 +106,6 @@ test.describe('ovis server/skills/claude.test.ts', () => {
         })
 
         test('offers every screen Chat cannot see through as terminal-bound and marks exactly the menu-hidden four', () => {
-            test.fail(true, 'ovis-port bug: design-login, radio, stickers missing from CLAUDE_REFERENCE/CLAUDE_TERMINAL')
             const { home, cwd } = fixture()
             const bound = claudeRows(home, cwd).filter((row) => row.source === 'builtin' && row.terminal === 'always').map((row) => row.name).sort()
             expect(bound).toEqual([

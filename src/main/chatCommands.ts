@@ -9,13 +9,13 @@ import type { ChatCommand, ConversationAgent } from '../shared/conversation'
 
 const CLAUDE_REFERENCE: readonly string[] = [
     'add-dir', 'advisor', 'agents', 'artifacts', 'auto-mode-setup', 'autocompact', 'autofix-pr', 'background', 'batch', 'branch',
-    'btw', 'bug', 'cd', 'chrome', 'clear', 'code-review', 'color', 'compact', 'config', 'context', 'copy', 'cost', 'debug', 'desktop',
+    'btw', 'bug', 'cd', 'chrome', 'clear', 'code-review', 'color', 'compact', 'config', 'context', 'copy', 'cost', 'debug', 'design-login', 'desktop',
     'diff', 'doctor', 'effort', 'exit', 'export', 'fast', 'feedback', 'fewer-permission-prompts', 'focus', 'fork', 'goal', 'help', 'hooks',
     'ide', 'import', 'init', 'insights', 'install-github-app', 'install-slack-app', 'keybindings', 'list-agents', 'login', 'logout', 'loop',
     'mcp', 'memory', 'mobile', 'model', 'output-style', 'passes', 'permissions', 'plan', 'plugin', 'powerup', 'privacy-settings',
-    'rate-limit-options', 'recap', 'release-notes', 'reload-plugins', 'reload-skills', 'remote-control', 'remote-env', 'rename', 'resume',
+    'radio', 'rate-limit-options', 'recap', 'release-notes', 'reload-plugins', 'reload-skills', 'remote-control', 'remote-env', 'rename', 'resume',
     'review', 'rewind', 'run', 'sandbox', 'schedule', 'scroll-speed', 'security-review', 'simplify', 'skill-doctor', 'skills', 'stats',
-    'status', 'statusline', 'stop', 'subtask', 'tasks', 'teleport', 'terminal-setup', 'theme', 'tui', 'ultrareview', 'update-config',
+    'status', 'statusline', 'stickers', 'stop', 'subtask', 'tasks', 'teleport', 'terminal-setup', 'theme', 'tui', 'ultrareview', 'update-config',
     'upgrade', 'usage', 'usage-credits', 'verify', 'voice', 'web-setup', 'workflows'
 ]
 
@@ -25,12 +25,15 @@ const CLAUDE_TERMINAL: ReadonlySet<string> = new Set([
     'tasks', 'workflows', 'powerup', 'scroll-speed', 'mobile', 'passes', 'add-dir', 'cd', 'mcp', 'artifacts', 'auto-mode-setup',
     'autofix-pr', 'bug', 'chrome', 'desktop', 'feedback', 'import', 'install-github-app', 'install-slack-app', 'login', 'logout',
     'privacy-settings', 'rate-limit-options', 'remote-control', 'remote-env', 'skill-doctor', 'teleport', 'terminal-setup', 'ultrareview',
-    'upgrade', 'usage-credits', 'web-setup', 'diff', 'ide', 'copy', 'voice', 'keybindings'
+    'upgrade', 'usage-credits', 'web-setup', 'diff', 'ide', 'copy', 'voice', 'keybindings',
+    // a sign-in, the radio player, the sticker order form (ovis server/skills/claude.ts:19,25-28)
+    'design-login', 'stickers', 'radio'
 ])
 /** Bare, these open a picker or dialog; given a value they set it and return (ovis `forms`). */
 const CLAUDE_TERMINAL_BARE: ReadonlySet<string> = new Set(['model', 'effort', 'goal', 'btw', 'rewind', 'fast', 'autocompact', 'advisor', 'export'])
 
 const CLAUDE_DESCRIPTIONS: Record<string, string> = {
+    'design-login': 'Authorize design-system access', radio: 'Listen to Claude FM radio', stickers: 'Order Claude Code stickers',
     'add-dir': 'Add a new working directory', advisor: 'Let Claude consult a stronger model', agents: 'Print a reminder to ask Claude to manage subagents',
     artifacts: 'Browse published and shared artifacts', 'auto-mode-setup': 'Teach auto mode about your environment',
     autocompact: 'Set how full context gets before summarizing', 'autofix-pr': 'Monitor and autofix issues with the current pull request',
