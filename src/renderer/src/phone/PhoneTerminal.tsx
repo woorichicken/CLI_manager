@@ -27,6 +27,12 @@ const ENTER_GAP_MS = 60
  */
 const ZOOM_KEY = 'phone-terminal-zoom'
 
+/**
+ * Each session's unsent input line, kept while this page is open (ovis terminalDraft.ts keeps one per
+ * owner): another session's terminal starts with its own line, and coming back finds this one's.
+ */
+const drafts = new Map<string, string>()
+
 function readZoom(): number | null {
     try {
         const saved = Number(window.localStorage.getItem(ZOOM_KEY))
@@ -58,7 +64,16 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
     const [wrap, setWrap] = useState(readWrap)
     const [typing, setTyping] = useState(false)
     const [ctrl, setCtrl] = useState(false)
-    const [line, setLine] = useState('')
+    // one PhoneTerminal per session (keyed by it in SessionScreen): Type and Ctrl start fresh, the line is this session's
+    const [line, setLineState] = useState(() => drafts.get(sessionId) ?? '')
+    const setLine = useCallback(
+        (next: string) => {
+            if (next) drafts.set(sessionId, next)
+            else drafts.delete(sessionId)
+            setLineState(next)
+        },
+        [sessionId]
+    )
     const pinch = useRef<{ distance: number; scale: number } | null>(null)
     const swipe = useRef<{ y: number } | null>(null)
 
@@ -138,7 +153,7 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
     const sendLine = useCallback(() => {
         if (!term.sendLine(line, ENTER_GAP_MS)) return
         setLine('')
-    }, [line, term])
+    }, [line, term, setLine])
 
     const onLineChange = (next: string): void => {
         // Ctrl held + one typed character = that control key (Ctrl+R, Ctrl+D …), sent at once
