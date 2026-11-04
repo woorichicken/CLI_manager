@@ -40,6 +40,11 @@ const NOT_SUBMITTED: ChatSendResult = {
     reason: 'not_submitted',
     message: 'The message is in the terminal input line but was not submitted. Press Enter there, or clear it.'
 }
+const NO_AGENT: ChatSendResult = {
+    status: 'rejected',
+    reason: 'no_agent',
+    message: 'The agent in this session is not running, so the message would go to the shell. Start it in the terminal first.'
+}
 
 export interface ConversationSessionInfo {
     cwd?: string
@@ -64,6 +69,12 @@ export interface ConversationServiceDeps {
     writeInput(id: string, data: string): void
     /** ControlApiService.typeForChat — throws ControlApiError (409 awaiting_input …) */
     type(id: string, text: string): Promise<boolean>
+    /**
+     * Which program the terminal's shell runs now (its child processes), null when only the shell is
+     * there. A queued message goes only to the program it was queued for: once the agent exits, its
+     * text would be a shell command. Without it (tests of other parts) messages are not bound.
+     */
+    agentProcess?(id: string): Promise<string | null>
     onChange(sessionId: string, revision: number): void
     /** The `/` commands an agent offers in a folder (chatCommands.ts). */
     listCommands?(agent: ConversationAgent, cwd: string | undefined): ChatCommand[]
@@ -79,8 +90,18 @@ interface Watched {
     lastScreenAt: number
     working: boolean
     prompt: PromptMenu | null
-    queue: QueuedMessage[]
+    queue: QueueItem[]
     sending: boolean
+}
+
+/**
+ * A queued message and what it is bound to: the agent program in front when it was queued, and who
+ * sent it (`origin`: a phone's `device:<id>` / `tailscale:<login>`; none from this Mac) — a device
+ * disconnected or the phone turned off drops its messages (`dropQueuedFrom`).
+ */
+interface QueueItem extends QueuedMessage {
+    process: string | null
+    origin?: string
 }
 
 let queueSequence = 0
@@ -151,7 +172,7 @@ export class ConversationService {
             ...(this.deps.home ? { home: this.deps.home } : {}),
             working: entry.working,
             prompt: entry.prompt,
-            queued: entry.queue.map((message) => ({ ...message })),
+            queued: entry.queue.map(({ id, text }) => ({ id, text })),
             revision: entry.revision,
             meta: null
         }
@@ -173,7 +194,8 @@ export class ConversationService {
         }
     }
 
-    async send(sessionId: string, raw: string): Promise<ChatSendResult> {
+    /** `origin`: who sends it, when not this Mac (a phone's `device:<id>` / `tailscale:<login>`). */
+    async send(sessionId: string, raw: string, origin?: string): Promise<ChatSendResult> {
         const text = raw.replace(/\s+$/, '')
         if (!text.trim()) return { status: 'rejected', reason: 'empty', message: 'Nothing to send.' }
         if (text.length > MAX_TEXT_LENGTH) {
@@ -191,10 +213,15 @@ export class ConversationService {
             this.dropIfIdle(sessionId, entry)
             return blocked
         }
+        const process = await this.agentInFront(sessionId)
+        if (process === null) {
+            this.dropIfIdle(sessionId, entry)
+            return NO_AGENT
+        }
         // working, others waiting, or another message still being typed: it waits its turn,
         // so two sends never type into the terminal at once
         if (entry.working || entry.queue.length > 0 || entry.sending || this.lanes.has(sessionId)) {
-            entry.queue.push({ id: `q${++queueSequence}`, text })
+            entry.queue.push({ id: `q${++queueSequence}`, text, process: process === true ? null : process, ...(origin ? { origin } : {}) })
             this.bump(sessionId, entry)
             this.ensureTimer()
             return { status: 'queued' }
@@ -212,6 +239,40 @@ export class ConversationService {
                 this.dropIfIdle(sessionId, entry)
             }
         })
+    }
+
+    /**
+     * Drops what a sender queued, in every session: a phone device disconnected (`device:<id>`), or —
+     * with a test — the phone connection turned off. Returns how many were dropped.
+     */
+    dropQueuedFrom(origin: string | ((origin: string | undefined) => boolean)): number {
+        const matches = typeof origin === 'string' ? (from: string | undefined) => from === origin : origin
+        let dropped = 0
+        for (const [sessionId, entry] of [...this.watched]) {
+            const kept = entry.queue.filter((message) => !matches(message.origin))
+            if (kept.length === entry.queue.length) continue
+            dropped += entry.queue.length - kept.length
+            entry.queue = kept
+            this.bump(sessionId, entry)
+            this.dropIfIdle(sessionId, entry)
+        }
+        return dropped
+    }
+
+    /** The program in front: its id, null when only the shell is there, true when it cannot be told (no dep). */
+    private async agentInFront(sessionId: string): Promise<string | null | true> {
+        if (!this.deps.agentProcess) return true
+        try {
+            return await this.deps.agentProcess(sessionId)
+        } catch (error) {
+            console.error('[conversation] could not read the program in front', sessionId, error)
+            return null
+        }
+    }
+
+    /** Whether `message` would still reach the program it was queued for. */
+    private stillFor(message: QueueItem, front: string | null | true): boolean {
+        return front === true || (front !== null && (message.process === null || message.process === front))
     }
 
     cancelQueued(sessionId: string): void {
@@ -254,6 +315,14 @@ export class ConversationService {
         await this.refreshScreen(sessionId, entry, true)
         const blocked = this.blockedReason(sessionId, entry)
         if (blocked) return blocked
+        if (!this.stillFor(message, await this.agentInFront(sessionId))) {
+            const at = entry.queue.indexOf(message)
+            if (at >= 0) entry.queue.splice(at, 1)
+            console.warn('[conversation] dropped a queued message: the agent it was written for is gone', sessionId)
+            this.bump(sessionId, entry)
+            this.dropIfIdle(sessionId, entry)
+            return NO_AGENT
+        }
         const index = entry.queue.indexOf(message)
         if (index < 0) return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
         entry.queue.splice(index, 1)
@@ -497,6 +566,19 @@ export class ConversationService {
         await this.inLane(sessionId, async () => {
             await this.refreshScreen(sessionId, entry, true)
             if (entry.queue.length === 0 || entry.working || entry.prompt || this.blockedReason(sessionId, entry)) return
+            // the agent exited (only its shell left) or another program took its place: what was
+            // written for it would run as a command there — dropped, never typed
+            const front = await this.agentInFront(sessionId)
+            const kept = entry.queue.filter((message) => this.stillFor(message, front))
+            if (kept.length !== entry.queue.length) {
+                console.warn(`[conversation] dropped ${entry.queue.length - kept.length} queued message(s): the agent they were written for is gone`, sessionId)
+                entry.queue = kept
+                this.bump(sessionId, entry)
+                if (kept.length === 0) {
+                    this.dropIfIdle(sessionId, entry)
+                    return
+                }
+            }
             const message = entry.queue.shift()!
             entry.sending = true
             try {

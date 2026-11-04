@@ -7,6 +7,9 @@ import { CLISessionTracker } from './CLISessionTracker'
 import { SESSION_ID_ENV, TerminalAttachResult } from '../shared/types'
 const pty = require('node-pty')
 
+/** A login shell's own name, as `ps` shows it (without the leading `-`). */
+const SHELL_NAMES = /^(zsh|bash|sh|dash|ksh|mksh|tcsh|csh|fish|nu|xonsh|elvish|pwsh|powershell)$/
+
 // Default shell based on platform
 const DEFAULT_SHELL = os.platform() === 'win32' ? 'powershell.exe' : 'zsh'
 
@@ -581,6 +584,32 @@ export class TerminalManager {
         return new Promise((resolve) => {
             execFile('pgrep', ['-P', String(ptyProcess.pid)], (error, stdout) => {
                 resolve(!error && stdout.trim().length > 0)
+            })
+        })
+    }
+
+    /**
+     * What runs in front in the terminal, as an id: its foreground process group. Null when the
+     * shell itself is in front (the agent exited). The Chat view binds a queued message to it: the
+     * agent exiting, or another program taking its place, changes it (ConversationService).
+     * The foreground group, not the shell's children: a background job is not in front, and a
+     * program the shell `exec`ed is the pty's own process. When `ps` cannot answer, 'unknown' —
+     * the binding then cannot tell, as before it existed.
+     */
+    foregroundProgram(id: string): Promise<string | null> {
+        const ptyProcess = this.terminals.get(id)
+        if (!ptyProcess) return Promise.resolve(null)
+        const pid = ptyProcess.pid
+        return new Promise((resolve) => {
+            execFile('ps', ['-o', 'tpgid=,comm=', '-p', String(pid)], (error, stdout) => {
+                const match = /^\s*(-?\d+)\s+(.+?)\s*$/.exec(stdout)
+                if (error || !match) {
+                    resolve('unknown')
+                    return
+                }
+                const group = Number(match[1])
+                const command = match[2].split('/').pop()!.replace(/^-/, '')
+                resolve(group === pid && SHELL_NAMES.test(command) ? null : String(group))
             })
         })
     }

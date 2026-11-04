@@ -27,7 +27,8 @@ import { readBody, readJson, send } from './PhoneServer'
 /** The Chat service, as the Electron IPC handlers call it. */
 export interface PhoneConversation {
     getConversation(sessionId: string, limit?: number): Promise<ConversationSnapshot>
-    send(sessionId: string, text: string): Promise<ChatSendResult>
+    /** `origin`: who sent it (`deps.owner`) — a disconnected device's queued messages are dropped by it */
+    send(sessionId: string, text: string, origin?: string): Promise<ChatSendResult>
     cancelQueued(sessionId: string): void
     discardQueued(sessionId: string, id: string): void
     sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult>
@@ -156,7 +157,7 @@ async function handleChat(
     switch (action) {
         case 'send': {
             const text = typeof body.text === 'string' ? body.text : ''
-            const result = await c.send(sessionId, text)
+            const result = await c.send(sessionId, text, deps.owner)
             if (result.status !== 'rejected') deps.recordPhoneInput(sessionId, `chat message ${result.status} (${text.length} chars)`)
             send(res, 200, result)
             return

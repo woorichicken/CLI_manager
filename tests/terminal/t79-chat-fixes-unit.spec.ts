@@ -171,3 +171,94 @@ test.describe('T79 F09 text left unsubmitted in the input box is not reported as
         conversations.unsubscribe('s')
     })
 })
+
+test.describe('T79 F03 a queued message belongs to the agent it was written for, and to the device that sent it', () => {
+    /** a terminal that printed long ago (the queue's quiet time is over) and whose screen the test sets */
+    function quietTerminal() {
+        let screen = WORKING
+        let outputAt = Date.now() - 20_000
+        // a new screen comes with output — printed long enough ago that the queue's quiet time is over
+        const state = {
+            set screen(lines: string[]) {
+                screen = lines
+                outputAt += 1
+            }
+        }
+        return { state, terminal: { screen: () => screen, lastOutputAt: () => outputAt, writeInput: () => undefined } }
+    }
+    const poll = (conversations: ConversationService): Promise<void> => (conversations as unknown as { pollRound(): Promise<void> }).pollRound()
+
+    test('the agent exits while the message waits: the shell left behind never gets it', async () => {
+        const { state, terminal } = quietTerminal()
+        let front: string | null = '4242'
+        const { conversations, typed } = serviceOn(terminal, { agentProcess: async () => front })
+        expect(await conversations.send('s', 'touch /tmp/queue-proof')).toEqual({ status: 'queued' })
+        state.screen = ['$ ']
+        front = null
+        await poll(conversations)
+        expect(typed).toEqual([])
+        expect((await conversations.getConversation('s')).queued).toEqual([])
+    })
+
+    test('another agent process took its place: not sent to it either', async () => {
+        const { state, terminal } = quietTerminal()
+        let front: string | null = '4242'
+        const { conversations, typed } = serviceOn(terminal, { agentProcess: async () => front })
+        conversations.subscribe('s')
+        expect(await conversations.send('s', 'for the first one')).toEqual({ status: 'queued' })
+        state.screen = IDLE
+        front = '5151'
+        await poll(conversations)
+        expect(typed).toEqual([])
+        expect((await conversations.getConversation('s')).queued).toEqual([])
+        conversations.unsubscribe('s')
+    })
+
+    test('the same agent finished its turn: the message goes', async () => {
+        const { state, terminal } = quietTerminal()
+        const { conversations, typed } = serviceOn(terminal, { agentProcess: async () => '4242' })
+        expect(await conversations.send('s', 'next step')).toEqual({ status: 'queued' })
+        state.screen = IDLE
+        await poll(conversations)
+        expect(typed).toEqual(['next step'])
+    })
+
+    test('Send now after the agent exited: refused and dropped', async () => {
+        const { terminal } = quietTerminal()
+        let front: string | null = '4242'
+        const { conversations, typed } = serviceOn(terminal, { agentProcess: async () => front })
+        conversations.subscribe('s')
+        expect(await conversations.send('s', 'rm -rf build')).toEqual({ status: 'queued' })
+        const [queued] = (await conversations.getConversation('s')).queued
+        front = null
+        expect(await conversations.sendQueuedNow('s', queued.id)).toMatchObject({ status: 'rejected', reason: 'no_agent' })
+        expect(typed).toEqual([])
+        expect((await conversations.getConversation('s')).queued).toEqual([])
+        conversations.unsubscribe('s')
+    })
+
+    test('a send with no agent in front is refused instead of typed into the shell', async () => {
+        const { conversations, typed } = serviceOn({ screen: () => ['$ '], lastOutputAt: () => 1, writeInput: () => undefined }, { agentProcess: async () => null })
+        expect(await conversations.send('s', 'ls')).toMatchObject({ status: 'rejected', reason: 'no_agent' })
+        expect(typed).toEqual([])
+    })
+
+    test('a device disconnected (or the phone turned off): what it queued is dropped, in every session; the rest stays', async () => {
+        const { terminal } = quietTerminal()
+        const { conversations } = serviceOn(terminal, { agentProcess: async () => '4242' })
+        for (const id of ['s1', 's2']) conversations.subscribe(id)
+        expect(await conversations.send('s1', 'from the Mac')).toEqual({ status: 'queued' })
+        expect(await conversations.send('s1', 'from the phone', 'device:abc')).toEqual({ status: 'queued' })
+        expect(await conversations.send('s2', 'also from the phone', 'device:abc')).toEqual({ status: 'queued' })
+        expect(await conversations.send('s2', 'from another phone', 'device:xyz')).toEqual({ status: 'queued' })
+        expect(conversations.dropQueuedFrom('device:abc')).toBe(2)
+        expect((await conversations.getConversation('s1')).queued.map((item) => item.text)).toEqual(['from the Mac'])
+        expect((await conversations.getConversation('s2')).queued.map((item) => item.text)).toEqual(['from another phone'])
+        expect(conversations.dropQueuedFrom((origin) => origin !== undefined)).toBe(1)
+        expect((await conversations.getConversation('s2')).queued).toEqual([])
+        for (const id of ['s1', 's2']) {
+            conversations.unsubscribe(id)
+            conversations.cancelQueued(id)
+        }
+    })
+})
