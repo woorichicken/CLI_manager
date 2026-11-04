@@ -233,6 +233,18 @@ body.phone-body #root {
     font-size: 13px;
 }
 
+.phone-unreachable-note {
+    margin-top: 6px;
+}
+.phone-retry {
+    margin-top: 12px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 13px;
+}
+
 /* --- segmented buttons, icon buttons --- */
 .phone-seg {
     display: inline-flex;
