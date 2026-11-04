@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import type { ConversationAgent, PromptAnswer, PromptKind, PromptMenu, PromptOption } from '../shared/conversation'
 import { INPUT_BOX_RULE } from './screenLines'
 
@@ -166,7 +167,11 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     const kind = kindOf(text, options)
     const answerable = agent === 'claude' && options.length > 0 && !multi && options.some((option) => option.selected)
     const selected = options.findIndex((option) => option.selected)
-    const signature = JSON.stringify([agent, kind, question, context, options.map((option) => option.label), selected])
+    // A hash, not the words: the card goes to a phone with its words masked (maskSnapshot), and a plain
+    // JSON signature carried the unmasked command — a key in it — right beside them (ovis dialogs/shared.ts:331)
+    const signature = createHash('sha256')
+        .update(JSON.stringify([agent, kind, question, context, options.map((option) => option.label), selected]))
+        .digest('hex')
     return { agent, kind, question, context, options, multi, answerable, signature }
 }
 

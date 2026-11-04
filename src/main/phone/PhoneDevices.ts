@@ -136,10 +136,12 @@ export class PhoneDevices {
             lastSeenAt: this.now()
         }
         this.devices.push(device)
-        // the oldest pairing goes first; a list this long is forgotten devices
-        if (this.devices.length > MAX_DEVICES) this.devices.splice(0, this.devices.length - MAX_DEVICES)
+        // the oldest pairing goes first; a list this long is forgotten devices. Dropping one is a revoke:
+        // its open sockets close and its alerts stop like a Disconnect (ovis connections.ts:247)
+        const dropped = this.devices.length > MAX_DEVICES ? this.devices.splice(0, this.devices.length - MAX_DEVICES) : []
         this.save()
         this.emit()
+        for (const old of dropped) for (const listener of this.revokeListeners) listener(old.id)
         return { token, device: { id: device.id, label: device.label, role: device.role } }
     }
 
@@ -158,22 +160,41 @@ export class PhoneDevices {
         return { id: device.id, label: device.label, role: device.role }
     }
 
+    /** Still paired: a request or socket judged before a revoke asks again before it types. */
+    has(id: string): boolean {
+        return this.devices.some((d) => d.id === id)
+    }
+
+    /**
+     * Written to disk first: a revoke the disk did not take would come back, cookie and all, on the
+     * next start. When the write fails this throws and nothing changes — the list, the open sockets
+     * and the file still agree, and the caller tells the person (ovis devices.ts:409,434).
+     */
     revoke(id: string): boolean {
-        const before = this.devices.length
-        this.devices = this.devices.filter((d) => d.id !== id)
-        if (this.devices.length === before) return false
-        this.save()
+        const remaining = this.devices.filter((d) => d.id !== id)
+        if (remaining.length === this.devices.length) return false
+        this.persist(remaining)
+        this.devices = remaining
         this.emit()
         for (const listener of this.revokeListeners) listener(id)
         return true
     }
 
+    /** Like `revoke`: throws, changing nothing, when the empty list cannot be written. */
     revokeAll(): void {
+        this.persist([])
         this.devices = []
         this.pending = null
-        this.save()
         this.emit()
         for (const listener of this.revokeListeners) listener(null)
+    }
+
+    private persist(devices: StoredDevice[]): void {
+        try {
+            writePrivateJson(this.file, { devices })
+        } catch (error) {
+            throw new Error(`Could not save the device list: ${error instanceof Error ? error.message : String(error)}`)
+        }
     }
 
     private save(): void {

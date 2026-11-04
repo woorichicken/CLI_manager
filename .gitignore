@@ -6,6 +6,8 @@ out/
 dist/
 *.js
 *.js.map
+# hand-written files Vite copies as they are (the phone's service worker): not build output
+!src/renderer/public/**/*.js
 
 # Terminal pipeline tests (Playwright + mock CLI)
 test-results/

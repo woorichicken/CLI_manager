@@ -55,6 +55,16 @@ export interface PhoneApiDeps {
     recordPhoneInput(sessionId: string, detail: string): void
     /** Settings shows how many devices turned alerts on */
     onStateChange(): void
+    /**
+     * `access` was judged when the headers arrived. A body can take its time: the device may be
+     * revoked (or the phone switched off) before it ends — ask again before acting on it
+     * (ovis composer.ts:273,335,632 re-authorize between async steps).
+     */
+    stillAllowed(): boolean
+}
+
+function refuseRevoked(res: http.ServerResponse): void {
+    send(res, 401, { status: 'rejected', reason: 'revoked', error: 'revoked', message: 'This device was disconnected from the Mac.' })
 }
 
 const DRIVE_ONLY = new Set(['send', 'cancel-queued', 'discard-queued', 'send-queued-now', 'interrupt', 'answer', 'attach'])
@@ -70,6 +80,8 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
 
     if (path === PHONE_API.pushSubscribe && method === 'POST') {
         const body = await readJson(req)
+        // a revoked device must not leave alerts behind for itself
+        if (!deps.stillAllowed()) return refuseRevoked(res)
         const ok = deps.push.subscribe(body?.subscription, deps.owner)
         if (ok) deps.onStateChange()
         send(res, ok ? 200 : 400, ok ? { status: 'subscribed' } : { error: 'bad_subscription' })
@@ -143,6 +155,7 @@ async function handleChat(
     }
     if (action === 'attach') {
         const bytes = await readBody(req, MAX_ATTACH_BYTES)
+        if (!deps.stillAllowed()) return refuseRevoked(res)
         if (!bytes) {
             send(res, 413, { status: 'rejected', reason: 'too_large', message: `Files are limited to ${MAX_ATTACH_BYTES / 1024 / 1024} MB.` })
             return
@@ -154,6 +167,7 @@ async function handleChat(
         return
     }
     const body = (await readJson(req)) ?? {}
+    if (!deps.stillAllowed()) return refuseRevoked(res)
     switch (action) {
         case 'send': {
             const text = typeof body.text === 'string' ? body.text : ''
@@ -200,7 +214,8 @@ async function handleChat(
 /**
  * The transcript is what the agent and the person wrote — the Chat view shows it as is.
  * The question card is read off the screen: its words go through maskSecrets like a
- * report's lines. The signature stays as main computed it, so an answer still matches.
+ * report's lines. The signature stays as main computed it, so an answer still matches —
+ * it is a hash of the unmasked words (promptScreen.ts), so it carries none of them.
  */
 export function maskSnapshot(snapshot: ConversationSnapshot, maskLine: (text: string) => string): ConversationSnapshot {
     if (!snapshot.prompt) return snapshot

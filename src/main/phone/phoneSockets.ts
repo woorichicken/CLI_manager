@@ -52,7 +52,11 @@ function keepAlive(ws: WebSocket): () => void {
     return () => clearInterval(timer)
 }
 
-export function handleTerminalSocket(ws: WebSocket, sessionId: string, role: PhoneRole, deps: PhoneSocketDeps): void {
+/**
+ * `stillAllowed`: the access this socket was opened with, asked again before each input — a revoked
+ * device's socket is only closing (ws keeps emitting its frames until the phone answers the close).
+ */
+export function handleTerminalSocket(ws: WebSocket, sessionId: string, role: PhoneRole, deps: PhoneSocketDeps, stillAllowed: () => boolean): void {
     let ready = false
     let closed = false
     const queued: string[] = []
@@ -94,6 +98,8 @@ export function handleTerminalSocket(ws: WebSocket, sessionId: string, role: Pho
     ws.on('error', cleanup)
 
     ws.on('message', (raw) => {
+        // closing (revoked, Phone off, exited) or no longer allowed: nothing more reaches the pty
+        if (closed || ws.readyState !== ws.OPEN || !stillAllowed()) return
         let message: { type?: unknown; data?: unknown } | null = null
         try {
             message = JSON.parse(String(raw))

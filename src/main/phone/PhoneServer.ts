@@ -61,7 +61,7 @@ const CSP = [
     "form-action 'self'"
 ].join('; ')
 
-export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' | 'devices' | 'push'>, PhoneSocketDeps {
+export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' | 'devices' | 'push' | 'stillAllowed'>, PhoneSocketDeps {
     devices: PhoneDevices
     push: PhonePush
     tailscale: TailscaleStatus
@@ -71,6 +71,11 @@ export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' |
     onStateChange(): void
     /** a status poller for alerts, started and stopped with the server */
     statusPoller: { start(): void; stop(): void }
+    /**
+     * A paired device lost access (`null`: every device) — Disconnect, Disconnect all, or pushed out by the
+     * 51st pairing. Its sockets are already closing; work it left behind (a Chat queue it filled) should go too.
+     */
+    onDeviceRevoked?(deviceId: string | null): void
 }
 
 export interface PhoneRequestAccess {
@@ -92,10 +97,13 @@ export class PhoneServer {
 
     constructor(private readonly deps: PhoneServerDeps) {
         deps.devices.onRevoke((deviceId) => {
+            // close() only starts the handshake: frames the phone sends until it answers still arrive.
+            // The terminal socket asks `stillAllowed` before every input (ovis connections.ts:164,247).
             for (const socket of [...this.sockets]) {
                 if (deviceId === null ? socket.deviceId !== undefined : socket.deviceId === deviceId) socket.ws.close(4401, 'revoked')
             }
             deps.push.forgetOwner(deviceId === null ? null : `device:${deviceId}`)
+            deps.onDeviceRevoked?.(deviceId)
         })
         deps.devices.onChange(() => deps.onStateChange())
     }
@@ -179,6 +187,15 @@ export class PhoneServer {
     statusChanged(changes: SessionScreenStatus[]): void {
         if (!this.server) return
         this.deps.push.onStatus(changes.map((c) => (c.question ? { ...c, question: this.deps.maskLine(c.question) } : c)))
+    }
+
+    /**
+     * Access judged when a request's headers (or a socket's upgrade) arrived, asked again right before
+     * it types: the phone may have been switched off or the device revoked in between.
+     */
+    stillAllowed(access: Extract<PhoneAccess, { level: 'full' }>): boolean {
+        if (!this.enabled || this.server === null) return false
+        return access.via !== 'device' || (access.deviceId !== undefined && this.deps.devices.has(access.deviceId))
     }
 
     private configuredPortHint(): number {
@@ -284,7 +301,8 @@ export class PhoneServer {
                 send(res, who.access.reason === 'pairing_required' ? 401 : 403, { error: who.access.reason })
                 return
             }
-            await handlePhoneApi(req, res, url, { ...this.deps, access: who.access, owner: who.owner! })
+            const access = who.access
+            await handlePhoneApi(req, res, url, { ...this.deps, access, owner: who.owner!, stillAllowed: () => this.stillAllowed(access) })
             return
         }
 
@@ -356,7 +374,7 @@ export class PhoneServer {
                 this.recent.set(entry.who, Date.now())
                 this.deps.onStateChange()
             })
-            if (isTerminal) handleTerminalSocket(ws, targetId, role, this.deps)
+            if (isTerminal) handleTerminalSocket(ws, targetId, role, this.deps, () => this.stillAllowed(access))
             else handleChatSocket(ws, targetId, this.deps)
         })
     }
