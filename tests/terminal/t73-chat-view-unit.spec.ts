@@ -588,7 +588,7 @@ test.describe('T73 r2 shortcut defaults never take a chord the person already bo
 
 
 test('T73 app attachment mentions (G7): the chat\'s own stored files become chips, a typed @path stays text', () => {
-    const path = '/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/climanager-chat/2026-11-04/1793809848410-75f57aee.png'
+    const path = '/var/folders/ab/c0d1e2f3/T/climanager-chat/2026-11-04/1793809848410-75f57aee.png'
     expect(splitAppAttachments(`@${path}  What text is in the attached image? Answer in three words.`)).toEqual([
         { path, extension: 'png', image: true },
         'What text is in the attached image? Answer in three words.'

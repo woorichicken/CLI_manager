@@ -476,7 +476,7 @@ test('T75 secret prompt (F15): only a real password prompt on the cursor row tur
     expect(secretPrompt('$ sudo ls\n[sudo] password for kim: ')).toBe('[sudo] password for kim:')
     expect(secretPrompt('Password: ')).toBe('Password:')
     expect(secretPrompt('kim@mac.local\'s password: ')).toBe("kim@mac.local's password:")
-    expect(secretPrompt("Enter passphrase for key '/Users/kim/.ssh/id_ed25519': ")).toBe("Enter passphrase for key '/Users/kim/.ssh/id_ed25519':")
+    expect(secretPrompt("Enter passphrase for key '~/.ssh/id_ed25519': ")).toBe("Enter passphrase for key '~/.ssh/id_ed25519':")
     expect(secretPrompt('Enter PIN for token: ')).toBe('Enter PIN for token:')
     expect(secretPrompt('Verify password: \n\n')).toBe('Verify password:')
     // prose about passwords, questions and a prompt that is not on the last row: no
