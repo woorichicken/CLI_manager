@@ -61,7 +61,7 @@ const CSP = [
     "form-action 'self'"
 ].join('; ')
 
-export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' | 'devices' | 'push'>, PhoneSocketDeps {
+export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' | 'devices' | 'push' | 'stillAllowed'>, PhoneSocketDeps {
     devices: PhoneDevices
     push: PhonePush
     tailscale: TailscaleStatus
@@ -295,7 +295,8 @@ export class PhoneServer {
                 send(res, who.access.reason === 'pairing_required' ? 401 : 403, { error: who.access.reason })
                 return
             }
-            await handlePhoneApi(req, res, url, { ...this.deps, access: who.access, owner: who.owner! })
+            const access = who.access
+            await handlePhoneApi(req, res, url, { ...this.deps, access, owner: who.owner!, stillAllowed: () => this.stillAllowed(access) })
             return
         }
 

@@ -148,3 +148,56 @@ test.describe('T79 F01 a revoked device cannot type through an open terminal soc
         }
     })
 })
+
+test.describe('T79 F02 a request still sending its body when the device is revoked does nothing', () => {
+    const slowPost = (port: number, cookie: string, route: string, body: string, midway: () => void): Promise<{ status: number; text: string }> =>
+        new Promise((resolve, reject) => {
+            const req = http.request(
+                {
+                    host: '127.0.0.1',
+                    port,
+                    path: route,
+                    method: 'POST',
+                    headers: { cookie, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), origin: `http://127.0.0.1:${port}` }
+                },
+                (res) => {
+                    let text = ''
+                    res.on('data', (chunk) => (text += chunk))
+                    res.on('end', () => resolve({ status: res.statusCode ?? 0, text }))
+                }
+            )
+            req.on('error', reject)
+            const half = Math.floor(body.length / 2)
+            req.write(body.slice(0, half))
+            // the headers were judged when they arrived; revoke while the rest is on its way
+            setTimeout(() => {
+                midway()
+                setTimeout(() => req.end(body.slice(half)), 100)
+            }, 200)
+        })
+
+    test('chat send', async () => {
+        const h = await startServer()
+        try {
+            const device = pairDevice(h.devices)
+            const result = await slowPost(h.port, device.cookie, '/api/phone/chat/S1/send', JSON.stringify({ text: 'touch /tmp/after-revoke' }), () => h.devices.revoke(device.id))
+            expect(h.sent).toEqual([])
+            expect(result.status).toBe(401)
+        } finally {
+            await h.stop()
+        }
+    })
+
+    test('alerts subscribe', async () => {
+        const h = await startServer()
+        try {
+            const device = pairDevice(h.devices)
+            const subscription = { endpoint: 'https://push.example/x', keys: { p256dh: 'p', auth: 'a' } }
+            const result = await slowPost(h.port, device.cookie, '/api/phone/push/subscribe', JSON.stringify({ subscription }), () => h.devices.revokeAll())
+            expect(h.subscribed).toEqual([])
+            expect(result.status).toBe(401)
+        } finally {
+            await h.stop()
+        }
+    })
+})
