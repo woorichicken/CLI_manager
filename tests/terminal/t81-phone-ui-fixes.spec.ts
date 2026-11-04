@@ -401,3 +401,18 @@ test('T81 G8 a view-only phone shows no message box, attach, model chip or Type'
     await expect(phone.getByTestId('phone-key-bar')).toHaveCount(0)
     await phone.close()
 })
+
+test('T81 G9 a path in the chat is plain text on the phone, where nothing can open it', async () => {
+    test.setTimeout(120_000)
+    const { app, page, base } = await launch()
+    const { phone, cdp } = await openPhone(app, base, `session=${NEW}&view=chat`, 't81-g9')
+    const box = phone.locator('.chat-composer textarea')
+    await expect(box).toBeVisible({ timeout: 15_000 })
+    await box.fill('saved to docs/demo.mp4 please')
+    await tap(cdp, phone, 'chat-send')
+    await waitForBufferText(page, NEW, 'ANSWER[1]: saved to docs/demo.mp4', 10_000)
+    await expect(phone.getByTestId('chat-answer').last()).toContainText('docs/demo.mp4', { timeout: 10_000 })
+    await expect(phone.getByTestId('chat-user-text').last()).toContainText('docs/demo.mp4')
+    await expect(phone.getByTestId('chat-file-link')).toHaveCount(0)
+    await phone.close()
+})

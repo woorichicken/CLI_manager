@@ -41,6 +41,11 @@ export interface ChatViewProps {
      * would be one line says why there is none — the server refuses its sends anyway (403 view_only).
      */
     readOnly?: boolean
+    /**
+     * Whether `transport.openFile` shows anything. The phone page has no file preview: there a path
+     * the chat names is plain text instead of a button that does nothing (G9).
+     */
+    canOpenFiles?: boolean
 }
 
 /** Within this many pixels of the end, new turns keep the view pinned to the bottom. */
@@ -86,7 +91,7 @@ interface SentWaiting {
 }
 let sentSequence = 0
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false }: ChatViewProps) {
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true }: ChatViewProps) {
     const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? CHAT_TURN_LIMIT)
     const { snapshot, refresh } = useConversation(transport, sessionId, limit)
     const scroller = useRef<HTMLDivElement>(null)
@@ -212,9 +217,10 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 const { path, line } = fileLineTarget(target)
                 transport.openFile(sessionId, resolveChatPath(path, cwd, home), line ?? undefined)
             },
+            canOpenPaths: canOpenFiles,
             openGallery: (images, index) => setGallery({ images, index })
         }),
-        [sessionId, transport, cwd, home]
+        [sessionId, transport, cwd, home, canOpenFiles]
     )
 
     const sendText = useCallback(

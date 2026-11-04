@@ -195,7 +195,7 @@ const ToolRow = memo(function ToolRow({ tool }: { tool: ToolPart }) {
                     {tool.summary && tool.summary !== tool.name && <span className="chat-tool-summary">{tool.summary}</span>}
                     {tool.error && <AlertCircle size={12} className="text-red-400 shrink-0" aria-label="Failed" />}
                 </button>
-                {file && actions && (
+                {file && actions?.canOpenPaths && (
                     <button type="button" className="chat-tool-open" title={`Open ${file}`} aria-label={`Open ${file}`} data-testid="chat-tool-open" onClick={() => actions.openPath(file)}>
                         <ExternalLink size={12} aria-hidden="true" />
                     </button>
