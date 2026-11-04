@@ -258,6 +258,7 @@ export function PhoneSettings({ onEnabledChange }: { onEnabledChange: (enabled: 
                                 {state.pushDevices} device{state.pushDevices === 1 ? '' : 's'} turned alerts on (bell on the phone page). A
                                 question or a finished turn; never while you use the app here; once a minute per session.
                             </p>
+                            {state.pushError && <p className="text-xs text-amber-400 mt-1" data-testid="phone-push-error">{state.pushError}</p>}
                             {pushResult && <p className="text-xs text-blue-300 mt-1" data-testid="phone-push-result">{pushResult}</p>}
                         </div>
                         <button

@@ -234,6 +234,32 @@ test.describe('T75 alerts', () => {
     })
 })
 
+test.describe('T75 alert keys (F04)', () => {
+    test('a malformed key file is left as it is and named, never replaced by a new key pair', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t75-vapid-'))
+        const keysFile = path.join(dir, 'vapid.json')
+        const deps = { keysFile, subscriptionsFile: path.join(dir, 'push.json'), macInUse: () => false, session: () => ({ name: 'A', agent: true }) }
+        for (const broken of ['{}\n', 'not json', '{"publicKey":"only"}']) {
+            fs.writeFileSync(keysFile, broken)
+            const push = new PhonePush(deps)
+            expect(push.keysProblem()).toMatch(/malformed/)
+            expect(() => push.publicKey()).toThrow('malformed')
+            expect(await push.test()).toMatchObject({ status: 'failed', message: expect.stringMatching(/malformed/) })
+            // an alert (fire-and-forget) neither throws nor writes a key
+            expect(push.subscribe({ endpoint: 'https://push.example/abc', keys: { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' } }, 'tailscale:o')).toBe(true)
+            push.onStatus([{ sessionId: 's', state: 'waiting', question: 'Proceed?' }])
+            await new Promise((resolve) => setTimeout(resolve, 20))
+            expect(fs.readFileSync(keysFile, 'utf8')).toBe(broken)
+        }
+        // deleted on purpose: a new pair is made, and the problem is gone
+        fs.rmSync(keysFile)
+        const fresh = new PhonePush(deps)
+        expect(fresh.keysProblem()).toBeNull()
+        expect(fresh.publicKey()).toMatch(/^[A-Za-z0-9_-]{80,}$/)
+        expect(fresh.keysProblem()).toBeNull()
+    })
+})
+
 test.describe('T75 key bar and masking', () => {
     test('key bar: ovis order, sequences, Ctrl + letter', () => {
         expect(KEY_BAR_ITEMS.map(keyBarLabel)).toEqual(['Esc', 'Tab', '⇧Tab', 'Ctrl', '↑', '↓', '←', '→', '^C', '⏎'])

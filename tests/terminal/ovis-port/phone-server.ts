@@ -450,7 +450,6 @@ test.describe('ovis server/push.test.ts', () => {
         })
 
         test('refuses a malformed key file instead of rotating the key under every device', () => {
-            test.fail(true, 'ovis-port bug: PhonePush.vapid() silently makes a new key pair (and overwrites vapid.json) when the file is malformed — every subscribed phone is orphaned')
             const rig = pushRig()
             fs.writeFileSync(rig.deps.keysFile, '{}\n')
             expect(() => new PhonePush(rig.deps).publicKey()).toThrow('malformed')

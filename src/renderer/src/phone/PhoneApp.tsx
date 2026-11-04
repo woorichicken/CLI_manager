@@ -180,7 +180,7 @@ export function PhoneApp() {
                             {me.via === 'tailscale' ? me.login : me.deviceLabel}
                             {me.role === 'watch' ? ' · view only' : ''}
                         </span>
-                        <AlertsMenu publicKey={me.push.publicKey} />
+                        {me.push && <AlertsMenu publicKey={me.push.publicKey} />}
                     </div>
                     {offline && <div className="phone-offline">Reconnecting to the Mac…</div>}
                     <SessionList data={data} activeId={session?.id ?? null} onOpen={open} />
