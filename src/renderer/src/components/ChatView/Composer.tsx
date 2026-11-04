@@ -28,6 +28,16 @@ function saveDraft(sessionId: string, text: string): void {
     }
 }
 
+/**
+ * Puts text after `sessionId`'s saved draft without showing it: a queued message withdrawn for Edit
+ * after the view moved to another session goes back to its own session, not into the box on
+ * screen (round2 N01).
+ */
+export function appendDraft(sessionId: string, text: string): void {
+    const current = drafts[sessionId] ?? ''
+    saveDraft(sessionId, current.trim() ? `${current}\n${text}` : text)
+}
+
 /** How often each `/` command was picked, so the menu offers the usual ones first (ovis `ovis:slash-usage`). */
 const USAGE_KEY = 'chat-command-usage'
 function readUsage(): Record<string, number> {
@@ -103,8 +113,12 @@ const SOURCE_LABEL: Record<ChatCommand['source'], string> = {
 export interface ComposerHandle {
     focus(): void
     addFiles(files: File[]): void
-    /** puts text in the box (a queued message taken back to edit): into an empty box, or after the draft */
-    editText(text: string): void
+    /**
+     * puts text in the box (a queued message taken back to edit): into an empty box, or after the
+     * draft. `forSession`: the session it was taken from — when the box shows another one now, the
+     * text goes to that session's saved draft instead (round2 N01).
+     */
+    editText(text: string, forSession?: string): void
 }
 
 export interface ComposerProps {
@@ -262,12 +276,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         () => ({
             focus: () => box.current?.focus(),
             addFiles,
-            editText: (incoming: string) => {
+            editText: (incoming: string, forSession?: string) => {
+                if (forSession !== undefined && forSession !== sessionId) {
+                    appendDraft(forSession, incoming)
+                    return
+                }
                 const next = text.trim() ? `${text}\n${incoming}` : incoming
                 setDraft(next, next.length)
             }
         }),
-        [addFiles, setDraft, text]
+        [addFiles, setDraft, text, sessionId]
     )
 
     // ---- completion menu -------------------------------------------------------------------

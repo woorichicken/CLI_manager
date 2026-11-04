@@ -19,7 +19,8 @@ export function QueuedMessages({
     transport: ChatTransport
     queued: QueuedMessage[]
     agentName: string
-    onEdit: (text: string) => void
+    /** `sessionId`: the session the message was withdrawn from — the view may show another one by then */
+    onEdit: (text: string, sessionId: string) => void
     onChanged: () => void
 }) {
     const [busy, setBusy] = useState<string | null>(null)
@@ -57,8 +58,11 @@ export function QueuedMessages({
     }
     // Edit brings the text back only once the queue has given it up: otherwise it would be sent twice
     // (ovis useComposerSends.ts:195 — restore after the discarded receipt)
+    // the session is fixed now: the phone reuses this view for the next session it opens while
+    // the withdrawal is on its way (round2 N01)
     const edit = async (message: QueuedMessage): Promise<void> => {
-        if (await withdraw(message)) onEdit(message.text)
+        const from = sessionId
+        if (await withdraw(message)) onEdit(message.text, from)
     }
 
     return (

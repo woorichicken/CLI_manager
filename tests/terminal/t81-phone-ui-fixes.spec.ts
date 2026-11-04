@@ -17,6 +17,8 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  *  F20 a question on screen: a number + the Send button picks that option
  *  G1  a new Claude session with no conversation file yet: an empty state, not an error
  *  G2  the View | Type switch draws no focus ring on a touch screen
+ *  N01 (round 2) a queued message's Edit, answered after the phone moved to another session, goes
+ *      back to its own session's draft — never into the other session's box
  */
 
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
@@ -92,14 +94,21 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; base: s
 async function openOwnerPhone(app: ElectronApplication, url: string, partition: string): Promise<Page> {
     const opened = app.waitForEvent('window')
     await app.evaluate(({ BrowserWindow, session }, o) => {
-        const g = globalThis as unknown as { __t81Block?: string[] }
+        const g = globalThis as unknown as { __t81Block?: string[]; __t81Hold?: string[]; __t81Held?: Array<() => void> }
         g.__t81Block = g.__t81Block ?? []
+        g.__t81Hold = g.__t81Hold ?? []
+        g.__t81Held = g.__t81Held ?? []
         const jar = session.fromPartition(o.partition)
         jar.webRequest.onBeforeSendHeaders((details, callback) => {
             callback({ requestHeaders: { ...details.requestHeaders, 'Tailscale-User-Login': o.owner, 'X-Forwarded-For': '100.101.102.103' } })
         })
         jar.webRequest.onBeforeRequest((details, callback) => {
             const blocked = (g.__t81Block ?? []).some((word) => details.url.includes(word))
+            // held: the request waits until `release` (a slow network), then goes through
+            if (!blocked && (g.__t81Hold ?? []).some((word) => details.url.includes(word))) {
+                g.__t81Held!.push(() => callback({}))
+                return
+            }
             callback({ cancel: blocked })
         })
         const win = new BrowserWindow({ width: 390, height: 844, useContentSize: true, show: false, webPreferences: { partition: o.partition, backgroundThrottling: false } })
@@ -114,6 +123,25 @@ async function block(app: ElectronApplication, words: string[]): Promise<void> {
     await app.evaluate((_electron, list) => {
         ;(globalThis as unknown as { __t81Block?: string[] }).__t81Block = list
     }, words)
+}
+
+/** Requests whose path holds a word in `words` wait (see openOwnerPhone) until `release`. */
+async function hold(app: ElectronApplication, words: string[]): Promise<void> {
+    await app.evaluate((_electron, list) => {
+        ;(globalThis as unknown as { __t81Hold?: string[] }).__t81Hold = list
+    }, words)
+}
+
+/** Lets the held requests go; returns how many there were. */
+async function release(app: ElectronApplication): Promise<number> {
+    return app.evaluate(() => {
+        const g = globalThis as unknown as { __t81Hold?: string[]; __t81Held?: Array<() => void> }
+        g.__t81Hold = []
+        const held = g.__t81Held ?? []
+        g.__t81Held = []
+        for (const go of held) go()
+        return held.length
+    })
 }
 
 async function becomePhone(phone: Page): Promise<CDPSession> {
@@ -468,5 +496,42 @@ test('T81 G3 the phone terminal draws with its own font: Hangul exactly two Lati
     await expect
         .poll(() => phone.locator('.xterm-rows').evaluate((rows) => getComputedStyle(rows).fontFamily), { timeout: 10_000 })
         .toContain('CLIM Phone Mono')
+    await phone.close()
+})
+
+test('T81 N01 Edit answered after the phone moved to another session: the text goes to its own session’s draft', async () => {
+    test.setTimeout(150_000)
+    const { app, page, base } = await launch()
+    const { phone, cdp } = await openPhone(app, base, `session=${AGENT}&view=chat`, 't81-n01')
+    const box = phone.locator('.chat-composer textarea')
+    await expect(box).toBeVisible({ timeout: 15_000 })
+    await box.fill('first job')
+    await tap(cdp, phone, 'chat-send')
+    await waitForBufferText(page, AGENT, 'ANSWER[1]: first job', 10_000)
+    await phone.waitForTimeout(800)
+    await box.fill('only for the first agent')
+    await tap(cdp, phone, 'chat-send')
+    await expect(phone.getByTestId('chat-queued-item')).toHaveCount(1, { timeout: 10_000 })
+    // Edit, and its withdrawal is slow to come back
+    await hold(app, ['discard-queued'])
+    await tap(cdp, phone, 'chat-queued-edit')
+    await expect.poll(() => app.evaluate(() => ((globalThis as unknown as { __t81Held?: unknown[] }).__t81Held ?? []).length), { timeout: 5_000 }).toBe(1)
+    // meanwhile, to the other Claude session's Chat through the list
+    await tap(cdp, phone, 'phone-menu-button')
+    await phone.locator(`[data-testid="phone-session-row"][data-session-id="${NEW}"]`).click()
+    await expect(phone.getByTestId('phone-session-title')).toHaveText('T81 Claude new')
+    await expect(box).toBeVisible({ timeout: 15_000 })
+    await expect(box).toHaveValue('')
+    expect(await release(app)).toBe(1)
+    await phone.waitForTimeout(1_000)
+    // the other session's box stays empty, and so does its saved draft
+    await expect(box).toHaveValue('')
+    expect(await phone.evaluate((id) => (JSON.parse(localStorage.getItem('chat-drafts') ?? '{}') as Record<string, string>)[id] ?? '', NEW)).toBe('')
+    // back on the first session: the withdrawn text waits in its box
+    await tap(cdp, phone, 'phone-menu-button')
+    await phone.locator(`[data-testid="phone-session-row"][data-session-id="${AGENT}"]`).click()
+    await expect(phone.getByTestId('phone-session-title')).toHaveText('T81 Claude')
+    await expect(box).toHaveValue('only for the first agent', { timeout: 10_000 })
+    await expect(phone.getByTestId('chat-queued-item')).toHaveCount(0)
     await phone.close()
 })

@@ -3,7 +3,7 @@ import { ArrowDown, Clock, Loader2, Terminal as TerminalIcon } from 'lucide-reac
 import type { ChatCommand, ChatPreferences, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
-import { Composer, type ComposerHandle } from './Composer'
+import { appendDraft, Composer, type ComposerHandle } from './Composer'
 import { ArtifactsChip, ContextChip, ModelChip, PlanChip } from './ComposerChips'
 import { ImageLightbox } from './ChatImages'
 import { PromptCard } from './PromptCard'
@@ -372,7 +372,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                 transport={transport}
                                 queued={snapshot.queued}
                                 agentName={agentName}
-                                onEdit={(text) => composer.current?.editText(text)}
+                                onEdit={(text, from) => (composer.current ? composer.current.editText(text, from) : appendDraft(from, text))}
                                 onChanged={refresh}
                             />
                         )}
