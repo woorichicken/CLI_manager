@@ -600,7 +600,6 @@ ${after}`
         const FOOTER = 'Esc to cancel · ctrl+x ctrl+k twice to stop background agents'
 
         test('accepts its exact background-agent footer, but not unknown trailing text', () => {
-            test.fail(true, "ovis-port bug: unknown trailing text after Esc to cancel (another programs prompt, Password:) still reads as a Claude approval")
             for (const accepted of [FOOTER, 'Esc to cancel · Tab to amend', 'Esc to cancel · Tab to amend · ctrl+e to explain', 'Esc to cancel · ctrl+e to explain', 'Esc to cancel']) {
                 const prompt = parse(backgroundApproval(1, accepted))
                 expect(prompt).toMatchObject({ question: 'Do you want to proceed?' })

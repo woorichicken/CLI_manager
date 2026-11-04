@@ -163,13 +163,19 @@ function readConfirmMenu(lines: string[]): ConfirmMenu | 'unsure' | null {
 /** A rule drawn under a dialog: a full one, or Claude's with the tab title in it ("──── title ─"). */
 const TRAILING_RULE = /^[─━╌]{8,}/
 
-/** The rest of a key hint a narrow pane wrapped onto the next row ("cancel"). */
-const HINT_CONTINUATION = /^[A-Za-z][A-Za-z0-9 ·/↑↓←→+]*$/
+/**
+ * One part of a key hint between its `·`: a key, "to", what it does ("Esc to cancel",
+ * "ctrl+x ctrl+k twice to stop background agents", "n to add notes"). Text that is no such part
+ * ("Password:", another program's words after the hint) means the hint row is not the menu's own.
+ */
+const HINT_PART = /^(?:press\s+)?(?:enter|esc|escape|tab|space|shift\+tab|ctrl\+\S+(?:\s+ctrl\+\S+)?(?:\s+twice)?|[↑↓←→]+(?:\/[↑↓←→]+)?|tab\/arrow keys|[a-z])\s+to\s+[a-z][a-z +/-]*$/i
 
 /**
  * Whether the menu's key hint is the last thing drawn (rows are the non-blank rows, top to bottom).
  * The hint is the first footer row under the last option (the last "Enter to confirm" for an
- * unnumbered menu). No hint found: nothing to tell by, the menu is taken as drawn.
+ * unnumbered menu); what follows it may only be the rest of it (a narrow pane wraps it) and rules,
+ * and all of it together must read as key hints. No hint found: nothing to tell by, the menu is
+ * taken as drawn.
  * (ovis server/prompt.test.ts "is gone once the menu is answered", MIT)
  */
 function menuIsLast(rows: string[], lastOptionRow: number, unnumbered: boolean): boolean {
@@ -180,7 +186,8 @@ function menuIsLast(rows: string[], lastOptionRow: number, unnumbered: boolean):
         hint = rows.findIndex((line, row) => row > lastOptionRow && FOOTER.test(line))
     }
     if (hint < 0) return true
-    return rows.slice(hint + 1).every((line) => TRAILING_RULE.test(line.trim()) || HINT_CONTINUATION.test(line.trim()))
+    const words = [rows[hint], ...rows.slice(hint + 1).filter((line) => !TRAILING_RULE.test(line.trim()))].join(' ').replace(/\s+/g, ' ')
+    return words.split('·').map((part) => part.trim()).filter(Boolean).every((part) => HINT_PART.test(part))
 }
 
 function kindOf(text: string, options: PromptOption[]): PromptKind {
