@@ -33,4 +33,9 @@ test.describe('T79 subagent cards decode the XML entities of the notification (o
         expect(notice.agent).toBe(true)
         expect(agentTaskResult(notice, undefined).title).toBe(title)
     })
+
+    test('다1: the result body has the subagent’s own characters', () => {
+        const notice = taskNotification(escapedNotification(summary, result))!
+        expect(agentTaskResult(notice, undefined).result).toBe(result)
+    })
 })

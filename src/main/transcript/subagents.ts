@@ -54,7 +54,7 @@ export function taskNotification(content: string): TaskNotification | null {
         toolUseId: tag('tool-use-id'),
         status: raw === 'completed' ? 'completed' : raw === 'failed' || raw === 'error' ? 'failed' : 'cancelled',
         summary,
-        result: from !== -1 && to > from ? block.slice(from + '<result>'.length, to).trim() : '',
+        result: from !== -1 && to > from ? decodeXmlEntities(block.slice(from + '<result>'.length, to).trim()) : '',
         agent: summary.startsWith('Agent "')
     }
 }
