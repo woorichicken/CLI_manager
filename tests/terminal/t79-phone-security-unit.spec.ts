@@ -119,3 +119,32 @@ test.describe('T79 F06 the alert worker is in Git', () => {
         expect(inHead.status, `${file} is not in HEAD`).toBe(0)
     })
 })
+
+test.describe('T79 F01 a revoked device cannot type through an open terminal socket', () => {
+    test('input sent after Disconnect, before the close handshake ends, never reaches the pty', async () => {
+        const h = await startServer()
+        try {
+            const device = pairDevice(h.devices)
+            const ws = new WebSocket(`ws://127.0.0.1:${h.port}/api/phone/terminal?session=S1`, {
+                headers: { cookie: device.cookie, origin: `http://127.0.0.1:${h.port}` }
+            })
+            await new Promise<void>((resolve, reject) => {
+                ws.on('message', (raw) => {
+                    if (JSON.parse(String(raw)).type === 'snapshot') resolve()
+                })
+                ws.on('error', reject)
+            })
+            ws.send(JSON.stringify({ type: 'input', data: 'before\r' }))
+            expect(await until(() => h.typed.includes('before\r'))).toBe(true)
+
+            // Mac: Disconnect. The phone answers the close slowly — its frames sent meanwhile still arrive.
+            h.devices.revoke(device.id)
+            ws.send(JSON.stringify({ type: 'input', data: 'after-revoke\r' }))
+            await new Promise((resolve) => setTimeout(resolve, 300))
+            expect(h.typed).not.toContain('after-revoke\r')
+            ws.terminate()
+        } finally {
+            await h.stop()
+        }
+    })
+})

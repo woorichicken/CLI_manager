@@ -92,6 +92,8 @@ export class PhoneServer {
 
     constructor(private readonly deps: PhoneServerDeps) {
         deps.devices.onRevoke((deviceId) => {
+            // close() only starts the handshake: frames the phone sends until it answers still arrive.
+            // The terminal socket asks `stillAllowed` before every input (ovis connections.ts:164,247).
             for (const socket of [...this.sockets]) {
                 if (deviceId === null ? socket.deviceId !== undefined : socket.deviceId === deviceId) socket.ws.close(4401, 'revoked')
             }
@@ -179,6 +181,15 @@ export class PhoneServer {
     statusChanged(changes: SessionScreenStatus[]): void {
         if (!this.server) return
         this.deps.push.onStatus(changes.map((c) => (c.question ? { ...c, question: this.deps.maskLine(c.question) } : c)))
+    }
+
+    /**
+     * Access judged when a request's headers (or a socket's upgrade) arrived, asked again right before
+     * it types: the phone may have been switched off or the device revoked in between.
+     */
+    stillAllowed(access: Extract<PhoneAccess, { level: 'full' }>): boolean {
+        if (!this.enabled || this.server === null) return false
+        return access.via !== 'device' || (access.deviceId !== undefined && this.deps.devices.has(access.deviceId))
     }
 
     private configuredPortHint(): number {
@@ -356,7 +367,7 @@ export class PhoneServer {
                 this.recent.set(entry.who, Date.now())
                 this.deps.onStateChange()
             })
-            if (isTerminal) handleTerminalSocket(ws, targetId, role, this.deps)
+            if (isTerminal) handleTerminalSocket(ws, targetId, role, this.deps, () => this.stillAllowed(access))
             else handleChatSocket(ws, targetId, this.deps)
         })
     }

@@ -158,6 +158,11 @@ export class PhoneDevices {
         return { id: device.id, label: device.label, role: device.role }
     }
 
+    /** Still paired: a request or socket judged before a revoke asks again before it types. */
+    has(id: string): boolean {
+        return this.devices.some((d) => d.id === id)
+    }
+
     revoke(id: string): boolean {
         const before = this.devices.length
         this.devices = this.devices.filter((d) => d.id !== id)
