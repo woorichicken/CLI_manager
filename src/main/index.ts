@@ -395,6 +395,8 @@ const conversationService = new ConversationService({
     hasTerminal: (id) => terminalManager.hasTerminal(id),
     writeInput: (id, data) => terminalManager.writeInput(id, data),
     type: (id, text) => controlApiService.typeForChat(id, text),
+    // a queued message goes only to the program it was queued for (F03)
+    agentProcess: (id) => terminalManager.foregroundProgram(id),
     onChange: (sessionId, revision) => {
         broadcast('conversation-changed', { sessionId, revision })
         phoneConversationListeners.emit(sessionId, revision)
