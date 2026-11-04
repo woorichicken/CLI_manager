@@ -74,8 +74,10 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
         cancelQueued: async (sessionId) => {
             await postJson(chatPath(sessionId, 'cancel-queued'), {}).catch(() => undefined)
         },
+        // no catch: a withdrawal that did not get through must not look like one that did (Edit, F19)
         discardQueued: async (sessionId, id) => {
-            await postJson(chatPath(sessionId, 'discard-queued'), { id }).catch(() => undefined)
+            const result = await postJson<{ discarded?: boolean }>(chatPath(sessionId, 'discard-queued'), { id })
+            return result.discarded === true
         },
         sendQueuedNow: (sessionId, id) => postJson<ChatSendResult>(chatPath(sessionId, 'send-queued-now'), { id }).catch(refuse),
         interrupt: (sessionId) =>

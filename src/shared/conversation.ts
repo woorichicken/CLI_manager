@@ -241,8 +241,11 @@ export interface ChatTransport {
     send(sessionId: string, text: string): Promise<ChatSendResult>
     /** Drops every queued message. */
     cancelQueued(sessionId: string): Promise<void>
-    /** Drops one queued message. */
-    discardQueued(sessionId: string, id: string): Promise<void>
+    /**
+     * Drops one queued message. True when it was still queued and is withdrawn now; false when it had
+     * already gone to the agent. Rejects when the request did not get through.
+     */
+    discardQueued(sessionId: string, id: string): Promise<boolean>
     /** Sends one queued message now, while the agent still works (the agent decides when it reads it). */
     sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult>
     /** Stops the agent's turn (Esc to its terminal) — refused unless its screen shows a turn in progress. */

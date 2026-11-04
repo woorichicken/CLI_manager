@@ -372,7 +372,7 @@ const api = {
     },
     sendChatMessage: (sessionId: string, text: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send', sessionId, text),
     cancelQueuedChat: (sessionId: string): Promise<void> => ipcRenderer.invoke('chat-cancel-queued', sessionId),
-    discardQueuedChat: (sessionId: string, id: string): Promise<void> => ipcRenderer.invoke('chat-discard-queued', sessionId, id),
+    discardQueuedChat: (sessionId: string, id: string): Promise<boolean> => ipcRenderer.invoke('chat-discard-queued', sessionId, id),
     sendQueuedChatNow: (sessionId: string, id: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send-queued-now', sessionId, id),
     interruptChat: (sessionId: string): Promise<InterruptResult> => ipcRenderer.invoke('chat-interrupt', sessionId),
     getChatImage: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-image', sessionId, ref),

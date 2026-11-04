@@ -39,9 +39,26 @@ export function QueuedMessages({
             onChanged()
         }
     }
-    const discard = async (message: QueuedMessage): Promise<void> => {
-        await transport.discardQueued(sessionId, message.id).catch(() => undefined)
-        onChanged()
+    /** True when the message was still queued and is withdrawn now. */
+    const withdraw = async (message: QueuedMessage): Promise<boolean> => {
+        setBusy(message.id)
+        setError(null)
+        try {
+            const withdrawn = await transport.discardQueued(sessionId, message.id)
+            if (!withdrawn) setError('It was already sent.')
+            return withdrawn
+        } catch (failure) {
+            setError(`Not withdrawn — it is still queued. ${failure instanceof Error ? failure.message : String(failure)}`)
+            return false
+        } finally {
+            setBusy(null)
+            onChanged()
+        }
+    }
+    // Edit brings the text back only once the queue has given it up: otherwise it would be sent twice
+    // (ovis useComposerSends.ts:195 — restore after the discarded receipt)
+    const edit = async (message: QueuedMessage): Promise<void> => {
+        if (await withdraw(message)) onEdit(message.text)
     }
 
     return (
@@ -59,17 +76,15 @@ export function QueuedMessages({
                                 data-testid="chat-queued-edit"
                                 title="Edit — back into the box"
                                 aria-label="Edit queued message"
-                                onClick={() => {
-                                    onEdit(message.text)
-                                    void discard(message)
-                                }}
+                                disabled={busy !== null}
+                                onClick={() => void edit(message)}
                             >
                                 <Pencil size={12} />
                             </button>
                             <button type="button" title="Copy message" aria-label="Copy message" onClick={() => void navigator.clipboard.writeText(message.text).catch(() => undefined)}>
                                 <Copy size={12} />
                             </button>
-                            <button type="button" data-testid="chat-queued-discard" title="Discard" aria-label="Discard queued message" onClick={() => void discard(message)}>
+                            <button type="button" data-testid="chat-queued-discard" title="Discard" aria-label="Discard queued message" disabled={busy !== null} onClick={() => void withdraw(message)}>
                                 <X size={12} />
                             </button>
                         </div>

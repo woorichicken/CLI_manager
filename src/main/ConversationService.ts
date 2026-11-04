@@ -185,14 +185,18 @@ export class ConversationService {
         this.dropIfIdle(sessionId, entry)
     }
 
-    /** Drops one queued message (its ✕). */
-    discardQueued(sessionId: string, id: string): void {
+    /**
+     * Drops one queued message (its ✕, or Edit). True when it was still queued and is withdrawn now —
+     * false when it already went (or never was), so Edit does not bring back text the agent has.
+     */
+    discardQueued(sessionId: string, id: string): boolean {
         const entry = this.watched.get(sessionId)
         const index = entry?.queue.findIndex((message) => message.id === id) ?? -1
-        if (!entry || index < 0) return
+        if (!entry || index < 0) return false
         entry.queue.splice(index, 1)
         this.bump(sessionId, entry)
         this.dropIfIdle(sessionId, entry)
+        return true
     }
 
     /**

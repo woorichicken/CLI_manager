@@ -436,7 +436,10 @@ test.describe('T73 r2 ConversationService: stop, queued messages one by one, com
         expect(new Set(queued.map((item) => item.id)).size).toBe(3)
         expect(await conversations.sendQueuedNow('s', queued[1].id)).toEqual({ status: 'sent' })
         expect(sent).toEqual(['two'])
-        conversations.discardQueued('s', queued[0].id)
+        expect(conversations.discardQueued('s', queued[0].id)).toBe(true)
+        // the receipt Edit waits for (F19): gone already — sent now, or withdrawn — is false
+        expect(conversations.discardQueued('s', queued[0].id)).toBe(false)
+        expect(conversations.discardQueued('s', queued[1].id)).toBe(false)
         queued = (await conversations.getConversation('s')).queued
         expect(queued.map((item) => item.text)).toEqual(['three'])
         conversations.unsubscribe('s')
