@@ -415,7 +415,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         if (!shouldSend) return
         event.preventDefault()
         if (event.repeat) return
-        // a question is on screen: a number picks its option; anything else waits
+        submit()
+    }
+
+    /**
+     * Enter and the Send button do the same: a question on screen takes a typed number as its option
+     * (the empty box then confirms it); anything else waits for the answer. On a phone Return breaks
+     * the line, so the button is the only way to pick by number.
+     */
+    const submit = (): void => {
+        if (pendingPick && text.trim() === '') {
+            onConfirmPick()
+            return
+        }
         if (promptOptions) {
             const number = /^\s*(\d{1,2})\s*$/.exec(text)?.[1]
             if (number && promptOptions.includes(Number(number))) {
@@ -591,7 +603,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                             data-testid="chat-send"
                             disabled={attaching || over > 0 || (empty && !pendingPick)}
                             onPointerDown={(event) => event.preventDefault()}
-                            onClick={() => (pendingPick && empty ? onConfirmPick() : void send())}
+                            onClick={submit}
                             title={touch ? 'Send' : preferences.enterSends === false ? 'Send (⌘Enter)' : 'Send (Enter)'}
                             aria-label="Send"
                         >
