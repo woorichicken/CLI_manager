@@ -133,11 +133,10 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
         setCtrl(false)
     }, [term, ctrl])
 
+    // only a live connection takes input: while it reconnects the line keeps its text (ovis useTerminalSends.ts:158)
+    const connected = term.status === 'live'
     const sendLine = useCallback(() => {
-        const text = line
-        if (text) term.send(text)
-        // the program sees the text land before its Enter, as typed
-        window.setTimeout(() => term.send('\r'), text ? ENTER_GAP_MS : 0)
+        if (!term.sendLine(line, ENTER_GAP_MS)) return
         setLine('')
     }, [line, term])
 
@@ -278,7 +277,15 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                             spellCheck={false}
                             enterKeyHint="send"
                         />
-                        <button type="submit" aria-label="Send" data-testid="phone-terminal-send"><Send size={15} /></button>
+                        <button
+                            type="submit"
+                            aria-label="Send"
+                            data-testid="phone-terminal-send"
+                            disabled={!connected}
+                            title={connected ? 'Send (adds Enter)' : 'Not connected to the Mac — the line is kept'}
+                        >
+                            <Send size={15} />
+                        </button>
                     </form>
                 </div>
             )}

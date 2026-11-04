@@ -37,6 +37,12 @@ export interface PhoneTerminalHandle {
     /** the last refusal from the server, shown briefly */
     notice: string | null
     send(data: string): boolean
+    /**
+     * Types a line, then its Enter after `gapMs` — both on the same connection: when the socket
+     * closed in between, the Enter is dropped rather than sent alone on the next one. False when
+     * the text could not go (not connected), so the caller keeps it.
+     */
+    sendLine(text: string, gapMs: number): boolean
     applicationCursorKeys(): boolean
     scrollPages(pages: number): void
     scrollToBottom(): void
@@ -174,6 +180,25 @@ export function usePhoneTerminal(sessionId: string, host: React.RefObject<HTMLDi
         return true
     }, [])
 
+    const sendLine = useCallback((text: string, gapMs: number): boolean => {
+        const socket = socketRef.current
+        if (!socket || socket.readyState !== WebSocket.OPEN) return false
+        const input = (data: string): void => {
+            const message: PhoneTerminalClientMessage = { type: 'input', data }
+            socket.send(JSON.stringify(message))
+        }
+        if (!text) {
+            input('\r')
+            return true
+        }
+        input(text)
+        // the program sees the text land before its Enter, as typed
+        window.setTimeout(() => {
+            if (socketRef.current === socket && socket.readyState === WebSocket.OPEN) input('\r')
+        }, gapMs)
+        return true
+    }, [])
+
     const subscribe = useCallback((listener: () => void) => {
         listeners.current.add(listener)
         return () => {
@@ -187,6 +212,7 @@ export function usePhoneTerminal(sessionId: string, host: React.RefObject<HTMLDi
         role,
         notice,
         send,
+        sendLine,
         applicationCursorKeys: () => termRef.current?.modes.applicationCursorKeysMode ?? false,
         scrollPages: (pages) => termRef.current?.scrollPages(pages),
         scrollToBottom: () => termRef.current?.scrollToBottom(),

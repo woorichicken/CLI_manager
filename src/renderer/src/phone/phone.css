@@ -522,6 +522,10 @@ body.phone-body #root {
     align-items: center;
     justify-content: center;
 }
+.phone-line button:disabled {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-tertiary);
+}
 
 /* --- pairing --- */
 .phone-pair {
