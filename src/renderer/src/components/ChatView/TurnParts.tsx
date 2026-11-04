@@ -1,9 +1,10 @@
 import { memo, useState } from 'react'
-import { BookOpen, ChevronDown, ChevronRight, Layers, OctagonX, Terminal as TerminalIcon } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronRight, FileText, Image as ImageIcon, Layers, OctagonX, Terminal as TerminalIcon } from 'lucide-react'
 import type { ConversationPart, TaskResult } from '../../../../shared/conversation'
 import { LinkedText, Markdown } from './markdown/Markdown'
 import { ChatImageStrip } from './ChatImages'
-import { INTERRUPTED_TEXT, shouldFoldUserMessage } from './chatLib'
+import { INTERRUPTED_TEXT, shouldFoldUserMessage, splitAppAttachments, type AppAttachmentMention } from './chatLib'
+import { useChatActions } from './chatContext'
 
 /** What the person's seat holds: their words, a `!` command, a notice, a subagent's result. */
 export const UserParts = memo(function UserParts({ parts }: { parts: ConversationPart[] }) {
@@ -72,13 +73,44 @@ function UserText({ text }: { text: string }) {
     const [open, setOpen] = useState(false)
     return (
         <div className={`chat-user-bubble${foldable && !open ? ' is-folded' : ''}`} data-testid="chat-user-text">
-            <LinkedText text={text} />
+            {splitAppAttachments(text).map((part, index) =>
+                typeof part === 'string' ? <LinkedText key={index} text={part} /> : <AttachmentChip key={index} attachment={part} />
+            )}
             {foldable && (
                 <button type="button" className="chat-user-fold" data-testid="chat-user-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
                     {open ? 'Show less' : 'Show full message'}
                 </button>
             )}
         </div>
+    )
+}
+
+/**
+ * A file the person attached (G7): a chip with what it is, not the app's temporary path. It opens the
+ * file where the chat can show files (the Mac's preview); elsewhere (the phone) it only says what it was.
+ */
+function AttachmentChip({ attachment }: { attachment: AppAttachmentMention }) {
+    const actions = useChatActions()
+    const Icon = attachment.image ? ImageIcon : FileText
+    const label = attachment.image ? 'Attached image' : 'Attached file'
+    const content = (
+        <>
+            <Icon size={12} aria-hidden="true" />
+            <span>{label}</span>
+            {attachment.extension && <span className="chat-attachment-chip-ext">{attachment.extension}</span>}
+        </>
+    )
+    if (actions?.canOpenPaths) {
+        return (
+            <button type="button" className="chat-attachment-chip" data-testid="chat-attachment-chip" title={`Open ${attachment.path}`} onClick={() => actions.openPath(attachment.path)}>
+                {content}
+            </button>
+        )
+    }
+    return (
+        <span className="chat-attachment-chip" data-testid="chat-attachment-chip" title={attachment.path}>
+            {content}
+        </span>
     )
 }
 

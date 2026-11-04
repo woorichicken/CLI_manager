@@ -12,8 +12,7 @@ import { DEFAULT_SHORTCUTS, effectiveShortcuts } from '../../src/shared/types'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { createChatCommandLister } from '../../src/main/chatCommands'
 import { saveChatAttachment } from '../../src/main/chatAttachments'
-import {
-    activeTrigger,
+import { activeTrigger,
     artifactLinks,
     codeIsFilePath,
     fileLineTarget,
@@ -25,8 +24,7 @@ import {
     shouldFoldUserMessage,
     splitFilePaths,
     terminalCommand,
-    todoSnapshot
-} from '../../src/renderer/src/components/ChatView/chatLib'
+    todoSnapshot, splitAppAttachments } from '../../src/renderer/src/components/ChatView/chatLib'
 
 /**
  * T73 — Chat view, without Electron.
@@ -588,3 +586,16 @@ test.describe('T73 r2 shortcut defaults never take a chord the person already bo
     })
 })
 
+
+test('T73 app attachment mentions (G7): the chat\'s own stored files become chips, a typed @path stays text', () => {
+    const path = '/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/climanager-chat/2026-11-04/1793809848410-75f57aee.png'
+    expect(splitAppAttachments(`@${path}  What text is in the attached image? Answer in three words.`)).toEqual([
+        { path, extension: 'png', image: true },
+        'What text is in the attached image? Answer in three words.'
+    ])
+    const doc = '/tmp/climanager-chat/2026-11-05/1-ab.pdf'
+    expect(splitAppAttachments(`see @${path} and @${doc}`)).toEqual(['see ', { path, extension: 'png', image: true }, 'and ', { path: doc, extension: 'pdf', image: false }])
+    // a file the person named, an e-mail, no attachment: unchanged
+    expect(splitAppAttachments('look at @src/main/index.ts please')).toEqual(['look at @src/main/index.ts please'])
+    expect(splitAppAttachments('mail kim@climanager-chat.dev')).toEqual(['mail kim@climanager-chat.dev'])
+})

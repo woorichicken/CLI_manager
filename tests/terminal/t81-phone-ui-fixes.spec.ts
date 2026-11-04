@@ -416,3 +416,30 @@ test('T81 G9 a path in the chat is plain text on the phone, where nothing can op
     await expect(phone.getByTestId('chat-file-link')).toHaveCount(0)
     await phone.close()
 })
+
+test('T81 G7 an attached picture shows as a chip in the sent bubble, not the app’s temporary path', async () => {
+    test.setTimeout(120_000)
+    const { app, page, base } = await launch()
+    const { phone, cdp } = await openPhone(app, base, `session=${NEW}&view=chat`, 't81-g7')
+    const box = phone.locator('.chat-composer textarea')
+    await expect(box).toBeVisible({ timeout: 15_000 })
+    await phone.evaluate(() => {
+        // a 1×1 PNG
+        const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
+        const data = new DataTransfer()
+        data.items.add(new File([bytes], 'photo.png', { type: 'image/png' }))
+        document.querySelector('.chat-composer-card')!.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
+    })
+    await expect(phone.getByTestId('chat-attachment').first()).toHaveAttribute('data-state', 'ready', { timeout: 10_000 })
+    await box.fill('what is in it')
+    await tap(cdp, phone, 'chat-send')
+    // the mock cuts its long line at the screen's edge: its start is enough
+    await waitForBufferText(page, NEW, 'ANSWER[1]: @/', 10_000)
+    const bubble = phone.getByTestId('chat-user-text').last()
+    await expect(bubble).toContainText('what is in it', { timeout: 10_000 })
+    await expect(bubble).not.toContainText('climanager-chat')
+    await expect(bubble.getByTestId('chat-attachment-chip')).toHaveText(/Attached image/)
+    // the phone shows no files: the chip says what it was and is not a button
+    expect(await bubble.getByTestId('chat-attachment-chip').evaluate((el) => el.tagName)).toBe('SPAN')
+    await phone.close()
+})
