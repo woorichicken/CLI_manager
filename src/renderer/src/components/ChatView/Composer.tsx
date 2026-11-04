@@ -481,6 +481,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             onDrop={(event) => {
                 if (event.dataTransfer.files.length === 0) return
                 event.preventDefault()
+                // the chat around it also takes a drop (anywhere on the chat): once is one attachment
+                event.stopPropagation()
                 setDragging(false)
                 addFiles(Array.from(event.dataTransfer.files))
             }}
