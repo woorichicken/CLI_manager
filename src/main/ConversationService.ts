@@ -46,6 +46,11 @@ const REVOKED = {
     reason: 'revoked',
     message: 'This device was disconnected from the Mac.'
 } as const
+const CONVERSATION_CHANGED: ChatSendResult = {
+    status: 'rejected',
+    reason: 'conversation_changed',
+    message: 'The agent moved to another conversation (/resume or /clear), so the waiting message was dropped.'
+}
 const NO_AGENT: ChatSendResult = {
     status: 'rejected',
     reason: 'no_agent',
@@ -130,6 +135,11 @@ interface QueueItem extends QueuedMessage {
     origin?: string
     /** the sender may still type (ChatSender) — asked again when the queue gets to it */
     allowed?: () => boolean
+    /**
+     * The conversation it was written in (the session's `cliSessionId` then). The same agent process
+     * can move to another one (`/resume`, `/clear`) — the message is not for that one (F03).
+     */
+    conversation: string | null
 }
 
 let queueSequence = 0
@@ -261,6 +271,7 @@ export class ConversationService {
                 id: `q${++queueSequence}`,
                 text,
                 process: process === true ? null : process,
+                conversation: info.cliSessionId ?? null,
                 ...(sender ? { origin: sender.origin, allowed: sender.allowed } : {})
             })
             this.bump(sessionId, entry)
@@ -323,6 +334,17 @@ export class ConversationService {
         return front === true || (front !== null && (message.process === null || message.process === front))
     }
 
+    /**
+     * Whether the session still shows the conversation `message` was written in. Known only once the
+     * stored id changed: ClaudeSessionSync / CodexSessionLocator update it within seconds of a
+     * `/resume`, so a message sent in that gap still goes (report: round2 F03).
+     */
+    private sameConversation(sessionId: string, message: QueueItem): boolean {
+        if (message.conversation === null) return true
+        const now = this.deps.session(sessionId)?.cliSessionId ?? null
+        return now === null || now === message.conversation
+    }
+
     cancelQueued(sessionId: string): void {
         const entry = this.watched.get(sessionId)
         if (!entry || entry.queue.length === 0) return
@@ -367,6 +389,14 @@ export class ConversationService {
         await this.refreshScreen(sessionId, entry, true)
         const blocked = this.blockedReason(sessionId, entry)
         if (blocked) return blocked
+        if (!this.sameConversation(sessionId, message)) {
+            const at = entry.queue.indexOf(message)
+            if (at >= 0) entry.queue.splice(at, 1)
+            console.warn('[conversation] dropped a queued message: the agent moved to another conversation', sessionId)
+            this.bump(sessionId, entry)
+            this.dropIfIdle(sessionId, entry)
+            return CONVERSATION_CHANGED
+        }
         if (!this.stillFor(message, await this.agentInFront(sessionId))) {
             const at = entry.queue.indexOf(message)
             if (at >= 0) entry.queue.splice(at, 1)
@@ -634,9 +664,14 @@ export class ConversationService {
             // written for it would run as a command there — dropped, never typed
             const front = await this.agentInFront(sessionId)
             // also what a device sent and lost access to since (revoked after its revoke hook ran)
-            const kept = entry.queue.filter((message) => this.stillFor(message, front) && (message.allowed?.() ?? true))
+            const kept = entry.queue.filter(
+                (message) => this.stillFor(message, front) && this.sameConversation(sessionId, message) && (message.allowed?.() ?? true)
+            )
             if (kept.length !== entry.queue.length) {
-                console.warn(`[conversation] dropped ${entry.queue.length - kept.length} queued message(s): the agent they were written for is gone, or their sender lost access`, sessionId)
+                console.warn(
+                    `[conversation] dropped ${entry.queue.length - kept.length} queued message(s): the agent or conversation they were written for is gone, or their sender lost access`,
+                    sessionId
+                )
                 entry.queue = kept
                 this.bump(sessionId, entry)
                 if (kept.length === 0) {

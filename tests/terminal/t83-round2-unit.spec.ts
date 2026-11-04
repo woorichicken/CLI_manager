@@ -199,3 +199,40 @@ test.describe('T83 F02 a device disconnected while the Chat service waits types 
         expect(typed).toEqual(['from the Mac'])
     })
 })
+
+test.describe('T83 F03 a queued message belongs to the conversation it was written in', () => {
+    test('the same agent process resumed another conversation (/resume): the queue drops it, never types it there', async () => {
+        const { state, terminal } = quietTerminal()
+        const { conversations, typed, resume } = serviceOn(terminal, { agentProcess: async () => '4242' })
+        conversations.subscribe('s')
+        expect(await conversations.send('s', 'continue the refactor in A')).toEqual({ status: 'queued' })
+        resume('c2')
+        state.screen = IDLE
+        await poll(conversations)
+        expect(typed).toEqual([])
+        expect((await conversations.getConversation('s')).queued).toEqual([])
+        conversations.unsubscribe('s')
+    })
+
+    test('Send now after the conversation changed: refused and dropped', async () => {
+        const { terminal } = quietTerminal()
+        const { conversations, typed, resume } = serviceOn(terminal, { agentProcess: async () => '4242' })
+        conversations.subscribe('s')
+        expect(await conversations.send('s', 'for A')).toEqual({ status: 'queued' })
+        const [queued] = (await conversations.getConversation('s')).queued
+        resume('c2')
+        expect(await conversations.sendQueuedNow('s', queued.id)).toMatchObject({ status: 'rejected', reason: 'conversation_changed' })
+        expect(typed).toEqual([])
+        expect((await conversations.getConversation('s')).queued).toEqual([])
+        conversations.unsubscribe('s')
+    })
+
+    test('the same conversation: the queued message goes', async () => {
+        const { state, terminal } = quietTerminal()
+        const { conversations, typed } = serviceOn(terminal, { agentProcess: async () => '4242' })
+        expect(await conversations.send('s', 'next step')).toEqual({ status: 'queued' })
+        state.screen = IDLE
+        await poll(conversations)
+        expect(typed).toEqual(['next step'])
+    })
+})
