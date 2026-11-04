@@ -313,8 +313,15 @@ export function createChatCommandLister(dirs: ChatCommandDirs): (agent: Conversa
                     ...(CODEX_TERMINAL.has(name) ? { terminal: 'always' as const } : CODEX_TERMINAL_BARE.has(name) ? { terminal: 'bare' as const } : {})
                 })
             }
-            // Codex runs a skill by `$name` (ovis guide.md:313)
-            const roots = [...ancestors.map((directory) => join(directory, '.codex', 'skills')), join(codexHome, 'skills'), join(dirs.home, '.agents', 'skills')]
+            // Codex runs a skill by `$name` (ovis guide.md:313). The roots and their order are ovis
+            // server/skills/codex.ts:207-213: each project folder's .agents then .codex, ~/.agents, CODEX_HOME,
+            // then the bundled .system folder (a dot folder, so the CODEX_HOME walk skips it — loaded on its own)
+            const roots = [
+                ...ancestors.flatMap((directory) => [join(directory, '.agents', 'skills'), join(directory, '.codex', 'skills')]),
+                join(dirs.home, '.agents', 'skills'),
+                join(codexHome, 'skills'),
+                join(codexHome, 'skills', '.system')
+            ]
             for (const root of roots) {
                 for (const skill of skillsIn(root, budget, 6)) {
                     if (skill.description) all.push({ name: skill.name, description: skill.description, source: 'skill', trigger: '$' })

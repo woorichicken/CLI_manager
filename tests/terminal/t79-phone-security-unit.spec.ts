@@ -357,3 +357,25 @@ test.describe('T79 F23 a question card sent to the phone carries no masked secre
         expect(readPrompt(command(secret.replace('T79a', 'T79b')), 'claude')!.signature).not.toBe(menu.signature)
     })
 })
+
+test.describe('T79 F22 Codex `$` lists every skill folder ovis loads', () => {
+    test("the project's .agents/skills and $CODEX_HOME/skills/.system", () => {
+        const project = tmp('codex-project')
+        fs.mkdirSync(path.join(project, '.git'))
+        const home = tmp('codex-home')
+        const codexHome = path.join(home, '.codex')
+        const skill = (dir: string, name: string): void => {
+            fs.mkdirSync(path.join(dir, name), { recursive: true })
+            fs.writeFileSync(path.join(dir, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name} skill\n---\n`)
+        }
+        skill(path.join(project, '.agents', 'skills'), 'project-agents-skill')
+        skill(path.join(project, '.codex', 'skills'), 'project-codex-skill')
+        skill(path.join(home, '.agents', 'skills'), 'user-agents-skill')
+        skill(path.join(codexHome, 'skills'), 'user-codex-skill')
+        skill(path.join(codexHome, 'skills', '.system'), 'bundled-skill')
+        const list = createChatCommandLister({ home, claudeConfigDir: () => path.join(home, '.claude'), codexHome: () => codexHome })
+        const skills = list('codex', project).filter((c) => c.trigger === '$').map((c) => c.name)
+        // ovis server/skills/codex.ts:207-213 order: project .agents, project .codex, ~/.agents, CODEX_HOME, .system
+        expect(skills).toEqual(['project-agents-skill', 'project-codex-skill', 'user-agents-skill', 'user-codex-skill', 'bundled-skill'])
+    })
+})
