@@ -268,6 +268,23 @@ body.phone-body #root {
 .phone-seg button:disabled {
     opacity: 0.4;
 }
+/*
+ * Focus: the segment clips its corners (overflow: hidden), so the browser's own ring showed only
+ * its inner edge — the white bar beside Type on a Galaxy (g05). A keyboard gets a ring drawn
+ * inside the button; a finger gets none — the pressed segment already says which one is on.
+ */
+.phone-seg button:focus {
+    outline: none;
+}
+.phone-seg button:focus-visible {
+    outline: 2px solid rgba(96, 165, 250, 0.9);
+    outline-offset: -2px;
+}
+@media (pointer: coarse) {
+    .phone-seg button:focus-visible {
+        outline: none;
+    }
+}
 .phone-icon-button {
     width: 36px;
     height: 36px;
