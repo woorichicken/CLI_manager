@@ -201,3 +201,35 @@ test.describe('T79 F02 a request still sending its body when the device is revok
         }
     })
 })
+
+test.describe('T79 F07 a revoke that cannot reach the disk says so', () => {
+    // The folder turns read-only after pairing: the revoke cannot be written. Before, the device vanished from
+    // the list and its sockets closed — and came back, cookie and all, on the next start.
+    for (const which of ['one device', 'every device'] as const) {
+        test(which, () => {
+            const dir = tmp('revoke')
+            const file = path.join(dir, 'devices.json')
+            const devices = new PhoneDevices(file)
+            const { code } = devices.startPairing('drive')
+            const paired = devices.pair(code, 'Phone')
+            if ('error' in paired) throw new Error(paired.error)
+            fs.chmodSync(dir, 0o500)
+            try {
+                const revoked: Array<string | null> = []
+                devices.onRevoke((id) => revoked.push(id))
+                expect(() => (which === 'one device' ? devices.revoke(paired.device.id) : devices.revokeAll())).toThrow()
+                // nothing half-done: the list, the socket and the disk agree
+                expect(revoked).toEqual([])
+                expect(devices.list().map((d) => d.id)).toEqual([paired.device.id])
+            } finally {
+                fs.chmodSync(dir, 0o700)
+            }
+            // what a restart reads is what the person was told
+            expect(new PhoneDevices(file).match(paired.token)?.id).toBe(paired.device.id)
+            // once the disk takes it, the revoke holds after a restart
+            if (which === 'one device') expect(devices.revoke(paired.device.id)).toBe(true)
+            else devices.revokeAll()
+            expect(new PhoneDevices(file).match(paired.token)).toBeNull()
+        })
+    }
+})

@@ -163,22 +163,36 @@ export class PhoneDevices {
         return this.devices.some((d) => d.id === id)
     }
 
+    /**
+     * Written to disk first: a revoke the disk did not take would come back, cookie and all, on the
+     * next start. When the write fails this throws and nothing changes — the list, the open sockets
+     * and the file still agree, and the caller tells the person (ovis devices.ts:409,434).
+     */
     revoke(id: string): boolean {
-        const before = this.devices.length
-        this.devices = this.devices.filter((d) => d.id !== id)
-        if (this.devices.length === before) return false
-        this.save()
+        const remaining = this.devices.filter((d) => d.id !== id)
+        if (remaining.length === this.devices.length) return false
+        this.persist(remaining)
+        this.devices = remaining
         this.emit()
         for (const listener of this.revokeListeners) listener(id)
         return true
     }
 
+    /** Like `revoke`: throws, changing nothing, when the empty list cannot be written. */
     revokeAll(): void {
+        this.persist([])
         this.devices = []
         this.pending = null
-        this.save()
         this.emit()
         for (const listener of this.revokeListeners) listener(null)
+    }
+
+    private persist(devices: StoredDevice[]): void {
+        try {
+            writePrivateJson(this.file, { devices })
+        } catch (error) {
+            throw new Error(`Could not save the device list: ${error instanceof Error ? error.message : String(error)}`)
+        }
     }
 
     private save(): void {
