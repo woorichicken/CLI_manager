@@ -214,10 +214,21 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     const options: PromptOption[] = []
     let firstOptionRow = -1
     let lastOptionRow = -1
+    /** the column each option's number is drawn at */
+    let numberColumn = -1
     for (let row = 0; row < rows.length; row++) {
         const line = rows[row]
         const trimmed = line.trim()
         const match = NUMBERED_OPTION.exec(trimmed)
+        const column = match ? line.indexOf(`${match[2]}.`) : -1
+        // A numbered line inside an option's description ("Runs these steps:" / "1. Install deps") sits
+        // to the right of the options' own numbers: it is the description's, not a list starting again.
+        if (match && options.length > 0 && row === lastOptionRow + 1 && column > numberColumn + 1) {
+            const last = options[options.length - 1]
+            last.description = last.description ? `${last.description} ${trimmed}` : trimmed
+            lastOptionRow = row
+            continue
+        }
         if (match) {
             // A list that starts again (the agent's own numbered answer above the dialog): the last one is the menu.
             if (options.length > 0 && Number(match[2]) <= (options[options.length - 1].number ?? 0)) {
@@ -225,6 +236,7 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
                 firstOptionRow = -1
             }
             const label = match[3].trim()
+            numberColumn = column
             if (firstOptionRow < 0) firstOptionRow = row
             lastOptionRow = row
             options.push({

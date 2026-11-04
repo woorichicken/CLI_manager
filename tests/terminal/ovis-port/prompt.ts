@@ -369,7 +369,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
         })
 
         test("does not start the menu at a numbered line in the first option's description", () => {
-            test.fail(true, "ovis-port bug: a numbered line inside the first option description restarts the list: options become [Install deps, Manual]")
             const prompt = parse(`
  ☐ Setup
 
