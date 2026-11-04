@@ -176,6 +176,13 @@ test.describe('T71 header checklists', () => {
         await expect(page.getByTestId('checklist-chip-title')).toHaveText('v1.24 release')
         await expect(page.getByTestId('checklist-chip-due')).toHaveAttribute('data-due-tone', 'soon')
 
+        // The deadline badge stays a step below the title: no border, smaller type (63947391).
+        const badge = await page.getByTestId('checklist-chip-due').evaluate((el) => {
+            const style = getComputedStyle(el)
+            return { border: style.borderTopWidth, size: style.fontSize }
+        })
+        expect(badge).toEqual({ border: '0px', size: '9px' })
+
         // --- A second one through MCP, with an earlier (passed) deadline ---------
         const docs = await mcp('checklist_create', { title: 'Docs sweep', items: ['README', 'CHANGELOG'], due: dayFromToday(-1) }, WORKER)
         expect(docs.isError ?? false).toBe(false)
@@ -262,6 +269,20 @@ test.describe('T71 header checklists', () => {
         await page.keyboard.press('Escape')
         await expect(panel(page)).toHaveCount(0)
         await expect.poll(() => focusedSession(page)).toBe(WORKER)
+
+        // "by <session>" in the panel goes to that session and closes the panel (41323382).
+        const visibleSessions = (): Promise<string[]> => page.evaluate(() =>
+            Array.from(document.querySelectorAll('[data-session-id]'))
+                .filter((el) => getComputedStyle(el).visibility === 'visible')
+                .map((el) => el.getAttribute('data-session-id') ?? '')
+        )
+        await chip(page).click()
+        await expect(page.getByTestId('checklist-maker')).toHaveText('by T71 lead')
+        await page.getByTestId('checklist-maker').click()
+        await expect(panel(page)).toHaveCount(0)
+        await expect.poll(visibleSessions).toEqual([LEAD])
+        await activateSession(page, 'T71 worker')
+        await expect.poll(visibleSessions).toEqual([WORKER])
 
         // A click outside closes it too; the memo's corner does not cover the panel.
         await page.keyboard.press('Meta+J')
