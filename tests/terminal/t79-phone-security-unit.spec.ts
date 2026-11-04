@@ -303,3 +303,36 @@ test.describe('T79 F05 a SKILL.md that is not a plain file cannot stall main', (
         expect([...second.names].sort()).toEqual(['big', 'fine'])
     })
 })
+
+test.describe('T79 F21 a push service that never answers does not hold the alert forever', () => {
+    test('Test alert ends with "failed" when the endpoint accepts the connection and says nothing', async () => {
+        // takes the TCP connection, never finishes TLS: without a timeout the request waits for good
+        const sockets: net.Socket[] = []
+        const silent = net.createServer((socket) => sockets.push(socket))
+        await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve))
+        const port = (silent.address() as net.AddressInfo).port
+        const dir = tmp('push')
+        const push = new PhonePush({
+            keysFile: path.join(dir, 'keys.json'),
+            subscriptionsFile: path.join(dir, 'subs.json'),
+            macInUse: () => false,
+            session: () => null,
+            pushTimeoutMs: 500
+        })
+        // a real browser's key shape: web-push encrypts before it connects
+        const ecdh = crypto.createECDH('prime256v1')
+        ecdh.generateKeys()
+        const subscription = {
+            endpoint: `https://127.0.0.1:${port}/push/abc`,
+            keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') }
+        }
+        expect(push.subscribe(subscription, 'tailscale:owner')).toBe(true)
+        try {
+            const result = await Promise.race([push.test(), new Promise((resolve) => setTimeout(() => resolve('still waiting'), 5000))])
+            expect(result).toMatchObject({ status: 'failed' })
+        } finally {
+            for (const socket of sockets) socket.destroy()
+            silent.close()
+        }
+    })
+})

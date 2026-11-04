@@ -25,6 +25,12 @@ const TTL_SECONDS = 60 * 60
 /** VAPID contact: the push services want a URL or mailto they can reach the sender at. */
 const VAPID_SUBJECT = 'https://climanager.solhun.com'
 const MAX_SUBSCRIPTIONS = 50
+/**
+ * A push service answers in well under a second. One that takes the connection and never answers
+ * would hold Test alert (and every later alert's request) open for good: web-push only sets a socket
+ * timeout when given one (ovis push.ts:569 uses AbortSignal.timeout the same way).
+ */
+const PUSH_TIMEOUT_MS = 10_000
 
 interface StoredSubscription extends PhonePushSubscription {
     /** `tailscale:<login>` or `device:<id>` — a revoked device loses its alerts with it */
@@ -45,6 +51,8 @@ export interface PhonePushDeps {
     /** the session's name and whether it runs an agent, for the alert text */
     session(id: string): { name: string; agent: boolean } | null
     now?: () => number
+    /** tests: a shorter wait than PUSH_TIMEOUT_MS */
+    pushTimeoutMs?: number
 }
 
 export class PhonePush {
@@ -162,6 +170,7 @@ export class PhonePush {
             try {
                 await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, body, {
                     TTL: TTL_SECONDS,
+                    timeout: this.deps.pushTimeoutMs ?? PUSH_TIMEOUT_MS,
                     vapidDetails: { subject: VAPID_SUBJECT, publicKey: keys.publicKey, privateKey: keys.privateKey }
                 })
                 ok += 1
