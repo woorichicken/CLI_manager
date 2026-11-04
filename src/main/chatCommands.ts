@@ -161,6 +161,9 @@ function skillsIn(root: string, budget: Budget, depth = 1): { name: string; desc
         if (level > 0 && existsSync(file)) {
             const fields = frontmatter(file)
             if (!isOff(fields['user-invocable'])) found.push({ name: fields.name || basename(directory), description: fields.description ?? '' })
+            // A skill folder holds its scripts/references, not more skills — walking them spent the folder budget, so a
+            // 300-skill ~/.codex/skills listed only about half (new-worktree, park-finding missing)
+            return
         }
         if (level >= depth) return
         let entries: string[]
