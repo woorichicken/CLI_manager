@@ -543,12 +543,16 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     await page.getByTestId('chat-peek-keep').click()
     await expect(page.getByTestId('chat-peek-bar')).toHaveCount(0)
     await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal')
+    // `PANEL CLOSED` is already on screen from the /model panel above, so waiting for the words would
+    // pass at once — count them instead. Under load the next send then reached the agent in the same read
+    // as the Esc (`\x1bw…` is Alt+w), the panel stayed open and swallowed the message.
+    const count = async (words: string): Promise<number> => (await termText(page, R2)).split(words).length - 1
+    const closedBefore = await count('PANEL CLOSED')
     await writeToTerminal(page, R2, '\x1b')
-    await waitForBufferText(page, R2, 'PANEL CLOSED', 10_000)
+    await expect.poll(() => count('PANEL CLOSED'), { timeout: 10_000 }).toBe(closedBefore + 1)
     await page.getByTestId('view-toggle-chat').click()
     // F18: the same command sent while the agent works waits in the queue; when it goes on its own,
     // the terminal shows (before, the chat stayed and the panel could not be seen)
-    const count = async (words: string): Promise<number> => (await termText(page, R2)).split(words).length - 1
     const panels = await count('PANEL: /config')
     const closed = await count('PANEL CLOSED')
     await composer.fill('work before the panel')
