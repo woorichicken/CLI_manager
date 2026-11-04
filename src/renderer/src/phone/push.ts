@@ -10,14 +10,12 @@ import { subscribePush, unsubscribePush } from './api'
 export type AlertsState = 'on' | 'off' | 'unsupported' | 'denied'
 
 /**
- * What «Send a test alert» says back. The service worker shows no alert while this page is in front
- * (sw.js: the page already shows it), so a test tapped here appears only once the phone is locked
- * or another app is up — said, so «Sent to 1 device» with nothing on screen does not read as broken.
+ * What «Send a test alert» says back. The test alert shows even over this page (sw.js lets its tag
+ * through); a session's alert does not while the page is in front — the page already shows it.
  */
 export function testAlertMessage(result: PhoneTestPushResult): string {
     if (result.status !== 'sent') return result.message
-    const devices = `${result.devices} device${result.devices === 1 ? '' : 's'}`
-    return `Sent to ${devices}. Alerts show while this page is in the background — lock the phone or switch apps to see it.`
+    return `Sent to ${result.devices} device${result.devices === 1 ? '' : 's'}.`
 }
 
 function supported(): boolean {

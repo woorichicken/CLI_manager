@@ -495,10 +495,33 @@ test('T75 secret prompt (F15): only a real password prompt on the cursor row tur
     expect(validSecret('x'.repeat(4097))).toBe(false)
 })
 
-test('T75 test alert result (G4): «sent» says where it shows — not on top of this page', () => {
-    const one = testAlertMessage({ status: 'sent', devices: 1 })
-    expect(one).toContain('Sent to 1 device.')
-    expect(one).toContain('in the background')
+test('T75 test alert result (G4): how many devices it went to', () => {
+    expect(testAlertMessage({ status: 'sent', devices: 1 })).toBe('Sent to 1 device.')
     expect(testAlertMessage({ status: 'sent', devices: 2 })).toContain('Sent to 2 devices.')
     expect(testAlertMessage({ status: 'none', message: 'No device has alerts on.' })).toBe('No device has alerts on.')
+})
+
+/** Runs the phone's service worker against a fake `self`: which pushes become a notification. */
+async function swShows(payload: { title: string; tag: string }, pageInFront: boolean): Promise<string[]> {
+    const code = fs.readFileSync(path.join(__dirname, '../../src/renderer/public/phone/sw.js'), 'utf8')
+    const handlers = new Map<string, (event: unknown) => void>()
+    const shown: string[] = []
+    const fakeSelf = {
+        addEventListener: (type: string, handler: (event: unknown) => void) => handlers.set(type, handler),
+        skipWaiting: () => undefined,
+        clients: { claim: async () => undefined, matchAll: async () => (pageInFront ? [{ focused: true, visibilityState: 'visible', url: 'http://127.0.0.1/' }] : []) },
+        registration: { showNotification: async (title: string) => void shown.push(title) },
+        location: { origin: 'http://127.0.0.1' }
+    }
+    new Function('self', code)(fakeSelf)
+    let done: Promise<unknown> = Promise.resolve()
+    handlers.get('push')!({ data: { json: () => payload }, waitUntil: (work: Promise<unknown>) => (done = work) })
+    await done
+    return shown
+}
+
+test('T75 service worker (G4): the test alert shows even with the page in front; session alerts do not', async () => {
+    expect(await swShows({ title: 'CLI Manager', tag: 'climanager-test' }, true)).toEqual(['CLI Manager'])
+    expect(await swShows({ title: 'T75 needs you', tag: 'session-a' }, true)).toEqual([])
+    expect(await swShows({ title: 'T75 needs you', tag: 'session-a' }, false)).toEqual(['T75 needs you'])
 })
