@@ -16,6 +16,7 @@ import type { PhoneAccess } from './phoneAccess'
 import type { PhoneDevices } from './PhoneDevices'
 import type { PhonePush } from './PhonePush'
 import { readBody, readJson, send } from './PhoneServer'
+import type { ChatSender } from '../ConversationService'
 
 /**
  * The phone's REST routes after access was granted (PhoneServer). Chat calls the same
@@ -27,13 +28,16 @@ import { readBody, readJson, send } from './PhoneServer'
 /** The Chat service, as the Electron IPC handlers call it. */
 export interface PhoneConversation {
     getConversation(sessionId: string, limit?: number): Promise<ConversationSnapshot>
-    /** `origin`: who sent it (`deps.owner`) — a disconnected device's queued messages are dropped by it */
-    send(sessionId: string, text: string, origin?: string): Promise<ChatSendResult>
+    /**
+     * `from`: who sends it — `deps.owner` (a disconnected device's queued messages are dropped by it)
+     * and `stillAllowed`, asked again right before any key goes (F02)
+     */
+    send(sessionId: string, text: string, from?: ChatSender): Promise<ChatSendResult>
     cancelQueued(sessionId: string): void
     discardQueued(sessionId: string, id: string): boolean
-    sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult>
-    interrupt(sessionId: string): Promise<InterruptResult>
-    answerPrompt(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult>
+    sendQueuedNow(sessionId: string, id: string, from?: ChatSender): Promise<ChatSendResult>
+    interrupt(sessionId: string, from?: ChatSender): Promise<InterruptResult>
+    answerPrompt(sessionId: string, answer: PromptAnswer, from?: ChatSender): Promise<PromptAnswerResult>
     getImage(sessionId: string, ref: string): Promise<string | null>
     getToolOutput(sessionId: string, ref: string): Promise<string | null>
     listCommands(sessionId: string): ChatCommand[]
@@ -168,10 +172,12 @@ async function handleChat(
     }
     const body = (await readJson(req)) ?? {}
     if (!deps.stillAllowed()) return refuseRevoked(res)
+    // the service waits (flushes, its lane, the queue): it asks again before typing
+    const sender: ChatSender = { origin: deps.owner, allowed: () => deps.stillAllowed() }
     switch (action) {
         case 'send': {
             const text = typeof body.text === 'string' ? body.text : ''
-            const result = await c.send(sessionId, text, deps.owner)
+            const result = await c.send(sessionId, text, sender)
             if (result.status !== 'rejected') deps.recordPhoneInput(sessionId, `chat message ${result.status} (${text.length} chars)`)
             send(res, 200, result)
             return
@@ -187,13 +193,13 @@ async function handleChat(
             return
         }
         case 'send-queued-now': {
-            const result = typeof body.id === 'string' ? await c.sendQueuedNow(sessionId, body.id) : { status: 'rejected', reason: 'empty', message: 'No message.' }
+            const result = typeof body.id === 'string' ? await c.sendQueuedNow(sessionId, body.id, sender) : { status: 'rejected', reason: 'empty', message: 'No message.' }
             if (result.status === 'sent') deps.recordPhoneInput(sessionId, 'queued chat message sent now')
             send(res, 200, result)
             return
         }
         case 'interrupt': {
-            const result = await c.interrupt(sessionId)
+            const result = await c.interrupt(sessionId, sender)
             if (result.status === 'stopped') deps.recordPhoneInput(sessionId, 'stopped the turn (Esc)')
             send(res, 200, result)
             return
@@ -204,7 +210,7 @@ async function handleChat(
                 send(res, 400, { status: 'rejected', reason: 'bad_answer', message: 'No answer.' })
                 return
             }
-            const result = await c.answerPrompt(sessionId, answer)
+            const result = await c.answerPrompt(sessionId, answer, sender)
             if (result.status === 'answered') deps.recordPhoneInput(sessionId, 'answered a question card')
             send(res, 200, result)
             return

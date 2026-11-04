@@ -40,11 +40,32 @@ const NOT_SUBMITTED: ChatSendResult = {
     reason: 'not_submitted',
     message: 'The message is in the terminal input line but was not submitted. Press Enter there, or clear it.'
 }
+/** A phone device disconnected (or the phone switched off) while its request waited (F02). */
+const REVOKED = {
+    status: 'rejected',
+    reason: 'revoked',
+    message: 'This device was disconnected from the Mac.'
+} as const
 const NO_AGENT: ChatSendResult = {
     status: 'rejected',
     reason: 'no_agent',
     message: 'The agent in this session is not running, so the message would go to the shell. Start it in the terminal first.'
 }
+
+/**
+ * Who sends from outside this Mac: the queue `origin` (a phone's `device:<id>` / `tailscale:<login>`)
+ * and whether it may still type. A phone's access is judged when its request arrives, but the
+ * service waits — flushes, the program in front, the session's lane, the queue — and the device
+ * can be disconnected meanwhile. `allowed` is asked again right before any key goes (ovis
+ * composer.ts:273,335,632 re-authorize between async steps). A bare string is an origin that
+ * cannot lose access.
+ */
+export interface ChatSender {
+    origin: string
+    allowed(): boolean
+}
+
+type From = string | ChatSender | undefined
 
 export interface ConversationSessionInfo {
     cwd?: string
@@ -67,8 +88,11 @@ export interface ConversationServiceDeps {
     mirror: ConversationMirror
     hasTerminal(id: string): boolean
     writeInput(id: string, data: string): void
-    /** ControlApiService.typeForChat — throws ControlApiError (409 awaiting_input …) */
-    type(id: string, text: string): Promise<boolean>
+    /**
+     * ControlApiService.typeForChat — throws ControlApiError (409 awaiting_input …). `allowed`: asked
+     * before the text and before each Enter; false throws `revoked` (F02).
+     */
+    type(id: string, text: string, allowed?: () => boolean): Promise<boolean>
     /**
      * Which program the terminal's shell runs now (its child processes), null when only the shell is
      * there. A queued message goes only to the program it was queued for: once the agent exits, its
@@ -104,6 +128,8 @@ interface Watched {
 interface QueueItem extends QueuedMessage {
     process: string | null
     origin?: string
+    /** the sender may still type (ChatSender) — asked again when the queue gets to it */
+    allowed?: () => boolean
 }
 
 let queueSequence = 0
@@ -197,8 +223,9 @@ export class ConversationService {
         }
     }
 
-    /** `origin`: who sends it, when not this Mac (a phone's `device:<id>` / `tailscale:<login>`). */
-    async send(sessionId: string, raw: string, origin?: string): Promise<ChatSendResult> {
+    /** `from`: who sends it, when not this Mac (ChatSender). */
+    async send(sessionId: string, raw: string, from?: From): Promise<ChatSendResult> {
+        const sender = senderOf(from)
         const text = raw.replace(/\s+$/, '')
         if (!text.trim()) return { status: 'rejected', reason: 'empty', message: 'Nothing to send.' }
         if (text.length > MAX_TEXT_LENGTH) {
@@ -221,10 +248,21 @@ export class ConversationService {
             this.dropIfIdle(sessionId, entry)
             return NO_AGENT
         }
+        // disconnected during the checks above: the revoke hook has already cleared this device's
+        // queue, so what is put there now would outlive it
+        if (sender && !sender.allowed()) {
+            this.dropIfIdle(sessionId, entry)
+            return REVOKED
+        }
         // working, others waiting, or another message still being typed: it waits its turn,
         // so two sends never type into the terminal at once
         if (entry.working || entry.queue.length > 0 || entry.sending || this.lanes.has(sessionId)) {
-            entry.queue.push({ id: `q${++queueSequence}`, text, process: process === true ? null : process, ...(origin ? { origin } : {}) })
+            entry.queue.push({
+                id: `q${++queueSequence}`,
+                text,
+                process: process === true ? null : process,
+                ...(sender ? { origin: sender.origin, allowed: sender.allowed } : {})
+            })
             this.bump(sessionId, entry)
             this.ensureTimer()
             return { status: 'queued' }
@@ -232,7 +270,8 @@ export class ConversationService {
         entry.sending = true
         return this.inLane(sessionId, async () => {
             try {
-                const submitted = await this.deps.type(sessionId, text)
+                if (sender && !sender.allowed()) return REVOKED
+                const submitted = await this.deps.type(sessionId, text, sender?.allowed)
                 this.bump(sessionId, entry)
                 return submitted ? ({ status: 'sent' } as ChatSendResult) : NOT_SUBMITTED
             } catch (error) {
@@ -311,14 +350,14 @@ export class ConversationService {
      * it reads it (Claude Code holds it for its next step). Refused like any send while a question
      * is on screen or the terminal's input line holds text — then it stays queued.
      */
-    async sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult> {
+    async sendQueuedNow(sessionId: string, id: string, from?: From): Promise<ChatSendResult> {
         if (!this.watched.get(sessionId)?.queue.some((item) => item.id === id)) {
             return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
         }
-        return this.inLane(sessionId, () => this.sendQueuedNowInLane(sessionId, id))
+        return this.inLane(sessionId, () => this.sendQueuedNowInLane(sessionId, id, senderOf(from)))
     }
 
-    private async sendQueuedNowInLane(sessionId: string, id: string): Promise<ChatSendResult> {
+    private async sendQueuedNowInLane(sessionId: string, id: string, sender: ChatSender | null): Promise<ChatSendResult> {
         // looked up again: what waited in the lane may have been sent, dropped or forgotten meanwhile
         const entry = this.watched.get(sessionId)
         const message = entry?.queue.find((item) => item.id === id)
@@ -338,11 +377,14 @@ export class ConversationService {
         }
         const index = entry.queue.indexOf(message)
         if (index < 0) return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
+        // the tap and the message's own sender both still allowed (a phone may tap a Mac's message)
+        const allowed = (): boolean => (sender?.allowed() ?? true) && (message.allowed?.() ?? true)
+        if (!allowed()) return REVOKED
         entry.queue.splice(index, 1)
         entry.sending = true
         try {
             // not put back when unsubmitted: the text is in the terminal's box, a later send would type it twice
-            if (!(await this.deps.type(sessionId, message.text))) return NOT_SUBMITTED
+            if (!(await this.deps.type(sessionId, message.text, allowed))) return NOT_SUBMITTED
             this.noteTerminalCommand(sessionId, entry, message)
             return { status: 'sent' }
         } catch (error) {
@@ -360,11 +402,11 @@ export class ConversationService {
      * ("esc to interrupt"). At rest Esc would land in whatever the agent shows (a menu, the input
      * box), so it is refused then.
      */
-    async interrupt(sessionId: string): Promise<InterruptResult> {
-        return this.inLane(sessionId, () => this.interruptInLane(sessionId))
+    async interrupt(sessionId: string, from?: From): Promise<InterruptResult> {
+        return this.inLane(sessionId, () => this.interruptInLane(sessionId, senderOf(from)))
     }
 
-    private async interruptInLane(sessionId: string): Promise<InterruptResult> {
+    private async interruptInLane(sessionId: string, sender: ChatSender | null): Promise<InterruptResult> {
         if (!this.deps.hasTerminal(sessionId) || this.deps.mirror.hasExited(sessionId)) {
             return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
         }
@@ -373,6 +415,10 @@ export class ConversationService {
         if (!entry.working) {
             this.dropIfIdle(sessionId, entry)
             return { status: 'rejected', reason: 'not_working', message: 'The agent is not working on a turn.' }
+        }
+        if (sender && !sender.allowed()) {
+            this.dropIfIdle(sessionId, entry)
+            return REVOKED
         }
         this.deps.writeInput(sessionId, INTERRUPT_KEY)
         this.bump(sessionId, entry)
@@ -420,11 +466,12 @@ export class ConversationService {
      * card was drawn from (same question, options, highlighted option). The
      * person may have answered in the terminal already, or the agent moved on.
      */
-    async answerPrompt(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult> {
-        return this.inLane(sessionId, () => this.answerPromptInLane(sessionId, answer))
+    async answerPrompt(sessionId: string, answer: PromptAnswer, from?: From): Promise<PromptAnswerResult> {
+        return this.inLane(sessionId, () => this.answerPromptInLane(sessionId, answer, senderOf(from)))
     }
 
-    private async answerPromptInLane(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult> {
+    private async answerPromptInLane(sessionId: string, answer: PromptAnswer, sender: ChatSender | null): Promise<PromptAnswerResult> {
+        if (sender && !sender.allowed()) return REVOKED
         if (!this.deps.hasTerminal(sessionId) || this.deps.mirror.hasExited(sessionId)) {
             return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
         }
@@ -454,6 +501,8 @@ export class ConversationService {
         try {
             for (const [index, step] of steps.entries()) {
                 if (index > 0) await sleep(KEY_GAP_MS)
+                // disconnected between two keys: stop before the next (an Enter would pick an option)
+                if (sender && !sender.allowed()) return REVOKED
                 this.deps.writeInput(sessionId, 'key' in step ? step.key : step.text)
             }
         } finally {
@@ -584,9 +633,10 @@ export class ConversationService {
             // the agent exited (only its shell left) or another program took its place: what was
             // written for it would run as a command there — dropped, never typed
             const front = await this.agentInFront(sessionId)
-            const kept = entry.queue.filter((message) => this.stillFor(message, front))
+            // also what a device sent and lost access to since (revoked after its revoke hook ran)
+            const kept = entry.queue.filter((message) => this.stillFor(message, front) && (message.allowed?.() ?? true))
             if (kept.length !== entry.queue.length) {
-                console.warn(`[conversation] dropped ${entry.queue.length - kept.length} queued message(s): the agent they were written for is gone`, sessionId)
+                console.warn(`[conversation] dropped ${entry.queue.length - kept.length} queued message(s): the agent they were written for is gone, or their sender lost access`, sessionId)
                 entry.queue = kept
                 this.bump(sessionId, entry)
                 if (kept.length === 0) {
@@ -598,11 +648,13 @@ export class ConversationService {
             entry.sending = true
             try {
                 // left in the terminal's box: not queued again (typing it twice), the person sees it there
-                if (!(await this.deps.type(sessionId, message.text))) console.warn('[conversation] queued message left unsubmitted in the input box', sessionId)
+                if (!(await this.deps.type(sessionId, message.text, message.allowed))) console.warn('[conversation] queued message left unsubmitted in the input box', sessionId)
                 else this.noteTerminalCommand(sessionId, entry, message)
             } catch (error) {
                 // A question appeared between the check and the typing: put it back and wait.
-                if ((error as { code?: string }).code === 'awaiting_input') entry.queue.unshift(message)
+                const code = (error as { code?: string }).code
+                if (code === 'awaiting_input') entry.queue.unshift(message)
+                else if (code === 'revoked') console.warn('[conversation] dropped a queued message: its sender lost access', sessionId)
                 else console.error('[conversation] queued send failed', sessionId, error)
             } finally {
                 entry.sending = false
@@ -611,6 +663,11 @@ export class ConversationService {
             }
         })
     }
+}
+
+function senderOf(from: From): ChatSender | null {
+    if (from === undefined) return null
+    return typeof from === 'string' ? { origin: from, allowed: () => true } : from
 }
 
 function agentOf(info: ConversationSessionInfo | null): ConversationAgent | null {
@@ -622,6 +679,7 @@ function rejection(error: unknown): ChatSendResult {
     const code = (error as { code?: string }).code
     const message = error instanceof Error ? error.message : String(error)
     if (code === 'awaiting_input') return { status: 'rejected', reason: 'awaiting_input', message }
+    if (code === 'revoked') return REVOKED
     if (code === 'exited') return { status: 'rejected', reason: 'exited', message }
     if (code === 'not_found') return { status: 'rejected', reason: 'unknown_session', message }
     return { status: 'rejected', reason: 'not_running', message }

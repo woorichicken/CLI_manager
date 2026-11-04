@@ -197,11 +197,11 @@ export type ChatSendResult =
      * `not_submitted`: typed and Enter pressed, but the text is still in the agent's input box.
      * `no_agent`: only the shell is left in the terminal (or another program took the agent's place).
      */
-    | { status: 'rejected'; reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session' | 'not_submitted' | 'no_agent'; message: string }
+    | { status: 'rejected'; reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session' | 'not_submitted' | 'no_agent' | 'revoked'; message: string }
 
 export type InterruptResult =
     | { status: 'stopped' }
-    | { status: 'rejected'; reason: 'not_working' | 'not_running'; message: string }
+    | { status: 'rejected'; reason: 'not_working' | 'not_running' | 'revoked'; message: string }
 
 /** What a picked or pasted file became: a path the agent can read (`@path` in the message). */
 export type AttachResult =
@@ -248,7 +248,7 @@ export type PromptAnswer =
 
 export type PromptAnswerResult =
     | { status: 'answered' }
-    | { status: 'rejected'; reason: 'prompt_changed' | 'not_answerable' | 'bad_answer' | 'not_running'; message: string }
+    | { status: 'rejected'; reason: 'prompt_changed' | 'not_answerable' | 'bad_answer' | 'not_running' | 'revoked'; message: string }
 
 /**
  * What a Chat view needs from wherever it runs: read turns, hear about changes,

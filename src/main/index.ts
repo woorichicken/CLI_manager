@@ -394,7 +394,7 @@ const conversationService = new ConversationService({
     mirror: terminalMirror,
     hasTerminal: (id) => terminalManager.hasTerminal(id),
     writeInput: (id, data) => terminalManager.writeInput(id, data),
-    type: (id, text) => controlApiService.typeForChat(id, text),
+    type: (id, text, allowed) => controlApiService.typeForChat(id, text, allowed),
     // a queued message goes only to the program it was queued for (F03)
     agentProcess: (id) => terminalManager.foregroundProgram(id),
     onChange: (sessionId, revision) => {
