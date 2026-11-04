@@ -15,7 +15,6 @@ import { createECDH, randomBytes } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import webpush from 'web-push'
 import {
     decidePhoneAccess,
     hostAllowed,
@@ -470,17 +469,17 @@ test.describe('ovis server/push.test.ts', () => {
             const rig = pushRig()
             // no test-mode log: the real code path, with the push service's answer stubbed
             delete process.env.CLIMANGER_TEST_USERDATA
-            const original = webpush.sendNotification
-            webpush.sendNotification = (async () => {
-                throw Object.assign(new Error('gone'), { statusCode: 410 })
-            }) as typeof webpush.sendNotification
+            // the request goes out through fetch (round2 F21 — a whole-request deadline), as in ovis:
+            // the push service's answer is a 410 Response (ovis push.test.ts:303 fake.answerWith(410))
+            const original = globalThis.fetch
+            globalThis.fetch = (async () => new Response(null, { status: 410 })) as typeof fetch
             try {
                 expect(rig.push.subscribe(subscriptionFixture(), 'tailscale:o')).toBe(true)
                 expect((await rig.push.test()).status).toBe('failed')
                 expect(JSON.parse(fs.readFileSync(rig.deps.subscriptionsFile, 'utf8')).subscriptions).toEqual([])
                 expect(await rig.push.test()).toMatchObject({ status: 'none' })
             } finally {
-                webpush.sendNotification = original
+                globalThis.fetch = original
             }
         })
     })
