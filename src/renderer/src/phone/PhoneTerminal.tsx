@@ -3,7 +3,9 @@ import { ArrowDownToLine, ChevronsDown, ChevronsUp, Eye, Keyboard, Maximize2, Mi
 import '@xterm/xterm/css/xterm.css'
 import type { PhoneRole } from '../../../shared/phone'
 import { KEY_BAR_ITEMS, controlCharacter, createKeyRepeat, isRepeatable, keyBarLabel, keySequence, type KeyBarItem } from './keyBar'
+import { PhoneSecretInput } from './PhoneSecretInput'
 import { PhoneTerminalFold } from './PhoneTerminalFold'
+import { cursorRowsText, SECRET_PROMPT_ROWS, secretPrompt } from './secretPrompt'
 import { readWrap, saveWrap } from './terminalFold'
 import { usePhoneTerminal } from './usePhoneTerminal'
 
@@ -138,6 +140,25 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
             }
         })
     }, [subscribe])
+
+    // A password prompt on the cursor's row (sudo, ssh …): the input line becomes a password field
+    // whose value never enters React state (PhoneSecretInput, after ovis SecretInput.tsx).
+    const [secret, setSecret] = useState<string | null>(null)
+    useEffect(() => {
+        const read = (): void => {
+            const xterm = termHandle.current.terminal()
+            if (!xterm) return
+            const buffer = xterm.buffer.active
+            const cursorRow = buffer.baseY + buffer.cursorY
+            const rows: string[] = []
+            for (let row = Math.max(0, cursorRow - SECRET_PROMPT_ROWS + 1); row <= cursorRow; row++) {
+                rows.push(buffer.getLine(row)?.translateToString(true) ?? '')
+            }
+            setSecret(secretPrompt(cursorRowsText(rows), xterm.cols))
+        }
+        read()
+        return subscribe(read)
+    }, [subscribe, term.status])
 
     const sendKey = useCallback((item: KeyBarItem) => {
         if (item.type === 'modifier') {
@@ -274,6 +295,9 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                             <KeyBarButton key={keyBarLabel(item)} item={item} held={item.type === 'modifier' && ctrl} onKey={sendKey} />
                         ))}
                     </div>
+                    {secret !== null ? (
+                        <PhoneSecretInput prompt={secret} connected={connected} onSend={(value) => term.sendLine(value, ENTER_GAP_MS)} />
+                    ) : (
                     <form
                         className="phone-line"
                         onSubmit={(event) => {
@@ -302,6 +326,7 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                             <Send size={15} />
                         </button>
                     </form>
+                    )}
                 </div>
             )}
         </div>

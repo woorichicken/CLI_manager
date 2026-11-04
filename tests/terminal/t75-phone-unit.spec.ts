@@ -10,6 +10,7 @@ import { controlCharacter, createKeyRepeat, isRepeatable, KEY_BAR_ITEMS, KEY_REP
 import { dropletFor, LONG_TURN_MS, nextSeen, waitingElsewhere } from '../../src/renderer/src/phone/droplets'
 import { foldRows, type FoldLine } from '../../src/renderer/src/phone/terminalFold'
 import { reconnectDelay } from '../../src/renderer/src/phone/usePhoneTerminal'
+import { secretPrompt, validSecret } from '../../src/renderer/src/phone/secretPrompt'
 import { Terminal as HeadlessTerminal } from '@xterm/headless'
 import { listLines } from '../../src/renderer/src/phone/sessionListLines'
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder } from '../../src/renderer/src/utils/sessionNavigation'
@@ -467,4 +468,28 @@ test.describe('T75 «Wrap to screen» rows', () => {
         expect(escaped[escaped.length - 1].html).toBe('&lt;b&gt;&amp;&lt;/b&gt;')
         term.dispose()
     })
+})
+
+test('T75 secret prompt (F15): only a real password prompt on the cursor row turns the line into a password field', () => {
+    // the prompts ovis recognises (shared/secret-prompt.ts)
+    expect(secretPrompt('$ sudo ls\n[sudo] password for kim: ')).toBe('[sudo] password for kim:')
+    expect(secretPrompt('Password: ')).toBe('Password:')
+    expect(secretPrompt('kim@mac.local\'s password: ')).toBe("kim@mac.local's password:")
+    expect(secretPrompt("Enter passphrase for key '/Users/kim/.ssh/id_ed25519': ")).toBe("Enter passphrase for key '/Users/kim/.ssh/id_ed25519':")
+    expect(secretPrompt('Enter PIN for token: ')).toBe('Enter PIN for token:')
+    expect(secretPrompt('Verify password: \n\n')).toBe('Verify password:')
+    // prose about passwords, questions and a prompt that is not on the last row: no
+    expect(secretPrompt('Your password was changed.')).toBeNull()
+    expect(secretPrompt('Change password? (y/n): ')).toBeNull()
+    expect(secretPrompt('Password:\n$ ')).toBeNull()
+    expect(secretPrompt('')).toBeNull()
+    // a prompt wrapped at a 20-column edge joins the row above only when that row is full
+    expect(secretPrompt('[sudo] password for \nkim: ', 20)).toBe('[sudo] password for kim:')
+    expect(secretPrompt('[sudo] password\nfor kim: ', 20)).toBeNull()
+    // what may be sent: one line of plain keys
+    expect(validSecret('hunter2')).toBe(true)
+    expect(validSecret('')).toBe(false)
+    expect(validSecret('two\nlines')).toBe(false)
+    expect(validSecret('esc\x1b[A')).toBe(false)
+    expect(validSecret('x'.repeat(4097))).toBe(false)
 })
