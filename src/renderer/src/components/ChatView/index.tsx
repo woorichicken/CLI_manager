@@ -36,6 +36,11 @@ export interface ChatViewProps {
      * chat does not take the keyboard — as ovis on a phone (Composer.tsx:274-276, docs/guide.md:963).
      */
     touch?: boolean
+    /**
+     * A device paired view-only (the phone's `watch` role): the conversation is shown, and where the box
+     * would be one line says why there is none — the server refuses its sends anyway (403 view_only).
+     */
+    readOnly?: boolean
 }
 
 /** Within this many pixels of the end, new turns keep the view pinned to the bottom. */
@@ -81,7 +86,7 @@ interface SentWaiting {
 }
 let sentSequence = 0
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false }: ChatViewProps) {
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false }: ChatViewProps) {
     const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? CHAT_TURN_LIMIT)
     const { snapshot, refresh } = useConversation(transport, sessionId, limit)
     const scroller = useRef<HTMLDivElement>(null)
@@ -378,8 +383,14 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                 picked={picked}
                                 onConfirmPick={() => void confirmPick()}
                                 onCancelPick={() => setPicked(null)}
+                                readOnly={readOnly}
                             />
                         )}
+                        {readOnly ? (
+                            <p className="chat-read-only" data-testid="chat-read-only">
+                                View only — pair this device again on the Mac with “Code — can type” to write here.
+                            </p>
+                        ) : (
                         <Composer
                             ref={composer}
                             sessionId={sessionId}
@@ -406,6 +417,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                 </>
                             }
                         />
+                        )}
                     </div>
                 </div>
                 {gallery && <ImageLightbox images={gallery.images} start={gallery.index} onClose={() => setGallery(null)} />}

@@ -256,6 +256,8 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                 <button type="button" aria-label="Page up" onClick={() => term.scrollPages(-1)}><ChevronsUp size={14} /></button>
                 <button type="button" aria-label="Page down" onClick={() => term.scrollPages(1)}><ChevronsDown size={14} /></button>
                 <button type="button" aria-label="Scroll to the end" onClick={() => term.scrollToBottom()}><ArrowDownToLine size={14} /></button>
+                {/* a view-only device only watches: no Type to switch to (the server refuses its input anyway) */}
+                {canType && (
                 <div className="phone-seg" role="group" aria-label="View or type">
                     <button type="button" data-testid="phone-terminal-view" aria-pressed={!typing} onClick={() => setTyping(false)}>
                         <Eye size={13} /> View
@@ -264,13 +266,13 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                         type="button"
                         data-testid="phone-terminal-type"
                         aria-pressed={typing}
-                        disabled={!canType}
-                        title={canType ? 'Show the key bar and input line' : 'This device can only watch'}
+                        title="Show the key bar and input line"
                         onClick={() => setTyping(true)}
                     >
                         <Keyboard size={13} /> Type
                     </button>
                 </div>
+                )}
             </div>
             <div
                 ref={scroller}

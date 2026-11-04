@@ -5,7 +5,7 @@ import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, termText, waitForBufferText, writeToTerminal } from './helpers'
 
 /**
- * T79 — the phone and Chat screen fixes of the ovis cross-review (fixes/ui, 11-05), each on a touch
+ * T81 — the phone and Chat screen fixes of the ovis cross-review (fixes/ui, 11-05), each on a touch
  * phone (CDP touch emulation, 390×844, scale 3) against the real app and its phone server:
  *
  *  F13 terminal Send while the socket is down: disabled, and the line is never lost
@@ -20,15 +20,15 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  */
 
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
-const AGENT_ID = '00000000-0000-4000-8000-00000000c79a'
-const NEW_ID = '00000000-0000-4000-8000-00000000c79b'
-const AGENT = 't79-claude'
-const NEW = 't79-claude-new'
-const SHELL_A = 't79-shell-a'
-const SHELL_B = 't79-shell-b'
+const AGENT_ID = '00000000-0000-4000-8000-00000000c81a'
+const NEW_ID = '00000000-0000-4000-8000-00000000c81b'
+const AGENT = 't81-claude'
+const NEW = 't81-claude-new'
+const SHELL_A = 't81-shell-a'
+const SHELL_B = 't81-shell-b'
 const OWNER = 'owner@example.com'
 const DPR = 3
-const T79_PORT = 47879
+const T81_PORT = 47881
 const claudeProjectSlug = (cwd: string): string => cwd.replace(/[^A-Za-z0-9]/g, '-')
 
 let result: LaunchResult | null = null
@@ -45,7 +45,7 @@ test.afterEach(async () => {
 })
 
 async function launch(): Promise<{ app: ElectronApplication; page: Page; base: string }> {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t79-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t81-'))
     const project = path.join(home, 'project')
     fs.mkdirSync(project)
     const claudeDir = path.join(home, 'claude')
@@ -60,23 +60,26 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; base: s
     result = await launchAppWithWorkspaces(
         [
             {
-                id: 'w-t79',
-                name: 'T79 project',
+                id: 'w-t81',
+                name: 'T81 project',
                 path: project,
                 sessions: [
-                    { id: AGENT, name: 'T79 Claude', cliSessionId: AGENT_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 15000` },
-                    { id: NEW, name: 'T79 Claude new', cliSessionId: NEW_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${newTranscript} --work-ms 300` },
-                    { id: SHELL_A, name: 'T79 Shell A' },
-                    { id: SHELL_B, name: 'T79 Shell B' }
+                    { id: AGENT, name: 'T81 Claude', cliSessionId: AGENT_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 15000` },
+                    // started fresh (no resume): the app clears a conversation id whose file is missing at launch
+                    { id: NEW, name: 'T81 Claude new', initialCommand: `node ${MOCK} --transcript ${newTranscript} --work-ms 300` },
+                    { id: SHELL_A, name: 'T81 Shell A' },
+                    { id: SHELL_B, name: 'T81 Shell B' }
                 ]
             }
         ],
-        { settings: { phone: { enabled: true, port: T79_PORT } }, env: { CLAUDE_CONFIG_DIR: claudeDir, CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile } }
+        { settings: { phone: { enabled: true, port: T81_PORT } }, env: { CLAUDE_CONFIG_DIR: claudeDir, CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile } }
     )
     const { app, page } = result
     await resizeMainWindow(app, 1280, 800)
     await waitForBufferText(page, AGENT, 'Claude Code', 30_000)
     await waitForBufferText(page, NEW, 'Claude Code', 30_000)
+    // what the app records when a new Claude starts in a session: its conversation id, before any file
+    expect(await page.evaluate((o) => window.api.updateSessionCliInfo('w-t81', o.id, o.cli, 'claude', o.command), { id: NEW, cli: NEW_ID, command: `node ${MOCK}` })).toBe(true)
     const state = await page.evaluate(() => window.api.getPhoneState())
     expect(state.running).toBe(true)
     return { app, page, base: `http://127.0.0.1:${state.port}` }
@@ -84,19 +87,19 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; base: s
 
 /**
  * A phone window in its own cookie jar, let in as this Mac's owner the way `tailscale serve` does it.
- * Requests whose path holds a word in `globalThis.__t79Block` (main process) fail like a dropped network.
+ * Requests whose path holds a word in `globalThis.__t81Block` (main process) fail like a dropped network.
  */
 async function openOwnerPhone(app: ElectronApplication, url: string, partition: string): Promise<Page> {
     const opened = app.waitForEvent('window')
     await app.evaluate(({ BrowserWindow, session }, o) => {
-        const g = globalThis as unknown as { __t79Block?: string[] }
-        g.__t79Block = g.__t79Block ?? []
+        const g = globalThis as unknown as { __t81Block?: string[] }
+        g.__t81Block = g.__t81Block ?? []
         const jar = session.fromPartition(o.partition)
         jar.webRequest.onBeforeSendHeaders((details, callback) => {
             callback({ requestHeaders: { ...details.requestHeaders, 'Tailscale-User-Login': o.owner, 'X-Forwarded-For': '100.101.102.103' } })
         })
         jar.webRequest.onBeforeRequest((details, callback) => {
-            const blocked = (g.__t79Block ?? []).some((word) => details.url.includes(word))
+            const blocked = (g.__t81Block ?? []).some((word) => details.url.includes(word))
             callback({ cancel: blocked })
         })
         const win = new BrowserWindow({ width: 390, height: 844, useContentSize: true, show: false, webPreferences: { partition: o.partition, backgroundThrottling: false } })
@@ -109,7 +112,7 @@ async function openOwnerPhone(app: ElectronApplication, url: string, partition: 
 
 async function block(app: ElectronApplication, words: string[]): Promise<void> {
     await app.evaluate((_electron, list) => {
-        ;(globalThis as unknown as { __t79Block?: string[] }).__t79Block = list
+        ;(globalThis as unknown as { __t81Block?: string[] }).__t81Block = list
     }, words)
 }
 
@@ -150,10 +153,10 @@ async function openTerminal(phone: Page, cdp: CDPSession): Promise<void> {
     await expect(phone.getByTestId('phone-key-bar')).toBeVisible()
 }
 
-test('T79 F13 terminal Send while the socket is down: disabled, and the line stays', async () => {
+test('T81 F13 terminal Send while the socket is down: disabled, and the line stays', async () => {
     test.setTimeout(120_000)
     const { app, page, base } = await launch()
-    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't79-f13')
+    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't81-f13')
     await openTerminal(phone, cdp)
     const line = phone.getByTestId('phone-terminal-line')
     await line.fill('echo kept-$((40+2))')
@@ -172,10 +175,10 @@ test('T79 F13 terminal Send while the socket is down: disabled, and the line sta
     await phone.close()
 })
 
-test('T79 F14 another session’s terminal starts clean; coming back brings this one’s draft', async () => {
+test('T81 F14 another session’s terminal starts clean; coming back brings this one’s draft', async () => {
     test.setTimeout(120_000)
     const { app, page, base } = await launch()
-    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't79-f14')
+    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't81-f14')
     await openTerminal(phone, cdp)
     await phone.getByTestId('phone-terminal-line').fill('echo for-a-only')
     const ctrlKey = phone.locator('.phone-key[data-key="ctrl"]')
@@ -185,7 +188,7 @@ test('T79 F14 another session’s terminal starts clean; coming back brings this
     // to B through the list, the page not reloaded
     await tap(cdp, phone, 'phone-menu-button')
     await phone.locator(`[data-testid="phone-session-row"][data-session-id="${SHELL_B}"]`).click()
-    await expect(phone.getByTestId('phone-session-title')).toHaveText('T79 Shell B')
+    await expect(phone.getByTestId('phone-session-title')).toHaveText('T81 Shell B')
     await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })
     // B opens in View, its line empty and Ctrl up
     await expect(phone.getByTestId('phone-key-bar')).toHaveCount(0)
@@ -198,20 +201,20 @@ test('T79 F14 another session’s terminal starts clean; coming back brings this
     // back to A: its draft is where it was left
     await tap(cdp, phone, 'phone-menu-button')
     await phone.locator(`[data-testid="phone-session-row"][data-session-id="${SHELL_A}"]`).click()
-    await expect(phone.getByTestId('phone-session-title')).toHaveText('T79 Shell A')
+    await expect(phone.getByTestId('phone-session-title')).toHaveText('T81 Shell A')
     await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })
     await tap(cdp, phone, 'phone-terminal-type')
     await expect(phone.getByTestId('phone-terminal-line')).toHaveValue('echo for-a-only')
     await phone.close()
 })
 
-test('T79 F15 a password prompt gets a password field, sent straight to the pty', async () => {
+test('T81 F15 a password prompt gets a password field, sent straight to the pty', async () => {
     test.setTimeout(120_000)
     const { app, page, base } = await launch()
-    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't79-f15')
+    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't81-f15')
     await openTerminal(phone, cdp)
     await expect(phone.getByTestId('phone-terminal-secret')).toHaveCount(0)
-    await writeToTerminal(page, SHELL_A, "printf 'Password: '; stty -echo; read t79pw; stty echo; echo; echo got-$t79pw\r")
+    await writeToTerminal(page, SHELL_A, "printf 'Password: '; stty -echo; read t81pw; stty echo; echo; echo got-$t81pw\r")
     const secret = phone.getByTestId('phone-terminal-secret')
     await expect(secret).toBeVisible({ timeout: 10_000 })
     await expect(secret).toHaveAttribute('type', 'password')
@@ -223,7 +226,7 @@ test('T79 F15 a password prompt gets a password field, sent straight to the pty'
     await expect(phone.getByTestId('phone-terminal-secret')).toHaveCount(0, { timeout: 10_000 })
     await expect(phone.getByTestId('phone-terminal-line')).toBeVisible()
     // a prompt left open, then the page hidden: what was typed is wiped
-    await writeToTerminal(page, SHELL_A, "printf 'Password: '; stty -echo; read t79pw; stty echo; echo; echo again-$t79pw\r")
+    await writeToTerminal(page, SHELL_A, "printf 'Password: '; stty -echo; read t81pw; stty echo; echo; echo again-$t81pw\r")
     await expect(secret).toBeVisible({ timeout: 10_000 })
     await secret.fill('half-typed')
     await phone.evaluate(() => {
@@ -234,16 +237,16 @@ test('T79 F15 a password prompt gets a password field, sent straight to the pty'
     await phone.close()
 })
 
-test('T79 F16 a first /me that failed is tried again without a reload', async () => {
+test('T81 F16 a first /me that failed is tried again without a reload', async () => {
     test.setTimeout(120_000)
     const { app, base } = await launch()
     await block(app, ['/api/phone/me'])
-    const phone = await openOwnerPhone(app, `${base}/?session=${SHELL_A}&view=terminal`, 't79-f16')
+    const phone = await openOwnerPhone(app, `${base}/?session=${SHELL_A}&view=terminal`, 't81-f16')
     await expect(phone.getByText('The Mac is not answering', { exact: false })).toBeVisible({ timeout: 15_000 })
     await block(app, [])
     // no tap, no reload: it comes back by itself
     await expect(phone.getByTestId('phone-app')).toBeVisible({ timeout: 15_000 })
-    await expect(phone.getByTestId('phone-session-title')).toHaveText('T79 Shell A', { timeout: 15_000 })
+    await expect(phone.getByTestId('phone-session-title')).toHaveText('T81 Shell A', { timeout: 15_000 })
     // and the Retry button works at once
     await block(app, ['/api/phone/me'])
     await phone.reload()
@@ -254,15 +257,15 @@ test('T79 F16 a first /me that failed is tried again without a reload', async ()
     await phone.close()
 })
 
-test('T79 F17 one dropped file is one attachment', async () => {
+test('T81 F17 one dropped file is one attachment', async () => {
     test.setTimeout(120_000)
     const { app, base } = await launch()
-    const { phone } = await openPhone(app, base, `session=${AGENT}&view=chat`, 't79-f17')
+    const { phone } = await openPhone(app, base, `session=${AGENT}&view=chat`, 't81-f17')
     await expect(phone.locator('.chat-composer textarea')).toBeVisible({ timeout: 15_000 })
     await phone.evaluate(() => {
         const card = document.querySelector('.chat-composer-card')!
         const data = new DataTransfer()
-        data.items.add(new File(['t79 notes'], 't79-notes.txt', { type: 'text/plain' }))
+        data.items.add(new File(['t81 notes'], 't81-notes.txt', { type: 'text/plain' }))
         card.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
     })
     await expect(phone.getByTestId('chat-attachment')).toHaveCount(1)
@@ -272,10 +275,10 @@ test('T79 F17 one dropped file is one attachment', async () => {
     await phone.close()
 })
 
-test('T79 F19 a queued message’s Edit restores it only once it is withdrawn', async () => {
+test('T81 F19 a queued message’s Edit restores it only once it is withdrawn', async () => {
     test.setTimeout(120_000)
     const { app, page, base } = await launch()
-    const { phone, cdp } = await openPhone(app, base, `session=${AGENT}&view=chat`, 't79-f19')
+    const { phone, cdp } = await openPhone(app, base, `session=${AGENT}&view=chat`, 't81-f19')
     const box = phone.locator('.chat-composer textarea')
     await expect(box).toBeVisible({ timeout: 15_000 })
     await box.fill('first job')
@@ -300,10 +303,10 @@ test('T79 F19 a queued message’s Edit restores it only once it is withdrawn', 
     await phone.close()
 })
 
-test('T79 F20 a question on screen: a number and the Send button pick that option', async () => {
+test('T81 F20 a question on screen: a number and the Send button pick that option', async () => {
     test.setTimeout(120_000)
     const { app, page, base } = await launch()
-    const { phone, cdp } = await openPhone(app, base, `session=${NEW}&view=chat`, 't79-f20')
+    const { phone, cdp } = await openPhone(app, base, `session=${NEW}&view=chat`, 't81-f20')
     await writeToTerminal(page, NEW, 'ASK')
     await page.waitForTimeout(200)
     await writeToTerminal(page, NEW, '\r')
@@ -319,10 +322,10 @@ test('T79 F20 a question on screen: a number and the Send button pick that optio
     await phone.close()
 })
 
-test('T79 G1 a new Claude session with no conversation file yet shows an empty chat, not an error', async () => {
+test('T81 G1 a new Claude session with no conversation file yet shows an empty chat, not an error', async () => {
     test.setTimeout(120_000)
     const { app, page, base } = await launch()
-    const { phone, cdp } = await openPhone(app, base, `session=${NEW}&view=chat`, 't79-g1')
+    const { phone, cdp } = await openPhone(app, base, `session=${NEW}&view=chat`, 't81-g1')
     await expect(phone.getByTestId('chat-no-turns-yet')).toBeVisible({ timeout: 15_000 })
     await expect(phone.getByTestId('chat-no-turns-yet')).toContainText('No conversation yet')
     await expect(phone.getByTestId('chat-unavailable')).toHaveCount(0)
@@ -334,14 +337,14 @@ test('T79 G1 a new Claude session with no conversation file yet shows an empty c
     await phone.close()
 })
 
-test('T79 G2 the View | Type switch draws no focus ring on a touch screen', async () => {
+test('T81 G2 the View | Type switch draws no focus ring on a touch screen', async () => {
     test.setTimeout(120_000)
     const { app, base } = await launch()
-    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't79-g2')
+    const { phone, cdp } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't81-g2')
     await openTerminal(phone, cdp)
     // what a tap leaves (for the report) — the phone's browser may still count it as focus-visible
     const after = await phone.getByTestId('phone-terminal-type').evaluate((el) => ({ focus: el.matches(':focus'), visible: el.matches(':focus-visible') }))
-    console.log('[T79 G2] after a tap on Type:', JSON.stringify(after))
+    console.log('[T81 G2] after a tap on Type:', JSON.stringify(after))
     // force the state the Galaxy showed: focused and focus-visible
     await cdp.send('DOM.enable')
     await cdp.send('CSS.enable')
@@ -356,5 +359,45 @@ test('T79 G2 the View | Type switch draws no focus ring on a touch screen', asyn
         expect(outline.style === 'none' || outline.width === '0px', `${id} outline ${JSON.stringify(outline)}`).toBe(true)
         await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] })
     }
+    await phone.close()
+})
+
+/** A phone that is not this Mac's owner: it pairs with a code, as a second person's phone does. */
+async function openPairedPhone(app: ElectronApplication, page: Page, url: string, partition: string, role: 'drive' | 'watch'): Promise<Page> {
+    const state = await page.evaluate((r) => window.api.startPhonePairing(r), role)
+    const code = state.pairing!.code
+    const opened = app.waitForEvent('window')
+    await app.evaluate(({ BrowserWindow }, o) => {
+        const win = new BrowserWindow({ width: 390, height: 844, useContentSize: true, show: false, webPreferences: { partition: o.partition, backgroundThrottling: false } })
+        void win.loadURL(o.url)
+    }, { url, partition })
+    const phone = await opened
+    await phone.waitForLoadState('domcontentloaded')
+    await phone.getByTestId('phone-pair-code').fill(code)
+    await phone.getByTestId('phone-pair-submit').click()
+    return phone
+}
+
+test('T81 G8 a view-only phone shows no message box, attach, model chip or Type', async () => {
+    test.setTimeout(120_000)
+    const { app, page, base } = await launch()
+    const phone = await openPairedPhone(app, page, `${base}/?session=${AGENT}&view=chat`, 't81-g8', 'watch')
+    await expect(phone.getByTestId('chat-view')).toBeVisible({ timeout: 15_000 })
+    await expect(phone.getByTestId('chat-read-only')).toBeVisible({ timeout: 10_000 })
+    await expect(phone.getByTestId('chat-read-only')).toContainText('View only')
+    await expect(phone.getByTestId('chat-composer')).toHaveCount(0)
+    await expect(phone.getByTestId('chat-attach')).toHaveCount(0)
+    await expect(phone.getByTestId('chat-model-chip')).toHaveCount(0)
+    // a question on screen: shown, its options not offered
+    await writeToTerminal(page, AGENT, 'ASK')
+    await page.waitForTimeout(200)
+    await writeToTerminal(page, AGENT, '\r')
+    await expect(phone.getByTestId('chat-prompt-card')).toBeVisible({ timeout: 15_000 })
+    await expect(phone.getByTestId('chat-prompt-option').first()).toBeDisabled()
+    // the terminal: watching only, no Type and no key bar
+    await phone.goto(`${base}/?session=${SHELL_A}&view=terminal`)
+    await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })
+    await expect(phone.getByTestId('phone-terminal-type')).toHaveCount(0)
+    await expect(phone.getByTestId('phone-key-bar')).toHaveCount(0)
     await phone.close()
 })

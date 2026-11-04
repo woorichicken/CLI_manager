@@ -81,6 +81,7 @@ export function SessionScreen({
                         transport={transport}
                         fontSize={15}
                         touch={COARSE_POINTER}
+                        readOnly={role === 'watch'}
                         onOpenTerminal={() => onLens('terminal')}
                     />
                 ) : (

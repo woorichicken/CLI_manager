@@ -438,7 +438,8 @@ test('T76 phone: off by default, access, pairing, list, Chat, card, Terminal + k
     await watcher.getByTestId('phone-pair-code').fill(watchCode)
     await watcher.getByTestId('phone-pair-submit').click()
     await expect(watcher.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 10_000 })
-    await expect(watcher.getByTestId('phone-terminal-type')).toBeDisabled()
+    // no Type to switch to (G8) — the server refusing it is checked just below
+    await expect(watcher.getByTestId('phone-terminal-type')).toHaveCount(0)
     const watchSend = await watcher.evaluate(async ({ id }) => {
         const response = await fetch(`/api/phone/chat/${id}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"text":"nope"}' })
         return response.status
