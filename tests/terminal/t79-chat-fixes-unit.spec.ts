@@ -262,3 +262,41 @@ test.describe('T79 F03 a queued message belongs to the agent it was written for,
         }
     })
 })
+
+test.describe('T79 F18 a terminal-only `/` command sent off the queue tells the view to show the terminal', () => {
+    test('/config queued while working: once typed, the snapshot names it; a plain message does not', async () => {
+        let screen = WORKING
+        let outputAt = Date.now() - 20_000
+        const terminal = { screen: () => screen, lastOutputAt: () => outputAt, writeInput: () => undefined }
+        const { conversations, typed } = serviceOn(terminal, {
+            listCommands: () => [{ name: 'config', description: '', source: 'builtin', terminal: 'always' }]
+        })
+        conversations.subscribe('s')
+        expect(await conversations.send('s', 'plain words')).toEqual({ status: 'queued' })
+        expect(await conversations.send('s', '/config')).toEqual({ status: 'queued' })
+        screen = IDLE
+        outputAt += 1
+        const poll = (): Promise<void> => (conversations as unknown as { pollRound(): Promise<void> }).pollRound()
+        await poll()
+        expect(typed).toEqual(['plain words'])
+        expect((await conversations.getConversation('s')).terminalOpened ?? null).toBeNull()
+        outputAt += 1
+        await poll()
+        expect(typed).toEqual(['plain words', '/config'])
+        const opened = (await conversations.getConversation('s')).terminalOpened
+        expect(opened?.command).toBe('/config')
+        conversations.unsubscribe('s')
+    })
+
+    test('Send now of a queued /config names it too', async () => {
+        const { conversations } = serviceOn({ screen: () => WORKING, lastOutputAt: () => 1, writeInput: () => undefined }, {
+            listCommands: () => [{ name: 'model', description: '', source: 'builtin', terminal: 'bare' }]
+        })
+        conversations.subscribe('s')
+        expect(await conversations.send('s', '/model')).toEqual({ status: 'queued' })
+        const [queued] = (await conversations.getConversation('s')).queued
+        expect(await conversations.sendQueuedNow('s', queued.id)).toEqual({ status: 'sent' })
+        expect((await conversations.getConversation('s')).terminalOpened?.command).toBe('/model')
+        conversations.unsubscribe('s')
+    })
+})

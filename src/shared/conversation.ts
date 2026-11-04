@@ -169,6 +169,24 @@ export interface ConversationSnapshot {
     meta: ConversationMeta | null
     /** bumps on every change, so a subscriber can skip a fetch it already has */
     revision: number
+    /**
+     * The last queued message that went out (on its own or by Send now) as a terminal-only `/` command:
+     * what it opens (a picker, a panel) shows only in the terminal, so a view that sees a new `id` here
+     * after it opened shows the terminal. A send typed at once is switched by the view itself.
+     */
+    terminalOpened?: { id: string; command: string } | null
+}
+
+/**
+ * The command to show the terminal for, when `text` is a terminal-only `/` command the agent offers
+ * (`terminal: 'always'`, or `'bare'` sent with no argument); null otherwise.
+ */
+export function terminalCommand(text: string, commands: ChatCommand[]): string | null {
+    const match = /^\/([\w:.-]+)(\s+\S[\s\S]*)?$/.exec(text.trim())
+    if (!match) return null
+    const command = commands.find((item) => item.trigger !== '$' && item.name === match[1])
+    if (!command?.terminal) return null
+    return command.terminal === 'always' || !match[2] ? `/${match[1]}` : null
 }
 
 export type ChatSendResult =

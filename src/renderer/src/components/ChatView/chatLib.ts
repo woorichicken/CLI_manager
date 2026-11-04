@@ -297,11 +297,5 @@ export function fileMention(path: string): string {
     return /\s/.test(path) ? `@"${path}"` : `@${path}`
 }
 
-/** The command a sent text opens in the terminal (`/config`, a bare `/model`), or null when the chat shows its outcome. */
-export function terminalCommand(text: string, commands: ChatCommand[]): string | null {
-    const match = /^\/([\w:.-]+)(\s+\S[\s\S]*)?$/.exec(text.trim())
-    if (!match) return null
-    const command = commands.find((item) => item.trigger !== '$' && item.name === match[1])
-    if (!command?.terminal) return null
-    return command.terminal === 'always' || !match[2] ? `/${match[1]}` : null
-}
+// moved to shared (main also needs it for queued sends, F18)
+export { terminalCommand } from '../../../../shared/conversation'

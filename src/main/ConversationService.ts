@@ -9,7 +9,7 @@ import type {
     PromptMenu,
     QueuedMessage
 } from '../shared/conversation'
-import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH } from '../shared/conversation'
+import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
 import { answerSteps, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 
@@ -92,6 +92,8 @@ interface Watched {
     prompt: PromptMenu | null
     queue: QueueItem[]
     sending: boolean
+    /** the last queued message typed that only the terminal can show (ConversationSnapshot.terminalOpened) */
+    terminalOpened: { id: string; command: string } | null
 }
 
 /**
@@ -174,7 +176,8 @@ export class ConversationService {
             prompt: entry.prompt,
             queued: entry.queue.map(({ id, text }) => ({ id, text })),
             revision: entry.revision,
-            meta: null
+            meta: null,
+            terminalOpened: entry.terminalOpened
         }
         const agent = agentOf(info)
         if (!info?.cliSessionId || agent === null) {
@@ -259,6 +262,12 @@ export class ConversationService {
         return dropped
     }
 
+    /** A queued terminal-only `/` command went out: the views show the terminal (F18). */
+    private noteTerminalCommand(sessionId: string, entry: Watched, message: QueueItem): void {
+        const command = terminalCommand(message.text, this.listCommands(sessionId))
+        if (command) entry.terminalOpened = { id: message.id, command }
+    }
+
     /** The program in front: its id, null when only the shell is there, true when it cannot be told (no dep). */
     private async agentInFront(sessionId: string): Promise<string | null | true> {
         if (!this.deps.agentProcess) return true
@@ -329,7 +338,9 @@ export class ConversationService {
         entry.sending = true
         try {
             // not put back when unsubmitted: the text is in the terminal's box, a later send would type it twice
-            return (await this.deps.type(sessionId, message.text)) ? { status: 'sent' } : NOT_SUBMITTED
+            if (!(await this.deps.type(sessionId, message.text))) return NOT_SUBMITTED
+            this.noteTerminalCommand(sessionId, entry, message)
+            return { status: 'sent' }
         } catch (error) {
             entry.queue.splice(Math.min(index, entry.queue.length), 0, message)
             return rejection(error)
@@ -470,7 +481,7 @@ export class ConversationService {
     private entry(sessionId: string): Watched {
         let entry = this.watched.get(sessionId)
         if (!entry) {
-            entry = { subscribers: 0, revision: 1, lastKey: '', lastScreenAt: -1, working: false, prompt: null, queue: [], sending: false }
+            entry = { subscribers: 0, revision: 1, lastKey: '', lastScreenAt: -1, working: false, prompt: null, queue: [], sending: false, terminalOpened: null }
             this.watched.set(sessionId, entry)
         }
         return entry
@@ -584,6 +595,7 @@ export class ConversationService {
             try {
                 // left in the terminal's box: not queued again (typing it twice), the person sees it there
                 if (!(await this.deps.type(sessionId, message.text))) console.warn('[conversation] queued message left unsubmitted in the input box', sessionId)
+                else this.noteTerminalCommand(sessionId, entry, message)
             } catch (error) {
                 // A question appeared between the check and the typing: put it back and wait.
                 if ((error as { code?: string }).code === 'awaiting_input') entry.queue.unshift(message)

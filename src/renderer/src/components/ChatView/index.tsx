@@ -197,6 +197,23 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const signature = snapshot?.prompt?.signature ?? null
     useEffect(() => setPicked(null), [signature])
 
+    // A terminal-only `/` command typed off the queue (main names it, F18): show the terminal, as
+    // `sendText` does for one sent at once. The one already named when this session's chat opened
+    // went out before — it is only noted.
+    const seenOpened = useRef<{ session: string; id: string | null } | null>(null)
+    const openedId = snapshot?.sessionId === sessionId ? snapshot.terminalOpened?.id ?? null : undefined
+    const openedCommand = snapshot?.terminalOpened?.command
+    useEffect(() => {
+        if (openedId === undefined) return
+        if (seenOpened.current?.session !== sessionId) {
+            seenOpened.current = { session: sessionId, id: openedId }
+            return
+        }
+        if (openedId === null || openedId === seenOpened.current.id) return
+        seenOpened.current = { session: sessionId, id: openedId }
+        onOpenTerminal(openedCommand)
+    }, [openedId, openedCommand, onOpenTerminal, sessionId])
+
     const cwd = snapshot?.cwd
     const home = snapshot?.home
     const actions = useMemo<ChatActions>(
