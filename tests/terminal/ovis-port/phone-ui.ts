@@ -353,7 +353,6 @@ test.describe('ovis src/lib/terminalFold.test.ts', () => {
 
         test('inverse swaps the colours before bold brightens the foreground, as xterm draws them', () => {
             // ours brightens the foreground first and swaps after: fg 1 + bold + inverse draws #3465a4 on #ef2929, ovis #729fcf on #cc0000 (cellStyle in terminalFold.ts)
-            test.fail(true, 'ovis-port bug: cellStyle brightens bold before the inverse swap, so the swapped foreground is not the bright form of the old background')
             expect(rowHtml(line([{ chars: 'x', fg: 1, bg: 4, bold: true, inverse: true }]), 1, BASE_THEME).html).toBe(
                 '<span style="color:#729fcf;background:#cc0000;font-weight:bold;">x</span>'
             )

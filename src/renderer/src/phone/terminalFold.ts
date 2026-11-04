@@ -71,19 +71,28 @@ export function paletteColor(index: number, theme: FoldTheme): string {
     return `#${hex(8 + (index - 232) * 10).repeat(3)}`
 }
 
-const colorOf = (isDefault: boolean, isRgb: boolean, value: number, theme: FoldTheme, bright: boolean): string | null => {
+/** A cell's colour before it is drawn: a palette index, a CSS colour, or the terminal's default (null). */
+type CellColor = { index: number } | { css: string } | null
+
+const colorOf = (isDefault: boolean, isRgb: boolean, value: number): CellColor => {
     if (isDefault) return null
-    if (isRgb) return `#${value.toString(16).padStart(6, '0')}`
-    // as xterm draws bold: the first eight colours in their bright form
-    return paletteColor(bright && value < 8 ? value + 8 : value, theme)
+    if (isRgb) return { css: `#${value.toString(16).padStart(6, '0')}` }
+    return { index: value }
 }
+
+const cssOf = (color: CellColor, theme: FoldTheme): string | null => (color === null ? null : 'css' in color ? color.css : paletteColor(color.index, theme))
 
 /** The inline CSS a cell draws with; '' for the terminal's plain text. */
 export function cellStyle(cell: FoldCell, theme: FoldTheme): string {
     const bold = cell.isBold() !== 0
-    let fg = colorOf(cell.isFgDefault(), cell.isFgRGB(), cell.getFgColor(), theme, bold)
-    let bg = colorOf(cell.isBgDefault(), cell.isBgRGB(), cell.getBgColor(), theme, false)
-    if (cell.isInverse() !== 0) [fg, bg] = [bg ?? theme.background, fg ?? theme.foreground]
+    let fgColor = colorOf(cell.isFgDefault(), cell.isFgRGB(), cell.getFgColor())
+    let bgColor = colorOf(cell.isBgDefault(), cell.isBgRGB(), cell.getBgColor())
+    // As xterm draws a cell: inverse swaps the colours first (a default one standing for the theme's), then bold
+    // draws a foreground of the first eight colours in its bright form (ovis src/lib/terminalFold.ts:123-128, MIT)
+    if (cell.isInverse() !== 0) [fgColor, bgColor] = [bgColor ?? { css: theme.background }, fgColor ?? { css: theme.foreground }]
+    if (bold && fgColor !== null && 'index' in fgColor && fgColor.index < 8) fgColor = { index: fgColor.index + 8 }
+    const fg = cssOf(fgColor, theme)
+    const bg = cssOf(bgColor, theme)
     let style = ''
     if (cell.isInvisible() !== 0) style += 'color:transparent;'
     else if (cell.isDim() !== 0) style += `color:color-mix(in srgb, ${fg ?? theme.foreground} 50%, transparent);`
