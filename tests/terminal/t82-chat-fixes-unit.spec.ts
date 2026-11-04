@@ -10,7 +10,7 @@ import { agentTaskResult } from '../../src/main/transcript/records'
 import { taskNotification } from '../../src/main/transcript/subagents'
 
 /**
- * T79 — Chat fixes from the 11-03 cross review (codex-xreview F03 · F04 · F09 · F10 · F11 · F12 · F18)
+ * T82 — Chat fixes from the 11-03 cross review (codex-xreview F03 · F04 · F09 · F10 · F11 · F12 · F18)
  * and the ovis comparison (가1 · 다1), without Electron. Each block was written against the code
  * before its fix and failed there first.
  */
@@ -29,7 +29,7 @@ function escapedNotification(summary: string, result: string): string {
     ].join('\n')
 }
 
-test.describe('T79 subagent cards decode the XML entities of the notification (ovis 가1 · 다1)', () => {
+test.describe('T82 subagent cards decode the XML entities of the notification (ovis 가1 · 다1)', () => {
     const title = 'Survey programs & keywords <draft>'
     const summary = `Agent "${title}" completed`
     const result = 'Tracker & Newbie > Share & Earn — a <b> tag stays text, &amp; stays as typed'
@@ -111,7 +111,7 @@ function serviceOn(terminal: { screen(): string[]; lastOutputAt(): number; write
     return { conversations: new ConversationService(deps), typed, deps }
 }
 
-test.describe('T79 F04 a question card’s keys go one answer at a time per session', () => {
+test.describe('T82 F04 a question card’s keys go one answer at a time per session', () => {
     for (const keyDelayMs of [20, 200]) {
         test(`two devices answer option 2 of the same card at once: one answers, the other is refused (agent reads keys after ${keyDelayMs}ms)`, async () => {
             const terminal = fakeAgentTerminal(keyDelayMs)
@@ -154,7 +154,7 @@ test.describe('T79 F04 a question card’s keys go one answer at a time per sess
     })
 })
 
-test.describe('T79 F09 text left unsubmitted in the input box is not reported as sent', () => {
+test.describe('T82 F09 text left unsubmitted in the input box is not reported as sent', () => {
     // ControlApiService.typeForChat returns false when the prompt is provably still in the box after the Enter retries
     const unsubmitted = { type: async () => false }
 
@@ -174,7 +174,7 @@ test.describe('T79 F09 text left unsubmitted in the input box is not reported as
     })
 })
 
-test.describe('T79 F03 a queued message belongs to the agent it was written for, and to the device that sent it', () => {
+test.describe('T82 F03 a queued message belongs to the agent it was written for, and to the device that sent it', () => {
     /** a terminal that printed long ago (the queue's quiet time is over) and whose screen the test sets */
     function quietTerminal() {
         let screen = WORKING
@@ -265,7 +265,7 @@ test.describe('T79 F03 a queued message belongs to the agent it was written for,
     })
 })
 
-test.describe('T79 F18 a terminal-only `/` command sent off the queue tells the view to show the terminal', () => {
+test.describe('T82 F18 a terminal-only `/` command sent off the queue tells the view to show the terminal', () => {
     test('/config queued while working: once typed, the snapshot names it; a plain message does not', async () => {
         let screen = WORKING
         let outputAt = Date.now() - 20_000
@@ -330,7 +330,7 @@ function claudeHome(id: string): { reader: TranscriptReader; file: string } {
     return { reader: new TranscriptReader({ claudeConfigDir: () => home, codexHome: () => home }), file: path.join(dir, `${id}.jsonl`) }
 }
 
-test.describe('T79 F12 a transcript replaced by another file is read again, not by its size alone', () => {
+test.describe('T82 F12 a transcript replaced by another file is read again, not by its size alone', () => {
     const id = '00000000-0000-4000-8000-0000000000f1'
 
     test('replaced (a new file under the same name) with one of the same length: the new words show', () => {
@@ -369,7 +369,7 @@ test.describe('T79 F12 a transcript replaced by another file is read again, not 
     })
 })
 
-test.describe('T79 F10 a rewound Claude conversation shows the branch it follows now (ovis reader preprocessing)', () => {
+test.describe('T82 F10 a rewound Claude conversation shows the branch it follows now (ovis reader preprocessing)', () => {
     const recorded = fs.readFileSync(path.join(__dirname, 'fixtures', 'transcripts', 'ovis', 'claude-rewind-2.1.304-fork.jsonl'), 'utf8')
     const lines = recorded.split('\n').filter(Boolean)
     const id = '00000000-0000-4000-8000-0000000000f2'
@@ -416,7 +416,7 @@ test.describe('T79 F10 a rewound Claude conversation shows the branch it follows
     })
 })
 
-test.describe('T79 F11 a paginated Codex thread is read through its history_base, not every file of the thread', () => {
+test.describe('T82 F11 a paginated Codex thread is read through its history_base, not every file of the thread', () => {
     // Rollouts as Codex 0.156 writes them (after ovis server/codex.test.ts): one record per line, a
     // backtrack or fork starts a file whose session_meta.history_base names the cut it continues.
     type Cut = { thread: string; ordinal: number; byte: number }
