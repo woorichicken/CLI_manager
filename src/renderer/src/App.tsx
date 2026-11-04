@@ -1567,6 +1567,7 @@ function App() {
                             workspaces={workspaces}
                             activeWorkspaceId={activeWorkspace?.id}
                             viewedSessionId={viewedSessionId}
+                            onShowSession={id => showSessions([id])}
                         />
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
                         {!splitLayout && (
