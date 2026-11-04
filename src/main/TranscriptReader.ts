@@ -58,10 +58,25 @@ export interface TranscriptReaderDeps {
     firstReadBytes?: number
     /** Tests shrink it so a record straddles chunks; the app uses FIND_CHUNK_BYTES. */
     findChunkBytes?: number
+    /** Tests set 0 so a new Codex rollout is looked for on every read; the app uses RELOCATE_MS. */
+    relocateMs?: number
 }
+
+/** One file of a conversation, and how many of its bytes belong to it (a Codex cut); all when absent. */
+interface Segment {
+    path: string
+    end?: number
+}
+
+/** A Codex history chain is not followed further than this (ovis historyChain). */
+const MAX_CHAIN_DEPTH = 32
+/** A rollout's first line is its session_meta: read at most this much of it. */
+const ROLLOUT_HEADER_BYTES = 256 * 1024
 
 interface FileCursor {
     path: string
+    /** bytes of the file that belong to the conversation (a Codex cut): no further is read */
+    end?: number
     offset: number
     /** bytes after the last newline: a line still being written */
     carry: Buffer
@@ -107,6 +122,8 @@ export class TranscriptReader {
     private readonly states = new Map<string, ReadState>()
     /** id → files, so a scan of every project folder happens once per conversation */
     private readonly located = new Map<string, string[]>()
+    /** lines before a Codex cut, by file identity and cut: the bytes before a cut never change */
+    private readonly linesBeforeCut = new Map<string, number>()
 
     constructor(private readonly deps: TranscriptReaderDeps) {}
 
@@ -129,36 +146,45 @@ export class TranscriptReader {
      */
     read(key: string, agent: ConversationAgent, id: string, cwd?: string): TranscriptRead | null {
         let state = this.states.get(key)
+        let restarted = false
         if (!state || state.agent !== agent || state.id !== id) {
-            const files = this.locate(agent, id, cwd)
-            if (files.length === 0) {
+            const segments = this.segments(agent, id, cwd)
+            if (segments.length === 0) {
                 this.states.delete(key)
                 return null
             }
-            state = this.freshState(agent, id, files)
+            state = this.freshState(agent, id, segments)
             this.states.set(key, state)
-        } else if (agent === 'codex' && Date.now() - state.locatedAt > RELOCATE_MS) {
+        } else if (agent === 'codex' && Date.now() - state.locatedAt >= (this.deps.relocateMs ?? RELOCATE_MS)) {
             this.located.delete(`${agent}:${id}`)
-            const files = this.locate(agent, id, cwd)
+            const segments = this.segments(agent, id, cwd)
             state.locatedAt = Date.now()
-            for (const file of files) {
-                if (!state.files.some((cursor) => cursor.path === file)) state.files.push({ path: file, offset: 0, carry: Buffer.alloc(0) })
+            const current = state.files
+            const appended = segments.length >= current.length && current.every((cursor, i) => cursor.path === segments[i].path && cursor.end === segments[i].end)
+            if (appended) {
+                for (const segment of segments.slice(current.length)) current.push({ ...segment, offset: 0, carry: Buffer.alloc(0) })
+            } else if (segments.length > 0) {
+                // a backtrack or fork started a rollout that continues another cut: what was read
+                // reads otherwise now — start over (F11)
+                state = this.freshState(agent, id, segments)
+                this.states.set(key, state)
+                restarted = true
             }
         }
 
-        let changed = false
+        let changed = restarted
         try {
             changed = this.advance(state)
         } catch (error) {
             // The file was replaced or cut (a rewrite, a /clear on another build): start over once.
             const code = (error as NodeJS.ErrnoException).code
             if (code !== 'SHRUNK') throw error
-            const files = this.locate(agent, id, cwd)
-            if (files.length === 0) {
+            const segments = this.segments(agent, id, cwd)
+            if (segments.length === 0) {
                 this.states.delete(key)
                 return null
             }
-            state = this.freshState(agent, id, files)
+            state = this.freshState(agent, id, segments)
             this.states.set(key, state)
             this.advance(state)
             changed = true
@@ -287,11 +313,11 @@ export class TranscriptReader {
         this.states.delete(key)
     }
 
-    private freshState(agent: ConversationAgent, id: string, files: string[]): ReadState {
+    private freshState(agent: ConversationAgent, id: string, segments: Segment[]): ReadState {
         return {
             agent,
             id,
-            files: files.map((path) => ({ path, offset: 0, carry: Buffer.alloc(0) })),
+            files: segments.map((segment) => ({ ...segment, offset: 0, carry: Buffer.alloc(0) })),
             locatedAt: Date.now(),
             parser: agent === 'claude' ? createClaudeTranscriptParser() : createCodexTranscriptParser(),
             truncated: false,
@@ -310,7 +336,8 @@ export class TranscriptReader {
         // On a first read, only the newest MAX_FIRST_READ_BYTES of the whole thread are taken.
         let budget = firstRead ? this.deps.firstReadBytes ?? MAX_FIRST_READ_BYTES : Infinity
         const stats = state.files.map((cursor) => (existsSync(cursor.path) ? statSync(cursor.path) : null))
-        const sizes = stats.map((stat) => stat?.size ?? 0)
+        // a Codex segment's bytes past its cut belong to turns a backtrack discarded
+        const sizes = stats.map((stat, i) => Math.min(stat?.size ?? 0, state.files[i].end ?? Infinity))
         if (firstRead) {
             // Spend the budget from the last file backwards.
             const skipTo = new Map<number, number>()
@@ -496,6 +523,87 @@ export class TranscriptReader {
         return all.subarray(0, lastNewline + 1)
     }
 
+    /**
+     * The conversation's files with how much of each is its own. Claude: its one file. Codex: the
+     * thread's newest rollout, read through the history its session_meta.history_base continues
+     * (Codex 0.156 paginated rollouts — a backtrack or fork starts a file that names the cut it
+     * goes on from, the turns after that cut were discarded); a thread whose newest rollout names
+     * none is every file of the thread in name order, as before.
+     */
+    private segments(agent: ConversationAgent, id: string, cwd?: string): Segment[] {
+        const files = this.locate(agent, id, cwd)
+        if (agent !== 'codex' || files.length === 0) return files.map((path) => ({ path }))
+        const newest = files[files.length - 1]
+        if (Object.keys(asRecord(rolloutHeader(newest)?.history_base)).length === 0) return files.map((path) => ({ path }))
+        return [...this.historyChain(newest)].reverse().concat({ path: newest })
+    }
+
+    // From ovis (https://github.com/devswha/ovis, 3e51902) — MIT, Copyright (c) 2026 devswha. Modified.
+    // Source: server/codex.ts historyChain · holdsCut · firstOrdinal · countLines — without its caches
+    // and archived-file paths. Each rollout's cut is the one file that holds it (line count checked),
+    // never guessed from names or sizes; a chain that stops at a cut no file holds shows less history.
+    private historyChain(path: string): Segment[] {
+        const chain: Segment[] = []
+        let current = path
+        for (let depth = 0; depth < MAX_CHAIN_DEPTH; depth++) {
+            const base = asRecord(rolloutHeader(current)?.history_base)
+            if (Object.keys(base).length === 0) return chain
+            const threadId = base.thread_id
+            const ordinal = base.end_ordinal_exclusive
+            const end = base.end_byte_offset
+            if (typeof threadId !== 'string' || !UUID_LIKE.test(threadId) || typeof ordinal !== 'number' || !Number.isSafeInteger(ordinal)
+                || typeof end !== 'number' || !Number.isSafeInteger(end) || end <= 0) return chain
+            const holders = this.locateCodex(threadId).filter((candidate) =>
+                candidate !== current && !chain.some((segment) => segment.path === candidate) && this.holdsCut(candidate, ordinal, end))
+            if (holders.length !== 1) return chain
+            chain.push({ path: holders[0], end })
+            current = holders[0]
+        }
+        return chain
+    }
+
+    /** Whether `path` holds a cut at (ordinal, byte): it ends a line with exactly `ordinal - first` lines before it. */
+    private holdsCut(path: string, ordinal: number, end: number): boolean {
+        let header: Record<string, unknown> | null
+        try {
+            header = rolloutHeader(path)
+        } catch {
+            return false
+        }
+        if (header === null) return false
+        const first = asRecord(header.history_base).end_ordinal_exclusive
+        const lines = ordinal - (typeof first === 'number' && Number.isSafeInteger(first) && first > 0 ? first : 0)
+        let stat
+        try {
+            stat = statSync(path)
+        } catch {
+            return false
+        }
+        if (lines <= 0 || stat.size < end) return false
+        const fd = openSync(path, 'r')
+        try {
+            const last = Buffer.alloc(1)
+            if (readSync(fd, last, 0, 1, end - 1) !== 1 || last[0] !== 0x0a) return false
+            const key = `${stat.dev}:${stat.ino}:${end}`
+            let count = this.linesBeforeCut.get(key)
+            if (count === undefined) {
+                count = 0
+                const buffer = Buffer.alloc(Math.min(CHUNK_BYTES * 16, end))
+                for (let offset = 0; offset < end; ) {
+                    const length = readSync(fd, buffer, 0, Math.min(buffer.length, end - offset), offset)
+                    if (length <= 0) break
+                    for (let index = buffer.indexOf(0x0a); index !== -1 && index < length; index = buffer.indexOf(0x0a, index + 1)) count += 1
+                    offset += length
+                }
+                this.linesBeforeCut.set(key, count)
+                if (this.linesBeforeCut.size > 256) this.linesBeforeCut.delete(this.linesBeforeCut.keys().next().value!)
+            }
+            return count === lines
+        } finally {
+            closeSync(fd)
+        }
+    }
+
     private locateClaude(id: string, cwd?: string): string[] {
         const projects = join(this.deps.claudeConfigDir(), 'projects')
         if (cwd) {
@@ -542,6 +650,27 @@ export class TranscriptReader {
         }
         // `rollout-<time>-…`: the name sorts by start time; segments of one thread follow it.
         return found.sort((a, b) => a.split('/').pop()!.localeCompare(b.split('/').pop()!))
+    }
+}
+
+/** A Codex rollout's session_meta payload (its first line), null when the file is not a rollout. */
+function rolloutHeader(path: string): Record<string, unknown> | null {
+    let fd: number
+    try {
+        fd = openSync(path, 'r')
+    } catch {
+        return null
+    }
+    try {
+        const buffer = Buffer.alloc(ROLLOUT_HEADER_BYTES)
+        const length = readSync(fd, buffer, 0, buffer.length, 0)
+        const end = buffer.subarray(0, length).indexOf(0x0a)
+        const header = asRecord(JSON.parse(buffer.subarray(0, end === -1 ? length : end).toString('utf8')))
+        return header.type === 'session_meta' ? asRecord(header.payload) : null
+    } catch {
+        return null
+    } finally {
+        closeSync(fd)
     }
 }
 

@@ -415,3 +415,71 @@ test.describe('T79 F10 a rewound Claude conversation shows the branch it follows
         expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['apple', 'banana'])
     })
 })
+
+test.describe('T79 F11 a paginated Codex thread is read through its history_base, not every file of the thread', () => {
+    // Rollouts as Codex 0.156 writes them (after ovis server/codex.test.ts): one record per line, a
+    // backtrack or fork starts a file whose session_meta.history_base names the cut it continues.
+    type Cut = { thread: string; ordinal: number; byte: number }
+    const message = (role: 'user' | 'assistant', text: string) => ({
+        timestamp: '2026-11-05T01:00:00.000Z',
+        type: 'response_item',
+        payload: { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] }
+    })
+    function store() {
+        const home = scratch()
+        const rollout = (day: string, name: string, thread: string, records: unknown[], base?: Cut) => {
+            const header = {
+                type: 'session_meta',
+                payload: { id: thread, source: 'cli', ...(base ? { history_base: { thread_id: base.thread, end_ordinal_exclusive: base.ordinal, end_byte_offset: base.byte } } : {}) }
+            }
+            const lines = [header, ...records].map((record) => `${JSON.stringify(record)}\n`)
+            const dir = path.join(home, 'sessions', '2026', '11', day)
+            fs.mkdirSync(dir, { recursive: true })
+            const file = path.join(dir, name)
+            fs.writeFileSync(file, lines.join(''))
+            const first = base?.ordinal ?? 0
+            return {
+                file,
+                /** the cut a backtrack to just before records[index] names */
+                cutBefore: (index: number): Cut => ({ thread, ordinal: first + 1 + index, byte: Buffer.byteLength(lines.slice(0, index + 1).join('')) })
+            }
+        }
+        return { home, rollout }
+    }
+    const texts = (turns: ConversationTurn[]): string[] => turns.map((turn) => turn.parts.map((part) => (part.kind === 'text' ? part.text : '')).join(''))
+    const parent = '01a09a35-5c5f-7830-94f7-4a1854613531'
+    const thread = '01a0a337-19e8-7712-92f5-aa0883392afd'
+
+    test('a backtrack: the turns it discarded are gone, the history a fork continues comes first', () => {
+        const { home, rollout } = store()
+        const forked = rollout('01', `rollout-2026-11-01T18-59-43-${parent}.jsonl`, parent, [message('user', 'parent question'), message('assistant', 'parent answer')])
+        const original = rollout('02', `rollout-2026-11-02T12-58-12-${thread}.jsonl`, thread,
+            [message('user', '첫 질문'), message('assistant', '첫 답'), message('user', 'discarded'), message('assistant', 'discarded answer')], forked.cutBefore(2))
+        rollout('03', `rollout-2026-11-03T10-46-43-${thread}_01a0cbf1-9b0e-7383-a345-80974b279c68.jsonl`, thread,
+            [message('user', '다시 묻기'), message('assistant', '새 답')], original.cutBefore(2))
+        const reader = new TranscriptReader({ claudeConfigDir: () => home, codexHome: () => home })
+        expect(texts(reader.read('s', 'codex', thread)!.turns)).toEqual(['parent question', 'parent answer', '첫 질문', '첫 답', '다시 묻기', '새 답'])
+    })
+
+    test('a backtrack made while the chat is open: once the new file is found, the parser starts over without the discarded turns', () => {
+        const { home, rollout } = store()
+        const original = rollout('02', `rollout-2026-11-02T12-58-12-${thread}.jsonl`, thread,
+            [message('user', '첫 질문'), message('assistant', '첫 답'), message('user', 'discarded'), message('assistant', 'discarded answer')])
+        const reader = new TranscriptReader({ claudeConfigDir: () => home, codexHome: () => home, relocateMs: 0 })
+        expect(texts(reader.read('s', 'codex', thread)!.turns)).toEqual(['첫 질문', '첫 답', 'discarded', 'discarded answer'])
+        rollout('03', `rollout-2026-11-03T10-46-43-${thread}_01a0cbf1-9b0e-7383-a345-80974b279c68.jsonl`, thread,
+            [message('user', '다시 묻기'), message('assistant', '새 답')], original.cutBefore(2))
+        const after = reader.read('s', 'codex', thread)!
+        expect(after.changed).toBe(true)
+        expect(texts(after.turns)).toEqual(['첫 질문', '첫 답', '다시 묻기', '새 답'])
+    })
+
+    test('a cut no file holds (its rollout archived): less history, never the wrong one', () => {
+        const { home, rollout } = store()
+        const original = rollout('02', `rollout-2026-11-02T12-58-12-${thread}.jsonl`, thread, [message('user', '첫 질문'), message('assistant', '첫 답')])
+        const cut = { ...original.cutBefore(2), ordinal: original.cutBefore(2).ordinal + 5 }
+        rollout('03', `rollout-2026-11-03T10-46-43-${thread}_01a0cbf1-9b0e-7383-a345-80974b279c68.jsonl`, thread, [message('user', '다시 묻기'), message('assistant', '새 답')], cut)
+        const reader = new TranscriptReader({ claudeConfigDir: () => home, codexHome: () => home })
+        expect(texts(reader.read('s', 'codex', thread)!.turns)).toEqual(['다시 묻기', '새 답'])
+    })
+})
