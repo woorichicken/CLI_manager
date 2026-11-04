@@ -30,8 +30,10 @@ const VAPID_SUBJECT = 'https://climanager.solhun.com'
 const MAX_SUBSCRIPTIONS = 50
 /**
  * A push service answers in well under a second. One that takes the connection and never answers
- * would hold Test alert (and every later alert's request) open for good: web-push only sets a socket
- * timeout when given one (ovis push.ts:569 uses AbortSignal.timeout the same way).
+ * would hold Test alert (and every later alert's request) open for good. The deadline is for the
+ * whole request: web-push's own `timeout` is a socket *idle* timeout, which a service sending one
+ * byte every few seconds renews forever (F21). web-push only builds the request (encryption, VAPID);
+ * `fetch` sends it under AbortSignal.timeout — ovis server/push.ts:556-578 (MIT).
  */
 const PUSH_TIMEOUT_MS = 10_000
 
@@ -189,20 +191,38 @@ export class PhonePush {
         }
         let ok = 0
         const gone: string[] = []
+        const timeoutMs = this.deps.pushTimeoutMs ?? PUSH_TIMEOUT_MS
         await Promise.all(this.subscriptions.map(async (s) => {
+            let status: number | null = null
             try {
-                await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, body, {
+                const details = webpush.generateRequestDetails({ endpoint: s.endpoint, keys: s.keys }, body, {
                     TTL: TTL_SECONDS,
-                    timeout: this.deps.pushTimeoutMs ?? PUSH_TIMEOUT_MS,
                     vapidDetails: { subject: VAPID_SUBJECT, publicKey: keys.publicKey, privateKey: keys.privateKey }
                 })
-                ok += 1
-            } catch (error) {
-                const status = (error as { statusCode?: number }).statusCode
-                if (status === 404 || status === 410) gone.push(s.endpoint)
-                // the endpoint names the device's push account: log only the status
-                else console.warn('[phone] push failed with status', status ?? 'none')
+                const headers: Record<string, string> = {}
+                for (const [name, value] of Object.entries(details.headers)) headers[name] = String(value)
+                const response = await fetch(details.endpoint, {
+                    method: details.method,
+                    headers,
+                    body: details.body ? new Uint8Array(details.body) : undefined,
+                    // a push service answers, it never redirects: following one would send the alert
+                    // past the https-only check (ovis push.ts:571)
+                    redirect: 'error',
+                    signal: AbortSignal.timeout(timeoutMs)
+                })
+                // the answer's body is not needed — and a service could trickle it for good
+                void response.body?.cancel().catch(() => undefined)
+                if (response.ok) {
+                    ok += 1
+                    return
+                }
+                status = response.status
+            } catch {
+                // network failure, a redirect, or the deadline: status stays null
             }
+            if (status === 404 || status === 410) gone.push(s.endpoint)
+            // the endpoint names the device's push account: log only the status
+            else console.warn('[phone] push failed with status', status ?? 'none')
         }))
         if (gone.length > 0) {
             this.subscriptions = this.subscriptions.filter((s) => !gone.includes(s.endpoint))

@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test'
+import { execFileSync } from 'child_process'
+import crypto from 'crypto'
 import fs from 'fs'
+import net from 'net'
+import os from 'os'
 import path from 'path'
+import tls from 'tls'
+import { PhonePush } from '../../src/main/phone/PhonePush'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { readPrompt } from '../../src/main/promptScreen'
@@ -301,6 +307,62 @@ test.describe('T83 F04 a card’s Enter goes only while the option it meant is h
             await new Promise((resolve) => setTimeout(resolve, keyDelayMs + 100))
             expect(terminal.writes).toEqual(['\x1b[B', '\x1b[B', '\r'])
             expect(terminal.picked()).toBe(2)
+        })
+    }
+})
+
+test.describe('T83 F21 an alert request has a deadline for the whole request, not for each quiet moment', () => {
+    /** A self-signed TLS server for 127.0.0.1 (made at run time: no key is committed). */
+    function selfSigned(dir: string): { key: Buffer; cert: Buffer } {
+        execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-days', '1', '-subj', '/CN=127.0.0.1',
+            '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', path.join(dir, 'key.pem'), '-out', path.join(dir, 'cert.pem')], { stdio: 'ignore' })
+        return { key: fs.readFileSync(path.join(dir, 'key.pem')), cert: fs.readFileSync(path.join(dir, 'cert.pem')) }
+    }
+
+    for (const stage of ['headers', 'body'] as const) {
+        // headers trickled: never answered → failed. Body trickled after a 201: the service took the
+        // alert (sent) — what matters is that the answer does not wait for a body that never ends
+        test(`a push service that sends one byte every 200ms of its ${stage} and never ends: Test alert returns within the deadline`, async () => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t83-'))
+            const timers: NodeJS.Timeout[] = []
+            const server = tls.createServer(selfSigned(dir), (socket) => {
+                socket.on('error', () => undefined)
+                socket.once('data', () => {
+                    if (stage === 'body') socket.write('HTTP/1.1 201 Created\r\nTransfer-Encoding: chunked\r\n\r\n')
+                    else socket.write('HTTP/1.1 201 Created\r\n')
+                    timers.push(setInterval(() => socket.write(stage === 'body' ? '1\r\nx\r\n' : 'X-Slow: y\r\n'), 200))
+                })
+            })
+            await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+            const port = (server.address() as net.AddressInfo).port
+            const rejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+            process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+            const push = new PhonePush({
+                keysFile: path.join(dir, 'keys.json'),
+                subscriptionsFile: path.join(dir, 'subs.json'),
+                macInUse: () => false,
+                session: () => null,
+                pushTimeoutMs: 800
+            })
+            const ecdh = crypto.createECDH('prime256v1')
+            ecdh.generateKeys()
+            expect(
+                push.subscribe(
+                    { endpoint: `https://127.0.0.1:${port}/push/abc`, keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } },
+                    'tailscale:owner'
+                )
+            ).toBe(true)
+            try {
+                const started = Date.now()
+                const result = await Promise.race([push.test(), new Promise((resolve) => setTimeout(() => resolve('still waiting'), 4000))])
+                expect(result).toMatchObject({ status: stage === 'headers' ? 'failed' : 'sent' })
+                expect(Date.now() - started).toBeLessThan(2500)
+            } finally {
+                if (rejectUnauthorized === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+                else process.env.NODE_TLS_REJECT_UNAUTHORIZED = rejectUnauthorized
+                for (const timer of timers) clearInterval(timer)
+                server.close()
+            }
         })
     }
 })
