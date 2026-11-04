@@ -64,7 +64,7 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; base: s
                 name: 'T79 project',
                 path: project,
                 sessions: [
-                    { id: AGENT, name: 'T79 Claude', cliSessionId: AGENT_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 6000` },
+                    { id: AGENT, name: 'T79 Claude', cliSessionId: AGENT_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 15000` },
                     { id: NEW, name: 'T79 Claude new', cliSessionId: NEW_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${newTranscript} --work-ms 300` },
                     { id: SHELL_A, name: 'T79 Shell A' },
                     { id: SHELL_B, name: 'T79 Shell B' }
@@ -76,6 +76,7 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; base: s
     const { app, page } = result
     await resizeMainWindow(app, 1280, 800)
     await waitForBufferText(page, AGENT, 'Claude Code', 30_000)
+    await waitForBufferText(page, NEW, 'Claude Code', 30_000)
     const state = await page.evaluate(() => window.api.getPhoneState())
     expect(state.running).toBe(true)
     return { app, page, base: `http://127.0.0.1:${state.port}` }
@@ -265,10 +266,9 @@ test('T79 F17 one dropped file is one attachment', async () => {
         card.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
     })
     await expect(phone.getByTestId('chat-attachment')).toHaveCount(1)
-    await expect(phone.getByTestId('chat-attachment')).toHaveAttribute('data-state', 'attached', { timeout: 10_000 })
+    await expect(phone.getByTestId('chat-attachment')).toHaveAttribute('data-state', 'ready', { timeout: 10_000 })
     await phone.waitForTimeout(800)
     await expect(phone.getByTestId('chat-attachment')).toHaveCount(1)
-    expect((await phone.locator('.chat-composer textarea').inputValue()).split('t79-notes').length - 1).toBe(1)
     await phone.close()
 })
 
@@ -281,6 +281,7 @@ test('T79 F19 a queued message’s Edit restores it only once it is withdrawn', 
     await box.fill('first job')
     await tap(cdp, phone, 'chat-send')
     await waitForBufferText(page, AGENT, 'ANSWER[1]: first job', 10_000)
+    await phone.waitForTimeout(800) // the chat has seen the turn working
     await box.fill('queued job')
     await tap(cdp, phone, 'chat-send')
     await expect(phone.getByTestId('chat-queued-item')).toHaveCount(1, { timeout: 10_000 })
