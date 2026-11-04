@@ -8,6 +8,7 @@ import { dropletFor, nextSeen, waitingElsewhere, type Droplet, type SeenState } 
 import { PairScreen } from './PairScreen'
 import { SessionList } from './SessionList'
 import { SessionScreen, type SessionLens } from './SessionScreen'
+import { reconnectDelay } from './usePhoneTerminal'
 
 /**
  * The phone page: who am I → the session list → one session (Chat | Terminal).
@@ -72,9 +73,45 @@ export function PhoneApp() {
     openIdRef.current = route.sessionId
 
     const loadMe = useCallback(() => {
-        getMe().then(setMe).catch(() => setOffline(true))
+        getMe()
+            .then((next) => {
+                setMe(next)
+                setOffline(false)
+            })
+            .catch(() => setOffline(true))
     }, [])
     useEffect(loadMe, [loadMe])
+
+    // The first /me failed (the Mac asleep, the phone between networks): try again on a growing wait,
+    // and at once when the page or the network comes back — the same rule as the terminal's socket
+    // (ovis src/lib/ws.ts). A page that never got /me also never starts the list polling below.
+    const unreachable = offline && !me
+    useEffect(() => {
+        if (!unreachable) return
+        let retries = 0
+        let timer: number | null = null
+        const schedule = (): void => {
+            timer = window.setTimeout(() => {
+                timer = null
+                if (document.visibilityState === 'visible') loadMe()
+                retries++
+                schedule()
+            }, reconnectDelay(retries + 2))
+        }
+        const now = (): void => {
+            if (document.visibilityState === 'visible') loadMe()
+        }
+        schedule()
+        document.addEventListener('visibilitychange', now)
+        window.addEventListener('online', now)
+        window.addEventListener('pageshow', now)
+        return () => {
+            if (timer !== null) window.clearTimeout(timer)
+            document.removeEventListener('visibilitychange', now)
+            window.removeEventListener('online', now)
+            window.removeEventListener('pageshow', now)
+        }
+    }, [unreachable, loadMe])
 
     // the list, every few seconds while the page is in front
     useEffect(() => {
@@ -140,7 +177,17 @@ export function PhoneApp() {
 
     const closeDroplet = useCallback(() => setDroplet(null), [])
 
-    if (offline && !me) return <div className="phone-empty phone-fill">The Mac is not answering. Is CLI Manager running, with Settings › Phone on?</div>
+    if (unreachable) {
+        return (
+            <div className="phone-empty phone-fill" data-testid="phone-unreachable">
+                <p>The Mac is not answering. Is CLI Manager running, with Settings › Phone on?</p>
+                <p className="phone-unreachable-note">Trying again by itself.</p>
+                <button type="button" className="phone-retry" data-testid="phone-retry" onClick={loadMe}>
+                    Retry now
+                </button>
+            </div>
+        )
+    }
     if (!me) return <div className="phone-empty phone-fill">Connecting to the Mac…</div>
     if (me.access === 'none') return <PairScreen reason={me.reason} onPaired={loadMe} />
 

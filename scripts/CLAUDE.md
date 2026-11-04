@@ -28,6 +28,7 @@ gains an outward-facing effect belongs there, documented, not here.
 | `mock-cli/record-claude.cjs` | manual | Drives a **real** CLI through a pty and records the byte stream to JSONL | Spends real API tokens; writes to `mock-cli/recordings/` |
 | `mock-cli/replay.cjs` | manual | Replays a recording with original timing — the token-free way to reproduce a real session | None |
 | `mock-cli/analyze-recording.cjs` | manual | Reports ANSI sequence statistics for a recording | None |
+| `subset-phone-font.py` | manual | Cuts Nanum Gothic Coding (OFL) to ASCII + KS X 1001 Hangul as the phone terminal's woff2 (G3). Needs `fonttools` + `brotli` | Writes the output path it is given |
 
 `record-claude.cjs` is the only script here that costs money and the only one that needs an
 authenticated CLI. Prefer `replay.cjs` against an existing recording; record again only when you

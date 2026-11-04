@@ -24,7 +24,7 @@ export function FilePathLink({ path, code, open }: { path: string; code: boolean
 /** `text` with the file paths in it as links (`saved to docs/demo.mp4`). Plain where nothing can open one. */
 export function LinkedText({ text }: { text: string }) {
     const actions = useChatActions()
-    if (!actions || text.length > FILE_LINK_LIMIT) return <>{text}</>
+    if (!actions?.canOpenPaths || text.length > FILE_LINK_LIMIT) return <>{text}</>
     const parts = splitFilePaths(text)
     if (parts.length === 1 && typeof parts[0] === 'string') return <>{text}</>
     if (parts.filter((part) => typeof part !== 'string').length > FILE_LINK_COUNT) return <>{text}</>
@@ -48,7 +48,7 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                     case 'text':
                         return interactive && actions ? <LinkedText key={key} text={node.value} /> : <span key={key}>{node.value}</span>
                     case 'code':
-                        if (interactive && actions && codeIsFilePath(node.value)) {
+                        if (interactive && actions?.canOpenPaths && codeIsFilePath(node.value)) {
                             return <FilePathLink key={key} path={node.value} code open={actions.openPath} />
                         }
                         // agents often put an address in backticks: it stays code to the eye, and opens
@@ -92,7 +92,7 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                         )
                     // a link to a local file: the path shows after its words, as Codex's terminal does
                     case 'file':
-                        if (interactive && actions) {
+                        if (interactive && actions?.canOpenPaths) {
                             return (
                                 <button key={key} type="button" className="chat-file-link" title={`Open ${node.path}`} data-testid="chat-file-link" onClick={() => actions.openPath(node.path)}>
                                     <Inline nodes={node.children} interactive={false} />

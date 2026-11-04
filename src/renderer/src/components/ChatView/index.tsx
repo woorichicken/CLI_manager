@@ -36,6 +36,16 @@ export interface ChatViewProps {
      * chat does not take the keyboard — as ovis on a phone (Composer.tsx:274-276, docs/guide.md:963).
      */
     touch?: boolean
+    /**
+     * A device paired view-only (the phone's `watch` role): the conversation is shown, and where the box
+     * would be one line says why there is none — the server refuses its sends anyway (403 view_only).
+     */
+    readOnly?: boolean
+    /**
+     * Whether `transport.openFile` shows anything. The phone page has no file preview: there a path
+     * the chat names is plain text instead of a button that does nothing (G9).
+     */
+    canOpenFiles?: boolean
 }
 
 /** Within this many pixels of the end, new turns keep the view pinned to the bottom. */
@@ -81,7 +91,7 @@ interface SentWaiting {
 }
 let sentSequence = 0
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false }: ChatViewProps) {
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true }: ChatViewProps) {
     const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? CHAT_TURN_LIMIT)
     const { snapshot, refresh } = useConversation(transport, sessionId, limit)
     const scroller = useRef<HTMLDivElement>(null)
@@ -224,9 +234,10 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 const { path, line } = fileLineTarget(target)
                 transport.openFile(sessionId, resolveChatPath(path, cwd, home), line ?? undefined)
             },
+            canOpenPaths: canOpenFiles,
             openGallery: (images, index) => setGallery({ images, index })
         }),
-        [sessionId, transport, cwd, home]
+        [sessionId, transport, cwd, home, canOpenFiles]
     )
 
     const sendText = useCallback(
@@ -335,6 +346,9 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                             <div className="chat-empty">
                                 <Loader2 size={16} className="animate-spin" /> Reading the conversation…
                             </div>
+                        ) : snapshot.unavailable === 'not-found' && snapshot.agent !== null ? (
+                            // a new Claude session writes its file with the first message: nothing is wrong yet
+                            <NoTurnsYet missingFile onOpenTerminal={() => onOpenTerminal()} />
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
@@ -392,8 +406,14 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                 picked={picked}
                                 onConfirmPick={() => void confirmPick()}
                                 onCancelPick={() => setPicked(null)}
+                                readOnly={readOnly}
                             />
                         )}
+                        {readOnly ? (
+                            <p className="chat-read-only" data-testid="chat-read-only">
+                                View only — pair this device again on the Mac with “Code — can type” to write here.
+                            </p>
+                        ) : (
                         <Composer
                             ref={composer}
                             sessionId={sessionId}
@@ -420,6 +440,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                 </>
                             }
                         />
+                        )}
                     </div>
                 </div>
                 {gallery && <ImageLightbox images={gallery.images} start={gallery.index} onClose={() => setGallery(null)} />}
@@ -447,7 +468,7 @@ function Turns({ snapshot, onShowEarlier }: { snapshot: ConversationSnapshot; on
                     )}
                 </div>
             )}
-            {snapshot.turns.length === 0 && <div className="chat-empty">No messages yet. Send one below.</div>}
+            {snapshot.turns.length === 0 && <NoTurnsYet />}
             {snapshot.turns.map((turn, index) => (
                 <ChatTurn
                     key={`${snapshot.totalTurns - snapshot.turns.length + index}-${turn.ts ?? ''}`}
@@ -460,6 +481,27 @@ function Turns({ snapshot, onShowEarlier }: { snapshot: ConversationSnapshot; on
                 />
             ))}
         </>
+    )
+}
+
+/**
+ * Nothing said yet: the session is there and its agent waits for a first message. With `missingFile`
+ * the agent's conversation file is not there yet either — what a new Claude session looks like until
+ * the first message, and also what a deleted file looks like, so the terminal stays one tap away.
+ */
+function NoTurnsYet({ missingFile = false, onOpenTerminal }: { missingFile?: boolean; onOpenTerminal?: () => void }) {
+    return (
+        <div className="chat-empty" data-testid="chat-no-turns-yet" data-missing-file={missingFile ? 'true' : undefined}>
+            <p>No conversation yet — write your first message below.</p>
+            {missingFile && onOpenTerminal && (
+                <p className="chat-empty-note">
+                    Talked here before?{' '}
+                    <button type="button" className="chat-link-button" onClick={onOpenTerminal}>
+                        <TerminalIcon size={12} aria-hidden="true" /> Open the terminal
+                    </button>
+                </p>
+            )}
+        </div>
     )
 }
 

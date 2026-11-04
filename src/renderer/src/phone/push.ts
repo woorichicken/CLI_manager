@@ -1,4 +1,4 @@
-import type { PhonePushSubscription } from '../../../shared/phone'
+import type { PhonePushSubscription, PhoneTestPushResult } from '../../../shared/phone'
 import { subscribePush, unsubscribePush } from './api'
 
 /**
@@ -8,6 +8,15 @@ import { subscribePush, unsubscribePush } from './api'
  */
 
 export type AlertsState = 'on' | 'off' | 'unsupported' | 'denied'
+
+/**
+ * What «Send a test alert» says back. The test alert shows even over this page (sw.js lets its tag
+ * through); a session's alert does not while the page is in front — the page already shows it.
+ */
+export function testAlertMessage(result: PhoneTestPushResult): string {
+    if (result.status !== 'sent') return result.message
+    return `Sent to ${result.devices} device${result.devices === 1 ? '' : 's'}.`
+}
 
 function supported(): boolean {
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window

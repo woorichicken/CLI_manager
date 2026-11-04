@@ -17,7 +17,8 @@ export function PromptCard({
     onAnswered,
     picked = null,
     onConfirmPick,
-    onCancelPick
+    onCancelPick,
+    readOnly = false
 }: {
     sessionId: string
     prompt: PromptMenu
@@ -28,8 +29,11 @@ export function PromptCard({
     picked?: number | null
     onConfirmPick?: () => void
     onCancelPick?: () => void
+    /** a view-only phone: the card is shown, its answers are not offered */
+    readOnly?: boolean
 }) {
-    const [busy, setBusy] = useState(false)
+    const [sending, setBusy] = useState(false)
+    const busy = sending || readOnly
     const [error, setError] = useState<string | null>(null)
     const [customText, setCustomText] = useState('')
     const custom = prompt.options.find((option) => option.custom)

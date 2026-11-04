@@ -254,7 +254,7 @@ declare global {
             onConversationChanged: (callback: (change: { sessionId: string; revision: number }) => void) => () => void
             sendChatMessage: (sessionId: string, text: string) => Promise<ChatSendResult>
             cancelQueuedChat: (sessionId: string) => Promise<void>
-            discardQueuedChat: (sessionId: string, id: string) => Promise<void>
+            discardQueuedChat: (sessionId: string, id: string) => Promise<boolean>
             sendQueuedChatNow: (sessionId: string, id: string) => Promise<ChatSendResult>
             interruptChat: (sessionId: string) => Promise<InterruptResult>
             getChatImage: (sessionId: string, ref: string) => Promise<string | null>

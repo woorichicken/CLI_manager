@@ -3,6 +3,18 @@
  * ovis's phone shell (MIT) — a drawer under 768px, header · body · key bar stacked in the
  * visual viewport so the iOS keyboard does not push them away (viewport.ts sets --app-height).
  */
+/*
+ * The terminal's font (G3): Nanum Gothic Coding, SIL OFL 1.1 (THIRD_PARTY_NOTICES.md) — ASCII and the 2,350
+ * KS X 1001 syllables (scripts/subset-phone-font.py). Its Hangul is exactly twice its Latin, so xterm's
+ * two cells per syllable fit with no gap; Android's own fallback Hangul left one after every syllable.
+ */
+@font-face {
+    font-family: 'CLIM Phone Mono';
+    src: url('./fonts/clim-phone-mono-ksx1001.woff2') format('woff2');
+    font-display: block;
+    unicode-range: U+0020-007E, U+AC00-D7A3;
+}
+
 html,
 body.phone-body {
     height: 100%;
@@ -233,6 +245,18 @@ body.phone-body #root {
     font-size: 13px;
 }
 
+.phone-unreachable-note {
+    margin-top: 6px;
+}
+.phone-retry {
+    margin-top: 12px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 13px;
+}
+
 /* --- segmented buttons, icon buttons --- */
 .phone-seg {
     display: inline-flex;
@@ -255,6 +279,23 @@ body.phone-body #root {
 }
 .phone-seg button:disabled {
     opacity: 0.4;
+}
+/*
+ * Focus: the segment clips its corners (overflow: hidden), so the browser's own ring showed only
+ * its inner edge — the white bar beside Type on a Galaxy (g05). A keyboard gets a ring drawn
+ * inside the button; a finger gets none — the pressed segment already says which one is on.
+ */
+.phone-seg button:focus {
+    outline: none;
+}
+.phone-seg button:focus-visible {
+    outline: 2px solid rgba(96, 165, 250, 0.9);
+    outline-offset: -2px;
+}
+@media (pointer: coarse) {
+    .phone-seg button:focus-visible {
+        outline: none;
+    }
 }
 .phone-icon-button {
     width: 36px;
@@ -521,6 +562,32 @@ body.phone-body #root {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+}
+.phone-secret {
+    flex-direction: column;
+    gap: 4px;
+}
+.phone-secret-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.phone-secret-prompt {
+    font-family: Menlo, 'SF Mono', monospace;
+}
+.phone-secret-row {
+    display: flex;
+    gap: 6px;
+}
+.phone-secret-error {
+    font-size: 12px;
+    color: #f87171;
+}
+.phone-line button:disabled {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-tertiary);
 }
 
 /* --- pairing --- */

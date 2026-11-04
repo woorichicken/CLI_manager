@@ -18,6 +18,8 @@ export interface ChatActions {
     transport: ChatTransport
     /** a path as the agent wrote it (relative to the session's folder, `~/`, `:12` / `#L12` after it) */
     openPath(path: string): void
+    /** false where nothing can show a file (the phone page): paths stay plain words, not dead buttons (G9) */
+    canOpenPaths: boolean
     openGallery(images: GalleryImage[], index: number): void
 }
 

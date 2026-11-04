@@ -3383,8 +3383,8 @@ app.whenReady().then(async () => {
     ipcMain.handle('chat-cancel-queued', (_e, sessionId: string): void => {
         if (typeof sessionId === 'string') conversationService.cancelQueued(sessionId)
     })
-    ipcMain.handle('chat-discard-queued', (_e, sessionId: unknown, id: unknown): void => {
-        if (typeof sessionId === 'string' && typeof id === 'string') conversationService.discardQueued(sessionId, id)
+    ipcMain.handle('chat-discard-queued', (_e, sessionId: unknown, id: unknown): boolean => {
+        return typeof sessionId === 'string' && typeof id === 'string' ? conversationService.discardQueued(sessionId, id) : false
     })
     ipcMain.handle('chat-send-queued-now', (_e, sessionId: unknown, id: unknown) =>
         typeof sessionId === 'string' && typeof id === 'string'

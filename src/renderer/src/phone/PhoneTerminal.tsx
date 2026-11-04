@@ -3,7 +3,9 @@ import { ArrowDownToLine, ChevronsDown, ChevronsUp, Eye, Keyboard, Maximize2, Mi
 import '@xterm/xterm/css/xterm.css'
 import type { PhoneRole } from '../../../shared/phone'
 import { KEY_BAR_ITEMS, controlCharacter, createKeyRepeat, isRepeatable, keyBarLabel, keySequence, type KeyBarItem } from './keyBar'
+import { PhoneSecretInput } from './PhoneSecretInput'
 import { PhoneTerminalFold } from './PhoneTerminalFold'
+import { cursorRowsText, SECRET_PROMPT_ROWS, secretPrompt } from './secretPrompt'
 import { readWrap, saveWrap } from './terminalFold'
 import { usePhoneTerminal } from './usePhoneTerminal'
 
@@ -26,6 +28,12 @@ const ENTER_GAP_MS = 60
  * default should be is still open (report-r2 of impl-phone).
  */
 const ZOOM_KEY = 'phone-terminal-zoom'
+
+/**
+ * Each session's unsent input line, kept while this page is open (ovis terminalDraft.ts keeps one per
+ * owner): another session's terminal starts with its own line, and coming back finds this one's.
+ */
+const drafts = new Map<string, string>()
 
 function readZoom(): number | null {
     try {
@@ -58,7 +66,16 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
     const [wrap, setWrap] = useState(readWrap)
     const [typing, setTyping] = useState(false)
     const [ctrl, setCtrl] = useState(false)
-    const [line, setLine] = useState('')
+    // one PhoneTerminal per session (keyed by it in SessionScreen): Type and Ctrl start fresh, the line is this session's
+    const [line, setLineState] = useState(() => drafts.get(sessionId) ?? '')
+    const setLine = useCallback(
+        (next: string) => {
+            if (next) drafts.set(sessionId, next)
+            else drafts.delete(sessionId)
+            setLineState(next)
+        },
+        [sessionId]
+    )
     const pinch = useRef<{ distance: number; scale: number } | null>(null)
     const swipe = useRef<{ y: number } | null>(null)
 
@@ -74,7 +91,7 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
         // xterm lays out a resize on its next frame
         const frame = window.requestAnimationFrame(measure)
         return () => window.cancelAnimationFrame(frame)
-    }, [term.size, term.status])
+    }, [term.size, term.status, term.fontVersion])
 
     useEffect(() => {
         const element = scroller.current
@@ -124,6 +141,25 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
         })
     }, [subscribe])
 
+    // A password prompt on the cursor's row (sudo, ssh …): the input line becomes a password field
+    // whose value never enters React state (PhoneSecretInput, after ovis SecretInput.tsx).
+    const [secret, setSecret] = useState<string | null>(null)
+    useEffect(() => {
+        const read = (): void => {
+            const xterm = termHandle.current.terminal()
+            if (!xterm) return
+            const buffer = xterm.buffer.active
+            const cursorRow = buffer.baseY + buffer.cursorY
+            const rows: string[] = []
+            for (let row = Math.max(0, cursorRow - SECRET_PROMPT_ROWS + 1); row <= cursorRow; row++) {
+                rows.push(buffer.getLine(row)?.translateToString(true) ?? '')
+            }
+            setSecret(secretPrompt(cursorRowsText(rows), xterm.cols))
+        }
+        read()
+        return subscribe(read)
+    }, [subscribe, term.status])
+
     const sendKey = useCallback((item: KeyBarItem) => {
         if (item.type === 'modifier') {
             setCtrl((held) => !held)
@@ -133,13 +169,12 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
         setCtrl(false)
     }, [term, ctrl])
 
+    // only a live connection takes input: while it reconnects the line keeps its text (ovis useTerminalSends.ts:158)
+    const connected = term.status === 'live'
     const sendLine = useCallback(() => {
-        const text = line
-        if (text) term.send(text)
-        // the program sees the text land before its Enter, as typed
-        window.setTimeout(() => term.send('\r'), text ? ENTER_GAP_MS : 0)
+        if (!term.sendLine(line, ENTER_GAP_MS)) return
         setLine('')
-    }, [line, term])
+    }, [line, term, setLine])
 
     const onLineChange = (next: string): void => {
         // Ctrl held + one typed character = that control key (Ctrl+R, Ctrl+D …), sent at once
@@ -221,6 +256,8 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                 <button type="button" aria-label="Page up" onClick={() => term.scrollPages(-1)}><ChevronsUp size={14} /></button>
                 <button type="button" aria-label="Page down" onClick={() => term.scrollPages(1)}><ChevronsDown size={14} /></button>
                 <button type="button" aria-label="Scroll to the end" onClick={() => term.scrollToBottom()}><ArrowDownToLine size={14} /></button>
+                {/* a view-only device only watches: no Type to switch to (the server refuses its input anyway) */}
+                {canType && (
                 <div className="phone-seg" role="group" aria-label="View or type">
                     <button type="button" data-testid="phone-terminal-view" aria-pressed={!typing} onClick={() => setTyping(false)}>
                         <Eye size={13} /> View
@@ -229,13 +266,13 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                         type="button"
                         data-testid="phone-terminal-type"
                         aria-pressed={typing}
-                        disabled={!canType}
-                        title={canType ? 'Show the key bar and input line' : 'This device can only watch'}
+                        title="Show the key bar and input line"
                         onClick={() => setTyping(true)}
                     >
                         <Keyboard size={13} /> Type
                     </button>
                 </div>
+                )}
             </div>
             <div
                 ref={scroller}
@@ -260,6 +297,9 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                             <KeyBarButton key={keyBarLabel(item)} item={item} held={item.type === 'modifier' && ctrl} onKey={sendKey} />
                         ))}
                     </div>
+                    {secret !== null ? (
+                        <PhoneSecretInput prompt={secret} connected={connected} onSend={(value) => term.sendLine(value, ENTER_GAP_MS)} />
+                    ) : (
                     <form
                         className="phone-line"
                         onSubmit={(event) => {
@@ -278,8 +318,17 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                             spellCheck={false}
                             enterKeyHint="send"
                         />
-                        <button type="submit" aria-label="Send" data-testid="phone-terminal-send"><Send size={15} /></button>
+                        <button
+                            type="submit"
+                            aria-label="Send"
+                            data-testid="phone-terminal-send"
+                            disabled={!connected}
+                            title={connected ? 'Send (adds Enter)' : 'Not connected to the Mac — the line is kept'}
+                        >
+                            <Send size={15} />
+                        </button>
                     </form>
+                    )}
                 </div>
             )}
         </div>

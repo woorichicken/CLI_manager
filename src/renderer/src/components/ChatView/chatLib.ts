@@ -299,3 +299,37 @@ export function fileMention(path: string): string {
 
 // moved to shared (main also needs it for queued sends, F18)
 export { terminalCommand } from '../../../../shared/conversation'
+
+/** A file the chat's ＋ / paste / drop stored for a message (main chatAttachments.ts: `<tmp>/climanager-chat/<day>/<name>`). */
+export interface AppAttachmentMention {
+    path: string
+    /** the stored name's extension, lower case, without the dot ('' when none) */
+    extension: string
+    image: boolean
+}
+
+const APP_ATTACHMENT = /(^|\s)@(\/\S*\/climanager-chat\/\S+)/g
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tif', 'tiff'])
+
+/**
+ * A sent message with the app's own attachment mentions (`@/var/folders/…/climanager-chat/2026-11-04/1793…-75f5.png`)
+ * taken out: the person attached a file, they never typed that path — the bubble shows a chip for it (G7).
+ * Other `@` mentions (a file the person named) stay text.
+ */
+export function splitAppAttachments(text: string): (string | AppAttachmentMention)[] {
+    const out: (string | AppAttachmentMention)[] = []
+    let last = 0
+    for (const match of text.matchAll(APP_ATTACHMENT)) {
+        const start = (match.index ?? 0) + match[1].length
+        if (start > last) out.push(text.slice(last, start))
+        const path = match[2]
+        const name = path.slice(path.lastIndexOf('/') + 1)
+        const dot = name.lastIndexOf('.')
+        const extension = dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+        out.push({ path, extension, image: IMAGE_EXTENSIONS.has(extension) })
+        last = start + 1 + path.length
+    }
+    if (last < text.length) out.push(text.slice(last))
+    // the space that followed a chip is not part of the words
+    return out.map((part, index) => (typeof part === 'string' && index > 0 && typeof out[index - 1] !== 'string' ? part.replace(/^\s+/, '') : part)).filter((part) => part !== '')
+}

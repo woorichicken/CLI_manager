@@ -30,7 +30,7 @@ export interface PhoneConversation {
     /** `origin`: who sent it (`deps.owner`) — a disconnected device's queued messages are dropped by it */
     send(sessionId: string, text: string, origin?: string): Promise<ChatSendResult>
     cancelQueued(sessionId: string): void
-    discardQueued(sessionId: string, id: string): void
+    discardQueued(sessionId: string, id: string): boolean
     sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult>
     interrupt(sessionId: string): Promise<InterruptResult>
     answerPrompt(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult>
@@ -180,10 +180,12 @@ async function handleChat(
             c.cancelQueued(sessionId)
             send(res, 200, { status: 'ok' })
             return
-        case 'discard-queued':
-            if (typeof body.id === 'string') c.discardQueued(sessionId, body.id)
-            send(res, 200, { status: 'ok' })
+        case 'discard-queued': {
+            // the receipt Edit waits for: was it still queued (ovis useComposerSends.ts:195 discarded receipt)
+            const discarded = typeof body.id === 'string' ? c.discardQueued(sessionId, body.id) : false
+            send(res, 200, { status: 'ok', discarded })
             return
+        }
         case 'send-queued-now': {
             const result = typeof body.id === 'string' ? await c.sendQueuedNow(sessionId, body.id) : { status: 'rejected', reason: 'empty', message: 'No message.' }
             if (result.status === 'sent') deps.recordPhoneInput(sessionId, 'queued chat message sent now')

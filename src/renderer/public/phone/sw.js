@@ -19,8 +19,9 @@ self.addEventListener('push', (event) => {
     }
     event.waitUntil((async () => {
         const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-        // the page in front already shows it
-        if (windows.some((client) => client.focused && client.visibilityState === 'visible')) return
+        // the page in front already shows it — but a test alert is asked for to be seen (G4)
+        const inFront = windows.some((client) => client.focused && client.visibilityState === 'visible')
+        if (inFront && payload.tag !== 'climanager-test') return
         await self.registration.showNotification(payload.title, {
             body: payload.body,
             tag: payload.tag,

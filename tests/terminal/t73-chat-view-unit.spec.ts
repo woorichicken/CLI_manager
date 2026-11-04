@@ -12,8 +12,7 @@ import { DEFAULT_SHORTCUTS, effectiveShortcuts } from '../../src/shared/types'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { createChatCommandLister } from '../../src/main/chatCommands'
 import { saveChatAttachment } from '../../src/main/chatAttachments'
-import {
-    activeTrigger,
+import { activeTrigger,
     artifactLinks,
     codeIsFilePath,
     fileLineTarget,
@@ -25,8 +24,7 @@ import {
     shouldFoldUserMessage,
     splitFilePaths,
     terminalCommand,
-    todoSnapshot
-} from '../../src/renderer/src/components/ChatView/chatLib'
+    todoSnapshot, splitAppAttachments } from '../../src/renderer/src/components/ChatView/chatLib'
 
 /**
  * T73 — Chat view, without Electron.
@@ -450,7 +448,10 @@ test.describe('T73 r2 ConversationService: stop, queued messages one by one, com
         expect(new Set(queued.map((item) => item.id)).size).toBe(3)
         expect(await conversations.sendQueuedNow('s', queued[1].id)).toEqual({ status: 'sent' })
         expect(sent).toEqual(['two'])
-        conversations.discardQueued('s', queued[0].id)
+        expect(conversations.discardQueued('s', queued[0].id)).toBe(true)
+        // the receipt Edit waits for (F19): gone already — sent now, or withdrawn — is false
+        expect(conversations.discardQueued('s', queued[0].id)).toBe(false)
+        expect(conversations.discardQueued('s', queued[1].id)).toBe(false)
         queued = (await conversations.getConversation('s')).queued
         expect(queued.map((item) => item.text)).toEqual(['three'])
         conversations.unsubscribe('s')
@@ -600,3 +601,16 @@ test.describe('T73 r2 shortcut defaults never take a chord the person already bo
     })
 })
 
+
+test('T73 app attachment mentions (G7): the chat\'s own stored files become chips, a typed @path stays text', () => {
+    const path = '/var/folders/ab/c0d1e2f3/T/climanager-chat/2026-11-04/1793809848410-75f57aee.png'
+    expect(splitAppAttachments(`@${path}  What text is in the attached image? Answer in three words.`)).toEqual([
+        { path, extension: 'png', image: true },
+        'What text is in the attached image? Answer in three words.'
+    ])
+    const doc = '/tmp/climanager-chat/2026-11-05/1-ab.pdf'
+    expect(splitAppAttachments(`see @${path} and @${doc}`)).toEqual(['see ', { path, extension: 'png', image: true }, 'and ', { path: doc, extension: 'pdf', image: false }])
+    // a file the person named, an e-mail, no attachment: unchanged
+    expect(splitAppAttachments('look at @src/main/index.ts please')).toEqual(['look at @src/main/index.ts please'])
+    expect(splitAppAttachments('mail kim@climanager-chat.dev')).toEqual(['mail kim@climanager-chat.dev'])
+})

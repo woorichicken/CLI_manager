@@ -81,10 +81,13 @@ export function SessionScreen({
                         transport={transport}
                         fontSize={15}
                         touch={COARSE_POINTER}
+                        readOnly={role === 'watch'}
+                        canOpenFiles={false}
                         onOpenTerminal={() => onLens('terminal')}
                     />
                 ) : (
-                    <PhoneTerminal sessionId={session.id} deviceRole={role} />
+                    // keyed: another session's terminal must not inherit this one's Type, Ctrl or line
+                    <PhoneTerminal key={session.id} sessionId={session.id} deviceRole={role} />
                 )}
             </div>
         </div>
