@@ -513,7 +513,8 @@ test.describe('T73 r2 `/` commands an agent offers (ported ovis command tables)'
         const list = createChatCommandLister({ home, claudeConfigDir: () => path.join(home, '.claude'), codexHome: () => codex })('codex', undefined)
         expect(list.find((command) => command.name === 'nested-skill')).toMatchObject({ trigger: '$', source: 'skill' })
         expect(list.find((command) => command.name === 'model')).toMatchObject({ terminal: 'bare' })
-        expect(list.find((command) => command.name === 'status')).toMatchObject({ terminal: 'always' })
+        // F06c: like ovis, status/diff/pwd/ps go to the terminal only when sent bare
+        for (const name of ['status', 'diff', 'pwd', 'ps']) expect(list.find((command) => command.name === name)).toMatchObject({ terminal: 'bare' })
     })
 
     test('Codex: 300 skills with scripts/references folders are all listed', () => {

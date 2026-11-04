@@ -81,9 +81,11 @@ const CODEX_BUILTINS: readonly string[] = [
 const CODEX_TERMINAL: ReadonlySet<string> = new Set([
     'resume', 'permissions', 'agents', 'hooks', 'mcp', 'plugins', 'skills', 'voice', 'theme', 'config', 'keymap', 'experimental', 'approve',
     'memories', 'import', 'new', 'archive', 'delete', 'fork', 'worktree', 'side', 'btw', 'copy', 'tui', 'mention', 'warnings', 'cd', 'usage',
-    'title', 'statusline', 'feedback', 'subagents', 'vim', 'logout', 'status', 'diff', 'pwd', 'ps'
+    'title', 'statusline', 'feedback', 'subagents', 'vim', 'logout'
 ])
-const CODEX_TERMINAL_BARE: ReadonlySet<string> = new Set(['model', 'review', 'rename', 'export'])
+// status/diff/pwd/ps print to the TUI only when sent bare (ovis server/skills/codex.ts:147 `forms` — a bare form
+// whose interaction is the terminal); they are not among its terminal-bound screens (`terminalBound`, :167-169)
+const CODEX_TERMINAL_BARE: ReadonlySet<string> = new Set(['model', 'review', 'rename', 'export', 'status', 'diff', 'pwd', 'ps'])
 const CODEX_DESCRIPTIONS: Record<string, string> = {
     model: 'Choose what model and reasoning effort to use', config: 'Configure Codex preferences', btw: 'Start a side conversation in an ephemeral fork',
     quit: 'Exit Codex', ide: 'Include current selection, open files, and other context from your IDE', keymap: 'Remap TUI shortcuts',

@@ -272,7 +272,7 @@ test.describe('ovis server/skills/codex.test.ts', () => {
         })
 
         test('offers the nine former exclusions and the other TUI-only screens as terminal-bound builtins', () => {
-            test.fail(true, 'ovis-port bug: setup-default-sandbox/daemon/pets missing; status/diff/pwd/ps marked terminal always (ovis does not terminal-bind them)')
+            test.fail(true, 'ovis-port bug: setup-default-sandbox/daemon/pets missing from CODEX_BUILTINS (status/diff/pwd/ps fixed in F06c)')
             const { home } = fixture()
             const former = ['resume', 'permissions', 'agents', 'hooks', 'mcp', 'plugins', 'skills', 'voice', 'theme']
             const screens = ['config', 'setup-default-sandbox']
