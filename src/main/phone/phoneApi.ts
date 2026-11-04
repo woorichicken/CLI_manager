@@ -213,7 +213,8 @@ async function handleChat(
 /**
  * The transcript is what the agent and the person wrote — the Chat view shows it as is.
  * The question card is read off the screen: its words go through maskSecrets like a
- * report's lines. The signature stays as main computed it, so an answer still matches.
+ * report's lines. The signature stays as main computed it, so an answer still matches —
+ * it is a hash of the unmasked words (promptScreen.ts), so it carries none of them.
  */
 export function maskSnapshot(snapshot: ConversationSnapshot, maskLine: (text: string) => string): ConversationSnapshot {
     if (!snapshot.prompt) return snapshot

@@ -336,3 +336,24 @@ test.describe('T79 F21 a push service that never answers does not hold the alert
         }
     })
 })
+
+test.describe('T79 F23 a question card sent to the phone carries no masked secret in its signature', () => {
+    test('the signature is a hash: the secret is gone, a different command is still a different card', () => {
+        const fixture = fs.readFileSync(path.join(ROOT, 'tests/terminal/fixtures/prompts/claude-2.1.312-permission.txt'), 'utf8').replace(/\s+$/, '').split('\n')
+        // built at run time: the secret scan reads test files too
+        const secret = ['sk', 'ant', 'api03', 'T79abcdefghijklmnopqrstuvwxyz0123456789'].join('-')
+        const command = (key: string): string[] => fixture.map((line) => line.replace(' touch /tmp/fb1029b-perm-probe', ` curl -H "x-api-key: ${key}" https://api.example`))
+        const menu = readPrompt(command(secret), 'claude')!
+        expect(menu.context.join(' ')).toContain(secret)
+        const maskLine = (text: string): string => maskSecretLines([text]).lines[0] ?? ''
+        const sent = maskSnapshot({ prompt: menu } as ConversationSnapshot, maskLine)
+        // what leaves the Mac: the words are masked — and so must every other field be
+        expect(sent.prompt!.context.join(' ')).not.toContain(secret)
+        expect(JSON.stringify(sent)).not.toContain(secret)
+        expect(sent.prompt!.signature).toMatch(/^[0-9a-f]{64}$/)
+        // an answer still names this exact card, and another key is another card
+        expect(sent.prompt!.signature).toBe(menu.signature)
+        expect(readPrompt(command(secret), 'claude')!.signature).toBe(menu.signature)
+        expect(readPrompt(command(secret.replace('T79a', 'T79b')), 'claude')!.signature).not.toBe(menu.signature)
+    })
+})
