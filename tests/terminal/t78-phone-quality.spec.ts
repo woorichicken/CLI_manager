@@ -114,6 +114,9 @@ test('T78 phone quality: in-app alert, touch chat, key hold-repeat, wrap to scre
     fs.copyFileSync(path.join(FIXTURES, 'claude/tools.jsonl'), transcriptA)
     const transcriptB = path.join(path.dirname(transcriptA), `${B_ID}.jsonl`)
     fs.writeFileSync(transcriptB, '')
+    // a personal skill, so the phone's `/` menu has one of the user's own to offer
+    fs.mkdirSync(path.join(claudeDir, 'skills', 't78-phone-skill'), { recursive: true })
+    fs.writeFileSync(path.join(claudeDir, 'skills', 't78-phone-skill', 'SKILL.md'), '---\nname: t78-phone-skill\ndescription: T78 skill on the phone\n---\n')
     const statusFile = path.join(home, 'tailscale-status.json')
     fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Running', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: ['100.100.1.1'] }, User: { '42': { LoginName: OWNER } } }))
 
@@ -168,6 +171,15 @@ test('T78 phone quality: in-app alert, touch chat, key hold-repeat, wrap to scre
     await touch(cdp, phone, await centerOf(phone, 'chat-send'))
     await waitForBufferText(page, AGENT_A, 'second line', 15_000)
     await expect(box).toHaveValue('')
+
+    // ---- 2b. `/` on the phone lists the user's skills, as on the Mac --------------------------
+    await phone.keyboard.type('/t78')
+    const menu = phone.getByTestId('chat-complete')
+    await expect(menu).toBeVisible({ timeout: 10_000 })
+    await expect(menu).toContainText('t78-phone-skill')
+    await capture(cdp, 't78-slash-skills.png')
+    await box.fill('')
+    await expect(menu).toHaveCount(0)
 
     // ---- 1. in-app alert --------------------------------------------------------------------
     await writeToTerminal(page, AGENT_B, 'ASK')
