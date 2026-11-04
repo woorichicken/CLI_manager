@@ -3,7 +3,7 @@
 // ones only the terminal can show). The discovery is rewritten small: SKILL.md and command files in the
 // usual folders and enabled Claude plugins, without ovis's skillOverrides, managed settings, synced skills,
 // name folding or walk budget. Claude Code pinned at 2.1.301, codex-rs at rust-v0.163.0, as ovis has them.
-import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'fs'
 import { basename, dirname, join } from 'path'
 import type { ChatCommand, ConversationAgent } from '../shared/conversation'
 
@@ -180,6 +180,14 @@ function isDirectory(path: string): boolean {
     }
 }
 
+function isPlainFile(path: string): boolean {
+    try {
+        return lstatSync(path).isFile()
+    } catch {
+        return false
+    }
+}
+
 /** `<root>/<name>/SKILL.md` (Claude: one level; Codex: down to `depth`). */
 function skillsIn(root: string, budget: Budget, depth = 1, codex = false): { name: string; description: string }[] {
     const found: { name: string; description: string }[] = []
@@ -187,7 +195,8 @@ function skillsIn(root: string, budget: Budget, depth = 1, codex = false): { nam
         if (budget.folders <= 0 || !isDirectory(directory)) return
         budget.folders -= 1
         const file = join(directory, 'SKILL.md')
-        if (level > 0 && existsSync(file)) {
+        // Codex follows a linked skill folder but not a SKILL.md that is itself a link (ovis skills/codex.ts:80-81)
+        if (level > 0 && (codex ? isPlainFile(file) : existsSync(file))) {
             const fields = frontmatter(file)
             // Codex lists a skill only with a frontmatter description, the body is no stand-in (ovis skills/codex.ts:82-85)
             const description = codex ? fields?.description ?? '' : fields?.description || fields?.[BODY_LINE] || ''

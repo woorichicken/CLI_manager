@@ -321,7 +321,6 @@ test.describe('ovis server/skills/codex.test.ts', () => {
 
     test.describe('Codex catalog from the pinned loader', () => {
         test('walks skill roots to depth 6 through directory links and never through a SKILL.md link', () => {
-            test.fail(true, 'ovis-port bug: skillsIn() lists a skill whose SKILL.md is a symlink (existsSync follows links)')
             const { home } = fixture()
             const outerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ovis-cmds-out-'))
             roots.push(outerRoot)
