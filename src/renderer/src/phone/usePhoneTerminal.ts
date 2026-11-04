@@ -27,7 +27,24 @@ const RECONNECT_BASE_MS = 250
 const RECONNECT_MAX_MS = 5000
 const STABLE_MS = 10_000
 export const FONT_SIZE = 13
-export const FONT = 'Menlo, "SF Mono", Monaco, "Courier New", monospace'
+/** before the bundled font has loaded, and for what it does not hold (box drawing, symbols) */
+const FALLBACK_FONT = 'Menlo, "SF Mono", Monaco, "Courier New", monospace'
+/** the phone page's own font first (phone.css, G3): Hangul exactly two Latin cells wide */
+export const FONT = `"CLIM Nanum Gothic Coding", ${FALLBACK_FONT}`
+const FONT_FACE = `${FONT_SIZE}px "CLIM Nanum Gothic Coding"`
+
+/**
+ * xterm measures a cell once per font: a terminal opened before the font arrived would keep the
+ * fallback's cell. So it opens with the fallback and switches when the font is in (a new family
+ * string makes xterm measure again).
+ */
+function bundledFontLoaded(): boolean {
+    try {
+        return document.fonts.check(FONT_FACE)
+    } catch {
+        return false
+    }
+}
 
 export interface PhoneTerminalHandle {
     status: TerminalStatus
@@ -36,6 +53,8 @@ export interface PhoneTerminalHandle {
     role: PhoneRole | null
     /** the last refusal from the server, shown briefly */
     notice: string | null
+    /** bumps when the cell size changed without a new grid size (the bundled font arrived) */
+    fontVersion: number
     send(data: string): boolean
     /**
      * Types a line, then its Enter after `gapMs` — both on the same connection: when the socket
@@ -61,13 +80,14 @@ export function usePhoneTerminal(sessionId: string, host: React.RefObject<HTMLDi
     const [size, setSize] = useState<{ cols: number; rows: number } | null>(null)
     const [role, setRole] = useState<PhoneRole | null>(null)
     const [notice, setNotice] = useState<string | null>(null)
+    const [fontVersion, setFontVersion] = useState(0)
 
     useEffect(() => {
         const element = host.current
         if (!element) return
         const term = new Terminal({
             theme: { ...TERMINAL_THEME, selectionBackground: 'rgba(255, 255, 255, 0.3)' },
-            fontFamily: FONT,
+            fontFamily: bundledFontLoaded() ? FONT : FALLBACK_FONT,
             fontSize: FONT_SIZE,
             scrollback: 5000,
             // same rule as the desktop view: a CLI's full clear goes to scrollback, not away
@@ -79,6 +99,16 @@ export function usePhoneTerminal(sessionId: string, host: React.RefObject<HTMLDi
         })
         term.open(element)
         termRef.current = term
+        if (term.options.fontFamily !== FONT) {
+            document.fonts
+                ?.load(FONT_FACE)
+                .then(() => {
+                    if (termRef.current !== term) return
+                    term.options.fontFamily = FONT
+                    setFontVersion((version) => version + 1)
+                })
+                .catch(() => undefined) // not loaded: the fallback stays
+        }
         let frame = 0
         const changed = (): void => {
             if (frame || listeners.current.size === 0) return
@@ -211,6 +241,7 @@ export function usePhoneTerminal(sessionId: string, host: React.RefObject<HTMLDi
         size,
         role,
         notice,
+        fontVersion,
         send,
         sendLine,
         applicationCursorKeys: () => termRef.current?.modes.applicationCursorKeysMode ?? false,

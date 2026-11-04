@@ -3,6 +3,18 @@
  * ovis's phone shell (MIT) — a drawer under 768px, header · body · key bar stacked in the
  * visual viewport so the iOS keyboard does not push them away (viewport.ts sets --app-height).
  */
+/*
+ * The terminal's font (G3): Nanum Gothic Coding, SIL OFL 1.1 (THIRD_PARTY_NOTICES.md) — ASCII and the 2,350
+ * KS X 1001 syllables (scripts/subset-phone-font.py). Its Hangul is exactly twice its Latin, so xterm's
+ * two cells per syllable fit with no gap; Android's own fallback Hangul left one after every syllable.
+ */
+@font-face {
+    font-family: 'CLIM Nanum Gothic Coding';
+    src: url('./fonts/nanum-gothic-coding-ksx1001.woff2') format('woff2');
+    font-display: block;
+    unicode-range: U+0020-007E, U+AC00-D7A3;
+}
+
 html,
 body.phone-body {
     height: 100%;

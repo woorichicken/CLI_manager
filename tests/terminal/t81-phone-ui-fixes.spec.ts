@@ -443,3 +443,27 @@ test('T81 G7 an attached picture shows as a chip in the sent bubble, not the app
     expect(await bubble.getByTestId('chat-attachment-chip').evaluate((el) => el.tagName)).toBe('SPAN')
     await phone.close()
 })
+
+test('T81 G3 the phone terminal draws with its own font: Hangul exactly two Latin cells', async () => {
+    test.setTimeout(120_000)
+    const { app, base } = await launch()
+    const { phone } = await openPhone(app, base, `session=${SHELL_A}&view=terminal`, 't81-g3')
+    await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })
+    // the font file came from the phone server (an allowed asset), and xterm switched to it
+    await expect
+        .poll(() => phone.evaluate(() => document.fonts.check('13px "CLIM Nanum Gothic Coding"')), { timeout: 10_000 })
+        .toBe(true)
+    const measured = await phone.evaluate(() => {
+        const context = document.createElement('canvas').getContext('2d')!
+        context.font = '13px "CLIM Nanum Gothic Coding"'
+        const font = Array.from(document.fonts).find((face) => face.family.replace(/"/g, '') === 'CLIM Nanum Gothic Coding')
+        return { latin: context.measureText('A').width, hangul: context.measureText('한').width, status: font?.status ?? null }
+    })
+    expect(measured.status).toBe('loaded')
+    expect(measured.hangul / measured.latin).toBeCloseTo(2, 2)
+    // xterm measured its cell with it: two Latin cells hold one syllable with nothing left over
+    await expect
+        .poll(() => phone.locator('.xterm-rows').evaluate((rows) => getComputedStyle(rows).fontFamily), { timeout: 10_000 })
+        .toContain('CLIM Nanum Gothic Coding')
+    await phone.close()
+})

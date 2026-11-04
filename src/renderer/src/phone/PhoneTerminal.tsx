@@ -91,7 +91,7 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
         // xterm lays out a resize on its next frame
         const frame = window.requestAnimationFrame(measure)
         return () => window.cancelAnimationFrame(frame)
-    }, [term.size, term.status])
+    }, [term.size, term.status, term.fontVersion])
 
     useEffect(() => {
         const element = scroller.current
