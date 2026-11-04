@@ -233,3 +233,21 @@ test.describe('T79 F07 a revoke that cannot reach the disk says so', () => {
         })
     }
 })
+
+test.describe('T79 F08 the 51st pairing revokes the oldest device', () => {
+    test('the dropped device is told to the revoke listeners (sockets close, alerts stop)', () => {
+        const devices = new PhoneDevices(path.join(tmp('max'), 'devices.json'))
+        const revoked: Array<string | null> = []
+        devices.onRevoke((id) => revoked.push(id))
+        const ids: string[] = []
+        for (let i = 0; i < 51; i++) {
+            const { code } = devices.startPairing('drive')
+            const result = devices.pair(code, `Phone ${i}`)
+            if ('error' in result) throw new Error(result.error)
+            ids.push(result.device.id)
+        }
+        expect(devices.list()).toHaveLength(50)
+        expect(devices.list().map((d) => d.id)).not.toContain(ids[0])
+        expect(revoked).toEqual([ids[0]])
+    })
+})

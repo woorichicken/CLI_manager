@@ -136,10 +136,12 @@ export class PhoneDevices {
             lastSeenAt: this.now()
         }
         this.devices.push(device)
-        // the oldest pairing goes first; a list this long is forgotten devices
-        if (this.devices.length > MAX_DEVICES) this.devices.splice(0, this.devices.length - MAX_DEVICES)
+        // the oldest pairing goes first; a list this long is forgotten devices. Dropping one is a revoke:
+        // its open sockets close and its alerts stop like a Disconnect (ovis connections.ts:247)
+        const dropped = this.devices.length > MAX_DEVICES ? this.devices.splice(0, this.devices.length - MAX_DEVICES) : []
         this.save()
         this.emit()
+        for (const old of dropped) for (const listener of this.revokeListeners) listener(old.id)
         return { token, device: { id: device.id, label: device.label, role: device.role } }
     }
 
