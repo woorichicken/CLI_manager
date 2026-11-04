@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
+import type { ConversationTurn } from '../../src/shared/conversation'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { readPrompt } from '../../src/main/promptScreen'
@@ -298,5 +300,71 @@ test.describe('T79 F18 a terminal-only `/` command sent off the queue tells the 
         expect(await conversations.sendQueuedNow('s', queued.id)).toEqual({ status: 'sent' })
         expect((await conversations.getConversation('s')).terminalOpened?.command).toBe('/model')
         conversations.unsubscribe('s')
+    })
+})
+
+// ---- TranscriptReader ---------------------------------------------------------------------------
+
+const scratch = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t79-'))
+const prompts = (turns: ConversationTurn[]): string[] =>
+    turns.filter((turn) => turn.role === 'user').flatMap((turn) => turn.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])))
+let uuidSequence = 0
+const uuid = (): string => `00000000-0000-4000-8000-${String(++uuidSequence).padStart(12, '0')}`
+/** One Claude prompt and its answer, as Claude Code writes them; `parent` is what the prompt hangs from. */
+function claudeExchange(prompt: string, answer: string, parent: string | null): { lines: string[]; last: string } {
+    const user = uuid()
+    const assistant = uuid()
+    const ts = new Date(Date.UTC(2026, 10, 5, 1, 0, uuidSequence)).toISOString()
+    return {
+        last: assistant,
+        lines: [
+            JSON.stringify({ parentUuid: parent, isSidechain: false, type: 'user', uuid: user, timestamp: ts, message: { role: 'user', content: prompt } }),
+            JSON.stringify({ parentUuid: user, isSidechain: false, type: 'assistant', uuid: assistant, timestamp: ts, message: { id: `msg_${assistant}`, type: 'message', role: 'assistant', model: 'claude-test', content: [{ type: 'text', text: answer }], stop_reason: 'end_turn' } })
+        ]
+    }
+}
+function claudeHome(id: string): { reader: TranscriptReader; file: string } {
+    const home = scratch()
+    const dir = path.join(home, 'projects', 'p')
+    fs.mkdirSync(dir, { recursive: true })
+    return { reader: new TranscriptReader({ claudeConfigDir: () => home, codexHome: () => home }), file: path.join(dir, `${id}.jsonl`) }
+}
+
+test.describe('T79 F12 a transcript replaced by another file is read again, not by its size alone', () => {
+    const id = '00000000-0000-4000-8000-0000000000f1'
+
+    test('replaced (a new file under the same name) with one of the same length: the new words show', () => {
+        const { reader, file } = claudeHome(id)
+        const apple = claudeExchange('apple', 'Apple noted.', null)
+        fs.writeFileSync(file, apple.lines.join('\n') + '\n')
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['apple'])
+        const replaced = apple.lines.join('\n').replace('"apple"', '"berry"').replace('Apple noted.', 'Berry noted.') + '\n'
+        expect(Buffer.byteLength(replaced)).toBe(fs.statSync(file).size)
+        fs.writeFileSync(`${file}.new`, replaced)
+        fs.renameSync(`${file}.new`, file)
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['berry'])
+    })
+
+    test('rewritten in place, longer: the old start is not kept under the new end', () => {
+        const { reader, file } = claudeHome(id)
+        const apple = claudeExchange('apple', 'Apple noted.', null)
+        fs.writeFileSync(file, apple.lines.join('\n') + '\n')
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['apple'])
+        const berry = claudeExchange('berry', 'Berry noted.', null)
+        const cherry = claudeExchange('cherry', 'Cherry noted.', berry.last)
+        fs.writeFileSync(file, [...berry.lines, ...cherry.lines].join('\n') + '\n')
+        expect(prompts(reader.read('s', 'claude', id)!.turns)).toEqual(['berry', 'cherry'])
+    })
+
+    test('an append is still read as an append (no start over)', () => {
+        const { reader, file } = claudeHome(id)
+        const apple = claudeExchange('apple', 'Apple noted.', null)
+        fs.writeFileSync(file, apple.lines.join('\n') + '\n')
+        reader.read('s', 'claude', id)
+        const banana = claudeExchange('banana', 'Banana noted.', apple.last)
+        fs.appendFileSync(file, banana.lines.join('\n') + '\n')
+        const next = reader.read('s', 'claude', id)!
+        expect(next.changed).toBe(true)
+        expect(prompts(next.turns)).toEqual(['apple', 'banana'])
     })
 })

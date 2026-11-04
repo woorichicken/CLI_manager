@@ -64,7 +64,18 @@ interface FileCursor {
     offset: number
     /** bytes after the last newline: a line still being written */
     carry: Buffer
+    /**
+     * What was read last, to tell an append from a replacement: the file's inode and modification
+     * time, and the bytes just before `offset`. A file replaced by one of the same length (or
+     * rewritten in place, longer) passes a size check alone (F12).
+     */
+    ino?: number
+    mtimeMs?: number
+    mark?: Buffer
 }
+
+/** Bytes before the read position compared on the next read (`FileCursor.mark`). */
+const MARK_BYTES = 64
 
 interface ReadState {
     agent: ConversationAgent
@@ -287,7 +298,8 @@ export class TranscriptReader {
         const firstRead = state.files.every((cursor) => cursor.offset === 0)
         // On a first read, only the newest MAX_FIRST_READ_BYTES of the whole thread are taken.
         let budget = firstRead ? this.deps.firstReadBytes ?? MAX_FIRST_READ_BYTES : Infinity
-        const sizes = state.files.map((cursor) => (existsSync(cursor.path) ? statSync(cursor.path).size : 0))
+        const stats = state.files.map((cursor) => (existsSync(cursor.path) ? statSync(cursor.path) : null))
+        const sizes = stats.map((stat) => stat?.size ?? 0)
         if (firstRead) {
             // Spend the budget from the last file backwards.
             const skipTo = new Map<number, number>()
@@ -314,13 +326,19 @@ export class TranscriptReader {
         for (let i = 0; i < state.files.length; i++) {
             const cursor = state.files[i]
             const size = sizes[i]
-            if (size < cursor.offset) {
-                const error = new Error('transcript shrank') as NodeJS.ErrnoException
+            const stat = stats[i]
+            if (size < cursor.offset || (stat && cursor.offset > 0 && this.replaced(cursor, stat))) {
+                const error = new Error('transcript shrank or was replaced') as NodeJS.ErrnoException
                 error.code = 'SHRUNK'
                 throw error
             }
+            if (stat) {
+                cursor.ino = stat.ino
+                cursor.mtimeMs = stat.mtimeMs
+            }
             if (size === cursor.offset) continue
             const text = this.readLines(cursor, size)
+            this.keepMark(cursor)
             if (text.length > 0) {
                 state.parser.write(text)
                 state.meta = foldMetadata(text, state.agent, state.meta)
@@ -331,6 +349,40 @@ export class TranscriptReader {
             }
         }
         return fed
+    }
+
+    /**
+     * The file at the cursor's path is not the one read so far: another inode, or — changed since —
+     * the bytes before the read position differ (rewritten in place).
+     */
+    private replaced(cursor: FileCursor, stat: { ino: number; mtimeMs: number }): boolean {
+        if (cursor.ino !== undefined && stat.ino !== cursor.ino) return true
+        if (cursor.mtimeMs === stat.mtimeMs || !cursor.mark || cursor.mark.length === 0) return false
+        const now = Buffer.alloc(cursor.mark.length)
+        const fd = openSync(cursor.path, 'r')
+        try {
+            const length = readSync(fd, now, 0, now.length, cursor.offset - cursor.mark.length)
+            return length !== now.length || !now.equals(cursor.mark)
+        } finally {
+            closeSync(fd)
+        }
+    }
+
+    /** Keeps the bytes before the cursor, for `replaced`. */
+    private keepMark(cursor: FileCursor): void {
+        const length = Math.min(MARK_BYTES, cursor.offset)
+        const mark = Buffer.alloc(length)
+        if (length === 0) {
+            cursor.mark = mark
+            return
+        }
+        const fd = openSync(cursor.path, 'r')
+        try {
+            const read = readSync(fd, mark, 0, length, cursor.offset - length)
+            cursor.mark = mark.subarray(0, read)
+        } finally {
+            closeSync(fd)
+        }
     }
 
     /** Moves the cursor past the next newline. */
