@@ -19,6 +19,7 @@ import { PhoneDevices } from './PhoneDevices'
 import { PhonePush } from './PhonePush'
 import { PhoneServer } from './PhoneServer'
 import { TailscaleStatus } from './tailscaleStatus'
+import { phoneQueueHooks } from './phoneQueue'
 
 /**
  * Builds the phone connection out of main's existing parts and registers its IPC
@@ -160,6 +161,7 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
     // Tests count refused resize messages from main.
     const testCounters = process.env.CLIMANGER_TEST_USERDATA ? ((globalThis as { __phoneResizeRefused?: number }).__phoneResizeRefused = 0, true) : false
 
+    const queueHooks = phoneQueueHooks(deps.conversation)
     server = new PhoneServer({
         devices,
         push,
@@ -174,6 +176,10 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         maskLine,
         recordPhoneInput: (sessionId, detail) => deps.eventLog.record(sessionId, 'phone-input', detail),
         terminals: deps.terminals,
+        // what a disconnected device left in a Chat queue is not typed later (F03)
+        onDeviceRevoked: (deviceId) => {
+            queueHooks.deviceRevoked(deviceId)
+        },
         subscribeConversation: (sessionId, onChange) => {
             deps.conversation.subscribe(sessionId)
             const off = phoneConversationListeners.add(sessionId, onChange)
@@ -202,7 +208,10 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         const saved = (deps.store.get('settings') as UserSettings | undefined) ?? ({} as UserSettings)
         const next: PhoneSettings = { ...settings(), enabled: enabled === true }
         deps.store.set('settings', { ...saved, phone: next })
-        return server.apply(next)
+        const state = await server.apply(next)
+        // turned off: nothing a phone queued is typed after it (F03)
+        if (!next.enabled) queueHooks.phoneOff()
+        return state
     })
     ipcMain.handle('phone-start-pairing', (_e, role: unknown): PhoneState => {
         devices.startPairing(role === 'watch' ? 'watch' : 'drive')

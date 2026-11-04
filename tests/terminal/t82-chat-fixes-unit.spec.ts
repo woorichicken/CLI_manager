@@ -6,6 +6,9 @@ import type { ConversationTurn } from '../../src/shared/conversation'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { readPrompt } from '../../src/main/promptScreen'
+import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
+import { PhoneServer } from '../../src/main/phone/PhoneServer'
+import { phoneQueueHooks } from '../../src/main/phone/phoneQueue'
 import { agentTaskResult } from '../../src/main/transcript/records'
 import { taskNotification } from '../../src/main/transcript/subagents'
 
@@ -481,5 +484,58 @@ test.describe('T82 F11 a paginated Codex thread is read through its history_base
         rollout('03', `rollout-2026-11-03T10-46-43-${thread}_01a0cbf1-9b0e-7383-a345-80974b279c68.jsonl`, thread, [message('user', '다시 묻기'), message('assistant', '새 답')], cut)
         const reader = new TranscriptReader({ claudeConfigDir: () => home, codexHome: () => home })
         expect(texts(reader.read('s', 'codex', thread)!.turns)).toEqual(['다시 묻기', '새 답'])
+    })
+})
+
+test.describe('T82 F03 wiring: a device disconnected or the phone turned off drops what the phone queued', () => {
+    test('Disconnect drops that device’s messages, Disconnect all every device’s, turning the phone off the owner’s too; the Mac’s stay', async () => {
+        const dir = scratch()
+        const devices = new PhoneDevices(path.join(dir, 'devices.json'))
+        const { conversations } = serviceOn({ screen: () => WORKING, lastOutputAt: () => 1, writeInput: () => undefined }, { agentProcess: async () => '4242' })
+        const hooks = phoneQueueHooks(conversations)
+        // the PhoneServer phoneSetup builds, with the hook as phoneSetup passes it
+        new PhoneServer({
+            devices,
+            push: { forgetOwner: () => undefined } as never,
+            tailscale: {} as never,
+            staticDir: dir,
+            onStateChange: () => undefined,
+            statusPoller: { start: () => undefined, stop: () => undefined },
+            listSessions: () => ({ sessions: [] }) as never,
+            sessionExists: () => true,
+            conversation: conversations,
+            saveAttachment: () => ({ status: 'attached', path: '/tmp/x' }) as never,
+            maskLine: (text: string) => text,
+            recordPhoneInput: () => undefined,
+            terminals: {} as never,
+            subscribeConversation: () => () => undefined,
+            onDeviceRevoked: (id) => hooks.deviceRevoked(id)
+        })
+        const pair = (): string => {
+            const { code } = devices.startPairing('drive')
+            const result = devices.pair(code, 'Phone')
+            if ('error' in result) throw new Error(result.error)
+            return result.device.id
+        }
+        const first = pair()
+        const second = pair()
+        conversations.subscribe('s')
+        const senders: Array<[string, string | undefined]> = [
+            ['mac', undefined],
+            ['first', `device:${first}`],
+            ['second', `device:${second}`],
+            ['owner', 'tailscale:me@example.com']
+        ]
+        for (const [text, origin] of senders) expect(await conversations.send('s', text, origin)).toEqual({ status: 'queued' })
+        const waiting = async (): Promise<string[]> => (await conversations.getConversation('s')).queued.map((item) => item.text)
+
+        devices.revoke(first)
+        expect(await waiting()).toEqual(['mac', 'second', 'owner'])
+        devices.revokeAll()
+        expect(await waiting()).toEqual(['mac', 'owner'])
+        expect(hooks.phoneOff()).toBe(1)
+        expect(await waiting()).toEqual(['mac'])
+        conversations.unsubscribe('s')
+        conversations.cancelQueued('s')
     })
 })
