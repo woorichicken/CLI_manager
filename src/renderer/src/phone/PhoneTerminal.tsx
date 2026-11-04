@@ -90,7 +90,16 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
         measure()
         // xterm lays out a resize on its next frame
         const frame = window.requestAnimationFrame(measure)
-        return () => window.cancelAnimationFrame(frame)
+        // ...but it can re-measure its cells later still (the bundled font arriving after the first fit):
+        // a one-frame read then kept a stale width — landscape fit showed 83 of 103 columns (T77, 11-05).
+        // Watch the drawn screen itself; layout size ignores the scale transform.
+        const screen = host.current?.querySelector<HTMLElement>('.xterm-screen')
+        const observer = screen ? new ResizeObserver(measure) : null
+        if (screen) observer?.observe(screen)
+        return () => {
+            window.cancelAnimationFrame(frame)
+            observer?.disconnect()
+        }
     }, [term.size, term.status, term.fontVersion])
 
     useEffect(() => {
