@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Checklist } from '../../../shared/types'
 
 /**
@@ -39,7 +39,11 @@ export function useChecklists(): Checklist[] {
     return useSyncExternalStore(subscribe, () => snapshot)
 }
 
-/** The header shows the checklist looked at last; switching sessions does not change it. */
+/**
+ * The header shows the checklist looked at last. Moving to a session of another project brings up
+ * that project's checklist when it has one (9ddedfe3 — 「체크리스트 각 폴더에 맞게」); a project with
+ * none keeps the one on screen.
+ */
 const LAST_VIEWED_KEY = 'checklists-last-viewed'
 
 function readLastViewed(): string | null {
@@ -70,9 +74,11 @@ export interface CurrentChecklist {
 
 /**
  * Which checklist the header shows: the one looked at last, or the first in header order
- * when that one is gone (removed, or never picked).
+ * when that one is gone (removed, or never picked). `viewedWorkspaceId` is the project of the
+ * session in view: when it changes, that project's first checklist in header order (open ones
+ * by nearest deadline come first) takes the header — unless the one shown already belongs there.
  */
-export function useCurrentChecklist(): CurrentChecklist {
+export function useCurrentChecklist(viewedWorkspaceId?: string): CurrentChecklist {
     const checklists = useChecklists()
     const [lastViewed, setLastViewed] = useState<string | null>(readLastViewed)
     const found = checklists.findIndex((c) => c.id === lastViewed)
@@ -89,6 +95,18 @@ export function useCurrentChecklist(): CurrentChecklist {
     useEffect(() => {
         if (shownId && shownId !== lastViewed) select(shownId)
     }, [shownId, lastViewed, select])
+
+    // Only a change of project moves the header: paging ‹ › inside one project stays as picked.
+    // A list that arrives after the switch (first load) does not count as a switch either.
+    const followedWorkspaceRef = useRef<string | undefined>(undefined)
+    useEffect(() => {
+        if (!viewedWorkspaceId || viewedWorkspaceId === followedWorkspaceRef.current) return
+        followedWorkspaceRef.current = viewedWorkspaceId
+        const shown = index >= 0 ? checklists[index] : null
+        if (shown?.workspaceId === viewedWorkspaceId) return
+        const match = checklists.find((c) => c.workspaceId === viewedWorkspaceId)
+        if (match) select(match.id)
+    }, [viewedWorkspaceId, checklists, index, select])
 
     const page = useCallback(
         (delta: 1 | -1) => {

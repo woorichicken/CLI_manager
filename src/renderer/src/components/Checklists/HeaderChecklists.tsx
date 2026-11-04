@@ -35,7 +35,7 @@ const VIEWPORT_MARGIN = 8
  * sits below the terminal's own overlays in stacking order.
  */
 export function HeaderChecklists({ open, onOpenChange, compact, workspaces, activeWorkspaceId, viewedSessionId }: HeaderChecklistsProps) {
-    const nav = useCurrentChecklist()
+    const nav = useCurrentChecklist(activeWorkspaceId)
     const hint = useShortcutHint()
     const { current } = nav
     const chipRef = useRef<HTMLButtonElement>(null)
