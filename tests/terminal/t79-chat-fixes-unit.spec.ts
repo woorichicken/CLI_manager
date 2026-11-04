@@ -151,3 +151,23 @@ test.describe('T79 F04 a question card’s keys go one answer at a time per sess
         conversations.cancelQueued('s')
     })
 })
+
+test.describe('T79 F09 text left unsubmitted in the input box is not reported as sent', () => {
+    // ControlApiService.typeForChat returns false when the prompt is provably still in the box after the Enter retries
+    const unsubmitted = { type: async () => false }
+
+    test('a send at rest', async () => {
+        const { conversations } = serviceOn({ screen: () => IDLE, lastOutputAt: () => 1, writeInput: () => undefined }, unsubmitted)
+        expect(await conversations.send('s', 'hello')).toMatchObject({ status: 'rejected', reason: 'not_submitted' })
+    })
+
+    test('Send now: refused, and not queued again (the text already sits in the terminal’s box)', async () => {
+        const { conversations } = serviceOn({ screen: () => WORKING, lastOutputAt: () => 1, writeInput: () => undefined }, unsubmitted)
+        conversations.subscribe('s')
+        expect(await conversations.send('s', 'later')).toEqual({ status: 'queued' })
+        const [queued] = (await conversations.getConversation('s')).queued
+        expect(await conversations.sendQueuedNow('s', queued.id)).toMatchObject({ status: 'rejected', reason: 'not_submitted' })
+        expect((await conversations.getConversation('s')).queued).toEqual([])
+        conversations.unsubscribe('s')
+    })
+})

@@ -34,6 +34,12 @@ const INTERRUPT_KEY = '\x1b'
 /** Between the keys of a card's answer, as the Control API spaces keys. */
 const KEY_GAP_MS = 60
 const BUSY = /esc to interrupt/i
+/** `type` returned false: Enter was pressed (and retried) but the text is still in the agent's input box. */
+const NOT_SUBMITTED: ChatSendResult = {
+    status: 'rejected',
+    reason: 'not_submitted',
+    message: 'The message is in the terminal input line but was not submitted. Press Enter there, or clear it.'
+}
 
 export interface ConversationSessionInfo {
     cwd?: string
@@ -196,9 +202,9 @@ export class ConversationService {
         entry.sending = true
         return this.inLane(sessionId, async () => {
             try {
-                await this.deps.type(sessionId, text)
+                const submitted = await this.deps.type(sessionId, text)
                 this.bump(sessionId, entry)
-                return { status: 'sent' } as ChatSendResult
+                return submitted ? ({ status: 'sent' } as ChatSendResult) : NOT_SUBMITTED
             } catch (error) {
                 return rejection(error)
             } finally {
@@ -253,8 +259,8 @@ export class ConversationService {
         entry.queue.splice(index, 1)
         entry.sending = true
         try {
-            await this.deps.type(sessionId, message.text)
-            return { status: 'sent' }
+            // not put back when unsubmitted: the text is in the terminal's box, a later send would type it twice
+            return (await this.deps.type(sessionId, message.text)) ? { status: 'sent' } : NOT_SUBMITTED
         } catch (error) {
             entry.queue.splice(Math.min(index, entry.queue.length), 0, message)
             return rejection(error)
@@ -494,7 +500,8 @@ export class ConversationService {
             const message = entry.queue.shift()!
             entry.sending = true
             try {
-                await this.deps.type(sessionId, message.text)
+                // left in the terminal's box: not queued again (typing it twice), the person sees it there
+                if (!(await this.deps.type(sessionId, message.text))) console.warn('[conversation] queued message left unsubmitted in the input box', sessionId)
             } catch (error) {
                 // A question appeared between the check and the typing: put it back and wait.
                 if ((error as { code?: string }).code === 'awaiting_input') entry.queue.unshift(message)

@@ -175,7 +175,8 @@ export type ChatSendResult =
     | { status: 'sent' }
     /** the agent was working: main sends it when the turn ends */
     | { status: 'queued' }
-    | { status: 'rejected'; reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session'; message: string }
+    /** `not_submitted`: typed and Enter pressed, but the text is still in the agent's input box */
+    | { status: 'rejected'; reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session' | 'not_submitted'; message: string }
 
 export type InterruptResult =
     | { status: 'stopped' }
