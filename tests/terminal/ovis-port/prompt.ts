@@ -504,7 +504,6 @@ Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
 ${after}`
 
         test('reads the folder-trust check as a menu with its question and both rows', () => {
-            test.fail(true, "ovis-port bug: real multi-line folder-trust dialog: no row ends in ?, so every row above the footer becomes an option and the question is the last row")
             const prompt = parse(trust())!
             expect(prompt).not.toBeNull()
             expect(ovisKind(prompt)).toBe('menu')
@@ -513,14 +512,17 @@ ${after}`
         })
 
         test('answers from the native cursor, and keeps its id when only the cursor moves', () => {
-            test.fail(true, "ovis-port bug: real multi-line folder-trust dialog is read with every row as an option (see the folder-trust read test)")
             const prompt = parse(trust())!
             expect(keys(prompt, { option_index: 1 })).toEqual([{ keys: ['down'] }, { keys: ['enter'] }])
             expect(keys(prompt, { option_index: 0 })).toEqual([{ keys: ['enter'] }])
             const moved = parse(trust(1))!
-            expect(moved.signature).toBe(prompt.signature)
             expect(keys(moved, { option_index: 0 })).toEqual([{ keys: ['up'] }, { keys: ['enter'] }])
             expect(() => keys(prompt, { custom_text: 'maybe' })).toThrow()
+        })
+
+        test('keeps its id when only the cursor moves', () => {
+            test.fixme(true, "t73 'the signature changes when the highlight moves': answerSteps counts arrows from the highlighted row, so a moved cursor must make the card's answer stale (promptScreen.ts signature)")
+            expect(parse(trust(1))!.signature).toBe(parse(trust())!.signature)
         })
 
         test('is gone once the menu is answered and Claude draws under it', () => {
@@ -529,7 +531,6 @@ ${after}`
         })
 
         test('keeps a label a narrow pane wrapped as one row', () => {
-            test.fail(true, "ovis-port bug: narrow folder-trust dialog (no ? row) reads no options at all")
             const narrow = (selected: 0 | 1) => `
  Accessing workspace:
 
@@ -552,7 +553,6 @@ ${after}`
         })
 
         test('never takes the next row for a wrapped label when a row is the widest line', () => {
-            test.fail(true, "ovis-port bug: unnumbered rows are read without any wrap check; ovis refuses (null) when a row is the widest line")
             const two = (selected: 0 | 1) => `
  Trust?
 

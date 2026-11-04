@@ -74,6 +74,92 @@ function belowInputBox(screen: string[]): string[] {
     return first !== undefined && /^[❯>](?!\s*\d+\.\s)/.test(first.trim()) ? screen.slice(bottom + 1) : screen
 }
 
+/** A divider row: only rules and box corners. */
+const DIVIDER = /^[\s╭╮╰╯├┤┬┴┼─━═╌▔]+$/
+
+interface ConfirmMenu {
+    options: PromptOption[]
+    question: string
+    context: string[]
+}
+
+/**
+ * Claude Code's unnumbered menus, the folder-trust check on a new folder (2.1.285):
+ *
+ *   Accessing workspace:
+ *   /home/user/project
+ *   Quick safety check: Is this a project you created or one you trust? (Like your own code,
+ *   …
+ *   ❯ No, exit
+ *     Yes, I trust this folder
+ *   Enter to confirm · Esc to cancel
+ *
+ * The rows are the lines right above the hint, up to a blank line or a rule, exactly one of
+ * them `❯`. A narrow pane wraps a long label onto the next line at the label's own indent, so
+ * the indent cannot tell a wrapped label from the next row: words wrap only when the next one
+ * no longer fits, so a line under a row continues it when its first word would not have fitted
+ * after it. The widest line off the rows stands for the pane's width; a row wider than all of
+ * them says nothing of it, and the line under it could be either — 'unsure', no card rather
+ * than one that answers a row it does not show.
+ * (ovis server/dialogs/claude.ts parseClaudeConfirm, MIT — the whole screen's text used to
+ * become options when no row above them ended in "?".)
+ */
+function readConfirmMenu(lines: string[]): ConfirmMenu | 'unsure' | null {
+    let hint = -1
+    for (let index = lines.length - 1; index >= 0 && hint < 0; index--) if (/Enter to confirm/i.test(lines[index])) hint = index
+    if (hint < 0) return null
+    let end = hint - 1
+    while (end >= 0 && !lines[end].trim()) end--
+    let start = end
+    // A line asking ("…?") is the panel's, not a row, even with no blank line under it.
+    while (start > 0 && lines[start - 1].trim() && !DIVIDER.test(lines[start - 1]) && !/[?？]\s*$/.test(lines[start - 1])) start--
+    if (end < 0) return null
+    const width = Math.max(0, ...lines.filter((_, index) => index < start || index > end).map((line) => line.trimEnd().length))
+    let unsure = false
+    const wrappedFrom = (above: string, line: string): boolean => {
+        if (above.trimEnd().length + 1 + (line.split(/\s+/)[0]?.length ?? 0) <= width) return false
+        if (above.trimEnd().length > width) unsure = true
+        return true
+    }
+    const rows: { label: string; selected: boolean }[] = []
+    for (let index = start; index <= end; index++) {
+        const line = lines[index].trim()
+        const selected = /^[❯›>]/.test(line)
+        const previous = rows[rows.length - 1]
+        if (previous && !selected && wrappedFrom(lines[index - 1], line)) {
+            previous.label = `${previous.label} ${line}`.replace(/\s+/g, ' ').trim()
+            continue
+        }
+        rows.push({ label: line.replace(/^[❯›>]\s*/, '').trim(), selected })
+    }
+    if (unsure) return 'unsure'
+    if (rows.length < 2 || rows.length > 9 || rows.filter((row) => row.selected).length !== 1) return null
+    if (rows.some((row) => !row.label || NUMBERED_OPTION.test(row.label))) return null
+
+    // The panel above the rows: its first line names it, a sentence ending in "?" asks.
+    let top = start - 1
+    while (top >= 0 && !DIVIDER.test(lines[top]) && start - top <= MENU_REGION_LINES) top--
+    const panel = lines.slice(top + 1, start).map((line) => line.trim()).filter(Boolean)
+    const prose = panel.join(' ').replace(/\s+/g, ' ')
+    const found = /(?:^|[.:!]\s+)([^.:!?]*\?)/.exec(prose)
+    const asked = found?.[1]?.trim()
+    // What the panel says before its question (its title, the folder): the lines above the one it starts on.
+    let askedAt = -1
+    if (found && asked) {
+        const offset = found.index + found[0].indexOf(asked)
+        for (let index = 0, at = 0; index < panel.length && askedAt < 0; index++) {
+            at += panel[index].replace(/\s+/g, ' ').length + 1
+            if (offset < at) askedAt = index
+        }
+    }
+    const context = (askedAt > 0 ? panel.slice(0, askedAt) : []).slice(0, CONTEXT_MAX_LINES)
+    return {
+        options: rows.map((row, index) => ({ index, number: null, label: row.label, selected: row.selected })),
+        question: asked ?? panel[0]?.replace(/:$/, '') ?? '',
+        context
+    }
+}
+
 function kindOf(text: string, options: PromptOption[]): PromptKind {
     if (/trust this folder|Do you trust the contents of this directory/i.test(text)) return 'trust'
     if (options.some((option) => option.custom) || /Enter to select/i.test(text)) return 'question'
@@ -130,17 +216,13 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
         }
     }
 
-    // A folder-trust dialog lists its two options without numbers ("❯ No, exit").
-    if (options.length === 0 && /trust this folder/i.test(text)) {
-        const footer = rows.findIndex((line) => FOOTER.test(line))
-        const questionRow = rows.findIndex((line) => /[?？]\s*$/.test(line.trim()))
-        for (let row = questionRow + 1; row < (footer < 0 ? rows.length : footer); row++) {
-            const trimmed = rows[row].trim()
-            if (!trimmed || SEPARATOR.test(trimmed)) continue
-            const selected = /^[❯›>]/.test(trimmed)
-            options.push({ index: options.length, number: null, label: trimmed.replace(/^[❯›>]\s*/, ''), selected })
-            if (firstOptionRow < 0) firstOptionRow = row
-        }
+    // Claude's unnumbered menus (the folder-trust check): plain rows over "Enter to confirm".
+    let confirm: ConfirmMenu | null = null
+    if (options.length === 0 && /Enter to confirm/i.test(text)) {
+        const read = readConfirmMenu(belowInputBox(screen).map(clean))
+        if (read === 'unsure') return null
+        confirm = read
+        if (confirm) options.push(...confirm.options)
     }
 
     const above = firstOptionRow >= 0 ? rows.slice(0, firstOptionRow) : rows
@@ -149,7 +231,7 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
         for (let row = above.length - 1; row >= 0; row--) if (MENU_MARKERS.some((marker) => marker.test(above[row]))) return row
         return -1
     })()
-    const questionLine = questionAt >= 0 ? above[questionAt].trim() : rows.find((line) => MENU_MARKERS.some((m) => m.test(line)))?.trim() ?? ''
+    const questionLine = confirm ? confirm.question : questionAt >= 0 ? above[questionAt].trim() : rows.find((line) => MENU_MARKERS.some((m) => m.test(line)))?.trim() ?? ''
     const question = questionLine.length > QUESTION_MAX ? `${questionLine.slice(0, QUESTION_MAX - 1)}…` : questionLine
 
     // The rows between the dialog's top edge (a full rule, or the prompt above it) and the question:
@@ -158,13 +240,13 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     while (top >= 0 && !INPUT_BOX_RULE.test(above[top].trim()) && !/^[❯>⏺●⎿]/.test(above[top].trim()) && questionAt - top <= CONTEXT_MAX_LINES * 2) top--
     // No edge found (Codex draws none): the rows above are the agent's output, not the dialog's.
     const edgeFound = top >= 0 && questionAt - top <= CONTEXT_MAX_LINES * 2
-    const context = (questionAt > 0 && edgeFound ? above.slice(top + 1, questionAt) : [])
+    const context = confirm ? confirm.context : (questionAt > 0 && edgeFound ? above.slice(top + 1, questionAt) : [])
         .map((line) => line.trim())
         .filter((line) => line && !SEPARATOR.test(line) && !/^Tip:/i.test(line))
         .slice(-CONTEXT_MAX_LINES)
 
     const multi = options.some((option) => CHECKBOX.test(option.label))
-    const kind = kindOf(text, options)
+    const kind = kindOf([text, ...options.map((option) => option.label)].join('\n'), options)
     const answerable = agent === 'claude' && options.length > 0 && !multi && options.some((option) => option.selected)
     const selected = options.findIndex((option) => option.selected)
     // A hash, not the words: the card goes to a phone with its words masked (maskSnapshot), and a plain
