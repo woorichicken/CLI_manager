@@ -10,7 +10,7 @@ import type {
     QueuedMessage
 } from '../shared/conversation'
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
-import { answerSteps, PromptAnswerError, readPrompt } from './promptScreen'
+import { answerSteps, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 
 /**
@@ -33,6 +33,13 @@ const MAX_TEXT_LENGTH = MAX_CHAT_TEXT_LENGTH
 const INTERRUPT_KEY = '\x1b'
 /** Between the keys of a card's answer, as the Control API spaces keys. */
 const KEY_GAP_MS = 60
+/**
+ * Before a card's Enter (or its typed answer) the screen must show the option it meant highlighted.
+ * The agent draws a moved highlight a little after the key: read again every CONFIRM_POLL_MS until
+ * it does, for at most CONFIRM_MS — then someone else's key moved it (F04) and Enter is not sent.
+ */
+const CONFIRM_MS = 1500
+const CONFIRM_POLL_MS = 40
 const BUSY = /esc to interrupt/i
 /** `type` returned false: Enter was pressed (and retried) but the text is still in the agent's input box. */
 const NOT_SUBMITTED: ChatSendResult = {
@@ -528,11 +535,28 @@ export class ConversationService {
         this.lastAnswer.set(sessionId, { signature: current.signature, outputAt: this.deps.mirror.lastOutputAt(sessionId) })
         const entry = this.entry(sessionId)
         entry.sending = true
+        const target = 'customText' in answer ? current.options.findIndex((option) => option.custom) : answer.optionIndex
         try {
+            let confirmed = false
             for (const [index, step] of steps.entries()) {
                 if (index > 0) await sleep(KEY_GAP_MS)
                 // disconnected between two keys: stop before the next (an Enter would pick an option)
                 if (sender && !sender.allowed()) return REVOKED
+                const moves = 'key' in step && (step.key === KEYS.up || step.key === KEYS.down)
+                // the moves are done: a key typed in the raw terminal (the Mac, a phone's Terminal tab —
+                // outside this lane) may have moved the highlight between ours. Enter only on the option meant.
+                if (!moves && !confirmed) {
+                    if (!(await this.highlightsOption(sessionId, current, target))) {
+                        this.lastAnswer.delete(sessionId)
+                        const entry = this.entry(sessionId)
+                        await this.refreshScreen(sessionId, entry, true)
+                        this.bump(sessionId, entry)
+                        console.warn('[conversation] card answer stopped before Enter: the highlight is not on the option meant', sessionId)
+                        return { status: 'rejected', reason: 'prompt_changed', message: 'The highlighted option changed while answering. Look at the question again.' }
+                    }
+                    confirmed = true
+                    if (sender && !sender.allowed()) return REVOKED
+                }
                 this.deps.writeInput(sessionId, 'key' in step ? step.key : step.text)
             }
         } finally {
@@ -540,6 +564,29 @@ export class ConversationService {
             this.dropIfIdle(sessionId, entry)
         }
         return { status: 'answered' }
+    }
+
+    /**
+     * Whether the screen shows `menu` (same question and options) with option `target` highlighted,
+     * waiting up to CONFIRM_MS for the agent to draw the keys already sent.
+     */
+    private async highlightsOption(sessionId: string, menu: PromptMenu, target: number): Promise<boolean> {
+        const agent = agentOf(this.deps.session(sessionId)) ?? 'claude'
+        const deadline = Date.now() + CONFIRM_MS
+        for (;;) {
+            await this.deps.mirror.flush(sessionId)
+            const now = readPrompt(this.deps.mirror.screen(sessionId), agent)
+            const same =
+                now !== null &&
+                now.question === menu.question &&
+                now.options.length === menu.options.length &&
+                now.options.every((option, index) => option.label === menu.options[index].label)
+            if (!same) return false
+            const selected = now.options.findIndex((option) => option.selected)
+            if (selected === target) return true
+            if (Date.now() >= deadline) return false
+            await sleep(CONFIRM_POLL_MS)
+        }
     }
 
     private blockedReason(sessionId: string, entry: Watched): ChatSendResult | null {

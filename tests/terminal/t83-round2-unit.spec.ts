@@ -236,3 +236,71 @@ test.describe('T83 F03 a queued message belongs to the conversation it was writt
         expect(typed).toEqual(['next step'])
     })
 })
+
+/**
+ * A permission menu whose "agent" reads each key `keyDelayMs` after it is written (as T82's), and
+ * where someone can press a key in the raw terminal too (`rawKey`) — the Mac's own keyboard or the
+ * phone's Terminal tab, neither of which goes through the Chat service's lane.
+ */
+function sharedMenuTerminal(keyDelayMs: number) {
+    let selected = 0
+    let picked: number | null = null
+    let outputAt = 1
+    const writes: string[] = []
+    const apply = (data: string): void => {
+        if (picked !== null) return
+        if (data === '\x1b[B') selected = Math.min(3, selected + 1)
+        else if (data === '\x1b[A') selected = Math.max(0, selected - 1)
+        else if (data === '\r') picked = selected
+        outputAt += 1
+    }
+    const menu = (): string[] =>
+        PERMISSION_SCREEN.map((line) => {
+            const option = /^ (?:❯| ) (\d)\. (.*)$/.exec(line)
+            if (!option) return line
+            return `${Number(option[1]) - 1 === selected ? ' ❯' : '  '} ${option[1]}. ${option[2]}`
+        })
+    return {
+        writes,
+        picked: () => picked,
+        screen: (): string[] => (picked === null ? menu() : IDLE),
+        lastOutputAt: () => outputAt,
+        writeInput: (_id: string, data: string): void => {
+            writes.push(data)
+            setTimeout(() => apply(data), keyDelayMs)
+        },
+        rawKey: (data: string): void => apply(data)
+    }
+}
+
+test.describe('T83 F04 a card’s Enter goes only while the option it meant is highlighted', () => {
+    test('a raw ↓ lands between the card’s ↓ and its Enter: no Enter, prompt_changed', async () => {
+        const terminal = sharedMenuTerminal(5)
+        const { conversations } = serviceOn({
+            ...terminal,
+            writeInput: (id, data) => {
+                terminal.writeInput(id, data)
+                // the person presses ↓ in the terminal right after the card's first key
+                if (data === '\x1b[B') setTimeout(() => terminal.rawKey('\x1b[B'), 15)
+            }
+        })
+        const menu = readPrompt(terminal.screen(), 'claude')!
+        const result = await conversations.answerPrompt('s', { signature: menu.signature, optionIndex: 1 })
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        expect(result).toMatchObject({ status: 'rejected', reason: 'prompt_changed' })
+        expect(terminal.writes).not.toContain('\r')
+        expect(terminal.picked()).toBeNull()
+    })
+
+    for (const keyDelayMs of [5, 300]) {
+        test(`nothing in between: option 3 is picked (agent reads keys after ${keyDelayMs}ms)`, async () => {
+            const terminal = sharedMenuTerminal(keyDelayMs)
+            const { conversations } = serviceOn(terminal)
+            const menu = readPrompt(terminal.screen(), 'claude')!
+            expect(await conversations.answerPrompt('s', { signature: menu.signature, optionIndex: 2 })).toEqual({ status: 'answered' })
+            await new Promise((resolve) => setTimeout(resolve, keyDelayMs + 100))
+            expect(terminal.writes).toEqual(['\x1b[B', '\x1b[B', '\r'])
+            expect(terminal.picked()).toBe(2)
+        })
+    }
+})
