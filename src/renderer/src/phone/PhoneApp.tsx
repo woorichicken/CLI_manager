@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Laptop } from 'lucide-react'
+import { Laptop, MessageSquareWarning } from 'lucide-react'
 import type { PhoneMe, PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { getMe, getSessions, PhoneApiError } from './api'
 import { AlertsMenu } from './AlertsMenu'
 import { DropletPill } from './DropletPill'
 import { dropletFor, nextSeen, waitingElsewhere, type Droplet, type SeenState } from './droplets'
 import { PairScreen } from './PairScreen'
+import { openPhoneFeedback, phoneFeedbackConfigured, PhoneFeedback } from './feedback/PhoneFeedback'
+import { phoneFeedbackAvailable } from './feedbackGate'
 import { SessionList } from './SessionList'
 import { SessionScreen, type SessionLens } from './SessionScreen'
 import { reconnectDelay } from './usePhoneTerminal'
@@ -198,6 +200,7 @@ export function PhoneApp() {
         navigate(next.id, next.agent ? rememberedLens(next.id) ?? 'chat' : 'terminal')
     }
     const showList = wide || !session || drawer
+    const feedback = phoneFeedbackAvailable(me, phoneFeedbackConfigured())
     const badge = data ? waitingElsewhere(data.sessions, session?.id ?? null) : 0
 
     return (
@@ -227,6 +230,22 @@ export function PhoneApp() {
                             {me.via === 'tailscale' ? me.login : me.deviceLabel}
                             {me.role === 'watch' ? ' · view only' : ''}
                         </span>
+                        {feedback && (
+                            <button
+                                type="button"
+                                className="phone-icon-button"
+                                aria-label="Feedback"
+                                title="Send feedback about this screen"
+                                data-testid="phone-feedback-button"
+                                onClick={() => {
+                                    // the report captures the screen: the session, not the drawer over it
+                                    setDrawer(false)
+                                    void openPhoneFeedback()
+                                }}
+                            >
+                                <MessageSquareWarning size={17} />
+                            </button>
+                        )}
                         {me.push && <AlertsMenu publicKey={me.push.publicKey} />}
                     </div>
                     {offline && <div className="phone-offline">Reconnecting to the Mac…</div>}
@@ -252,6 +271,7 @@ export function PhoneApp() {
                 </main>
             )}
             {wide && !session && <main className="phone-main phone-empty">Pick a session.</main>}
+            <PhoneFeedback me={me} sessionId={session?.id ?? null} lens={session ? (session.agent ? lens : 'terminal') : null} />
             {droplet && (
                 <DropletPill
                     droplet={droplet}

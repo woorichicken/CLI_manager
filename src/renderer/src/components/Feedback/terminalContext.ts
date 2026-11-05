@@ -31,7 +31,8 @@ const EVENT_LEVELS: Record<TerminalEventKind, DiagLogEntry['level']> = {
     'phone-input': 'log'
 }
 
-export type TerminalTargetSource = 'picked' | 'focused' | 'visible'
+/** `viewing`: the session open on the phone page when its report was sent */
+export type TerminalTargetSource = 'picked' | 'focused' | 'visible' | 'viewing'
 
 export interface TerminalTarget {
     sessionId: string
