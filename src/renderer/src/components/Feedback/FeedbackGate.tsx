@@ -39,6 +39,12 @@ export function FeedbackGate() {
         if (promptOpen) inputRef.current?.focus()
     }, [promptOpen])
 
+    // main passes this on to the phone page (/api/phone/me), which cannot tell a development build by its host
+    const shown = isFeedbackConfigured() && (devHost || unlocked)
+    useEffect(() => {
+        window.api.reportFeedbackMode?.(shown)
+    }, [shown])
+
     if (!isFeedbackConfigured()) return null
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {

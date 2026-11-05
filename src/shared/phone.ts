@@ -27,13 +27,23 @@ export type PhoneRefusal =
 
 /** GET /api/phone/me — who this request is. */
 export type PhoneMe =
-    | { access: 'full'; role: PhoneRole; via: PhoneVia; login?: string; deviceLabel?: string; push?: PhonePushInfo }
+    | { access: 'full'; role: PhoneRole; via: PhoneVia; login?: string; deviceLabel?: string; push?: PhonePushInfo; feedback?: PhoneFeedbackInfo }
     | { access: 'none'; reason: PhoneRefusal }
 
 /** `push` is absent when the Mac's alert key file is malformed: the page shows no bell. */
 export interface PhonePushInfo {
     /** VAPID public key (base64url) for `pushManager.subscribe` */
     publicKey: string
+}
+
+/**
+ * Present only when this Mac shows the feedback widget (its renderer said feedback mode is on, or a
+ * development build) and the device may type. The page decides from this alone: behind
+ * `adb reverse` its own host is localhost too, so it cannot tell a development build by itself.
+ */
+export interface PhoneFeedbackInfo {
+    /** the Mac app's version, carried in each report's `extra` */
+    appVersion: string
 }
 
 /** The status dot of a session row, read from its screen like the sidebar's. */
@@ -135,5 +145,9 @@ export const PHONE_API = {
     pushUnsubscribe: '/api/phone/push/unsubscribe',
     pushTest: '/api/phone/push/test',
     /** `/api/phone/chat/<sessionId>/<action>` */
-    chat: '/api/phone/chat'
+    chat: '/api/phone/chat',
+    /** POST: one HTTP request of the feedback widget, sent by main's FeedbackRelay */
+    feedbackRelay: '/api/phone/feedback/relay',
+    /** GET `?session=<id>`: the terminal a report is about, as the desktop widget gets it over IPC */
+    feedbackTerminal: '/api/phone/feedback/terminal'
 } as const

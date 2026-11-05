@@ -44,6 +44,7 @@ import { createChatCommandLister } from './chatCommands'
 import { saveChatAttachment } from './chatAttachments'
 import type { PromptAnswer } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
+import { FeedbackModeState } from './feedbackMode'
 import { setupPhone, phoneConversationListeners, type PhoneSetup } from './phone/phoneSetup'
 import { workspacesInLoadOrder } from './workspaceLoadOrder'
 import type { FeedbackRelayRequest } from '../shared/types'
@@ -336,6 +337,16 @@ const sessionFolders = new SessionFolders(store)
 const recentSessions = new RecentSessions(store)
 /** sessionsInSidebarOrder as the renderer last computed it; null until the window has drawn its sidebar */
 let sidebarSessionOrder: string[] | null = null
+/** The feedback widget is shown on this Mac (the renderer reports it); the phone page follows it. */
+const feedbackMode = new FeedbackModeState()
+/** What a feedback report carries about a terminal — the desktop widget over IPC, the phone over its server. */
+const feedbackTerminalContext = (sessionId: unknown) => buildFeedbackTerminalContext(sessionId, {
+    terminals: terminalManager,
+    mirror: terminalMirror,
+    log: terminalEventLog,
+    agentStatus: (id) => agentStatusResolver.getStatus(id)?.status ?? null,
+    mask: { homeDir: os.homedir(), username: currentUsername() }
+})
 
 /** Unread inbox requests on the Dock icon, so a request is seen from the browser the user is signing in with. */
 function updateInboxBadge(unread: number): void {
@@ -1930,13 +1941,10 @@ app.whenReady().then(async () => {
     // Feedback widget transport — see FeedbackRelay for why it leaves through main
     ipcMain.handle('feedback-relay', (_, request: FeedbackRelayRequest) => relayFeedbackRequest(request))
     // What a feedback report carries about the terminal it is about (see feedbackTerminalContext)
-    ipcMain.handle('feedback-terminal-context', (_, sessionId: unknown) => buildFeedbackTerminalContext(sessionId, {
-        terminals: terminalManager,
-        mirror: terminalMirror,
-        log: terminalEventLog,
-        agentStatus: (id) => agentStatusResolver.getStatus(id)?.status ?? null,
-        mask: { homeDir: os.homedir(), username: currentUsername() }
-    }))
+    ipcMain.handle('feedback-terminal-context', (_, sessionId: unknown) => feedbackTerminalContext(sessionId))
+    // Whether this Mac shows the widget — the renderer knows (build values, password unlock); the
+    // phone page asks main through /api/phone/me (see feedbackMode.ts)
+    ipcMain.on('feedback-mode', (_, on: unknown) => feedbackMode.report(on))
 
     // Template handlers
     ipcMain.handle('get-templates', () => {
@@ -3493,7 +3501,13 @@ app.whenReady().then(async () => {
         userDataDir: app.getPath('userData'),
         staticDir: join(__dirname, '../renderer'),
         recentSessions: () => recentSessions.list(),
-        sidebarSessionOrder: () => sidebarSessionOrder
+        sidebarSessionOrder: () => sidebarSessionOrder,
+        feedback: {
+            enabled: () => feedbackMode.enabled(),
+            appVersion: () => app.getVersion(),
+            relay: relayFeedbackRequest,
+            terminalContext: feedbackTerminalContext
+        }
     })
     void phone.start()
 

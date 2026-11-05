@@ -13,6 +13,7 @@ import type { PhonePush } from './PhonePush'
 import type { TailscaleStatus } from './tailscaleStatus'
 import { handlePhoneApi, type PhoneApiDeps } from './phoneApi'
 import { handleChatSocket, handleTerminalSocket, type PhoneSocketDeps } from './phoneSockets'
+import { handlePhoneFeedback, isPhoneFeedbackPath, type PhoneFeedbackDeps } from './phoneFeedback'
 
 /**
  * The phone connection: a second HTTP server in main, apart from the Control API.
@@ -76,6 +77,8 @@ export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' |
      * 51st pairing. Its sockets are already closing; work it left behind (a Chat queue it filled) should go too.
      */
     onDeviceRevoked?(deviceId: string | null): void
+    /** the feedback widget on the phone (phoneFeedback.ts); absent, the page never shows it */
+    feedback?: PhoneFeedbackDeps
 }
 
 export interface PhoneRequestAccess {
@@ -306,6 +309,14 @@ export class PhoneServer {
                 return
             }
             const access = who.access
+            if (isPhoneFeedbackPath(path)) {
+                await handlePhoneFeedback(req, res, url, this.deps.feedback, {
+                    access,
+                    stillAllowed: () => this.stillAllowed(access),
+                    sessionExists: (id) => this.deps.sessionExists(id)
+                })
+                return
+            }
             await handlePhoneApi(req, res, url, { ...this.deps, access, owner: who.owner!, stillAllowed: () => this.stillAllowed(access) })
             return
         }
@@ -325,7 +336,9 @@ export class PhoneServer {
             via: access.via,
             ...(access.login ? { login: access.login } : {}),
             ...(access.deviceLabel ? { deviceLabel: access.deviceLabel } : {}),
-            ...this.pushInfo()
+            ...this.pushInfo(),
+            // the widget only for a device that may send — what a view-only device could report it cannot send
+            ...(access.role === 'drive' && this.deps.feedback?.enabled() ? { feedback: { appVersion: this.deps.feedback.appVersion() } } : {})
         }
     }
 

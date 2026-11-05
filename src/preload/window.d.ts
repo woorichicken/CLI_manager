@@ -137,6 +137,8 @@ declare global {
             getAppVersion: () => Promise<string>
             feedbackRelay: (request: FeedbackRelayRequest) => Promise<FeedbackRelayResponse>
             feedbackTerminalContext: (sessionId: string | null) => Promise<FeedbackTerminalContext>
+            /** Tells main whether the feedback widget is shown here; the phone page follows it */
+            reportFeedbackMode: (on: boolean) => void
             checkTools: () => Promise<{ git: boolean; gh: boolean; brew: boolean }>
 
             // File utilities (for drag & drop)

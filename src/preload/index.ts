@@ -39,6 +39,7 @@ const api = {
     getAppVersion: (): Promise<string> => ipcRenderer.invoke('get-app-version'),
     feedbackRelay: (request: FeedbackRelayRequest): Promise<FeedbackRelayResponse> => ipcRenderer.invoke('feedback-relay', request),
     feedbackTerminalContext: (sessionId: string | null): Promise<FeedbackTerminalContext> => ipcRenderer.invoke('feedback-terminal-context', sessionId),
+    reportFeedbackMode: (on: boolean): void => ipcRenderer.send('feedback-mode', on),
 
     // Templates
     getTemplates: (): Promise<any[]> => ipcRenderer.invoke('get-templates'),

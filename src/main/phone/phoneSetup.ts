@@ -20,6 +20,7 @@ import { PhonePush } from './PhonePush'
 import { PhoneServer } from './PhoneServer'
 import { TailscaleStatus } from './tailscaleStatus'
 import { phoneQueueHooks } from './phoneQueue'
+import type { PhoneFeedbackDeps } from './phoneFeedback'
 
 /**
  * Builds the phone connection out of main's existing parts and registers its IPC
@@ -48,6 +49,8 @@ export interface PhoneSetupDeps {
     recentSessions(): string[]
     /** the ids in the order the sidebar draws sessions, as the renderer last reported it (null before it has) */
     sidebarSessionOrder(): string[] | null
+    /** the feedback widget on the phone page: main's relay and terminal context (phoneFeedback.ts) */
+    feedback?: PhoneFeedbackDeps
 }
 
 export interface PhoneSetup {
@@ -176,6 +179,7 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         maskLine,
         recordPhoneInput: (sessionId, detail) => deps.eventLog.record(sessionId, 'phone-input', detail),
         terminals: deps.terminals,
+        ...(deps.feedback ? { feedback: deps.feedback } : {}),
         // what a disconnected device left in a Chat queue is not typed later (F03)
         onDeviceRevoked: (deviceId) => {
             queueHooks.deviceRevoked(deviceId)
