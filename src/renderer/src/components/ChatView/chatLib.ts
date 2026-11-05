@@ -333,3 +333,32 @@ export function splitAppAttachments(text: string): (string | AppAttachmentMentio
     // the space that followed a chip is not part of the words
     return out.map((part, index) => (typeof part === 'string' && index > 0 && typeof out[index - 1] !== 'string' ? part.replace(/^\s+/, '') : part)).filter((part) => part !== '')
 }
+
+/** Rows the completion menu lists at most. */
+const MENU_ROWS = 40
+
+/** Picked in this chat (`usage`, per browser) plus run by the agent itself (`uses`, Claude's own count). */
+function uses(command: ChatCommand, usage: Record<string, number>): number {
+    return (usage[command.name] ?? 0) + (command.uses ?? 0)
+}
+
+/** The `/` menu: best match first, then the most used, user's own before built-ins, then by name. */
+export function rankCommands(commands: ChatCommand[], trigger: Extract<Trigger, { kind: 'slash' }>, usage: Record<string, number>): ChatCommand[] {
+    const query = trigger.query.toLowerCase()
+    const wanted = commands.filter((command) => (trigger.prefix === '$' ? command.trigger === '$' : command.trigger !== '$'))
+    const scored = wanted
+        .map((command) => {
+            const name = command.name.toLowerCase()
+            const score = query === '' ? 1 : name.startsWith(query) ? 3 : name.split(/[:-]/).some((word) => word.startsWith(query)) ? 2 : name.includes(query) ? 1 : 0
+            return { command, score }
+        })
+        .filter(({ score }) => score > 0)
+    scored.sort(
+        (a, b) =>
+            b.score - a.score ||
+            uses(b.command, usage) - uses(a.command, usage) ||
+            Number(a.command.source === 'builtin') - Number(b.command.source === 'builtin') ||
+            a.command.name.localeCompare(b.command.name)
+    )
+    return scored.slice(0, MENU_ROWS).map(({ command }) => command)
+}

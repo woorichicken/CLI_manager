@@ -11,6 +11,7 @@ import type { TerminalMirror } from '../TerminalMirror'
 import type { PhoneSession, PhoneSessionsResponse, PhoneSessionState } from '../../shared/phone'
 import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
 import { DEFAULT_PHONE } from '../../shared/types'
+import { DEFAULT_QUICK_REPLIES } from '../../shared/conversation'
 // The sidebar's own ordering functions (pure, types only): the phone's list is the Mac's All
 // sessions List exactly because it is computed by the same code, not a copy of it.
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder, type SessionEntry } from '../../renderer/src/utils/sessionNavigation'
@@ -180,6 +181,10 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         recordPhoneInput: (sessionId, detail) => deps.eventLog.record(sessionId, 'phone-input', detail),
         terminals: deps.terminals,
         ...(deps.feedback ? { feedback: deps.feedback } : {}),
+        quickReplies: () => {
+            const chat = (deps.store.get('settings') as UserSettings | undefined)?.chat
+            return (chat?.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim())
+        },
         // what a disconnected device left in a Chat queue is not typed later (F03)
         onDeviceRevoked: (deviceId) => {
             queueHooks.deviceRevoked(deviceId)

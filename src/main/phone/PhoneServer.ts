@@ -80,6 +80,8 @@ export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' |
     onDeviceRevoked?(deviceId: string | null): void
     /** the feedback widget on the phone (phoneFeedback.ts); absent, the page never shows it */
     feedback?: PhoneFeedbackDeps
+    /** the Mac's chat quick replies (Settings › Terminal › Chat view), for the phone's own switch (847da0aa) */
+    quickReplies?(): string[]
 }
 
 export interface PhoneRequestAccess {
@@ -334,7 +336,9 @@ export class PhoneServer {
             ...(access.deviceLabel ? { deviceLabel: access.deviceLabel } : {}),
             ...this.pushInfo(),
             // the widget only for a device that may send — what a view-only device could report it cannot send
-            ...(access.role === 'drive' && this.deps.feedback?.enabled() ? { feedback: { appVersion: this.deps.feedback.appVersion() } } : {})
+            ...(access.role === 'drive' && this.deps.feedback?.enabled() ? { feedback: { appVersion: this.deps.feedback.appVersion() } } : {}),
+            // a view-only device has no box to put them in
+            ...(access.role === 'drive' && this.deps.quickReplies ? { quickReplies: this.deps.quickReplies() } : {})
         }
     }
 

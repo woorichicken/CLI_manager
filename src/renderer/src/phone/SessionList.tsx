@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react'
 import { Folder, MessageSquareText, Pin, TerminalSquare } from 'lucide-react'
 import type { PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { listLines } from './sessionListLines'
@@ -9,6 +10,12 @@ import { listLines } from './sessionListLines'
  * puts a line under the pinned sessions; each row carries its workspace's name. A dot says
  * working (blue) or waiting for you (amber, with the question). No create, delete or rename.
  */
+
+/**
+ * Where the list was scrolled, kept across the drawer closing (it unmounts) — b85fc49b: every close
+ * put the list back at the top. Module memory: the page's life, like the Mac sidebar's own scroll.
+ */
+let savedScrollTop = 0
 
 const STATE_TEXT: Partial<Record<PhoneSession['state'], string>> = {
     working: 'Working…',
@@ -27,9 +34,23 @@ export function SessionList({
 }) {
     const waiting = data?.sessions.filter((s) => s.state === 'waiting').length ?? 0
     const lines = data ? listLines(data) : []
+    const list = useRef<HTMLElement>(null)
+    // before paint: the drawer opens where it was left, not at the top and then jumping
+    const hasRows = lines.length > 0
+    useLayoutEffect(() => {
+        if (list.current && hasRows) list.current.scrollTop = savedScrollTop
+    }, [hasRows])
 
     return (
-        <nav className="phone-list" data-testid="phone-session-list" aria-label="Sessions">
+        <nav
+            ref={list}
+            className="phone-list"
+            data-testid="phone-session-list"
+            aria-label="Sessions"
+            onScroll={(event) => {
+                savedScrollTop = event.currentTarget.scrollTop
+            }}
+        >
             <div className="phone-list-head">
                 <span className="phone-list-title">All sessions</span>
                 {data && <span className="phone-group-count">{data.sessions.length}</span>}

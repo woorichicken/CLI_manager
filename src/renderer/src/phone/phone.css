@@ -66,6 +66,8 @@ body.phone-body #root {
     flex-shrink: 0;
 }
 .phone-narrow .phone-sidebar.phone-drawer {
+    /* opaque over the session (ede4906a): the glass sidebar colour is 85% and the chat showed through */
+    background: #0f0f14;
     position: absolute;
     top: env(safe-area-inset-top);
     bottom: 0;
@@ -345,6 +347,19 @@ body.phone-body #root {
 }
 .phone-menu button:active {
     background: var(--button-hover-bg);
+}
+.phone-menu-switch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+.phone-menu-switch input {
+    width: 18px;
+    height: 18px;
+    accent-color: #3b82f6;
 }
 .phone-menu-note {
     font-size: 11px;
@@ -803,6 +818,35 @@ body.phone-body #root {
 }
 
 /* the Mac not answering, said beside the session's name — the header keeps its height */
+.phone-header-refreshing {
+    font-weight: 400;
+    font-size: 12px;
+    color: #60a5fa;
+    white-space: nowrap;
+}
+.phone-refreshing {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #60a5fa;
+}
+.phone-spinner {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    vertical-align: -1px;
+    animation: phone-spin 0.8s linear infinite;
+}
+@keyframes phone-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
 .phone-header-offline {
     font-weight: 400;
     font-size: 12px;

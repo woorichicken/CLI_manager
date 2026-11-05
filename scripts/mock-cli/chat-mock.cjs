@@ -20,6 +20,7 @@
  *             tab title, question, options with descriptions, "Type something.", a rule, "Chat about this".
  *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
+ *   TABLE     answers with a five-column table wider than a phone (Korean cells).
  *   /model X  (Claude) records the command and "Set model to `X 5`", as Claude Code 2.1.3xx does; the next
  *             answers name that model. Bare `/model`, `/config`: a panel only the terminal shows (Esc closes it).
  *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
@@ -312,8 +313,19 @@ function submit(text) {
     else if (text === 'PLAN') {
         recordPlan()
         answerTurn(text, 'Planned three steps.')
-    } else answerTurn(text)
+    } else if (text === 'TABLE') answerTurn(text, WIDE_TABLE)
+    else answerTurn(text)
 }
+
+/** a report-style table wider than a phone, like the one in fb 2be8b580 (Korean words, long cells) */
+const WIDE_TABLE = [
+    'Here is the summary.',
+    '',
+    '| 대상 | 줄 | 화면 변화 | 확인한 것 | 남은 일 |',
+    '| --- | --- | --- | --- | --- |',
+    '| lightsoft | 11/6 월차 1 (입사 6개월) | 기본부여 5 → 6 | 운영 DB 조회만 했고 실제로 넣지는 않음 | 없음 |',
+    '| 박원호 | 바뀐 입사일 2016-02-01 기준으로 다시 계산 | 없음 — 올해 숫자는 기초잔여로 대신함 | 이력에만 쌓임 | 다음 달 확인 |'
+].join('\n')
 
 let escape = ''
 let escapeTimer = null

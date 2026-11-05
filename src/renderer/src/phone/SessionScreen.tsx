@@ -1,3 +1,4 @@
+import type { ChatPreferences } from '../../../shared/conversation'
 import { useMemo } from 'react'
 import { Menu, MessageSquareText, TerminalSquare } from 'lucide-react'
 import type { PhoneRole, PhoneSession } from '../../../shared/phone'
@@ -24,7 +25,9 @@ export function SessionScreen({
     onMenu,
     showMenuButton,
     menuBadge = 0,
-    offline = false
+    offline = false,
+    refreshing = false,
+    chatPreferences
 }: {
     session: PhoneSession
     lens: SessionLens
@@ -36,6 +39,10 @@ export function SessionScreen({
     menuBadge?: number
     /** the Mac stopped answering: said in the header, its height unchanged (ovis headerConnection.ts) */
     offline?: boolean
+    /** back on the page after a while away: being read again (e05bf978) */
+    refreshing?: boolean
+    /** this phone's own chat settings (phoneChatSettings.ts) with the Mac's quick replies */
+    chatPreferences?: ChatPreferences
 }) {
     const transport = useMemo(() => createPhoneChatTransport(), [])
     const chatAvailable = session.agent !== null
@@ -62,6 +69,11 @@ export function SessionScreen({
                             {' '}· Reconnecting…
                         </span>
                     )}
+                    {!offline && refreshing && (
+                        <span className="phone-header-refreshing" data-testid="phone-header-refreshing">
+                            {' '}<span className="phone-spinner" aria-hidden="true" /> Refreshing…
+                        </span>
+                    )}
                 </span>
                 {chatAvailable && (
                     <div className="phone-seg phone-lens" role="group" aria-label="Chat or terminal">
@@ -81,6 +93,7 @@ export function SessionScreen({
                         transport={transport}
                         fontSize={15}
                         touch={COARSE_POINTER}
+                        preferences={chatPreferences}
                         readOnly={role === 'watch'}
                         canOpenFiles={false}
                         onOpenTerminal={() => onLens('terminal')}

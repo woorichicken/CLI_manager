@@ -239,6 +239,8 @@ export interface ChatCommand {
      * sending it — `always`, or only when sent `bare` (no argument).
      */
     terminal?: 'always' | 'bare'
+    /** how often the agent ran it, by its own count (Claude's `skillUsage`) — the menu's order (d50fe2b7) */
+    uses?: number
 }
 
 /** The chat's own preferences (Settings › Terminal › Chat view), handed to the view as a prop. */
@@ -249,6 +251,8 @@ export interface ChatPreferences {
     showQuickReplies?: boolean
     /** The replies, in order. Default: continue · yes · no · retry. */
     quickReplies?: string[]
+    /** A touch screen: Return sends too (the phone's own setting). Default off — Return breaks the line. */
+    returnSendsOnTouch?: boolean
 }
 
 export const DEFAULT_QUICK_REPLIES = ['continue', 'yes', 'no', 'retry']

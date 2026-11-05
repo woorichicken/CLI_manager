@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowUp, FileText, Loader2, Plus, Square, X } from 'luci
 import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
 import { InputBusyNote } from './InputBusyNote'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH } from '../../../../shared/conversation'
-import { activeTrigger, fileMention, type Trigger } from './chatLib'
+import { activeTrigger, fileMention, rankCommands } from './chatLib'
 
 /**
  * A draft per session, kept while the app runs and across restarts
@@ -63,8 +63,6 @@ function bumpUsage(name: string): void {
 const FOCUS_DELAY_MS = 150
 /** Taller than this, the box scrolls instead of growing. */
 const MAX_ROWS = 10
-/** Rows the completion menu lists at most. */
-const MENU_ROWS = 40
 /** Wait this long after a keystroke before asking for files. */
 const FILE_SEARCH_DELAY_MS = 120
 /** A picture bigger than this gets no thumbnail on its tile. */
@@ -82,26 +80,6 @@ interface Attachment {
     error?: string
 }
 let attachmentSequence = 0
-
-function rankCommands(commands: ChatCommand[], trigger: Extract<Trigger, { kind: 'slash' }>, usage: Record<string, number>): ChatCommand[] {
-    const query = trigger.query.toLowerCase()
-    const wanted = commands.filter((command) => (trigger.prefix === '$' ? command.trigger === '$' : command.trigger !== '$'))
-    const scored = wanted
-        .map((command) => {
-            const name = command.name.toLowerCase()
-            const score = query === '' ? 1 : name.startsWith(query) ? 3 : name.split(/[:-]/).some((word) => word.startsWith(query)) ? 2 : name.includes(query) ? 1 : 0
-            return { command, score }
-        })
-        .filter(({ score }) => score > 0)
-    scored.sort(
-        (a, b) =>
-            b.score - a.score ||
-            (usage[b.command.name] ?? 0) - (usage[a.command.name] ?? 0) ||
-            Number(a.command.source === 'builtin') - Number(b.command.source === 'builtin') ||
-            a.command.name.localeCompare(b.command.name)
-    )
-    return scored.slice(0, MENU_ROWS).map(({ command }) => command)
-}
 
 const SOURCE_LABEL: Record<ChatCommand['source'], string> = {
     builtin: 'built-in',
@@ -325,6 +303,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const usage = useMemo(readUsage, [trigger?.kind])
     const commandChoices = trigger?.kind === 'slash' && commands ? rankCommands(commands, trigger, usage) : []
     const choices: (ChatCommand | string)[] = trigger?.kind === 'slash' ? commandChoices : trigger?.kind === 'file' ? files : []
+    // a message that is a skill or command reads light blue in the box (4030a994) — a known one once the list is in
+    const commandTyped = /^\s*([/$])([\w:.-]+)/.exec(text)
+    const isCommand = commandTyped !== null && (commands === null || commands.some((command) => command.name === commandTyped[2] && (command.trigger ?? '/') === commandTyped[1]))
     const menuOpen = trigger !== null && choices.length > 0
     const selected = Math.min(menuIndex, Math.max(0, choices.length - 1))
     useEffect(() => setMenuIndex(0), [trigger?.kind, trigger?.query])
@@ -413,7 +394,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }
         const modifier = event.metaKey || event.ctrlKey
         // a phone keyboard's Return has no Shift: on touch it breaks the line, the Send button sends
-        const enterSends = !touch && preferences.enterSends !== false
+        // a phone may choose Return to send (its own setting — 69340cc2)
+        const enterSends = touch ? preferences.returnSendsOnTouch === true : preferences.enterSends !== false
         const shouldSend = event.key === 'Enter' && !event.shiftKey && (modifier || (enterSends && !event.altKey))
         // a number typed for the card waits: the empty box's Enter confirms it, Escape cancels it
         if (pendingPick && text.trim() === '') {
@@ -605,8 +587,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         value={text}
                         maxLength={MAX_CHAT_TEXT_LENGTH}
                         data-testid="chat-composer"
+                        className={isCommand ? 'is-command' : undefined}
+                        data-command={isCommand ? 'true' : undefined}
                         placeholder={placeholder}
-                        title={touch ? 'Return starts a new line · the arrow sends' : preferences.enterSends === false ? '⌘Enter sends · Enter starts a new line' : 'Enter sends · Shift+Enter starts a new line'}
+                        title={touch ? (preferences.returnSendsOnTouch === true ? 'Return sends' : 'Return starts a new line · the arrow sends') : preferences.enterSends === false ? '⌘Enter sends · Enter starts a new line' : 'Enter sends · Shift+Enter starts a new line'}
                         onChange={(event) => {
                             setDraft(event.target.value)
                             setCaret(event.target.selectionStart)

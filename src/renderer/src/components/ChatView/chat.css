@@ -138,6 +138,7 @@
 .chat-composer textarea {
     flex: 1; min-width: 0; resize: none; background: transparent; border: 0; padding: 6px 8px; color: var(--chat-fg); line-height: 1.45; outline: none;
 }
+.chat-composer textarea.is-command { color: #93c5fd; }
 .chat-composer-send { width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #2563eb; color: #fff; }
 .chat-composer-send:disabled { background: var(--chat-soft); color: var(--chat-faint); }
 .chat-composer-send.is-stop { background: rgba(248, 113, 113, 0.18); color: #fca5a5; border: 1px solid rgba(248, 113, 113, 0.45); }
@@ -312,6 +313,9 @@ ol.chat-md-list { list-style: decimal; }
 .chat-md-table-wrap { overflow-x: auto; max-width: 100%; }
 .chat-md table { border-collapse: collapse; font-size: 0.92em; }
 .chat-md th, .chat-md td { border: 1px solid var(--chat-line); padding: 4px 8px; text-align: left; vertical-align: top; }
+/* A narrow screen squeezed every column to a few letters («lig/hts/oft», 2be8b580) and the wrapper never
+   scrolled. Cells keep a readable width and whole words; a table wider than the chat scrolls sideways. */
+.chat-md th, .chat-md td { min-width: 6.5em; max-width: 24em; overflow-wrap: break-word; word-break: keep-all; }
 .chat-md th { background: var(--chat-soft); font-weight: 600; }
 .chat-md-commentary { color: var(--chat-dim); font-size: 0.92em; }
 .chat-md-small { font-size: 0.9em; color: var(--chat-dim); }

@@ -12,6 +12,9 @@ import { reconnectDelay } from './usePhoneTerminal'
  * nothing here) or search the session's folder for `@` (an empty list).
  */
 
+/** Away from the page this long, the chat socket is not trusted on return. */
+const STALE_AFTER_MS = 5_000
+
 export function createPhoneChatTransport(onViewOnly?: (message: string) => void): ChatTransport {
     const refuse = (error: unknown): ChatSendResult => {
         const message = error instanceof Error ? error.message : String(error)
@@ -51,11 +54,30 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
                 onChange(-1)
                 open()
             }
-            // back on the page or the network: a waiting retry goes now
-            const now = (): void => {
-                if (stopped || retry === null || document.visibilityState !== 'visible') return
-                window.clearTimeout(retry)
-                reopen()
+            // back on the page or the network: a waiting retry goes now. Back after a while away (the
+            // phone slept, another app was in front), the socket may look open and be dead — Android
+            // froze the page — and the chat stayed as it was until a reload (24ab5ab1): a fresh one.
+            let hiddenAt: number | null = null
+            const now = (event?: Event): void => {
+                if (document.visibilityState === 'hidden') {
+                    hiddenAt ??= Date.now()
+                    return
+                }
+                const away = (hiddenAt !== null && Date.now() - hiddenAt >= STALE_AFTER_MS) || (event as PageTransitionEvent | undefined)?.persisted === true
+                hiddenAt = null
+                if (stopped) return
+                if (retry !== null) {
+                    window.clearTimeout(retry)
+                    reopen()
+                } else if (away) {
+                    const old = socket
+                    if (old) {
+                        old.onclose = null
+                        old.onmessage = null
+                        old.close()
+                    }
+                    reopen()
+                }
             }
             open()
             document.addEventListener('visibilitychange', now)

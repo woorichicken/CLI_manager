@@ -7,6 +7,9 @@ import { DropletPill } from './DropletPill'
 import { dropletFor, nextSeen, waitingElsewhere, type Droplet, type SeenState } from './droplets'
 import { PairScreen } from './PairScreen'
 import { openPhoneFeedback, phoneFeedbackConfigured, PhoneFeedback } from './feedback/PhoneFeedback'
+import { PhoneSettingsMenu } from './PhoneSettingsMenu'
+import { usePhoneChatSettings } from './phoneChatSettings'
+import type { ChatPreferences } from '../../../shared/conversation'
 import { phoneFeedbackAvailable } from './feedbackGate'
 import { SessionList } from './SessionList'
 import { SessionScreen, type SessionLens } from './SessionScreen'
@@ -61,13 +64,21 @@ function useWide(): boolean {
     return wide
 }
 
+/** Away from the page this long counts as coming back (the phone slept, another app was in front). */
+const AWAY_MS = 5_000
+/** «Refreshing…» stays at least this long — a blink would not be read. */
+const REFRESH_MIN_MS = 600
+
 export function PhoneApp() {
     const [me, setMe] = useState<PhoneMe | null>(null)
     const [data, setData] = useState<PhoneSessionsResponse | null>(null)
     const [route, setRoute] = useState(readRoute)
     const [drawer, setDrawer] = useState(false)
     const [offline, setOffline] = useState(false)
+    /** back on the page after a while away: the list and chat are being read again (e05bf978) */
+    const [refreshing, setRefreshing] = useState(false)
     const wide = useWide()
+    const chatSettings = usePhoneChatSettings()
     const edge = useRef<{ x: number; y: number } | null>(null)
     const [droplet, setDroplet] = useState<Droplet | null>(null)
     const seen = useRef<Map<string, SeenState> | null>(null)
@@ -149,6 +160,43 @@ export function PhoneApp() {
         }
     }, [me, loadMe])
 
+    // Back after a while away: say so until the list is read again, so the old screen is not taken
+    // for the current one (e05bf978 · 24ab5ab1). The chat reads itself again on its own (phoneChatTransport).
+    useEffect(() => {
+        if (me?.access !== 'full') return
+        let hiddenAt: number | null = null
+        let stopped = false
+        const visibility = (event?: Event): void => {
+            if (document.visibilityState === 'hidden') {
+                hiddenAt ??= Date.now()
+                return
+            }
+            const away = (hiddenAt !== null && Date.now() - hiddenAt >= AWAY_MS) || (event as PageTransitionEvent | undefined)?.persisted === true
+            hiddenAt = null
+            if (!away) return
+            setRefreshing(true)
+            const shown = Date.now()
+            getSessions()
+                .then((next) => {
+                    if (stopped) return
+                    setData(next)
+                    setOffline(false)
+                })
+                .catch(() => {
+                    if (!stopped) setOffline(true)
+                })
+                // long enough to be seen, not a flicker
+                .finally(() => window.setTimeout(() => !stopped && setRefreshing(false), Math.max(0, REFRESH_MIN_MS - (Date.now() - shown))))
+        }
+        document.addEventListener('visibilitychange', visibility)
+        window.addEventListener('pageshow', visibility)
+        return () => {
+            stopped = true
+            document.removeEventListener('visibilitychange', visibility)
+            window.removeEventListener('pageshow', visibility)
+        }
+    }, [me])
+
     const navigate = useCallback((sessionId: string | null, view: SessionLens | null, replace = false) => {
         const params = new URLSearchParams()
         if (sessionId) params.set('session', sessionId)
@@ -202,6 +250,11 @@ export function PhoneApp() {
     const showList = wide || !session || drawer
     const feedback = phoneFeedbackAvailable(me, phoneFeedbackConfigured())
     const badge = data ? waitingElsewhere(data.sessions, session?.id ?? null) : 0
+    const chatPreferences: ChatPreferences = {
+        returnSendsOnTouch: chatSettings.returnSends,
+        showQuickReplies: chatSettings.quickReplies,
+        quickReplies: me.quickReplies ?? []
+    }
 
     return (
         <div
@@ -246,9 +299,15 @@ export function PhoneApp() {
                                 <MessageSquareWarning size={17} />
                             </button>
                         )}
+                        {me.role === 'drive' && <PhoneSettingsMenu quickReplies={me.quickReplies ?? []} />}
                         {me.push && <AlertsMenu publicKey={me.push.publicKey} />}
                     </div>
                     {offline && <div className="phone-offline">Reconnecting to the Mac…</div>}
+                    {!offline && refreshing && (
+                        <div className="phone-refreshing" data-testid="phone-list-refreshing">
+                            <span className="phone-spinner" aria-hidden="true" /> Refreshing…
+                        </div>
+                    )}
                     <SessionList data={data} activeId={session?.id ?? null} onOpen={open} />
                 </aside>
             )}
@@ -262,6 +321,8 @@ export function PhoneApp() {
                         showMenuButton={!wide}
                         menuBadge={badge}
                         offline={offline}
+                        refreshing={refreshing}
+                        chatPreferences={chatPreferences}
                         onMenu={() => setDrawer(true)}
                         onLens={(next) => {
                             rememberLens(session.id, next)
