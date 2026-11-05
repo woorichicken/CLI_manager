@@ -141,6 +141,13 @@ interface ConfirmationModalProps {
     confirmText?: string
     cancelText?: string
     isDangerous?: boolean
+    /**
+     * Opt-in: Esc and a click on the backdrop cancel, and Cancel takes the focus so a stray
+     * Enter does nothing harmful. Off by default so existing callers behave exactly as before.
+     */
+    dismissible?: boolean
+    /** Prefix for test ids: `<id>`, `<id>-cancel`, `<id>-confirm`. */
+    testId?: string
 }
 
 /**
@@ -153,25 +160,51 @@ export function ConfirmationModal({
     onCancel,
     confirmText = 'Confirm',
     cancelText = 'Cancel',
-    isDangerous = false
+    isDangerous = false,
+    dismissible = false,
+    testId
 }: ConfirmationModalProps) {
+    const cancelRef = React.useRef<HTMLButtonElement>(null)
+    React.useEffect(() => {
+        if (!dismissible) return
+        cancelRef.current?.focus()
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            onCancel()
+        }
+        // Capture phase: the terminal and app shortcuts must not see this Esc.
+        window.addEventListener('keydown', onKey, true)
+        return () => window.removeEventListener('keydown', onKey, true)
+    }, [dismissible, onCancel])
     return createPortal(
-        <div className={`fixed inset-0 z-[${MENU_Z_INDEX}] flex items-center justify-center bg-black/50 backdrop-blur-sm`}>
+        <div
+            className={`fixed inset-0 z-[${MENU_Z_INDEX}] flex items-center justify-center bg-black/50 backdrop-blur-sm`}
+            data-testid={testId}
+            onClick={dismissible ? onCancel : undefined}
+        >
             <div
                 className="bg-[#1e1e20] border border-white/10 rounded-lg p-4 w-80 shadow-2xl"
+                role={dismissible ? 'alertdialog' : undefined}
+                aria-modal={dismissible ? true : undefined}
+                aria-label={dismissible ? title : undefined}
                 onClick={e => e.stopPropagation()}
             >
                 <h3 className="text-sm font-medium text-white mb-2">{title}</h3>
                 <p className="text-xs text-gray-400 mb-4">{message}</p>
                 <div className="flex justify-end gap-2">
                     <button
+                        ref={cancelRef}
                         onClick={onCancel}
-                        className="px-3 py-1 text-xs text-gray-400 hover:text-white"
+                        data-testid={testId ? `${testId}-cancel` : undefined}
+                        className="px-3 py-1 text-xs text-gray-400 hover:text-white rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-white/40"
                     >
                         {cancelText}
                     </button>
                     <button
                         onClick={onConfirm}
+                        data-testid={testId ? `${testId}-confirm` : undefined}
                         className={`px-3 py-1 text-xs text-white rounded ${isDangerous
                                 ? 'bg-red-600 hover:bg-red-500'
                                 : 'bg-blue-600 hover:bg-blue-500'
