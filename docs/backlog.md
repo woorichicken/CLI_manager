@@ -39,6 +39,15 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   ③ 세션 목록에서 「대화:」·총괄 세션을 위로 묶거나 따로 표시 ④ Mac 에만 있는 기능 목록(헤더 체크리스트·Related·split view·설정)을 표로 만들어 폰에서 볼 것/뺄 것을 사람이 고른다. 보기 전용(watch) 기기는 읽기만.
 - Owner: 없음
 
+### Mac 터미널 기본 글꼴 — 한글이 글자마다 벌어져 보인다(폰 G3 와 같은 증상)
+- Discovered: 2026-11-05, Chat 보기 위치 안내 캡처(격리 개발판, 설정 기본값) — 터미널에 「안 녕 하 세 요 !」처럼 글자 사이 틈. 캡처 `~/Downloads/_batches/plan-ovis-1103/review/where-chat/1-terminal.png`.
+- Evidence: 기본 글꼴 `DEFAULT_TERMINAL_FONT_FAMILY = 'Menlo, Monaco, "Courier New", monospace'`(`src/renderer/src/components/TerminalView.tsx`)에 한글 글리프가 없어 대체 글꼴로 그리는데, 그 폭이 2칸보다 좁아 xterm 이 남는 폭을 글자 뒤 틈으로 둔다.
+  폰은 G3 에서 한글 고정폭 부분 글꼴(`CLIM Phone Mono`)로 2.00 을 맞췄다. 사람이 쓰는 실제 앱 설정도 글꼴을 따로 고르지 않았다(`config.json` 에 `terminalFontFamily` 없음) — 같은 기본값을 쓴다.
+- Why deferred: 이번 범위(릴리즈 v1.26.0) 밖. 실제 앱 화면에서 같은 틈이 보이는지 사람 확인이 먼저다.
+- Trigger: 사람이 Mac 터미널 한글 간격을 말할 때, 또는 새 사용자 기본 글꼴을 다시 정할 때.
+- Fix direction: 기본 글꼴 목록 끝에 한글 고정폭(예: 폰과 같은 나눔고딕코딩 부분 글꼴을 데스크톱에도 싣거나 `D2Coding` 이 있으면 사용) — 한글/라틴 폭 비를 T81 처럼 재서 2.00 확인.
+- Owner: 없음
+
 ### 폰 알림 — Chrome 「스팸일 수 있음」 안내 · 두 주소로 붙은 같은 폰에 알림 두 번 · 번역 팝업
 - Discovered: 2026-11-05 Tailscale 주소(`tailscale serve`) 점검, 갤럭시 M23 · Chrome 156.
 - Evidence: ① 처음 받는 알림은 주소마다 Chrome 이 내용을 「스팸일 수 있음(1개) — Chrome에서 <주소>의 스팸 가능성이 감지되었습니다」로 바꿔 보여 준다(localhost:8765 · *.ts.net 둘 다).
