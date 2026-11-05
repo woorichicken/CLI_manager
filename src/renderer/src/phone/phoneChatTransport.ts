@@ -1,4 +1,4 @@
-import type { AttachResult, ChatCommand, ChatSendResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
+import type { AttachResult, ChatCommand, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../../shared/conversation'
 import { chatPath, getJson, postJson, socketUrl } from './api'
 import { reconnectDelay } from './usePhoneTerminal'
@@ -11,6 +11,9 @@ import { reconnectDelay } from './usePhoneTerminal'
  * What a phone cannot do the Mac's way: open a file on the Mac (the chat's file links do
  * nothing here) or search the session's folder for `@` (an empty list).
  */
+
+/** Away from the page this long, the chat socket is not trusted on return. */
+const STALE_AFTER_MS = 5_000
 
 export function createPhoneChatTransport(onViewOnly?: (message: string) => void): ChatTransport {
     const refuse = (error: unknown): ChatSendResult => {
@@ -51,11 +54,30 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
                 onChange(-1)
                 open()
             }
-            // back on the page or the network: a waiting retry goes now
-            const now = (): void => {
-                if (stopped || retry === null || document.visibilityState !== 'visible') return
-                window.clearTimeout(retry)
-                reopen()
+            // back on the page or the network: a waiting retry goes now. Back after a while away (the
+            // phone slept, another app was in front), the socket may look open and be dead — Android
+            // froze the page — and the chat stayed as it was until a reload (24ab5ab1): a fresh one.
+            let hiddenAt: number | null = null
+            const now = (event?: Event): void => {
+                if (document.visibilityState === 'hidden') {
+                    hiddenAt ??= Date.now()
+                    return
+                }
+                const away = (hiddenAt !== null && Date.now() - hiddenAt >= STALE_AFTER_MS) || (event as PageTransitionEvent | undefined)?.persisted === true
+                hiddenAt = null
+                if (stopped) return
+                if (retry !== null) {
+                    window.clearTimeout(retry)
+                    reopen()
+                } else if (away) {
+                    const old = socket
+                    if (old) {
+                        old.onclose = null
+                        old.onmessage = null
+                        old.close()
+                    }
+                    reopen()
+                }
             }
             open()
             document.addEventListener('visibilitychange', now)
@@ -70,7 +92,7 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
                 socket?.close()
             }
         },
-        send: (sessionId, text) => postJson<ChatSendResult>(chatPath(sessionId, 'send'), { text }).catch(refuse),
+        send: (sessionId, text, options) => postJson<ChatSendResult>(chatPath(sessionId, 'send'), { text, ...(options?.clearDraft !== undefined ? { clearDraft: options.clearDraft } : {}) }).catch(refuse),
         cancelQueued: async (sessionId) => {
             await postJson(chatPath(sessionId, 'cancel-queued'), {}).catch(() => undefined)
         },
@@ -80,6 +102,11 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
             return result.discarded === true
         },
         sendQueuedNow: (sessionId, id) => postJson<ChatSendResult>(chatPath(sessionId, 'send-queued-now'), { id }).catch(refuse),
+        // a failed request moves nothing: the text stays where it was
+        placeDraftInTerminal: (sessionId, text) =>
+            postJson<DraftToTerminalResult>(chatPath(sessionId, 'draft-to-terminal'), { text }).catch((): DraftToTerminalResult => ({ status: 'refused', reason: 'not_running' })),
+        takeTerminalDraft: (sessionId) =>
+            postJson<DraftFromTerminalResult>(chatPath(sessionId, 'draft-from-terminal'), {}).catch((): DraftFromTerminalResult => ({ status: 'empty' })),
         interrupt: (sessionId) =>
             postJson<InterruptResult>(chatPath(sessionId, 'interrupt'), {}).catch((error) => ({
                 status: 'rejected' as const,

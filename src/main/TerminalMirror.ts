@@ -8,7 +8,7 @@ import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.js'
 // Same reason as above: bundled by file so the packaged app does not need it in node_modules.
 import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.js'
 import { TerminalManager } from './TerminalManager'
-import { INPUT_BOX_RULE, ScreenSummary, screenSummary } from './screenLines'
+import { isBusyRow, isInputBoxRule, ScreenSummary, screenSummary } from './screenLines'
 import { resizeKeepingBottom } from '../shared/terminalResize'
 
 /**
@@ -45,11 +45,10 @@ const DEFAULT_ROWS = 30
 const MIRROR_SCROLLBACK = 2000
 
 /**
- * Agent CLIs print this while a turn is in progress — Claude Code
- * ("esc to interrupt") and Codex ("Esc to interrupt") both do. Output alone is
- * not enough: a model can think for a while without the screen changing much.
+ * A turn in progress is read from the agent's spinner row (`isBusyRow` — "esc to interrupt", or
+ * Claude Code 2.1.318's bare spinner). Output alone is not enough: a model can think for a while
+ * without the screen changing much.
  */
-const BUSY_PATTERN = /esc to interrupt/i
 
 /**
  * A question the agent cannot get past without an answer: permission prompts,
@@ -90,6 +89,13 @@ export interface InputBox {
     typed: string
     /** Text drawn dim — the agent's suggestion for the next prompt, never typed by anyone. */
     suggestion: string
+    /**
+     * Only the box's bottom rule is on screen: a draft taller than the screen pushed its top rule
+     * and its `❯` row off (ovis claudeInputBox "clipped", MIT). Nothing is read; it is not empty.
+     */
+    clipped?: boolean
+    /** Rows of the box that hold typed text: Ctrl+K and Ctrl+U clear one. */
+    typedRows?: number
 }
 
 interface Mirror {
@@ -354,14 +360,23 @@ export class TerminalMirror {
         const rules: number[] = []
         for (let row = mirror.term.rows - 1; row >= 0 && rules.length < 2; row--) {
             const text = buffer.getLine(buffer.viewportY + row)?.translateToString(true).trim() ?? ''
-            if (INPUT_BOX_RULE.test(text)) rules.push(row)
+            if (isInputBoxRule(text)) rules.push(row)
         }
-        if (rules.length < 2) return null
+        if (rules.length === 0) return null
+        if (rules.length === 1) return { typed: '', suggestion: '', clipped: true }
 
         const [bottom, top] = rules
         const typed: string[] = []
         const suggestion: string[] = []
         const cell = buffer.getNullCell()
+        // Past the box's prompt glyph; the IDE pill right after it, in cells to skip (edge-audit 1).
+        let promptSeen = false
+        let pill = 0
+        // Claude draws its own cursor inverse on a suggestion's first letter (edge-audit 2): held
+        // until the row tells whether grey text follows it (a suggestion) or not (typed).
+        let firstAfterPrompt = true
+        let cursor = ''
+        let grey = false
         for (let row = top + 1; row < bottom; row++) {
             const line = buffer.getLine(buffer.viewportY + row)
             if (!line) continue
@@ -372,13 +387,34 @@ export class TerminalMirror {
                 // Wide characters occupy a second, empty cell.
                 if (cell.getWidth() === 0) continue
                 const chars = cell.getChars()
+                if (!promptSeen && chars === '❯') {
+                    promptSeen = true
+                    pill = idePillCells(line.translateToString(true, col + 1))
+                    typedRow += chars
+                    continue
+                }
+                if (pill > 0) {
+                    pill--
+                    typedRow += ' '
+                    suggestionRow += ' '
+                    continue
+                }
                 // Claude Code draws the spaces inside dim text without the dim
                 // attribute (seen replaying a real session), so blanks belong to both.
                 if (chars.trim() === '') {
                     typedRow += ' '
                     suggestionRow += ' '
-                } else if (cell.isDim()) {
+                    continue
+                }
+                const first = promptSeen && firstAfterPrompt
+                if (promptSeen) firstAfterPrompt = false
+                if (cell.isDim()) {
+                    grey = true
                     suggestionRow += chars
+                } else if (first && cell.isInverse()) {
+                    cursor = chars
+                    typedRow += CURSOR_MARK
+                    suggestionRow += CURSOR_MARK
                 } else {
                     typedRow += chars
                 }
@@ -386,15 +422,20 @@ export class TerminalMirror {
             typed.push(collapseSpaces(typedRow))
             suggestion.push(collapseSpaces(suggestionRow))
         }
+        // A cursor over a typed letter has nothing grey after it.
+        const typedRows = typed.map((text) => text.replace(CURSOR_MARK, grey ? '' : cursor)).filter(Boolean)
+        const typedText = stripPromptGlyph(typedRows.join(' '))
+        const tip = typedRows.length === 1 && NO_COLOR_TIP.test(typedText) && viewportColorless(mirror.term)
         return {
-            typed: stripPromptGlyph(typed.filter(Boolean).join(' ')),
-            suggestion: suggestion.filter(Boolean).join(' ')
+            typed: tip ? '' : typedText,
+            typedRows: tip ? 0 : typedRows.length,
+            suggestion: suggestion.map((text) => text.replace(CURSOR_MARK, grey ? cursor : '')).filter(Boolean).join(' ')
         }
     }
 
     /** The screen currently shows an agent turn in progress. */
     showsBusy(id: string): boolean {
-        return this.screen(id).some((line) => BUSY_PATTERN.test(line))
+        return this.screen(id).some((line) => isBusyRow(line))
     }
 
     /**
@@ -423,7 +464,7 @@ export class TerminalMirror {
      */
     screenStatus(id: string): { busy: boolean; question: string | null } {
         const lines = this.screen(id)
-        if (lines.some((line) => BUSY_PATTERN.test(line))) return { busy: true, question: null }
+        if (lines.some((line) => isBusyRow(line))) return { busy: true, question: null }
         const region = questionRegion(linesUnderInputBox(lines))
         return { busy: false, question: showsQuestion(region) ? questionLine(region) : null }
     }
@@ -484,6 +525,43 @@ function collapseSpaces(text: string): string {
     return text.replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Claude Code's IDE pill, drawn right after the `❯` while an editor is connected: `[⧉ 3 lines
+ * selected] ` or `[⧉ In src/foo.ts] `. Painted in the theme's IDE color, not dim, yet no input.
+ * (ovis server/claude-input.ts CLAUDE_IDE_PILL_RE · idePillChars, MIT — Claude Code 2.1.302)
+ */
+const CLAUDE_IDE_PILL = /^[ \u00a0]?\[⧉ [^\]\n]+\] ?/
+
+/** How many cells after the `❯` the pill takes, with the space before it; 0 without one. */
+function idePillCells(afterPrompt: string): number {
+    const match = CLAUDE_IDE_PILL.exec(afterPrompt)
+    return match === null ? 0 : Array.from(match[0]).length
+}
+
+/** Stands in for Claude's drawn cursor until the box tells typed from suggested. */
+const CURSOR_MARK = '\u0000'
+
+/**
+ * Claude's new-session tip as the box's whole row (`Try "how does <filepath> work?"`). Dim
+ * normally; under NO_COLOR nothing is, and only a screen drawn without any color tells it from
+ * the same words typed (ovis claude-input.ts CLAUDE_TIP_ROW_RE · colorless, MIT).
+ */
+const NO_COLOR_TIP = /^Try "[^"]+"$/
+
+function viewportColorless(term: HeadlessTerminal): boolean {
+    const buffer = term.buffer.active
+    const cell = buffer.getNullCell()
+    for (let row = 0; row < term.rows; row++) {
+        const line = buffer.getLine(buffer.viewportY + row)
+        if (!line) continue
+        for (let col = 0; col < line.length; col++) {
+            line.getCell(col, cell)
+            if (!cell.isFgDefault() || !cell.isBgDefault() || cell.isDim()) return false
+        }
+    }
+    return true
+}
+
 /** The box starts with a prompt glyph ("❯" or ">"); it is decoration, not input. */
 function stripPromptGlyph(text: string): string {
     return text.replace(/^[❯>]\s*/, '').trim()
@@ -506,7 +584,7 @@ const PROMPT_LINE = /^[❯>](?!\s*\d+\.\s)/
 function linesUnderInputBox(screen: string[]): string[] {
     const rules: number[] = []
     for (let row = screen.length - 1; row >= 0 && rules.length < 2; row--) {
-        if (INPUT_BOX_RULE.test(screen[row].trim())) rules.push(row)
+        if (isInputBoxRule(screen[row].trim())) rules.push(row)
     }
     if (rules.length < 2) return screen
     const [bottom, top] = rules

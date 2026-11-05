@@ -197,7 +197,44 @@ export type ChatSendResult =
      * `not_submitted`: typed and Enter pressed, but the text is still in the agent's input box.
      * `no_agent`: only the shell is left in the terminal (or another program took the agent's place).
      */
-    | { status: 'rejected'; reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session' | 'not_submitted' | 'no_agent' | 'revoked' | 'conversation_changed'; message: string }
+    | {
+          status: 'rejected'
+          reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session' | 'not_submitted' | 'no_agent' | 'revoked' | 'conversation_changed'
+          message: string
+          /**
+           * `input_busy`: the text in the agent's input box, when the chat may offer to clear it — one
+           * row of typed text in Claude's box (ChatSendOptions.clearDraft). Absent otherwise.
+           */
+          draft?: string
+      }
+
+/**
+ * Chat → Terminal (4b9cb0c2): the chat's unsent text put in Claude's input box without Enter.
+ * `busy`: the box already holds text (`draft`, when one row) — nothing was written over it.
+ */
+export type DraftToTerminalResult =
+    | { status: 'placed' }
+    | { status: 'busy'; draft?: string }
+    | { status: 'refused'; reason: 'awaiting_input' | 'not_running' | 'no_agent' | 'revoked' | 'empty' | 'too_large' }
+    | { status: 'unsupported' }
+
+/**
+ * Terminal → Chat (4b9cb0c2): a one-row draft in Claude's input box, moved out of it. `left`: the box
+ * holds more than one row (or a paste, bash mode) — it stays in the terminal, the chat only says so.
+ */
+export type DraftFromTerminalResult =
+    | { status: 'moved'; text: string }
+    | { status: 'left'; reason: 'several_lines' | 'kept' | 'not_cleared' }
+    | { status: 'empty' }
+    | { status: 'unsupported' }
+
+export interface ChatSendOptions {
+    /**
+     * Empty the agent's input box first — only while it still holds exactly this text (the draft a
+     * refusal reported and the person agreed to clear). Otherwise refused, with the box's text now.
+     */
+    clearDraft?: string
+}
 
 export type InterruptResult =
     | { status: 'stopped' }
@@ -222,6 +259,8 @@ export interface ChatCommand {
      * sending it — `always`, or only when sent `bare` (no argument).
      */
     terminal?: 'always' | 'bare'
+    /** how often the agent ran it, by its own count (Claude's `skillUsage`) — the menu's order (d50fe2b7) */
+    uses?: number
 }
 
 /** The chat's own preferences (Settings › Terminal › Chat view), handed to the view as a prop. */
@@ -232,6 +271,8 @@ export interface ChatPreferences {
     showQuickReplies?: boolean
     /** The replies, in order. Default: continue · yes · no · retry. */
     quickReplies?: string[]
+    /** A touch screen: Return sends too (the phone's own setting). Default off — Return breaks the line. */
+    returnSendsOnTouch?: boolean
 }
 
 export const DEFAULT_QUICK_REPLIES = ['continue', 'yes', 'no', 'retry']
@@ -260,7 +301,7 @@ export interface ChatTransport {
     getConversation(sessionId: string, limit?: number): Promise<ConversationSnapshot>
     /** Calls `onChange` whenever the conversation, the working state or the question changes. */
     subscribe(sessionId: string, onChange: (revision: number) => void): () => void
-    send(sessionId: string, text: string): Promise<ChatSendResult>
+    send(sessionId: string, text: string, options?: ChatSendOptions): Promise<ChatSendResult>
     /** Drops every queued message. */
     cancelQueued(sessionId: string): Promise<void>
     /**
@@ -270,6 +311,10 @@ export interface ChatTransport {
     discardQueued(sessionId: string, id: string): Promise<boolean>
     /** Sends one queued message now, while the agent still works (the agent decides when it reads it). */
     sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult>
+    /** Chat → Terminal: the unsent text into Claude's input box, without Enter (4b9cb0c2). Absent: not offered. */
+    placeDraftInTerminal?(sessionId: string, text: string): Promise<DraftToTerminalResult>
+    /** Terminal → Chat: a one-row draft out of Claude's input box (4b9cb0c2). Absent: not offered. */
+    takeTerminalDraft?(sessionId: string): Promise<DraftFromTerminalResult>
     /** Stops the agent's turn (Esc to its terminal) — refused unless its screen shows a turn in progress. */
     interrupt(sessionId: string): Promise<InterruptResult>
     answerPrompt(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult>

@@ -108,8 +108,9 @@ export default function PhoneFeedbackWidget({ viewRef }: { viewRef: { current: P
             createReport={wiring.createReport}
             capture={captureWebScreenshot}
             getPathname={wiring.getPathname}
-            // a finger cannot hover to pick an element; the whole screen with a pin is the phone's report
-            defaultMode="report"
+            // The kit's default: Feedback starts pointing at an element. A tap is a click to the kit
+            // (measured on a Galaxy, 11-05): the note sheet sits above the keyboard with its Send in
+            // view. The dock's menu keeps «whole screen» for a report about everything.
         />
     )
 }

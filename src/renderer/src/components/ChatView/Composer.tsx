@@ -1,42 +1,12 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { AlertTriangle, ArrowUp, FileText, Loader2, Plus, Square, X } from 'lucide-react'
-import type { ChatCommand, ChatPreferences, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
+import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
+import { InputBusyNote } from './InputBusyNote'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH } from '../../../../shared/conversation'
-import { activeTrigger, fileMention, type Trigger } from './chatLib'
+import { activeTrigger, fileMention, rankCommands } from './chatLib'
+import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 
-/**
- * A draft per session, kept while the app runs and across restarts
- * (localStorage `chat-drafts`) — switching sessions or views never loses one.
- */
-const DRAFTS_KEY = 'chat-drafts'
-const drafts: Record<string, string> = (() => {
-    try {
-        const parsed = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? '{}') as unknown
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {}
-    } catch {
-        return {}
-    }
-})()
-
-function saveDraft(sessionId: string, text: string): void {
-    if (text) drafts[sessionId] = text
-    else delete drafts[sessionId]
-    try {
-        localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts))
-    } catch {
-        // storage blocked: the draft still lives in memory
-    }
-}
-
-/**
- * Puts text after `sessionId`'s saved draft without showing it: a queued message withdrawn for Edit
- * after the view moved to another session goes back to its own session, not into the box on
- * screen (round2 N01).
- */
-export function appendDraft(sessionId: string, text: string): void {
-    const current = drafts[sessionId] ?? ''
-    saveDraft(sessionId, current.trim() ? `${current}\n${text}` : text)
-}
+export { appendDraft } from './draftStore'
 
 /** How often each `/` command was picked, so the menu offers the usual ones first (ovis `ovis:slash-usage`). */
 const USAGE_KEY = 'chat-command-usage'
@@ -62,8 +32,6 @@ function bumpUsage(name: string): void {
 const FOCUS_DELAY_MS = 150
 /** Taller than this, the box scrolls instead of growing. */
 const MAX_ROWS = 10
-/** Rows the completion menu lists at most. */
-const MENU_ROWS = 40
 /** Wait this long after a keystroke before asking for files. */
 const FILE_SEARCH_DELAY_MS = 120
 /** A picture bigger than this gets no thumbnail on its tile. */
@@ -81,26 +49,6 @@ interface Attachment {
     error?: string
 }
 let attachmentSequence = 0
-
-function rankCommands(commands: ChatCommand[], trigger: Extract<Trigger, { kind: 'slash' }>, usage: Record<string, number>): ChatCommand[] {
-    const query = trigger.query.toLowerCase()
-    const wanted = commands.filter((command) => (trigger.prefix === '$' ? command.trigger === '$' : command.trigger !== '$'))
-    const scored = wanted
-        .map((command) => {
-            const name = command.name.toLowerCase()
-            const score = query === '' ? 1 : name.startsWith(query) ? 3 : name.split(/[:-]/).some((word) => word.startsWith(query)) ? 2 : name.includes(query) ? 1 : 0
-            return { command, score }
-        })
-        .filter(({ score }) => score > 0)
-    scored.sort(
-        (a, b) =>
-            b.score - a.score ||
-            (usage[b.command.name] ?? 0) - (usage[a.command.name] ?? 0) ||
-            Number(a.command.source === 'builtin') - Number(b.command.source === 'builtin') ||
-            a.command.name.localeCompare(b.command.name)
-    )
-    return scored.slice(0, MENU_ROWS).map(({ command }) => command)
-}
 
 const SOURCE_LABEL: Record<ChatCommand['source'], string> = {
     builtin: 'built-in',
@@ -137,7 +85,7 @@ export interface ComposerProps {
     preferences: ChatPreferences
     /** a touch screen: Return is a new line (Send sends) and opening the chat leaves the keyboard down */
     touch?: boolean
-    onSend(text: string): Promise<ChatSendResult>
+    onSend(text: string, options?: ChatSendOptions): Promise<ChatSendResult>
     onInterrupt(): Promise<string | null>
     /** the row under the box (model, context, plan) */
     status?: ReactNode
@@ -156,11 +104,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, onSend, onInterrupt, status },
     ref
 ) {
-    const [text, setText] = useState(() => drafts[sessionId] ?? '')
+    const [text, setText] = useState(() => readDraft(sessionId))
     const [caret, setCaret] = useState(0)
     /** messages on their way into the terminal */
     const [sending, setSending] = useState(0)
     const [notice, setNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
+    /** a send refused for text left in the terminal's input box, which main can clear (C-1) */
+    const [busyDraft, setBusyDraft] = useState<string | null>(null)
     const [attachments, setAttachments] = useState<Attachment[]>([])
     const [commands, setCommands] = useState<ChatCommand[] | null>(null)
     const [files, setFiles] = useState<string[]>([])
@@ -175,8 +125,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     textRef.current = text
 
     useEffect(() => {
-        setText(drafts[sessionId] ?? '')
+        setText(readDraft(sessionId))
         setNotice(null)
+        setBusyDraft(null)
         setCommands(null)
         setAttachments([])
         // The terminal under the chat may still hold focus: keys would go to it unseen.
@@ -190,6 +141,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }, FOCUS_DELAY_MS)
         return () => window.clearTimeout(timer)
     }, [sessionId])
+
+    // The view switch moved text in or out while this box was there (4b9cb0c2).
+    useEffect(() => onDraftReplaced(sessionId, (next) => setText(next)), [sessionId])
 
     useEffect(() => {
         const element = box.current
@@ -321,6 +275,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const usage = useMemo(readUsage, [trigger?.kind])
     const commandChoices = trigger?.kind === 'slash' && commands ? rankCommands(commands, trigger, usage) : []
     const choices: (ChatCommand | string)[] = trigger?.kind === 'slash' ? commandChoices : trigger?.kind === 'file' ? files : []
+    // a message that is a skill or command reads light blue in the box (4030a994) — a known one once the list is in
+    const commandTyped = /^\s*([/$])([\w:.-]+)/.exec(text)
+    const isCommand = commandTyped !== null && (commands === null || commands.some((command) => command.name === commandTyped[2] && (command.trigger ?? '/') === commandTyped[1]))
     const menuOpen = trigger !== null && choices.length > 0
     const selected = Math.min(menuIndex, Math.max(0, choices.length - 1))
     useEffect(() => setMenuIndex(0), [trigger?.kind, trigger?.query])
@@ -349,7 +306,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
      * The box empties at once, so the next message can be typed while this one is typed into the
      * terminal (main queues it behind). A refused message comes back into the box, if still empty.
      */
-    const send = async (override?: string): Promise<void> => {
+    const send = async (override?: string, options?: ChatSendOptions): Promise<void> => {
         const outgoing = override ?? message
         if (!outgoing.trim() || (override === undefined && (attaching || over > 0))) return
         const taken = override === undefined ? { text, attachments } : null
@@ -359,15 +316,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }
         setSending((count) => count + 1)
         setNotice(null)
+        setBusyDraft(null)
         let result: ChatSendResult
         try {
-            result = await onSend(outgoing)
+            result = await onSend(outgoing, options)
         } catch (error) {
             result = { status: 'rejected', reason: 'not_running', message: error instanceof Error ? error.message : String(error) }
         }
         setSending((count) => count - 1)
         if (result.status === 'rejected') {
-            setNotice({ tone: 'error', text: result.message })
+            if (result.reason === 'input_busy' && result.draft !== undefined) setBusyDraft(result.draft)
+            else setNotice({ tone: 'error', text: result.message })
             if (taken && textRef.current === '' && attachmentsRef.current.length === 0) {
                 setDraft(taken.text, taken.text.length)
                 setAttachments(taken.attachments)
@@ -407,7 +366,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }
         const modifier = event.metaKey || event.ctrlKey
         // a phone keyboard's Return has no Shift: on touch it breaks the line, the Send button sends
-        const enterSends = !touch && preferences.enterSends !== false
+        // a phone may choose Return to send (its own setting — 69340cc2)
+        const enterSends = touch ? preferences.returnSendsOnTouch === true : preferences.enterSends !== false
         const shouldSend = event.key === 'Enter' && !event.shiftKey && (modifier || (enterSends && !event.altKey))
         // a number typed for the card waits: the empty box's Enter confirms it, Escape cancels it
         if (pendingPick && text.trim() === '') {
@@ -526,6 +486,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     ))}
                 </div>
             )}
+            {busyDraft !== null && (
+                <InputBusyNote
+                    key={busyDraft}
+                    draft={busyDraft}
+                    onClearAndSend={() => void send(undefined, { clearDraft: busyDraft })}
+                    onDismiss={() => setBusyDraft(null)}
+                />
+            )}
             {notice && (
                 <p className={`chat-composer-note${notice.tone === 'error' ? ' is-error' : ''}`} role={notice.tone === 'error' ? 'alert' : 'status'} data-testid="chat-composer-note">
                     {notice.tone === 'error' && <AlertTriangle size={12} aria-hidden="true" />} {notice.text}
@@ -591,8 +559,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         value={text}
                         maxLength={MAX_CHAT_TEXT_LENGTH}
                         data-testid="chat-composer"
+                        className={isCommand ? 'is-command' : undefined}
+                        data-command={isCommand ? 'true' : undefined}
                         placeholder={placeholder}
-                        title={touch ? 'Return starts a new line · the arrow sends' : preferences.enterSends === false ? '⌘Enter sends · Enter starts a new line' : 'Enter sends · Shift+Enter starts a new line'}
+                        title={touch ? (preferences.returnSendsOnTouch === true ? 'Return sends' : 'Return starts a new line · the arrow sends') : preferences.enterSends === false ? '⌘Enter sends · Enter starts a new line' : 'Enter sends · Shift+Enter starts a new line'}
                         onChange={(event) => {
                             setDraft(event.target.value)
                             setCaret(event.target.selectionStart)

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, Clock, Loader2, Terminal as TerminalIcon } from 'lucide-react'
-import type { ChatCommand, ChatPreferences, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
+import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
+import { endedOnAnswer } from './workBlocks'
 import { appendDraft, Composer, type ComposerHandle } from './Composer'
 import { ArtifactsChip, ContextChip, ModelChip, PlanChip } from './ComposerChips'
 import { ImageLightbox } from './ChatImages'
@@ -46,6 +47,11 @@ export interface ChatViewProps {
      * the chat names is plain text instead of a button that does nothing (G9).
      */
     canOpenFiles?: boolean
+    /**
+     * A `climanager://session/…` link the chat shows was clicked: show that session (b2020233). Absent:
+     * the link stays words — the same link in the terminal already goes through the app's own handler.
+     */
+    onSessionLink?: (uri: string) => void
 }
 
 /** Within this many pixels of the end, new turns keep the view pinned to the bottom. */
@@ -91,7 +97,7 @@ interface SentWaiting {
 }
 let sentSequence = 0
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true }: ChatViewProps) {
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink }: ChatViewProps) {
     const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? CHAT_TURN_LIMIT)
     const { snapshot, refresh } = useConversation(transport, sessionId, limit)
     const scroller = useRef<HTMLDivElement>(null)
@@ -235,20 +241,21 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 transport.openFile(sessionId, resolveChatPath(path, cwd, home), line ?? undefined)
             },
             canOpenPaths: canOpenFiles,
+            openSessionLink: onSessionLink,
             openGallery: (images, index) => setGallery({ images, index })
         }),
-        [sessionId, transport, cwd, home, canOpenFiles]
+        [sessionId, transport, cwd, home, canOpenFiles, onSessionLink]
     )
 
     const sendText = useCallback(
-        async (text: string): Promise<ChatSendResult> => {
+        async (text: string, options?: ChatSendOptions): Promise<ChatSendResult> => {
             // the person's words show at once, faded, while they are typed into the terminal
             const bubble = isCommandText(text) ? null : { id: ++sentSequence, text, at: Date.now() }
             if (bubble) {
                 pinned.current = true
                 setSent((current) => [...current, bubble])
             }
-            const result = await transport.send(sessionId, text)
+            const result = await transport.send(sessionId, text, options)
             // refused, or waiting in the queue (shown there): not on its way
             if (bubble && result.status !== 'sent') setSent((current) => current.filter((item) => item.id !== bubble.id))
             if (result.status === 'sent' && !bubble) {
@@ -283,8 +290,14 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const agent = snapshot?.agent ?? null
     const agentName = agent ? NAMES[agent] : 'the agent'
     const prompt = snapshot?.prompt ?? null
-    const working = Boolean(snapshot?.working && !prompt)
     const turns = snapshot?.turns ?? []
+    // held a moment: Claude Code 2.1.318 hides its spinner row while an answer streams in, so the
+    // screen says «not working» for a second or two mid-turn — the row would blink (4359b4ee). Not once
+    // the turn has written its final answer: then it is over, and the row goes at once.
+    const lastTurn = turns.at(-1)
+    const settled = lastTurn?.role === 'assistant' && endedOnAnswer(lastTurn)
+    const heldWorking = useHeldTrue(Boolean(snapshot?.working && !prompt), WORKING_HOLD_MS)
+    const working = (snapshot?.working || !settled ? heldWorking : false) && !prompt
     const todos = useMemo(() => latestTodos(turns), [turns])
     const artifacts = useMemo(() => artifactLinks(turns), [turns])
     const lastUser = useMemo(() => {
@@ -520,4 +533,21 @@ function Unavailable({ snapshot, onOpenTerminal }: { snapshot: ConversationSnaps
             </button>
         </div>
     )
+}
+
+/** How long «working» outlasts the screen's last spinner row (a streamed answer hides it for ~1.7s, recorded). */
+const WORKING_HOLD_MS = 2000
+
+/** `value`, except that a change to false waits `ms` — and is dropped when it turns true again first. */
+function useHeldTrue(value: boolean, ms: number): boolean {
+    const [held, setHeld] = useState(value)
+    useEffect(() => {
+        if (value) {
+            setHeld(true)
+            return
+        }
+        const timer = window.setTimeout(() => setHeld(false), ms)
+        return () => window.clearTimeout(timer)
+    }, [value, ms])
+    return value || held
 }

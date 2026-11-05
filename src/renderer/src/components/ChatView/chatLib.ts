@@ -4,6 +4,7 @@
 // src/lib/todos.ts (todoSnapshot · todoCallSummary for Claude TodoWrite and Codex update_plan only — the
 // omp/omo/gjc operation lists are left out). Gathered in one file; the chat's own helpers follow at the end.
 import type { ChatCommand, ConversationPart, ToolPart } from '../../../../shared/conversation'
+import { SESSION_LINK_REGEX } from '../../utils/sessionLink'
 
 // ---------------------------------------------------------------- file paths (src/lib/filePaths.ts)
 
@@ -278,14 +279,23 @@ export function isCommandText(text: string): boolean {
 /** Claude Code's marker of a turn the person stopped. */
 export const INTERRUPTED_TEXT = /^\[Request interrupted by user(?: for tool use)?\]$/
 
-/** What the composer's menu is completing: a `/command` (or Codex `$skill`) at a line's start, or an `@file`. */
-export type Trigger = { kind: 'slash'; prefix: '/' | '$'; query: string; start: number } | { kind: 'file'; query: string; start: number }
+/**
+ * What the composer's menu is completing: a `/command` (or Codex `$skill`) at a line's start, a skill after
+ * a space mid-line (`inline` — c21d4b5a · 574c78e4), or an `@file`.
+ */
+export type Trigger = { kind: 'slash'; prefix: '/' | '$'; query: string; start: number; inline?: boolean } | { kind: 'file'; query: string; start: number }
 
 export function activeTrigger(text: string, caret: number, codex: boolean): Trigger | null {
     const before = text.slice(0, caret)
     const slash = /(?:^|\n)([/$])([\w:.-]*)$/.exec(before)
     if (slash && (slash[1] === '/' || codex)) {
         return { kind: 'slash', prefix: slash[1] as '/' | '$', query: slash[2], start: caret - slash[2].length - 1 }
+    }
+    // After other words a skill still runs — Claude Code reads `… /climanager …` anywhere in a message, and
+    // Codex a `$skill` mention. A path (`src/a`, `~/x`) is not after a space, so it never opens the menu.
+    const inline = /[ \t]([/$])([\w:.-]*)$/.exec(before)
+    if (inline && (inline[1] === '/' ? !codex : codex)) {
+        return { kind: 'slash', prefix: inline[1] as '/' | '$', query: inline[2], start: caret - inline[2].length - 1, inline: true }
     }
     const file = /(?:^|\s)@([^\s@"]*)$/.exec(before)
     if (file) return { kind: 'file', query: file[1], start: caret - file[1].length - 1 }
@@ -332,4 +342,59 @@ export function splitAppAttachments(text: string): (string | AppAttachmentMentio
     if (last < text.length) out.push(text.slice(last))
     // the space that followed a chip is not part of the words
     return out.map((part, index) => (typeof part === 'string' && index > 0 && typeof out[index - 1] !== 'string' ? part.replace(/^\s+/, '') : part)).filter((part) => part !== '')
+}
+
+/** Rows the completion menu lists at most. */
+const MENU_ROWS = 40
+
+/** Picked in this chat (`usage`, per browser) plus run by the agent itself (`uses`, Claude's own count). */
+function uses(command: ChatCommand, usage: Record<string, number>): number {
+    return (usage[command.name] ?? 0) + (command.uses ?? 0)
+}
+
+/** The `/` menu: best match first, then the most used, user's own before built-ins, then by name. */
+export function rankCommands(commands: ChatCommand[], trigger: Extract<Trigger, { kind: 'slash' }>, usage: Record<string, number>): ChatCommand[] {
+    const query = trigger.query.toLowerCase()
+    const wanted = commands.filter(
+        (command) =>
+            (trigger.prefix === '$' ? command.trigger === '$' : command.trigger !== '$') &&
+            // mid-message only a skill or the person's own command runs; `/model` there is just words
+            !(trigger.inline && command.source === 'builtin')
+    )
+    const scored = wanted
+        .map((command) => {
+            const name = command.name.toLowerCase()
+            const score = query === '' ? 1 : name.startsWith(query) ? 3 : name.split(/[:-]/).some((word) => word.startsWith(query)) ? 2 : name.includes(query) ? 1 : 0
+            return { command, score }
+        })
+        .filter(({ score }) => score > 0)
+    scored.sort(
+        (a, b) =>
+            b.score - a.score ||
+            uses(b.command, usage) - uses(a.command, usage) ||
+            Number(a.command.source === 'builtin') - Number(b.command.source === 'builtin') ||
+            a.command.name.localeCompare(b.command.name)
+    )
+    return scored.slice(0, MENU_ROWS).map(({ command }) => command)
+}
+
+/** `text` with its `climanager://session/…` links cut out, in order (b2020233) — the terminal's matcher. */
+export function splitSessionLinks(text: string): (string | { sessionLink: string })[] {
+    const pattern = new RegExp(SESSION_LINK_REGEX.source, 'g')
+    const out: (string | { sessionLink: string })[] = []
+    let last = 0
+    for (const match of text.matchAll(pattern)) {
+        const start = match.index ?? 0
+        if (start > last) out.push(text.slice(last, start))
+        out.push({ sessionLink: match[0] })
+        last = start + match[0].length
+    }
+    if (last < text.length) out.push(text.slice(last))
+    return out
+}
+
+/** A whole inline code span that is one session link (`climanager://session/be5c9a25`). */
+export function codeIsSessionLink(code: string): boolean {
+    const parts = splitSessionLinks(code.trim())
+    return parts.length === 1 && typeof parts[0] !== 'string'
 }

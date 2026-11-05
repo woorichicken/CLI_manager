@@ -361,7 +361,42 @@ export function createChatCommandLister(dirs: ChatCommandDirs): (agent: Conversa
             seen.add(key)
             return true
         })
+        if (agent === 'claude') {
+            const usage = claudeSkillUsage(dirs)
+            for (const command of commands) {
+                const uses = usage[command.name]
+                if (uses) command.uses = uses
+            }
+        }
         cache.set(key, { at: Date.now(), commands })
         return commands
+    }
+}
+
+/** Bigger than this, the config file is not read for an order (it is about 0.6MB on a busy Mac). */
+const MAX_CLAUDE_CONFIG_BYTES = 16 * 1024 * 1024
+
+/**
+ * How often Claude ran each skill, from its own `skillUsage` (`usageCount`) — what orders Claude's own
+ * `/` menu. The chat counted only what was picked in it, so skills run in the terminal never rose
+ * (d50fe2b7). The file is `~/.claude.json`, or `.claude.json` in CLAUDE_CONFIG_DIR when that is set.
+ * {} when it cannot be read.
+ */
+export function claudeSkillUsage(dirs: Pick<ChatCommandDirs, 'home' | 'claudeConfigDir'>): Record<string, number> {
+    const config = dirs.claudeConfigDir()
+    const file = config === join(dirs.home, '.claude') ? join(dirs.home, '.claude.json') : join(config, '.claude.json')
+    try {
+        if (statSync(file).size > MAX_CLAUDE_CONFIG_BYTES) return {}
+        const parsed = JSON.parse(readFileSync(file, 'utf8')) as { skillUsage?: unknown }
+        const usage = parsed.skillUsage
+        if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return {}
+        const counts: Record<string, number> = {}
+        for (const [name, entry] of Object.entries(usage as Record<string, unknown>)) {
+            const count = (entry as { usageCount?: unknown } | null)?.usageCount
+            if (typeof count === 'number' && Number.isFinite(count) && count > 0) counts[name] = count
+        }
+        return counts
+    } catch {
+        return {}
     }
 }

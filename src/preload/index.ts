@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
-import type { AttachResult, ChatCommand, ChatSendResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
 
@@ -371,8 +371,10 @@ const api = {
         ipcRenderer.on('conversation-changed', listener)
         return () => ipcRenderer.removeListener('conversation-changed', listener)
     },
-    sendChatMessage: (sessionId: string, text: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send', sessionId, text),
+    sendChatMessage: (sessionId: string, text: string, options?: ChatSendOptions): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send', sessionId, text, options),
     cancelQueuedChat: (sessionId: string): Promise<void> => ipcRenderer.invoke('chat-cancel-queued', sessionId),
+    placeChatDraftInTerminal: (sessionId: string, text: string): Promise<DraftToTerminalResult> => ipcRenderer.invoke('chat-draft-to-terminal', sessionId, text),
+    takeTerminalDraft: (sessionId: string): Promise<DraftFromTerminalResult> => ipcRenderer.invoke('chat-draft-from-terminal', sessionId),
     discardQueuedChat: (sessionId: string, id: string): Promise<boolean> => ipcRenderer.invoke('chat-discard-queued', sessionId, id),
     sendQueuedChatNow: (sessionId: string, id: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send-queued-now', sessionId, id),
     interruptChat: (sessionId: string): Promise<InterruptResult> => ipcRenderer.invoke('chat-interrupt', sessionId),

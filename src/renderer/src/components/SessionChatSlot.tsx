@@ -19,7 +19,8 @@ export function SessionChatSlot({
     visible,
     enabled,
     fontSize,
-    preferences
+    preferences,
+    onSessionLink
 }: {
     sessionId: string
     visible: boolean
@@ -27,6 +28,8 @@ export function SessionChatSlot({
     enabled: boolean
     fontSize?: number
     preferences?: ChatPreferences
+    /** a session link clicked in the chat — the same handler the terminal's links use */
+    onSessionLink?: (uri: string) => void
 }) {
     const mode = useSessionViewMode(sessionId)
     const peek = useSessionPeek(sessionId)
@@ -53,6 +56,7 @@ export function SessionChatSlot({
             transport={electronChatTransport}
             fontSize={fontSize}
             preferences={preferences}
+            onSessionLink={onSessionLink}
             onOpenTerminal={(command) => {
                 setSessionViewMode(sessionId, 'terminal')
                 if (command) setSessionPeek(sessionId, command)

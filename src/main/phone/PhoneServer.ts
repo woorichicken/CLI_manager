@@ -8,6 +8,7 @@ import { PHONE_API } from '../../shared/phone'
 import type { PhoneSettings, PhoneState, SessionScreenStatus } from '../../shared/types'
 import { DEFAULT_PHONE } from '../../shared/types'
 import { decidePhoneAccess, hostAllowed, isLoopbackAddress, sameOrigin, type PhoneAccess } from './phoneAccess'
+import { describeBrowser, PhoneConnections } from './phoneConnections'
 import type { PhoneDevices } from './PhoneDevices'
 import type { PhonePush } from './PhonePush'
 import type { TailscaleStatus } from './tailscaleStatus'
@@ -79,6 +80,8 @@ export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' |
     onDeviceRevoked?(deviceId: string | null): void
     /** the feedback widget on the phone (phoneFeedback.ts); absent, the page never shows it */
     feedback?: PhoneFeedbackDeps
+    /** the Mac's chat quick replies (Settings › Terminal › Chat view), for the phone's own switch (847da0aa) */
+    quickReplies?(): string[]
 }
 
 export interface PhoneRequestAccess {
@@ -94,8 +97,8 @@ export class PhoneServer {
     private lastError: string | undefined
     private enabled = false
     private allowedAssets: Set<string> | null = null
-    /** who fetched lately, for "n connected" */
-    private readonly recent = new Map<string, number>()
+    /** who fetched lately or has a socket open, for "n connected" and Settings' list */
+    private readonly connections = new PhoneConnections(CONNECTED_WINDOW_MS)
     private readonly sockets = new Set<{ ws: WebSocket; who: string; deviceId?: string }>()
 
     constructor(private readonly deps: PhoneServerDeps) {
@@ -106,6 +109,7 @@ export class PhoneServer {
                 if (deviceId === null ? socket.deviceId !== undefined : socket.deviceId === deviceId) socket.ws.close(4401, 'revoked')
             }
             deps.push.forgetOwner(deviceId === null ? null : `device:${deviceId}`)
+            this.connections.forget((key) => (deviceId === null ? key.startsWith('device:') : key === `device:${deviceId}`))
             deps.onDeviceRevoked?.(deviceId)
         })
         deps.devices.onChange(() => deps.onStateChange())
@@ -146,7 +150,7 @@ export class PhoneServer {
         this.deps.statusPoller.stop()
         for (const socket of this.sockets) socket.ws.terminate()
         this.sockets.clear()
-        this.recent.clear()
+        this.connections.clear()
         this.wss?.close()
         this.wss = null
         const server = this.server
@@ -175,7 +179,8 @@ export class PhoneServer {
             serveOffCommand: 'tailscale serve --https=443 off',
             devices: this.deps.devices.list(),
             pairing: this.deps.devices.activePairing(),
-            connected: this.connectedCount(),
+            connected: this.connections.count(),
+            connections: this.connections.list(),
             pushDevices: this.deps.push.count(),
             ...(() => {
                 const pushError = this.deps.push.keysProblem()
@@ -207,23 +212,6 @@ export class PhoneServer {
 
     private configuredPortHint(): number {
         return DEFAULT_PHONE.port
-    }
-
-    private connectedCount(): number {
-        const now = Date.now()
-        const who = new Set<string>()
-        for (const [key, at] of this.recent) {
-            if (now - at <= CONNECTED_WINDOW_MS) who.add(key)
-            else this.recent.delete(key)
-        }
-        for (const socket of this.sockets) who.add(socket.who)
-        return who.size
-    }
-
-    private seen(who: string): void {
-        const first = !this.recent.has(who) && ![...this.sockets].some((s) => s.who === who)
-        this.recent.set(who, Date.now())
-        if (first) this.deps.onStateChange()
     }
 
     private listen(port: number): Promise<void> {
@@ -276,7 +264,17 @@ export class PhoneServer {
             device
         })
         const owner = access.level !== 'full' ? null : access.via === 'device' ? `device:${access.deviceId}` : `tailscale:${access.login}`
-        if (owner) this.seen(owner)
+        if (owner && access.level === 'full') {
+            const first = this.connections.seen(owner, {
+                label: access.via === 'device' ? access.deviceLabel ?? 'Paired device' : access.login ?? 'Tailscale',
+                kind: access.via === 'device' ? 'device' : 'owner',
+                // `tailscale serve` forwards with X-Forwarded-For; without it the request came straight to 127.0.0.1
+                route: header('x-forwarded-for') !== null ? 'tailscale' : 'local',
+                browser: describeBrowser(header('user-agent')),
+                role: access.role
+            })
+            if (first) this.deps.onStateChange()
+        }
         return { access, owner }
     }
 
@@ -338,7 +336,9 @@ export class PhoneServer {
             ...(access.deviceLabel ? { deviceLabel: access.deviceLabel } : {}),
             ...this.pushInfo(),
             // the widget only for a device that may send — what a view-only device could report it cannot send
-            ...(access.role === 'drive' && this.deps.feedback?.enabled() ? { feedback: { appVersion: this.deps.feedback.appVersion() } } : {})
+            ...(access.role === 'drive' && this.deps.feedback?.enabled() ? { feedback: { appVersion: this.deps.feedback.appVersion() } } : {}),
+            // a view-only device has no box to put them in
+            ...(access.role === 'drive' && this.deps.quickReplies ? { quickReplies: this.deps.quickReplies() } : {})
         }
     }
 
@@ -394,10 +394,11 @@ export class PhoneServer {
         wss.handleUpgrade(req, socket, head, (ws) => {
             const entry = { ws, who: who.owner!, ...(access.via === 'device' ? { deviceId: access.deviceId } : {}) }
             this.sockets.add(entry)
+            this.connections.opened(entry.who)
             this.deps.onStateChange()
             ws.on('close', () => {
                 this.sockets.delete(entry)
-                this.recent.set(entry.who, Date.now())
+                this.connections.closed(entry.who)
                 this.deps.onStateChange()
             })
             if (isTerminal) handleTerminalSocket(ws, targetId, role, this.deps, () => this.stillAllowed(access))

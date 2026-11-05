@@ -9,6 +9,9 @@
  *   --agent claude|codex  record and screen format (default claude)
  *   --work-ms N           how long a turn "works" with the spinner (default 1200)
  *   --user-delay-ms N     write a submitted prompt to the transcript N ms late (default 0)
+ *   --name <text>         a session renamed with /rename: Claude Code writes the name into the input box's top rule
+ *   --spinner 318         Claude Code 2.1.318's spinner row: no "esc to interrupt" — `✳ Galloping… (3s · ↓ 120 tokens)`
+ *                         (recorded 2026-11-05, 4359b4ee)
  *
  * Prompts:
  *   ASK       a permission question. The layout is copied from a real Claude Code 2.1.312 screen
@@ -19,6 +22,9 @@
  *             tab title, question, options with descriptions, "Type something.", a rule, "Chat about this".
  *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
+ *   TABLE     answers with a five-column table wider than a phone (Korean cells).
+ *   LINK <id> answers with a session link to <id>'s first 8 characters, in backticks and in a sentence (b2020233).
+ *   /name …   (Claude) a skill: records the 2.1.318 echo (no <command-args> when sent bare) and its body, then answers.
  *   /model X  (Claude) records the command and "Set model to `X 5`", as Claude Code 2.1.3xx does; the next
  *             answers name that model. Bare `/model`, `/config`: a panel only the terminal shows (Esc closes it).
  *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
@@ -41,6 +47,9 @@ const AGENT = arg('--agent', 'claude')
 const WORK_MS = Number(arg('--work-ms', '1200'))
 /** how long a submitted prompt takes to reach the transcript (Claude Code writes it at once; a slow disk does not) */
 const USER_DELAY_MS = Number(arg('--user-delay-ms', '0'))
+const NAME = arg('--name')
+const SPINNER_318 = arg('--spinner') === '318'
+let workStartedAt = 0
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
 const FRAMES = ['✻', '✢', '✳', '∗']
@@ -127,6 +136,11 @@ function recordToolResult(id, output, isError) {
 function rule() {
     return '─'.repeat(cols() - 2)
 }
+/** the input box's top rule: `──── name ─` for a renamed session (Claude Code 2.1.318) */
+function topRule() {
+    if (!NAME) return rule()
+    return '─'.repeat(Math.max(3, cols() - 2 - NAME.length - 3)) + ` ${NAME} ─`
+}
 function dashes() {
     return '╌'.repeat(cols() - 2)
 }
@@ -158,9 +172,15 @@ function menuLines() {
 function boxLines() {
     if (menu) return menuLines()
     if (panel) return [rule(), ` ${panel}`, '', ' (mock panel — only the terminal shows it)', '', ' Esc to close']
-    const status = busy ? [`${FRAMES[spinner % FRAMES.length]} Working… (${AGENT === 'codex' ? 'Esc' : 'esc'} to interrupt)`] : []
+    const glyph = FRAMES[spinner % FRAMES.length]
+    const seconds = Math.floor((Date.now() - workStartedAt) / 1000)
+    const status = !busy
+        ? []
+        : SPINNER_318 && AGENT !== 'codex'
+          ? [`${glyph === '∗' ? '✶' : glyph} Galloping… (${seconds}s · ↓ ${12 * (spinner + 1)} tokens)`]
+          : [`${glyph} Working… (${AGENT === 'codex' ? 'Esc' : 'esc'} to interrupt)`]
     if (AGENT === 'codex') return [...status, `› ${input}`, '  ? for shortcuts']
-    return [...status, rule(), `❯ ${input}`, rule(), '  ⏵⏵ accept edits on']
+    return [...status, topRule(), `❯ ${input}`, rule(), '  ⏵⏵ accept edits on']
 }
 
 function draw() {
@@ -185,6 +205,7 @@ function endWork() {
 
 function answerTurn(text, answer = null) {
     busy = true
+    workStartedAt = Date.now()
     draw()
     workSpin = setInterval(() => {
         spinner++
@@ -224,6 +245,16 @@ function recordPlan() {
         claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'tool_use', id: 'toolu_plan', name: 'TodoWrite', input: { todos } }], stop_reason: 'tool_use', usage: usage() }, { effort: 'high' })
         claudeEntry('user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_plan', content: 'Todos have been modified successfully.' }] })
     }
+}
+
+/**
+ * Claude Code 2.1.318's record of a skill sent from the prompt: the echo (message, name, and
+ * <command-args> only when there are arguments), then the skill's body as a meta entry.
+ */
+function recordSkill(name, args) {
+    const tail = args ? `\n<command-args>${args}</command-args>` : ''
+    claudeEntry('user', { role: 'user', content: `<command-message>${name}</command-message>\n<command-name>/${name}</command-name>${tail}` }, { origin: { kind: 'human' }, turnOrigin: 'human' })
+    claudeEntry('user', { role: 'user', content: [{ type: 'text', text: `Base directory for this skill: /masked/.claude/skills/${name}\n\n# ${name}` }] }, { isMeta: true })
 }
 
 /** Claude Code's record of a slash command and its answer. */
@@ -299,14 +330,35 @@ function submit(text) {
         }
         return
     }
+    const skill = AGENT !== 'codex' ? /^\/([a-z][\w:-]*)(?:\s+([\s\S]+))?$/.exec(text.trim()) : null
+    if (skill) {
+        recordSkill(skill[1], skill[2])
+        answerTurn(text, `Skill ${skill[1]} ran.`)
+        return
+    }
     recordUser(text)
     if (text === 'ASK') openMenu(AGENT === 'codex' ? 'codex-trust' : 'permission')
     else if (text === 'QUESTION') openMenu('question')
     else if (text === 'PLAN') {
         recordPlan()
         answerTurn(text, 'Planned three steps.')
-    } else answerTurn(text)
+    } else if (text === 'TABLE') answerTurn(text, WIDE_TABLE)
+    else if (/^LINK [0-9a-f-]{8,}$/.test(text)) {
+        const ref = text.slice(5, 13)
+        answerTurn(text, `Opened it: \`climanager://session/${ref}\`\n\nOr go to climanager://session/${ref} and look.`)
+    }
+    else answerTurn(text)
 }
+
+/** a report-style table wider than a phone, like the one in fb 2be8b580 (Korean words, long cells) */
+const WIDE_TABLE = [
+    'Here is the summary.',
+    '',
+    '| 대상 | 줄 | 화면 변화 | 확인한 것 | 남은 일 |',
+    '| --- | --- | --- | --- | --- |',
+    '| lightsoft | 11/6 월차 1 (입사 6개월) | 기본부여 5 → 6 | 운영 DB 조회만 했고 실제로 넣지는 않음 | 없음 |',
+    '| 박원호 | 바뀐 입사일 2016-02-01 기준으로 다시 계산 | 없음 — 올해 숫자는 기초잔여로 대신함 | 이력에만 쌓임 | 다음 달 확인 |'
+].join('\n')
 
 let escape = ''
 let escapeTimer = null

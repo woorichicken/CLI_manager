@@ -162,8 +162,11 @@ test('T74 Chat view: toggle, read, send, queue, question card, Codex, 390 wide',
     await page.waitForTimeout(400)
     await composer.fill('should not mix')
     await composer.press('Enter')
-    await expect(chat(page).getByTestId('chat-composer-note')).toContainText('input line already has text')
+    // the refusal shows what is in the terminal's box and offers to clear it (phone-fixes C-1, T90)
+    await expect(chat(page).getByTestId('chat-input-busy-draft')).toHaveText('half typed')
     expect(await termText(page, CLAUDE)).not.toContain('should not mix')
+    await chat(page).getByTestId('chat-input-busy-dismiss').click()
+    await expect(chat(page).getByTestId('chat-input-busy')).toHaveCount(0)
     await writeToTerminal(page, CLAUDE, '\x15')
     await composer.fill('')
 

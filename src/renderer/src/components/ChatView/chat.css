@@ -138,12 +138,21 @@
 .chat-composer textarea {
     flex: 1; min-width: 0; resize: none; background: transparent; border: 0; padding: 6px 8px; color: var(--chat-fg); line-height: 1.45; outline: none;
 }
+.chat-composer textarea.is-command { color: #93c5fd; }
 .chat-composer-send { width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #2563eb; color: #fff; }
 .chat-composer-send:disabled { background: var(--chat-soft); color: var(--chat-faint); }
 .chat-composer-send.is-stop { background: rgba(248, 113, 113, 0.18); color: #fca5a5; border: 1px solid rgba(248, 113, 113, 0.45); }
 .chat-composer-send.is-stop:hover { background: rgba(248, 113, 113, 0.3); }
 .chat-composer-note { display: flex; align-items: center; gap: 4px; font-size: 0.82em; color: var(--chat-dim); }
 .chat-composer-note.is-error { color: #fca5a5; }
+.chat-busy-draft { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 10px; border: 1px solid rgba(248, 113, 113, 0.35); border-radius: 8px; background: rgba(127, 29, 29, 0.18); }
+.chat-busy-draft-line { margin: 0; display: block; overflow-wrap: anywhere; }
+.chat-busy-draft-line svg { display: inline; vertical-align: -1px; }
+.chat-busy-draft-text { color: var(--chat-fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.chat-busy-draft-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chat-busy-draft-ask { flex-basis: 100%; color: var(--chat-dim); }
+.chat-busy-draft-button { padding: 5px 10px; min-height: 30px; border-radius: 6px; border: 1px solid var(--chat-line); color: var(--chat-fg); background: var(--chat-soft); font-size: 1em; }
+.chat-busy-draft-button.is-danger { border-color: rgba(248, 113, 113, 0.6); color: #fecaca; background: rgba(185, 28, 28, 0.35); }
 .chat-composer-status { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: nowrap; overflow: visible; }
 .chat-status-spacer { flex: 1; min-width: 4px; }
 .chat-composer-hint { font-size: 0.75em; color: var(--chat-faint); white-space: nowrap; }
@@ -304,6 +313,9 @@ ol.chat-md-list { list-style: decimal; }
 .chat-md-table-wrap { overflow-x: auto; max-width: 100%; }
 .chat-md table { border-collapse: collapse; font-size: 0.92em; }
 .chat-md th, .chat-md td { border: 1px solid var(--chat-line); padding: 4px 8px; text-align: left; vertical-align: top; }
+/* A narrow screen squeezed every column to a few letters («lig/hts/oft», 2be8b580) and the wrapper never
+   scrolled. Cells keep a readable width and whole words; a table wider than the chat scrolls sideways. */
+.chat-md th, .chat-md td { min-width: 6.5em; max-width: 24em; overflow-wrap: break-word; word-break: keep-all; }
 .chat-md th { background: var(--chat-soft); font-weight: 600; }
 .chat-md-commentary { color: var(--chat-dim); font-size: 0.92em; }
 .chat-md-small { font-size: 0.9em; color: var(--chat-dim); }
@@ -336,3 +348,8 @@ ol.chat-md-list { list-style: decimal; }
 .chat-attachment-chip { display: inline-flex; align-items: center; gap: 5px; margin: 0 4px 4px 0; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: inherit; font: inherit; font-size: 0.85em; vertical-align: middle; }
 button.chat-attachment-chip:hover { background: rgba(255, 255, 255, 0.16); }
 .chat-attachment-chip-ext { opacity: 0.65; text-transform: uppercase; font-size: 0.85em; }
+
+/* the view switch's notice (draftHandoff.ts) — fixed, so it shows over the terminal too */
+.draft-handoff-notice { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 2147483000; display: flex; align-items: flex-start; gap: 8px; max-width: min(520px, calc(100vw - 32px)); padding: 9px 12px; border-radius: 10px; background: #1e293b; color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.35); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.4; }
+.draft-handoff-notice svg { flex-shrink: 0; margin-top: 2px; color: #93c5fd; }
+.draft-handoff-notice button { margin-left: 4px; color: #94a3b8; flex-shrink: 0; }

@@ -66,6 +66,8 @@ body.phone-body #root {
     flex-shrink: 0;
 }
 .phone-narrow .phone-sidebar.phone-drawer {
+    /* opaque over the session (ede4906a): the glass sidebar colour is 85% and the chat showed through */
+    background: #0f0f14;
     position: absolute;
     top: env(safe-area-inset-top);
     bottom: 0;
@@ -126,6 +128,42 @@ body.phone-body #root {
 .phone-waiting-count {
     font-size: 11px;
     color: #fbbf24;
+}
+.phone-list-search-toggle {
+    width: 30px;
+    height: 30px;
+    margin: -6px -6px -6px 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+.phone-list-search-toggle[aria-pressed='true'] {
+    color: var(--text-primary);
+    background: var(--button-hover-bg);
+}
+/* the search box under the head (1b92a570) — 16px text: iOS zooms the page into anything smaller */
+.phone-list-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 12px 6px;
+    padding: 0 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-tertiary);
+    background: rgba(255, 255, 255, 0.04);
+}
+.phone-list-search input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    font-size: 16px;
+    background: transparent;
+    color: var(--text-primary);
+    outline: none;
 }
 .phone-list-title {
     font-size: 12px;
@@ -345,6 +383,19 @@ body.phone-body #root {
 }
 .phone-menu button:active {
     background: var(--button-hover-bg);
+}
+.phone-menu-switch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+.phone-menu-switch input {
+    width: 18px;
+    height: 18px;
+    accent-color: #3b82f6;
 }
 .phone-menu-note {
     font-size: 11px;
@@ -803,6 +854,35 @@ body.phone-body #root {
 }
 
 /* the Mac not answering, said beside the session's name — the header keeps its height */
+.phone-header-refreshing {
+    font-weight: 400;
+    font-size: 12px;
+    color: #60a5fa;
+    white-space: nowrap;
+}
+.phone-refreshing {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #60a5fa;
+}
+.phone-spinner {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    vertical-align: -1px;
+    animation: phone-spin 0.8s linear infinite;
+}
+@keyframes phone-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
 .phone-header-offline {
     font-weight: 400;
     font-size: 12px;
@@ -814,4 +894,26 @@ body.phone-body #root {
    kit's report, toasts and sheet are other children of its root and stay. */
 [data-feedback-kit] > div:has(> #feedback-kit-floating-button) {
     display: none !important;
+}
+
+/* feedback-kit's report sizes itself to 100vh, which on Chrome for Android is the large viewport: with
+   the keyboard up the form runs under it and «보내기» cannot be reached (measured on a Galaxy, 11-05 —
+   innerHeight 416, the button at 450–488). Fit it to what is on screen (viewport.ts) and keep its
+   buttons in view at the bottom while it scrolls. Selectors are the kit's own (0.14). */
+[data-feedback-kit] [role="dialog"][aria-labelledby="feedback-kit-dialog-title"] {
+    max-height: calc(var(--phone-visible-height, 100dvh) - 24px) !important;
+}
+[data-feedback-kit] [aria-labelledby="feedback-kit-dialog-title"] form > div:has(> button[data-fk-focus-id]) {
+    position: sticky;
+    bottom: calc(-1 * clamp(14px, 4vw, 22px));
+    padding: 10px 0 clamp(14px, 4vw, 22px);
+    margin-bottom: calc(-1 * clamp(14px, 4vw, 22px));
+    background-color: #fff;
+    z-index: 1;
+}
+
+/* the Terminal ↔ Chat notice (draftHandoff.ts): on the phone the bottom is the key bar and the chat box */
+.phone-app .draft-handoff-notice {
+    top: calc(56px + env(safe-area-inset-top));
+    bottom: auto;
 }

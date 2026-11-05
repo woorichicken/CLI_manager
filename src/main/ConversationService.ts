@@ -1,6 +1,9 @@
 import type {
     ChatCommand,
+    ChatSendOptions,
     ChatSendResult,
+    DraftFromTerminalResult,
+    DraftToTerminalResult,
     ConversationAgent,
     ConversationSnapshot,
     InterruptResult,
@@ -10,6 +13,7 @@ import type {
     QueuedMessage
 } from '../shared/conversation'
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
+import { isBusyRow } from './screenLines'
 import { answerSteps, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 
@@ -40,7 +44,6 @@ const KEY_GAP_MS = 60
  */
 const CONFIRM_MS = 1500
 const CONFIRM_POLL_MS = 40
-const BUSY = /esc to interrupt/i
 /** `type` returned false: Enter was pressed (and retried) but the text is still in the agent's input box. */
 const NOT_SUBMITTED: ChatSendResult = {
     status: 'rejected',
@@ -91,7 +94,7 @@ export interface ConversationMirror {
     lastOutputAt(id: string): number
     hasExited(id: string): boolean
     showsAwaitingInput(id: string): boolean
-    inputBox(id: string): { typed: string } | null
+    inputBox(id: string): { typed: string; clipped?: boolean; typedRows?: number } | null
 }
 
 export interface ConversationServiceDeps {
@@ -241,7 +244,7 @@ export class ConversationService {
     }
 
     /** `from`: who sends it, when not this Mac (ChatSender). */
-    async send(sessionId: string, raw: string, from?: From): Promise<ChatSendResult> {
+    async send(sessionId: string, raw: string, from?: From, options: ChatSendOptions = {}): Promise<ChatSendResult> {
         const sender = senderOf(from)
         const text = raw.replace(/\s+$/, '')
         if (!text.trim()) return { status: 'rejected', reason: 'empty', message: 'Nothing to send.' }
@@ -255,7 +258,14 @@ export class ConversationService {
 
         const entry = this.entry(sessionId)
         await this.refreshScreen(sessionId, entry, true)
-        const blocked = this.blockedReason(sessionId, entry)
+        let blocked = this.blockedReason(sessionId, entry)
+        if (blocked?.status === 'rejected' && blocked.reason === 'input_busy' && options.clearDraft !== undefined) {
+            if (sender && !sender.allowed()) {
+                this.dropIfIdle(sessionId, entry)
+                return REVOKED
+            }
+            blocked = await this.clearDraft(sessionId, entry, options.clearDraft, blocked)
+        }
         if (blocked) {
             this.dropIfIdle(sessionId, entry)
             return blocked
@@ -597,15 +607,95 @@ export class ConversationService {
                 message: 'The agent is asking a question. Answer it first — Enter would pick the highlighted option.'
             }
         }
-        const typed = this.deps.mirror.inputBox(sessionId)?.typed.trim()
-        if (typed) {
+        const box = this.deps.mirror.inputBox(sessionId)
+        const claude = agentOf(this.deps.session(sessionId)) === 'claude'
+        // Only Claude's box is read from its rules; a lone rule on a Codex screen is its output.
+        const clipped = box?.clipped === true && claude
+        if (box?.typed.trim() || clipped) {
+            const draft = claude ? clearableDraft(box) : null
             return {
                 status: 'rejected',
                 reason: 'input_busy',
-                message: 'The terminal input line already has text. Send or clear it in the terminal first, so the two do not mix.'
+                message: 'The terminal input line already has text. Send or clear it in the terminal first, so the two do not mix.',
+                ...(draft !== null ? { draft } : {})
             }
         }
         return null
+    }
+
+    /**
+     * Empties Claude's input box for a send the person agreed to: only while it holds exactly
+     * `expected`, with Ctrl+K then Ctrl+U (the row after the cursor, then before it — ovis
+     * CLAUDE_CLEAR_INPUT_KEYS, measured on 2.1.295; Ctrl+Y puts it back). Returns what still
+     * blocks the send, or null once the box reads empty.
+     */
+    private async clearDraft(sessionId: string, entry: Watched, expected: string, refused: ChatSendResult): Promise<ChatSendResult | null> {
+        const draft = clearableDraft(this.deps.mirror.inputBox(sessionId))
+        if (draft === null || draft !== expected) return refused
+        if (!(await this.emptyBox(sessionId))) {
+            return { status: 'rejected', reason: 'input_busy', message: 'The terminal input line did not empty. Clear it in the terminal.' }
+        }
+        await this.refreshScreen(sessionId, entry, true)
+        return this.blockedReason(sessionId, entry)
+    }
+
+    /** Ctrl+K, Ctrl+U, then waits for the box to read empty. False when it did not in time. */
+    private async emptyBox(sessionId: string): Promise<boolean> {
+        for (const key of CLEAR_INPUT_KEYS) this.deps.writeInput(sessionId, key)
+        const deadline = Date.now() + CLEAR_WAIT_MS
+        for (;;) {
+            await this.deps.mirror.flush(sessionId)
+            if (!this.deps.mirror.inputBox(sessionId)?.typed.trim()) return true
+            if (Date.now() >= deadline) return false
+            await sleep(CLEAR_POLL_MS)
+        }
+    }
+
+    /**
+     * Chat → Terminal (4b9cb0c2): the chat's unsent text into Claude's input box, without Enter — never
+     * over text already there, never onto a question. Several lines (or a long one) go as one bracketed
+     * paste, so no line is sent on its own and a long line is not cut (edge-audit 7). Claude only.
+     */
+    async placeDraftInTerminal(sessionId: string, raw: string, from?: From): Promise<DraftToTerminalResult> {
+        const sender = senderOf(from)
+        const text = raw.replace(/\s+$/, '')
+        if (!text.trim()) return { status: 'refused', reason: 'empty' }
+        if (text.length > MAX_TEXT_LENGTH) return { status: 'refused', reason: 'too_large' }
+        const info = this.deps.session(sessionId)
+        if (agentOf(info) !== 'claude') return { status: 'unsupported' }
+        if (!this.deps.hasTerminal(sessionId) || this.deps.mirror.hasExited(sessionId)) return { status: 'refused', reason: 'not_running' }
+        const entry = this.entry(sessionId)
+        try {
+            await this.refreshScreen(sessionId, entry, true)
+            const blocked = this.blockedReason(sessionId, entry)
+            if (blocked?.status === 'rejected' && blocked.reason === 'awaiting_input') return { status: 'refused', reason: 'awaiting_input' }
+            if (blocked?.status === 'rejected' && blocked.reason === 'input_busy') return { status: 'busy', ...(blocked.draft !== undefined ? { draft: blocked.draft } : {}) }
+            if ((await this.agentInFront(sessionId)) === null) return { status: 'refused', reason: 'no_agent' }
+            if (sender && !sender.allowed()) return { status: 'refused', reason: 'revoked' }
+            const paste = text.includes('\n') || text.length > TYPED_LINE_MAX
+            this.deps.writeInput(sessionId, paste ? `\x1b[200~${text}\x1b[201~` : text)
+            return { status: 'placed' }
+        } finally {
+            this.dropIfIdle(sessionId, entry)
+        }
+    }
+
+    /**
+     * Terminal → Chat (4b9cb0c2): a one-row draft in Claude's box moves out (Ctrl+K, Ctrl+U) for the chat
+     * to take. More rows, bash mode or a paste placeholder stay — those keys edit one row. Claude only.
+     */
+    async takeTerminalDraft(sessionId: string, from?: From): Promise<DraftFromTerminalResult> {
+        const sender = senderOf(from)
+        if (agentOf(this.deps.session(sessionId)) !== 'claude') return { status: 'unsupported' }
+        if (!this.deps.hasTerminal(sessionId) || this.deps.mirror.hasExited(sessionId)) return { status: 'empty' }
+        await this.deps.mirror.flush(sessionId)
+        const box = this.deps.mirror.inputBox(sessionId)
+        if (!box || (!box.typed.trim() && !box.clipped)) return { status: 'empty' }
+        const draft = clearableDraft(box)
+        if (draft === null) return { status: 'left', reason: box.clipped || (box.typedRows ?? 0) > 1 ? 'several_lines' : 'kept' }
+        if (sender && !sender.allowed()) return { status: 'left', reason: 'kept' }
+        if (!(await this.emptyBox(sessionId))) return { status: 'left', reason: 'not_cleared' }
+        return { status: 'moved', text: draft }
     }
 
     private entry(sessionId: string): Watched {
@@ -641,7 +731,7 @@ export class ConversationService {
         await this.deps.mirror.flush(sessionId)
         entry.lastScreenAt = outputAt
         const screen = this.deps.mirror.screen(sessionId)
-        entry.working = screen.some((line) => BUSY.test(line))
+        entry.working = screen.some(isBusyRow)
         entry.prompt = entry.working ? null : readPrompt(screen, agentOf(this.deps.session(sessionId)) ?? 'claude')
     }
 
@@ -750,6 +840,27 @@ export class ConversationService {
 function senderOf(from: From): ChatSender | null {
     if (from === undefined) return null
     return typeof from === 'string' ? { origin: from, allowed: () => true } : from
+}
+
+/** Longer than this, one line goes as a paste: Claude reads a long typed line as pasted chunks and keeps the tail (ovis composer.ts TYPED_LINE_MAX, #1174). */
+const TYPED_LINE_MAX = 200
+/** Ctrl+K, Ctrl+U: what empties a one-row Claude input box. */
+const CLEAR_INPUT_KEYS = ['\x0b', '\x15']
+const CLEAR_WAIT_MS = 1500
+const CLEAR_POLL_MS = 50
+/** A paste or an image Claude folded into a placeholder stands for more than the box shows. */
+const DRAFT_PLACEHOLDER = /\[(?:Pasted text #\d+|Image #\d+)/
+
+/**
+ * The typed text the chat may offer to clear (ovis claudeClearableDraft, MIT): one row of a `❯`
+ * box. Not a box clipped by the screen, not bash mode (`!` in place of `❯`, its own Backspace),
+ * not a placeholder. Null otherwise.
+ */
+function clearableDraft(box: { typed: string; clipped?: boolean; typedRows?: number } | null): string | null {
+    if (!box || box.clipped || box.typedRows !== 1) return null
+    const typed = box.typed.trim()
+    if (!typed || typed.startsWith('!') || DRAFT_PLACEHOLDER.test(typed)) return null
+    return typed
 }
 
 function agentOf(info: ConversationSessionInfo | null): ConversationAgent | null {

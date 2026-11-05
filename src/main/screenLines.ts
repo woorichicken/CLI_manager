@@ -4,10 +4,42 @@
  */
 
 /**
- * Claude Code draws its input box between two full-width rules. Matched on the
- * trimmed row, so a rule with a label inside it does not count.
+ * A full-width rule: Claude Code's input box edges, and the top edge of its
+ * dialogs. Matched on the trimmed row. Heavy (━) too, and from 8 cells: a pane
+ * narrower than 20 columns still draws a box (ovis server/dialogs/shared.ts
+ * SOLID_RULE_RE, MIT).
  */
-export const INPUT_BOX_RULE = /^─{20,}$/
+export const INPUT_BOX_RULE = /^[─━]{8,}$/
+
+/**
+ * A labelled rule over an input box: Claude's named session after `/rename`
+ * (`──── my-session ─`), and OmO's own box while it works
+ * (`── • Running eval (7s • esc to interrupt) ───`). Only the box readers take
+ * it; a dialog's top edge stays INPUT_BOX_RULE. (ovis server/claude-input.ts
+ * BOX_LABELED_RULE_RE, MIT — our port had left it out, and every Chat send to a
+ * named session read the answer above the box as typed text.)
+ */
+const BOX_LABELED_RULE = /^─{2,}\s.*─$/
+
+/**
+ * A turn in progress. Codex (and Claude Code up to 2.1.31x) print "esc to interrupt" on the spinner row.
+ * Claude Code 2.1.318 dropped that hint: its spinner row is only a glyph, a verb with an ellipsis and a
+ * bracket that opens with the elapsed time or a hook it waits on — `✳ Galloping… (8s · ↓ 527 tokens)`,
+ * `✻ Deciphering… (running UserPromptSubmit hooks… 0/2 · 0s)` (recorded 2026-11-05, 4359b4ee). A
+ * settled turn's row has no ellipsis (`✻ Cogitated for 11s`), so it never matches.
+ */
+const ESC_TO_INTERRUPT = /esc to interrupt/i
+const CLAUDE_SPINNER_ROW = /^\s*[·✢✳✶✻✽*]\s+[^\s()…][^()…]*…\s*\((?:\d|running\b)/
+
+/** A screen row that says the agent is working on a turn (see above). */
+export function isBusyRow(row: string): boolean {
+    return ESC_TO_INTERRUPT.test(row) || CLAUDE_SPINNER_ROW.test(row)
+}
+
+/** One edge of an agent's input box. `trimmed` is a row with its edges' blanks removed. */
+export function isInputBoxRule(trimmed: string): boolean {
+    return INPUT_BOX_RULE.test(trimmed) || BOX_LABELED_RULE.test(trimmed)
+}
 
 /** Long enough for a sentence; the dialog truncates further to fit. */
 const MAX_LAST_LINE_LENGTH = 200
@@ -19,7 +51,7 @@ const NOTHING_TO_READ = /^[\s─-╿▀-▟·•…⎿⏺❯>|]*$/
 function inputBoxTop(rows: string[]): number {
     const rules: number[] = []
     for (let row = rows.length - 1; row >= 0 && rules.length < 2; row--) {
-        if (INPUT_BOX_RULE.test(rows[row].trim())) rules.push(row)
+        if (isInputBoxRule(rows[row].trim())) rules.push(row)
     }
     return rules.length === 2 ? rules[1] : -1
 }
@@ -56,7 +88,7 @@ export function recapOf(rows: string[]): string {
         const parts = [rows[start].trim().replace(RECAP_START, '')]
         // Claude Code wraps the recap itself, indenting the rows that continue it.
         for (let row = start + 1; row < rows.length && /^\s+\S/.test(rows[row]); row++) {
-            if (INPUT_BOX_RULE.test(rows[row].trim())) break
+            if (isInputBoxRule(rows[row].trim())) break
             parts.push(rows[row].trim())
         }
         const text = parts.join(' ').replace(/\s+/g, ' ').replace(RECAP_HINT, '').trim()

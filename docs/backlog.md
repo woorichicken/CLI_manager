@@ -19,6 +19,22 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 입력 상자 읽기 — edge-audit 나머지(4~13)와 복원 구분선
+- Discovered: 2026-11-05 phone-fixes(A 확장 1·2·3·14 는 끝, T88). `~/Downloads/_batches/plan-ovis-1103/fixes/edge-audit/report.md` 4~13번(Stop 뒤 Claude 가 되돌려 놓은 초안 · /rewind 대화상자 · 보이지 않는 글자로 붙잡힌 전송 · 200자 넘는 한 줄 · 화면 어디든 `esc to interrupt` 면 작업 중 · 질문 판정 범위 · 계획 승인 문구 · 끝이 `\`·`@` · 숨긴 중단 힌트 · `/btw`·상세 기록 보기)와 14c(좁은 칸 줄바꿈 head 비교).
+- Evidence: 새로 생긴 것 하나 — ovis 라벨 선(`/^─{2,}\s.*─$/`)이 우리 복원 구분선 `── Restored from previous session · saved … ──` 에도 맞는다. 복원 직후 Claude 가 상자를 그리기 전에는 선이 하나뿐이라 `clipped` → Claude 세션 Chat 이 잠깐 `input_busy`(실제 개발판 화면에서 그 줄을 봤다, 거절 자체는 재현 안 함).
+- Why deferred: 총괄 지시로 이번 범위는 1·2·3·14.
+- Trigger: 다음 Chat 안정화 회차, 또는 복원 직후 「input line already has text」 제보.
+- Fix direction: 4~13 은 report 「추천 순서」대로(8·9 먼저). 구분선은 판정에서 `Restored from previous session` 을 빼거나 구분선 모양을 라벨 선과 다르게.
+- Owner: 없음
+
+### 폰 페이지 — Chrome 이 「페이지를 번역하시겠습니까?」를 매번 띄운다
+- Discovered: 2026-11-05 phone-fixes 갤럭시 캡처 — localhost:8765 와 Tailscale 주소 모두, 출발어 영어 · 도착어 한국어.
+- Evidence: 리뷰 캡처 `fixes/phone-fixes/shots/a-before-galaxy.png` 등 상단 풍선. 화면 위를 덮어 지목·캡처를 가린다.
+- Why deferred: 이번 범위 밖(phone.html 머리말).
+- Trigger: 폰 화면 다음 회차.
+- Fix direction: `phone.html` 에 `<meta name="google" content="notranslate">` 또는 `translate="no"`. 실제 대화 글은 사람이 번역하고 싶을 수 있어 범위를 고른다.
+- Owner: 없음
+
 ### E2E 전체 실행 — 회차마다 다른 1~2건이 흔들린다(부하·동시 앱)
 - Discovered: 2026-11-05 밤샘 시험(plan-ovis-1103) — 같은 브랜치 전체 실행 6회: 893·911건 중 실패 2 · 2 · 0 · 2 · 2 · 1, 실패한 건은 매번 다시 3번 돌리면 대부분 통과.
 - Evidence: 회차별 실패 — T3(녹화 파일 없음, 환경) · T20 잠자기(R1′ 「Execution context was destroyed」) · T74 r2(질문 카드 10초 623행 — 11-03 에도 1/6) · T77 가로 폭 맞춤 83/103 · T19 #5 흐린 제안(3/3 통과). 로그 `~/Downloads/_batches/plan-ovis-1103/regress/full-final{,2,3,4,5,6}.log`. 같은 시간에 실제 Claude 세션이 든 격리 개발판·갤럭시 장시간 시험이 함께 돌았다.

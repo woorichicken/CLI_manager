@@ -11,6 +11,8 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  *  - a Mac without feedback mode: the phone shows no Feedback button and never loads the widget chunk
  *  - feedback mode on at the Mac: the button is in the session list header; the kit's own floating
  *    button is hidden, so the terminal key bar and Send are what a thumb reaches there
+ *  - the button starts pointing (phone-fixes B): a tap on an element opens the note sheet and sends it
+ *    with that element; the dock's «whole screen» is the report, whose Send stays above the keyboard
  *  - a report from a session: through the phone server to main's relay (main's fetch is replaced —
  *    nothing reaches Lasso Run), carrying url …/phone?screen=session, extra.surface 'phone', the
  *    viewed session's masked lines and a screenshot — and no owner login, cookie or ingest key in extra
@@ -144,7 +146,7 @@ test('T85 a Mac without feedback mode: no button on the phone, no widget chunk',
     expect(assets.some((name) => name.includes('PhoneFeedbackWidget')), assets.join('\n')).toBe(false)
 })
 
-test('T85 feedback mode on: the button opens the report; it reaches main relay with the phone context', async () => {
+test('T85 feedback mode on: the button points, a tap sends that element; whole screen reaches main relay with the phone context', async () => {
     test.setTimeout(180_000)
     test.skip(!buildHasFeedback(), 'build has no VITE_DP_FEEDBACK_URL/KEY')
     const { app, page, base } = await launch()
@@ -169,19 +171,48 @@ test('T85 feedback mode on: the button opens the report; it reaches main relay w
     })
     expect(bottomRight).not.toBe('kit')
 
-    // ☰ → Feedback: the drawer closes and the report opens with the session screen captured
+    // ☰ → Feedback: the drawer closes and the kit starts pointing (phone-fixes B — a tap is a click to it)
     await tap(cdp, phone, 'phone-menu-button')
     await expect(phone.getByTestId('phone-feedback-button')).toBeVisible()
     await tap(cdp, phone, 'phone-feedback-button')
+    await expect(phone.locator('[data-fk-pick-dock]')).toBeVisible({ timeout: 15_000 })
+    await expect(phone.getByTestId('phone-sidebar')).toHaveCount(0)
+    // a finger on the session's terminal: the note sheet opens for that element
+    await tap(cdp, phone, 'phone-terminal')
+    const note = phone.locator('#feedback-kit-annotation')
+    await expect(note).toBeVisible({ timeout: 10_000 })
+    await expect(phone.locator('[data-fk-popup-layout]')).toHaveAttribute('data-fk-popup-layout', /^sheet-/)
+    await note.fill('[t85] pointed at the terminal')
+    await note.press('Enter')
+    await expect.poll(async () => (await ingestBodies(app)).length, { timeout: 30_000 }).toBe(1)
+    const pointed = JSON.parse((await ingestBodies(app))[0]) as { report: { comment: string; element: { tag: string; boundingBox: unknown } | null; context: { extra: Record<string, any> } } }
+    expect(pointed.report.comment).toBe('[t85] pointed at the terminal')
+    expect(pointed.report.element, 'the tapped element').not.toBeNull()
+    expect(pointed.report.context.extra).toMatchObject({ surface: 'phone', phoneSessionId: SHELL })
+
+    // while pointing every tap is a pick (☰ too); the dock's menu has «whole screen» — the report as before
+    await expect(phone.locator('[data-fk-pick-dock]')).toBeVisible({ timeout: 10_000 })
+    await phone.locator('[data-fk-pick-dock] [data-fk-pick-menu]').click()
+    await expect(phone.locator('[data-fk-pick-whole]')).toBeVisible({ timeout: 10_000 })
+    await phone.locator('[data-fk-pick-whole]').click()
     const comment = phone.locator('#feedback-kit-comment')
     await expect(comment).toBeVisible({ timeout: 15_000 })
-    await expect(phone.getByTestId('phone-sidebar')).toHaveCount(0)
+    // the keyboard up (Chrome resizes the page to 416 high, measured on a Galaxy): Send stays on screen
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 416, deviceScaleFactor: DPR, mobile: true, screenOrientation: { type: 'portraitPrimary', angle: 0 } })
+    await comment.focus()
+    const submit = phone.locator('[aria-labelledby="feedback-kit-dialog-title"] button[type="submit"]')
+    await expect.poll(() => submit.evaluate((el) => {
+        const box = el.getBoundingClientRect()
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+        return box.bottom <= window.innerHeight && (hit === el || el.contains(hit))
+    }), { timeout: 5_000 }).toBe(true)
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: DPR, mobile: true, screenOrientation: { type: 'portraitPrimary', angle: 0 } })
     await comment.fill('[t85] phone report check')
-    await phone.locator('[aria-labelledby="feedback-kit-dialog-title"] button[type="submit"]').click()
+    await submit.click()
     await expect(phone.getByText('보냈습니다').first()).toBeVisible({ timeout: 30_000 })
-    await expect.poll(async () => (await ingestBodies(app)).length, { timeout: 30_000 }).toBe(1)
+    await expect.poll(async () => (await ingestBodies(app)).length, { timeout: 30_000 }).toBe(2)
 
-    const [body] = await ingestBodies(app)
+    const body = (await ingestBodies(app))[1]
     // the Lasso Run envelope (feedback-kit buildLassoEnvelope): url on top, the report's parts under `report`
     const payload = JSON.parse(body) as { url: string; report: { comment: string; screenshotBase64: string | null; web: { url: string } | null; context: { extra: Record<string, any> } } }
     const report = payload.report
