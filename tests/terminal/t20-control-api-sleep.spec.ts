@@ -57,6 +57,33 @@ function wakeOrder(frozen: number[]): number[] {
     return main === undefined ? [] : [main, ...rest.reverse()]
 }
 
+/**
+ * Tells main it slept, the way Electron does on a real wake-up. Main-first waking cut the
+ * "Execution context was destroyed" rate but did not end it: in full runs (release gate, 11-05
+ * 12:0x and 12:3x) the evaluate still landed on a context the inspector was resetting after SIGCONT,
+ * while main was alive and the in-flight wait answered 200, not timed out — the app had done its
+ * part. Only that resetting context is retried; any other error is the test's to report.
+ */
+const WAKE_EVALUATE_ATTEMPTS = 4
+const WAKE_EVALUATE_RETRY_MS = 500
+
+async function emitWakeUp(app: LaunchResult['app']): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            await app.evaluate(({ powerMonitor }) => {
+                powerMonitor.emit('suspend')
+                powerMonitor.emit('resume')
+            })
+            if (attempt > 1) console.log(`[t20] wake-up evaluate took ${attempt} attempts (context reset after SIGCONT)`)
+            return
+        } catch (error) {
+            const resetting = error instanceof Error && error.message.includes('Execution context was destroyed')
+            if (!resetting || attempt >= WAKE_EVALUATE_ATTEMPTS) throw error
+            await new Promise((resolve) => setTimeout(resolve, WAKE_EVALUATE_RETRY_MS))
+        }
+    }
+}
+
 function signalAll(pids: number[], signal: NodeJS.Signals): void {
     for (const pid of pids) {
         try {
@@ -175,10 +202,7 @@ test.describe('T20 Control API across sleep', () => {
         // What Electron reports on a real wake-up, for anything listening to it.
         let woke: Awaited<typeof inFlight>
         try {
-            await app.evaluate(({ powerMonitor }) => {
-                powerMonitor.emit('suspend')
-                powerMonitor.emit('resume')
-            })
+            await emitWakeUp(app)
             woke = await inFlight
         } catch (error) {
             const flight = await inFlight.then(
