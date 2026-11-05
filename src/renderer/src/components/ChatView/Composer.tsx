@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { AlertTriangle, ArrowUp, FileText, Loader2, Plus, Square, X } from 'lucide-react'
-import type { ChatCommand, ChatPreferences, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
+import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
+import { InputBusyNote } from './InputBusyNote'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH } from '../../../../shared/conversation'
 import { activeTrigger, fileMention, type Trigger } from './chatLib'
 
@@ -137,7 +138,7 @@ export interface ComposerProps {
     preferences: ChatPreferences
     /** a touch screen: Return is a new line (Send sends) and opening the chat leaves the keyboard down */
     touch?: boolean
-    onSend(text: string): Promise<ChatSendResult>
+    onSend(text: string, options?: ChatSendOptions): Promise<ChatSendResult>
     onInterrupt(): Promise<string | null>
     /** the row under the box (model, context, plan) */
     status?: ReactNode
@@ -161,6 +162,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     /** messages on their way into the terminal */
     const [sending, setSending] = useState(0)
     const [notice, setNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
+    /** a send refused for text left in the terminal's input box, which main can clear (C-1) */
+    const [busyDraft, setBusyDraft] = useState<string | null>(null)
     const [attachments, setAttachments] = useState<Attachment[]>([])
     const [commands, setCommands] = useState<ChatCommand[] | null>(null)
     const [files, setFiles] = useState<string[]>([])
@@ -177,6 +180,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     useEffect(() => {
         setText(drafts[sessionId] ?? '')
         setNotice(null)
+        setBusyDraft(null)
         setCommands(null)
         setAttachments([])
         // The terminal under the chat may still hold focus: keys would go to it unseen.
@@ -349,7 +353,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
      * The box empties at once, so the next message can be typed while this one is typed into the
      * terminal (main queues it behind). A refused message comes back into the box, if still empty.
      */
-    const send = async (override?: string): Promise<void> => {
+    const send = async (override?: string, options?: ChatSendOptions): Promise<void> => {
         const outgoing = override ?? message
         if (!outgoing.trim() || (override === undefined && (attaching || over > 0))) return
         const taken = override === undefined ? { text, attachments } : null
@@ -359,15 +363,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }
         setSending((count) => count + 1)
         setNotice(null)
+        setBusyDraft(null)
         let result: ChatSendResult
         try {
-            result = await onSend(outgoing)
+            result = await onSend(outgoing, options)
         } catch (error) {
             result = { status: 'rejected', reason: 'not_running', message: error instanceof Error ? error.message : String(error) }
         }
         setSending((count) => count - 1)
         if (result.status === 'rejected') {
-            setNotice({ tone: 'error', text: result.message })
+            if (result.reason === 'input_busy' && result.draft !== undefined) setBusyDraft(result.draft)
+            else setNotice({ tone: 'error', text: result.message })
             if (taken && textRef.current === '' && attachmentsRef.current.length === 0) {
                 setDraft(taken.text, taken.text.length)
                 setAttachments(taken.attachments)
@@ -525,6 +531,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         </button>
                     ))}
                 </div>
+            )}
+            {busyDraft !== null && (
+                <InputBusyNote
+                    key={busyDraft}
+                    draft={busyDraft}
+                    onClearAndSend={() => void send(undefined, { clearDraft: busyDraft })}
+                    onDismiss={() => setBusyDraft(null)}
+                />
             )}
             {notice && (
                 <p className={`chat-composer-note${notice.tone === 'error' ? ' is-error' : ''}`} role={notice.tone === 'error' ? 'alert' : 'status'} data-testid="chat-composer-note">

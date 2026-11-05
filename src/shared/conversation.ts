@@ -197,7 +197,24 @@ export type ChatSendResult =
      * `not_submitted`: typed and Enter pressed, but the text is still in the agent's input box.
      * `no_agent`: only the shell is left in the terminal (or another program took the agent's place).
      */
-    | { status: 'rejected'; reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session' | 'not_submitted' | 'no_agent' | 'revoked' | 'conversation_changed'; message: string }
+    | {
+          status: 'rejected'
+          reason: 'awaiting_input' | 'input_busy' | 'not_running' | 'exited' | 'empty' | 'too_large' | 'unknown_session' | 'not_submitted' | 'no_agent' | 'revoked' | 'conversation_changed'
+          message: string
+          /**
+           * `input_busy`: the text in the agent's input box, when the chat may offer to clear it — one
+           * row of typed text in Claude's box (ChatSendOptions.clearDraft). Absent otherwise.
+           */
+          draft?: string
+      }
+
+export interface ChatSendOptions {
+    /**
+     * Empty the agent's input box first — only while it still holds exactly this text (the draft a
+     * refusal reported and the person agreed to clear). Otherwise refused, with the box's text now.
+     */
+    clearDraft?: string
+}
 
 export type InterruptResult =
     | { status: 'stopped' }
@@ -260,7 +277,7 @@ export interface ChatTransport {
     getConversation(sessionId: string, limit?: number): Promise<ConversationSnapshot>
     /** Calls `onChange` whenever the conversation, the working state or the question changes. */
     subscribe(sessionId: string, onChange: (revision: number) => void): () => void
-    send(sessionId: string, text: string): Promise<ChatSendResult>
+    send(sessionId: string, text: string, options?: ChatSendOptions): Promise<ChatSendResult>
     /** Drops every queued message. */
     cancelQueued(sessionId: string): Promise<void>
     /**

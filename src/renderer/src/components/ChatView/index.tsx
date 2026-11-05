@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, Clock, Loader2, Terminal as TerminalIcon } from 'lucide-react'
-import type { ChatCommand, ChatPreferences, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
+import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
 import { appendDraft, Composer, type ComposerHandle } from './Composer'
@@ -241,14 +241,14 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     )
 
     const sendText = useCallback(
-        async (text: string): Promise<ChatSendResult> => {
+        async (text: string, options?: ChatSendOptions): Promise<ChatSendResult> => {
             // the person's words show at once, faded, while they are typed into the terminal
             const bubble = isCommandText(text) ? null : { id: ++sentSequence, text, at: Date.now() }
             if (bubble) {
                 pinned.current = true
                 setSent((current) => [...current, bubble])
             }
-            const result = await transport.send(sessionId, text)
+            const result = await transport.send(sessionId, text, options)
             // refused, or waiting in the queue (shown there): not on its way
             if (bubble && result.status !== 'sent') setSent((current) => current.filter((item) => item.id !== bubble.id))
             if (result.status === 'sent' && !bubble) {

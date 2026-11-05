@@ -9,6 +9,7 @@
  *   --agent claude|codex  record and screen format (default claude)
  *   --work-ms N           how long a turn "works" with the spinner (default 1200)
  *   --user-delay-ms N     write a submitted prompt to the transcript N ms late (default 0)
+ *   --name <text>         a session renamed with /rename: Claude Code writes the name into the input box's top rule
  *
  * Prompts:
  *   ASK       a permission question. The layout is copied from a real Claude Code 2.1.312 screen
@@ -41,6 +42,7 @@ const AGENT = arg('--agent', 'claude')
 const WORK_MS = Number(arg('--work-ms', '1200'))
 /** how long a submitted prompt takes to reach the transcript (Claude Code writes it at once; a slow disk does not) */
 const USER_DELAY_MS = Number(arg('--user-delay-ms', '0'))
+const NAME = arg('--name')
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
 const FRAMES = ['✻', '✢', '✳', '∗']
@@ -127,6 +129,11 @@ function recordToolResult(id, output, isError) {
 function rule() {
     return '─'.repeat(cols() - 2)
 }
+/** the input box's top rule: `──── name ─` for a renamed session (Claude Code 2.1.318) */
+function topRule() {
+    if (!NAME) return rule()
+    return '─'.repeat(Math.max(3, cols() - 2 - NAME.length - 3)) + ` ${NAME} ─`
+}
 function dashes() {
     return '╌'.repeat(cols() - 2)
 }
@@ -160,7 +167,7 @@ function boxLines() {
     if (panel) return [rule(), ` ${panel}`, '', ' (mock panel — only the terminal shows it)', '', ' Esc to close']
     const status = busy ? [`${FRAMES[spinner % FRAMES.length]} Working… (${AGENT === 'codex' ? 'Esc' : 'esc'} to interrupt)`] : []
     if (AGENT === 'codex') return [...status, `› ${input}`, '  ? for shortcuts']
-    return [...status, rule(), `❯ ${input}`, rule(), '  ⏵⏵ accept edits on']
+    return [...status, topRule(), `❯ ${input}`, rule(), '  ⏵⏵ accept edits on']
 }
 
 function draw() {

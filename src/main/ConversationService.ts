@@ -1,5 +1,6 @@
 import type {
     ChatCommand,
+    ChatSendOptions,
     ChatSendResult,
     ConversationAgent,
     ConversationSnapshot,
@@ -91,7 +92,7 @@ export interface ConversationMirror {
     lastOutputAt(id: string): number
     hasExited(id: string): boolean
     showsAwaitingInput(id: string): boolean
-    inputBox(id: string): { typed: string; clipped?: boolean } | null
+    inputBox(id: string): { typed: string; clipped?: boolean; typedRows?: number } | null
 }
 
 export interface ConversationServiceDeps {
@@ -241,7 +242,7 @@ export class ConversationService {
     }
 
     /** `from`: who sends it, when not this Mac (ChatSender). */
-    async send(sessionId: string, raw: string, from?: From): Promise<ChatSendResult> {
+    async send(sessionId: string, raw: string, from?: From, options: ChatSendOptions = {}): Promise<ChatSendResult> {
         const sender = senderOf(from)
         const text = raw.replace(/\s+$/, '')
         if (!text.trim()) return { status: 'rejected', reason: 'empty', message: 'Nothing to send.' }
@@ -255,7 +256,14 @@ export class ConversationService {
 
         const entry = this.entry(sessionId)
         await this.refreshScreen(sessionId, entry, true)
-        const blocked = this.blockedReason(sessionId, entry)
+        let blocked = this.blockedReason(sessionId, entry)
+        if (blocked?.status === 'rejected' && blocked.reason === 'input_busy' && options.clearDraft !== undefined) {
+            if (sender && !sender.allowed()) {
+                this.dropIfIdle(sessionId, entry)
+                return REVOKED
+            }
+            blocked = await this.clearDraft(sessionId, entry, options.clearDraft, blocked)
+        }
         if (blocked) {
             this.dropIfIdle(sessionId, entry)
             return blocked
@@ -598,16 +606,42 @@ export class ConversationService {
             }
         }
         const box = this.deps.mirror.inputBox(sessionId)
+        const claude = agentOf(this.deps.session(sessionId)) === 'claude'
         // Only Claude's box is read from its rules; a lone rule on a Codex screen is its output.
-        const clipped = box?.clipped === true && agentOf(this.deps.session(sessionId)) === 'claude'
+        const clipped = box?.clipped === true && claude
         if (box?.typed.trim() || clipped) {
+            const draft = claude ? clearableDraft(box) : null
             return {
                 status: 'rejected',
                 reason: 'input_busy',
-                message: 'The terminal input line already has text. Send or clear it in the terminal first, so the two do not mix.'
+                message: 'The terminal input line already has text. Send or clear it in the terminal first, so the two do not mix.',
+                ...(draft !== null ? { draft } : {})
             }
         }
         return null
+    }
+
+    /**
+     * Empties Claude's input box for a send the person agreed to: only while it holds exactly
+     * `expected`, with Ctrl+K then Ctrl+U (the row after the cursor, then before it — ovis
+     * CLAUDE_CLEAR_INPUT_KEYS, measured on 2.1.295; Ctrl+Y puts it back). Returns what still
+     * blocks the send, or null once the box reads empty.
+     */
+    private async clearDraft(sessionId: string, entry: Watched, expected: string, refused: ChatSendResult): Promise<ChatSendResult | null> {
+        const draft = clearableDraft(this.deps.mirror.inputBox(sessionId))
+        if (draft === null || draft !== expected) return refused
+        for (const key of CLEAR_INPUT_KEYS) this.deps.writeInput(sessionId, key)
+        const deadline = Date.now() + CLEAR_WAIT_MS
+        for (;;) {
+            await this.deps.mirror.flush(sessionId)
+            if (!this.deps.mirror.inputBox(sessionId)?.typed.trim()) break
+            if (Date.now() >= deadline) {
+                return { status: 'rejected', reason: 'input_busy', message: 'The terminal input line did not empty. Clear it in the terminal.' }
+            }
+            await sleep(CLEAR_POLL_MS)
+        }
+        await this.refreshScreen(sessionId, entry, true)
+        return this.blockedReason(sessionId, entry)
     }
 
     private entry(sessionId: string): Watched {
@@ -752,6 +786,25 @@ export class ConversationService {
 function senderOf(from: From): ChatSender | null {
     if (from === undefined) return null
     return typeof from === 'string' ? { origin: from, allowed: () => true } : from
+}
+
+/** Ctrl+K, Ctrl+U: what empties a one-row Claude input box. */
+const CLEAR_INPUT_KEYS = ['\x0b', '\x15']
+const CLEAR_WAIT_MS = 1500
+const CLEAR_POLL_MS = 50
+/** A paste or an image Claude folded into a placeholder stands for more than the box shows. */
+const DRAFT_PLACEHOLDER = /\[(?:Pasted text #\d+|Image #\d+)/
+
+/**
+ * The typed text the chat may offer to clear (ovis claudeClearableDraft, MIT): one row of a `❯`
+ * box. Not a box clipped by the screen, not bash mode (`!` in place of `❯`, its own Backspace),
+ * not a placeholder. Null otherwise.
+ */
+function clearableDraft(box: { typed: string; clipped?: boolean; typedRows?: number } | null): string | null {
+    if (!box || box.clipped || box.typedRows !== 1) return null
+    const typed = box.typed.trim()
+    if (!typed || typed.startsWith('!') || DRAFT_PLACEHOLDER.test(typed)) return null
+    return typed
 }
 
 function agentOf(info: ConversationSessionInfo | null): ConversationAgent | null {

@@ -70,7 +70,7 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
                 socket?.close()
             }
         },
-        send: (sessionId, text) => postJson<ChatSendResult>(chatPath(sessionId, 'send'), { text }).catch(refuse),
+        send: (sessionId, text, options) => postJson<ChatSendResult>(chatPath(sessionId, 'send'), { text, ...(options?.clearDraft !== undefined ? { clearDraft: options.clearDraft } : {}) }).catch(refuse),
         cancelQueued: async (sessionId) => {
             await postJson(chatPath(sessionId, 'cancel-queued'), {}).catch(() => undefined)
         },

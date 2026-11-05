@@ -3383,9 +3383,9 @@ app.whenReady().then(async () => {
         else subs.set(sessionId, count - 1)
         conversationService.unsubscribe(sessionId)
     })
-    ipcMain.handle('chat-send', (_e, sessionId: string, text: string) =>
+    ipcMain.handle('chat-send', (_e, sessionId: string, text: string, options?: { clearDraft?: unknown }) =>
         typeof sessionId === 'string' && typeof text === 'string'
-            ? conversationService.send(sessionId, text)
+            ? conversationService.send(sessionId, text, undefined, typeof options?.clearDraft === 'string' ? { clearDraft: options.clearDraft } : {})
             : { status: 'rejected', reason: 'empty', message: 'Nothing to send.' }
     )
     ipcMain.handle('chat-cancel-queued', (_e, sessionId: string): void => {

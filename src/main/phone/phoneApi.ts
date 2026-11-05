@@ -2,6 +2,7 @@ import type http from 'http'
 import type {
     AttachResult,
     ChatCommand,
+    ChatSendOptions,
     ChatSendResult,
     ConversationSnapshot,
     InterruptResult,
@@ -32,7 +33,7 @@ export interface PhoneConversation {
      * `from`: who sends it — `deps.owner` (a disconnected device's queued messages are dropped by it)
      * and `stillAllowed`, asked again right before any key goes (F02)
      */
-    send(sessionId: string, text: string, from?: ChatSender): Promise<ChatSendResult>
+    send(sessionId: string, text: string, from?: ChatSender, options?: ChatSendOptions): Promise<ChatSendResult>
     cancelQueued(sessionId: string): void
     discardQueued(sessionId: string, id: string): boolean
     sendQueuedNow(sessionId: string, id: string, from?: ChatSender): Promise<ChatSendResult>
@@ -177,7 +178,9 @@ async function handleChat(
     switch (action) {
         case 'send': {
             const text = typeof body.text === 'string' ? body.text : ''
-            const result = await c.send(sessionId, text, sender)
+            // «Clear and send» (C-1): only the text the refusal showed; main checks the box still holds it
+            const clearDraft = typeof body.clearDraft === 'string' ? body.clearDraft : undefined
+            const result = await c.send(sessionId, text, sender, clearDraft !== undefined ? { clearDraft } : undefined)
             if (result.status !== 'rejected') deps.recordPhoneInput(sessionId, `chat message ${result.status} (${text.length} chars)`)
             send(res, 200, result)
             return

@@ -95,6 +95,8 @@ export interface InputBox {
      * and its `❯` row off (ovis claudeInputBox "clipped", MIT). Nothing is read; it is not empty.
      */
     clipped?: boolean
+    /** Rows of the box that hold typed text: Ctrl+K and Ctrl+U clear one. */
+    typedRows?: number
 }
 
 interface Mirror {
@@ -368,6 +370,14 @@ export class TerminalMirror {
         const typed: string[] = []
         const suggestion: string[] = []
         const cell = buffer.getNullCell()
+        // Past the box's prompt glyph; the IDE pill right after it, in cells to skip (edge-audit 1).
+        let promptSeen = false
+        let pill = 0
+        // Claude draws its own cursor inverse on a suggestion's first letter (edge-audit 2): held
+        // until the row tells whether grey text follows it (a suggestion) or not (typed).
+        let firstAfterPrompt = true
+        let cursor = ''
+        let grey = false
         for (let row = top + 1; row < bottom; row++) {
             const line = buffer.getLine(buffer.viewportY + row)
             if (!line) continue
@@ -378,13 +388,34 @@ export class TerminalMirror {
                 // Wide characters occupy a second, empty cell.
                 if (cell.getWidth() === 0) continue
                 const chars = cell.getChars()
+                if (!promptSeen && chars === '❯') {
+                    promptSeen = true
+                    pill = idePillCells(line.translateToString(true, col + 1))
+                    typedRow += chars
+                    continue
+                }
+                if (pill > 0) {
+                    pill--
+                    typedRow += ' '
+                    suggestionRow += ' '
+                    continue
+                }
                 // Claude Code draws the spaces inside dim text without the dim
                 // attribute (seen replaying a real session), so blanks belong to both.
                 if (chars.trim() === '') {
                     typedRow += ' '
                     suggestionRow += ' '
-                } else if (cell.isDim()) {
+                    continue
+                }
+                const first = promptSeen && firstAfterPrompt
+                if (promptSeen) firstAfterPrompt = false
+                if (cell.isDim()) {
+                    grey = true
                     suggestionRow += chars
+                } else if (first && cell.isInverse()) {
+                    cursor = chars
+                    typedRow += CURSOR_MARK
+                    suggestionRow += CURSOR_MARK
                 } else {
                     typedRow += chars
                 }
@@ -392,9 +423,14 @@ export class TerminalMirror {
             typed.push(collapseSpaces(typedRow))
             suggestion.push(collapseSpaces(suggestionRow))
         }
+        // A cursor over a typed letter has nothing grey after it.
+        const typedRows = typed.map((text) => text.replace(CURSOR_MARK, grey ? '' : cursor)).filter(Boolean)
+        const typedText = stripPromptGlyph(typedRows.join(' '))
+        const tip = typedRows.length === 1 && NO_COLOR_TIP.test(typedText) && viewportColorless(mirror.term)
         return {
-            typed: stripPromptGlyph(typed.filter(Boolean).join(' ')),
-            suggestion: suggestion.filter(Boolean).join(' ')
+            typed: tip ? '' : typedText,
+            typedRows: tip ? 0 : typedRows.length,
+            suggestion: suggestion.map((text) => text.replace(CURSOR_MARK, grey ? cursor : '')).filter(Boolean).join(' ')
         }
     }
 
@@ -488,6 +524,43 @@ function cursorBelowContent(term: HeadlessTerminal): string {
 
 function collapseSpaces(text: string): string {
     return text.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Claude Code's IDE pill, drawn right after the `❯` while an editor is connected: `[⧉ 3 lines
+ * selected] ` or `[⧉ In src/foo.ts] `. Painted in the theme's IDE color, not dim, yet no input.
+ * (ovis server/claude-input.ts CLAUDE_IDE_PILL_RE · idePillChars, MIT — Claude Code 2.1.302)
+ */
+const CLAUDE_IDE_PILL = /^[ \u00a0]?\[⧉ [^\]\n]+\] ?/
+
+/** How many cells after the `❯` the pill takes, with the space before it; 0 without one. */
+function idePillCells(afterPrompt: string): number {
+    const match = CLAUDE_IDE_PILL.exec(afterPrompt)
+    return match === null ? 0 : Array.from(match[0]).length
+}
+
+/** Stands in for Claude's drawn cursor until the box tells typed from suggested. */
+const CURSOR_MARK = '\u0000'
+
+/**
+ * Claude's new-session tip as the box's whole row (`Try "how does <filepath> work?"`). Dim
+ * normally; under NO_COLOR nothing is, and only a screen drawn without any color tells it from
+ * the same words typed (ovis claude-input.ts CLAUDE_TIP_ROW_RE · colorless, MIT).
+ */
+const NO_COLOR_TIP = /^Try "[^"]+"$/
+
+function viewportColorless(term: HeadlessTerminal): boolean {
+    const buffer = term.buffer.active
+    const cell = buffer.getNullCell()
+    for (let row = 0; row < term.rows; row++) {
+        const line = buffer.getLine(buffer.viewportY + row)
+        if (!line) continue
+        for (let col = 0; col < line.length; col++) {
+            line.getCell(col, cell)
+            if (!cell.isFgDefault() || !cell.isBgDefault() || cell.isDim()) return false
+        }
+    }
+    return true
 }
 
 /** The box starts with a prompt glyph ("❯" or ">"); it is decoration, not input. */

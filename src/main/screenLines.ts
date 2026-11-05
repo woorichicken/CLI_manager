@@ -5,9 +5,11 @@
 
 /**
  * A full-width rule: Claude Code's input box edges, and the top edge of its
- * dialogs. Matched on the trimmed row.
+ * dialogs. Matched on the trimmed row. Heavy (━) too, and from 8 cells: a pane
+ * narrower than 20 columns still draws a box (ovis server/dialogs/shared.ts
+ * SOLID_RULE_RE, MIT).
  */
-export const INPUT_BOX_RULE = /^─{20,}$/
+export const INPUT_BOX_RULE = /^[─━]{8,}$/
 
 /**
  * A labelled rule over an input box: Claude's named session after `/rename`
