@@ -19,6 +19,7 @@ import {
     debugCountWriteError
 } from '../utils/terminalDebug'
 import { SessionStatus, HooksSettings } from '../../../shared/types'
+import { resizeKeepingBottom } from '../../../shared/terminalResize'
 import { watchStartupPrompts } from '../utils/startupPrompts'
 
 interface TerminalViewProps {
@@ -287,7 +288,9 @@ export function TerminalView({
 
         let didResize = false
         if (terminal.cols !== dimensions.cols || terminal.rows !== dimensions.rows) {
-            terminal.resize(dimensions.cols, dimensions.rows)
+            // Rows leave from the top and come back from the scrollback, the way the
+            // agent's repaint expects — the same function the mirror in main uses.
+            resizeKeepingBottom(terminal, dimensions.cols, dimensions.rows)
             didResize = true
         }
 
@@ -558,9 +561,8 @@ export function TerminalView({
         resizeManagerRef.current = new TerminalResizeManager(
             () => visibleRef.current,
             () => xtermRef.current?.buffer.normal.length ?? 0,
-            (cols, rows) => applyTerminalDimensions({ cols, rows }),
-            (cols) => applyTerminalDimensions({ cols, rows: xtermRef.current?.rows ?? term.rows }),
-            (rows) => applyTerminalDimensions({ cols: xtermRef.current?.cols ?? term.cols, rows })
+            () => (xtermRef.current ? { cols: xtermRef.current.cols, rows: xtermRef.current.rows } : null),
+            (cols, rows) => applyTerminalDimensions({ cols, rows })
         )
 
         // Context menu handler for right-click on selected text

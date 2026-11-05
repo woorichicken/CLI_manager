@@ -243,10 +243,9 @@ test.describe('T86 synthetic screens', () => {
     test('an agent taller than the screen: shrinking then growing keeps every line once', async () => {
         const term = await seeded(80, 30)
         const agent = Array.from({ length: 60 }, (_, i) => `agent line ${i + 1}`)
-        // The agent printed its whole output once; the screen shows its tail.
-        await write(term, agent.join('\r\n') + '\r\n')
+        // The agent streamed its output and its input box under it; the screen shows the tail.
+        await write(term, [...agent, RULE, '❯ ', RULE, '  ⏵⏵ footer line'].join('\r\n') + `${ESC}[28;3H`)
         const tail = (rows: number) => agent.slice(agent.length - (rows - 4))
-        await write(term, inlineFrame(tail(30)).text)
         for (const rows of [24, 30, 43]) {
             resizeKeepingBottom(term, 80, rows)
             await repaint(term, tail(rows))
@@ -284,18 +283,19 @@ test.describe('T86 synthetic screens', () => {
     })
 
     test('a full-screen program (alternate screen) and a scroll region are resized the plain way', async () => {
-        for (const setup of [`${ESC}[?1049h${ESC}[Hfull screen app${ESC}[5;1H`, `${ESC}[5;20rtop${ESC}[3;1H`]) {
-            const term = newTerminal(80, 30)
-            const plain = newTerminal(80, 30)
-            for (const t of [term, plain]) {
-                await write(t, Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\r\n'))
-                await write(t, setup + `${ESC}[30;1Hbottom row`)
-                await write(t, `${ESC}[5;1H`)
-            }
+        // One resize per fresh terminal: xterm drops the scroll region on every resize.
+        for (const setup of [`${ESC}[?1049h${ESC}[Hfull screen app`, `${ESC}[5;20rtop`]) {
             for (const rows of [20, 43]) {
+                const term = newTerminal(80, 30)
+                const plain = newTerminal(80, 30)
+                for (const t of [term, plain]) {
+                    await write(t, Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\r\n'))
+                    await write(t, `${setup}${ESC}[30;1Hbottom row${ESC}[5;1H`)
+                }
                 resizeKeepingBottom(term, 80, rows)
                 plain.resize(80, rows)
                 expect(dump(term)).toEqual(dump(plain))
+                expect(term.buffer.active.cursorY).toBe(plain.buffer.active.cursorY)
             }
         }
     })
