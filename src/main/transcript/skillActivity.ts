@@ -73,9 +73,13 @@ const CLAUDE_COMMANDS = new Set([
     'rewind', 'status', 'statusline', 'terminal-setup', 'todos', 'upgrade', 'usage', 'vim', 'fast', 'goal'
 ])
 
-/** The recorded Claude command echo, not arbitrary XML embedded in a user's prose. */
+/**
+ * The recorded Claude command echo, not arbitrary XML embedded in a user's prose. A skill sent bare
+ * has no `<command-args>` at all (Claude Code 2.1.318): without the optional group it read as a
+ * command record and the chat dropped the person's `/skill` line (0aab59f7).
+ */
 export function claudeCommandEcho(text: string): { text: string; skill: SkillActivity } | null {
-    const match = /^<command-message>([\p{L}\p{N}_:-]+)<\/command-message>\s*<command-name>\/([\p{L}\p{N}_:-]+)<\/command-name>\s*<command-args>([\s\S]*)<\/command-args>$/u.exec(text.trim())
+    const match = /^<command-message>([\p{L}\p{N}_:-]+)<\/command-message>\s*<command-name>\/([\p{L}\p{N}_:-]+)<\/command-name>(?:\s*<command-args>([\s\S]*)<\/command-args>)?$/u.exec(text.trim())
     if (!match || match[1] !== match[2]) return null
     const name = match[1]
     // a skill (bundled or the user's own) is a skill: only a built-in command is left out

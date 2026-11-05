@@ -267,3 +267,37 @@ test('T92 back on the page after a while away: «Refreshing…» and a fresh cha
     await phone.waitForTimeout(300)
     await expect(phone.getByTestId('phone-header-refreshing')).toHaveCount(0)
 })
+
+test('T92 a skill sent on its own stays in the chat, phone and Mac (0aab59f7)', async () => {
+    test.setTimeout(180_000)
+    const { app, page, base } = await launch()
+    const { phone } = await openPhone(app, `${base}/?session=${CLAUDE}&view=chat`, 't92-skill')
+    const box = phone.getByTestId('chat-composer')
+    await expect(box).toBeVisible({ timeout: 15_000 })
+    // bare: Claude Code 2.1.318 records no <command-args> (chat-mock writes the same)
+    await box.fill('/progress-report')
+    await phone.getByTestId('chat-send').click()
+    await waitForBufferText(page, CLAUDE, 'ANSWER[1]: /progress-report', 15_000)
+    const said = phone.getByTestId('chat-user-text')
+    await expect(phone.locator('[data-testid="chat-answer"]', { hasText: 'Skill progress-report ran.' })).toBeVisible({ timeout: 15_000 })
+    await expect(said.filter({ hasText: /^\/progress-report$/ })).toHaveCount(1, { timeout: 2_000 }).catch(() => undefined)
+    await shot(phone, 't92-skill-line-390')
+    await expect(said.filter({ hasText: /^\/progress-report$/ })).toHaveCount(1)
+    // with arguments: they go on the same line
+    await expect.poll(async () => (await terminalText(page, CLAUDE)).includes('Skill progress-report ran.'), { timeout: 15_000 }).toBe(true)
+    await page.waitForTimeout(600)
+    await box.fill('/progress-report 컴팩트하게')
+    await phone.getByTestId('chat-send').click()
+    await expect(said.filter({ hasText: '/progress-report 컴팩트하게' })).toHaveCount(1, { timeout: 15_000 })
+
+    // the Mac's Chat view reads the same transcript
+    await page.getByText('T92 Claude', { exact: true }).first().click()
+    await page.getByTestId('view-toggle-chat').click()
+    const mac = page.locator('[data-testid="chat-view"][data-session-id]:visible')
+    await expect(mac.getByTestId('chat-user-text').filter({ hasText: /^\/progress-report$/ })).toHaveCount(1, { timeout: 15_000 })
+    await expect(mac.getByTestId('chat-user-text').filter({ hasText: '/progress-report 컴팩트하게' })).toHaveCount(1)
+    if (process.env.T92_SHOTS) {
+        await page.waitForTimeout(400)
+        await page.screenshot({ path: path.join(process.env.T92_SHOTS, `t92-skill-line-mac-${LABEL}.png`), clip: { x: 0, y: 0, width: 1280, height: 800 } })
+    }
+})

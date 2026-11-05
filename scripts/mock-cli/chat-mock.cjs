@@ -21,6 +21,7 @@
  *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
  *   TABLE     answers with a five-column table wider than a phone (Korean cells).
+ *   /name …   (Claude) a skill: records the 2.1.318 echo (no <command-args> when sent bare) and its body, then answers.
  *   /model X  (Claude) records the command and "Set model to `X 5`", as Claude Code 2.1.3xx does; the next
  *             answers name that model. Bare `/model`, `/config`: a panel only the terminal shows (Esc closes it).
  *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
@@ -234,6 +235,16 @@ function recordPlan() {
     }
 }
 
+/**
+ * Claude Code 2.1.318's record of a skill sent from the prompt: the echo (message, name, and
+ * <command-args> only when there are arguments), then the skill's body as a meta entry.
+ */
+function recordSkill(name, args) {
+    const tail = args ? `\n<command-args>${args}</command-args>` : ''
+    claudeEntry('user', { role: 'user', content: `<command-message>${name}</command-message>\n<command-name>/${name}</command-name>${tail}` }, { origin: { kind: 'human' }, turnOrigin: 'human' })
+    claudeEntry('user', { role: 'user', content: [{ type: 'text', text: `Base directory for this skill: /masked/.claude/skills/${name}\n\n# ${name}` }] }, { isMeta: true })
+}
+
 /** Claude Code's record of a slash command and its answer. */
 function recordCommand(name, args, stdout) {
     claudeEntry('user', { role: 'user', content: `<command-name>/${name}</command-name>\n            <command-message>${name}</command-message>\n            <command-args>${args}</command-args>` })
@@ -305,6 +316,12 @@ function submit(text) {
             panel = model ? 'Select model (mock picker)' : 'Settings (mock /config panel)'
             say(`PANEL: ${text.trim()}`)
         }
+        return
+    }
+    const skill = AGENT !== 'codex' ? /^\/([a-z][\w:-]*)(?:\s+([\s\S]+))?$/.exec(text.trim()) : null
+    if (skill) {
+        recordSkill(skill[1], skill[2])
+        answerTurn(text, `Skill ${skill[1]} ran.`)
         return
     }
     recordUser(text)

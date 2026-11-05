@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { claudeSkillUsage, createChatCommandLister } from '../../src/main/chatCommands'
 import { rankCommands } from '../../src/renderer/src/components/ChatView/chatLib'
+import { parseClaudeTranscript } from '../../src/main/transcript/claudeTranscript'
 import type { ChatCommand } from '../../src/shared/conversation'
 
 /**
@@ -78,5 +79,33 @@ test.describe('T91 the `/` menu order', () => {
     test('the match comes first: a better match beats a more used one', () => {
         const commands = [skill('report-tool'), skill('progress-report', 41)]
         expect(rankCommands(commands, slash('rep'), {}).map((c) => c.name)).toEqual(['report-tool', 'progress-report'])
+    })
+})
+
+/**
+ * 0aab59f7 (people's decision 11-05): a skill sent on its own — `/progress-report`, with or without
+ * arguments — stays in the chat as a short line. Shape copied from a real Claude Code 2.1.318
+ * transcript: the echo (message · name · args, `origin` human), the skill body as a meta entry,
+ * then the answer. Content is synthetic.
+ */
+test.describe('T91 a skill sent on its own stays in the chat (0aab59f7)', () => {
+    const session = '00000000-0000-4000-8000-0000000091aa'
+    const line = (entry: Record<string, unknown>) => JSON.stringify({ sessionId: session, isSidechain: false, userType: 'external', cwd: '/w', version: '2.1.318', ...entry })
+    // args: null — Claude Code 2.1.318 writes no <command-args> at all for a skill sent bare (the real record)
+    const transcript = (args: string | null) => [
+        line({ type: 'user', uuid: 'u1', parentUuid: null, timestamp: '2026-11-05T06:00:00.000Z', origin: { kind: 'human' }, turnOrigin: 'human', promptId: 'p1', message: { role: 'user', content: `<command-message>progress-report</command-message>\n<command-name>/progress-report</command-name>${args === null ? '' : `\n<command-args>${args}</command-args>`}` } }),
+        line({ type: 'user', uuid: 'u2', parentUuid: 'u1', isMeta: true, timestamp: '2026-11-05T06:00:00.100Z', message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: /w/.claude/skills/progress-report\n\n# Progress Report' }] } }),
+        line({ type: 'assistant', uuid: 'a1', parentUuid: 'u2', timestamp: '2026-11-05T06:00:03.000Z', message: { role: 'assistant', model: 'claude-model', content: [{ type: 'text', text: 'All three steps are done.' }], stop_reason: 'end_turn' } })
+    ].join('\n')
+
+    test('the transcript reads it as the person\'s line: /name, then its arguments', () => {
+        const cases: [string | null, string][] = [[null, '/progress-report'], ['', '/progress-report'], ['컴팩트하게', '/progress-report 컴팩트하게']]
+        for (const [args, expected] of cases) {
+            const turns = parseClaudeTranscript(transcript(args))
+            const user = turns.filter((turn) => turn.role === 'user')
+            expect(user).toHaveLength(1)
+            expect(user[0].parts.find((part) => part.kind === 'text')).toMatchObject({ text: expected })
+            expect(turns[turns.length - 1].role).toBe('assistant')
+        }
     })
 })
