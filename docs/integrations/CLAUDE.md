@@ -85,6 +85,12 @@ Recorded with a real `claude` in a pty and replayed into `@xterm/headless` (repo
   The rows already in the scrollback keep the old layout, so a resize leaves an old-width copy above
   the redraw and a seam where rows drop out or repeat. Every terminal shows this; the app's part is to
   not resize a pty for nothing (Terminal Rendering Invariant 2 in the root `CLAUDE.md`).
+- It redraws `rows - 1` rows and leaves the last one blank (after streaming a reply there can be two).
+  For a **height-only** change the seam is avoidable, and the app avoids it since 2026-11-05: the
+  terminal resizes as if the cursor sat on the last content row, so rows leave from the top and come
+  back from the scrollback exactly as the redraw expects (`src/shared/terminalResize.ts`, renderer and
+  mirror alike — Rendering Invariant 7; T86 replays these recordings, T87 runs it in the app).
+  Width changes still leave the old-width copy.
 - The same seam appears **without any resize**: while a reply taller than the screen streams, a
   markdown table re-measures its columns as rows arrive, and Claude Code redraws the visible part
   with the new widths. The rows that scrolled off keep the old ones (recording: first column 10 → 11

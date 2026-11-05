@@ -172,6 +172,7 @@ pnpm build && pnpm test:term
 
 4. **Shared** (`src/shared/`)
    - `types.ts`: Main/Renderer 공통 TypeScript 타입 정의
+   - `terminalResize.ts`: `resizeKeepingBottom` — 높이만 바뀌는 resize 를 「화면 아래 기준」으로(줄 때 위 줄이 스크롤백으로, 늘 때 스크롤백에서 되돌림). 렌더러 xterm(`TerminalView`)과 main 미러(`TerminalMirror`)가 **같이** import 한다 — 두 사본이 다르게 줄이면 복원 히스토리가 사용자가 본 것과 달라진다(아래 렌더링 불변식 7)
 
 ### 상세 레퍼런스
 
@@ -298,6 +299,13 @@ CLI TUI(Claude Code, Codex)의 화면 갱신 패턴 때문에 도입된 동작�
      지운다 — 실제 `claude --resume` 에서 화면에 남아 있던 복원 줄과 구분선이 첫 리페인트에 지워졌다. 미러도 렌더러처럼
      `scrollOnEraseInDisplay: true` 여야 이 이동과 CLI 의 전체 클리어가 두 쪽에서 같게 처리된다. 스냅샷은 찍힌 크기와 함께
      가고 뷰는 그 크기로 맞춘 뒤 쓴다 — 줄 수가 다르면 스크롤백 줄이 화면으로 내려와 같은 식으로 지워진다
+
+7. **높이 변경은 화면 아래 기준 — 렌더러·미러가 같은 함수로** (`src/shared/terminalResize.ts`)
+   - Claude Code 는 SIGWINCH 에 화면 맨 위(`CSI H`)로 가서 화면 줄 전부를 자기 출력의 끝(`rows-1` 줄, 마지막 줄은 비움)으로 다시 쓴다. 스크롤백은 안 건드린다.
+     xterm.js 기본 resize 는 커서가 맨 아래가 아니면 아래 줄을 버리고(줄 때)·빈 줄을 붙여서(늘 때) 다시 그린 화면이 엉뚱한 줄에 덮인다 — 답 첫 줄 사라짐·배너 중복(T86 녹화 재생)
+   - 커서 아래에 내용(입력 상자·footer)이 있을 때만, 마지막 내용 줄(빈 줄 하나는 남김)을 커서로 보고 resize 한다(xterm 내부 `_core.buffer.y` — 이스케이프로 옮기면 아직 안 읽은 출력 뒤로 줄을 선다). 늘 때는 화면이 찼을 때(맨 아래 빈 줄 2 이하)만 스크롤백에서 되돌린다 — 짧은 프로그램 위의 복원 구분선을 끌어내려 지우지 않게
+   - 폭 변경·대체 화면·스크롤 영역·커서 아래가 빈 셸은 xterm 그대로. 폭 변경의 옛 폭 사본은 Claude 몫이라 고치지 않는다(T86 e1 = 옛 동작과 같음)
+   - 창 크기 변경 한 번 = PTY resize 한 번(`TerminalResizeManager` — rows 만 바뀌면 즉시, 폭이 바뀌면 100ms 뒤 rows·cols 함께). 회귀는 T86(유닛)·T87(앱)
 
 ### Agent Hook Invariants (회귀 주의)
 
@@ -497,6 +505,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T84 폰 피드백 유닛 — Electron 없이 실제 PhoneServer: `/me` 의 `feedback` 플래그(drive·켜짐일 때만, watch·꺼짐·배선 없음엔 없음)·폰 판정은 `/me` 로만(localhost 여도 꺼짐)·릴레이 인증 없음 401·watch 403·꺼짐 403 `feedback_off`·수집 함수 밖 URL/메서드 400·15MB 초과 413·남의 Origin 403·본문 받는 중 철회 401·정상은 그대로 릴레이(폰 쿠키는 안 넘어감)·터미널 맥락 경로(401·403·세션 없음은 null)·제보 url `…/phone?screen=`·extra(Tailscale 로그인 없음)·`FeedbackModeState`
   - T85 폰 피드백 — 앱 + 터치 폰(CDP 390×844·배율 3, 주인 머리말): 꺼진 Mac 이면 버튼·위젯 청크 없음, Mac 에서 켜면 ☰ → Feedback 이 서랍을 닫고 모달(캡처) → 보내기가 main 릴레이까지(main `fetch` 를 바꿔 밖으로 안 나감): url·extra·보던 세션 줄·스크린샷·로그인/쿠키/키 없음, Mac 에서 끄면 `/me`·릴레이 403·버튼 사라짐, 키트 떠 있는 버튼이 키 바·Send 를 안 가림. `PHONE_SHOTS` 면 제보 스크린샷 저장
   - T83 2차 교차 검수 남은 것 유닛(11-05 round2) — F02 철회가 서비스의 await(전경 읽기·lane·대기열·카드 키 사이) 중에 와도 안 침(`ChatSender.allowed` 를 키 직전에) · F03 대기 글은 쓴 대화(cliSessionId)에 묶임(/resume 이면 버림 · Send now 는 `conversation_changed`) · F04 카드 Enter 는 의도한 보기가 강조돼 있을 때만(raw ↓ 끼어들면 prompt_changed) · F21 푸시는 요청 전체 마감(fetch + AbortSignal.timeout — 헤더·본문을 조금씩 보내는 자체 서명 TLS 서버로)
+  - T86 높이 resize 유닛(11-05 resize-anchor) — Electron 없이. 실제 `claude` 2.1.309 녹화(`fixtures/resize-recordings/`, 홈 이름을 같은 길이로 가림 — `make-fixtures.cjs`)를 headless xterm 에 재생: 대조군(plain `term.resize`)은 e6 36행 답 첫 줄 0·50행 배너/프롬프트 2·e4 표 끊김을 그대로 보이고, `resizeKeepingBottom` 은 높이마다 답·배너·프롬프트 1·표 이상 0, 폭만 바뀌는 e1 은 옛 동작과 같은 버퍼. 합성: 짧은 프로그램 위 복원 구분선이 늘린 뒤에도 남음, 마지막 줄을 비우는 Claude 식 화면(스트리밍 뒤 빈 줄 둘 포함)에서 줄이 안 빠지고 안 겹침, 커서가 제 줄에, 셸 프롬프트·대체 화면·스크롤 영역은 plain 과 같음, `TerminalMirror` 로 재생해도 같은 버퍼
+  - T87 높이 resize 앱(11-05) — `fixtures/inline-tui.cjs`(Claude 처럼 SIGWINCH 에 화면 맨 위부터 `rows-1` 줄을 다시 쓰는 모의 TUI)를 띄우고 창 높이를 줄였다 늘림: 렌더러 버퍼와 미러(`feedbackTerminalContext` 의 줄) 모두 `tui line N` 이 한 번씩, 창 한 번에 rows·cols 가 같이 바뀌어도 PTY resize 1번(rows 만이면 즉시 1번). 옛 빌드(617467c)에서 줄 3개 사라짐·PTY resize 2번으로 실패
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이

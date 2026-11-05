@@ -89,6 +89,9 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   - 판정에 필요한 것은 **PTY 에서 들어온 원본 바이트**인데 어디에도 남지 않는다 — `TerminalEventLog` 는 메모리 사건 기록, `ScrollbackStore`(`.ans`)는 xterm 이 처리한 결과를 덮어쓰고 세션을 닫으면 사라진다.
   - 제안(사람 결정 대기): 터미널마다 최근 원본 출력 링버퍼(메모리 약 2MB)를 두고 제보에 첨부한다. 같은 바이트를 Terminal.app·iTerm 과 CLI Manager 에서 재생해 **CLI Manager 에서만 사라지면 앱·xterm.js, 둘 다 사라지면 Claude Code** 로 가른다.
     앱 변경 없이 당장 쓸 길: CLI Manager 터미널에서 `script -q -r <파일> claude …` 로 원본을 기록해 두고 재현되면 같은 비교를 한다.
+- 부분 해결 (2026-11-05 resize-anchor-1105): 높이 변경은 이제 `src/shared/terminalResize.ts`(렌더러·미러 공용)가 「화면 아래 기준」으로 한다 — 커서 아래에 입력 상자가 있는 TUI 는
+  줄 때 위 줄을 스크롤백으로, 늘 때는 **화면이 찼을 때만** 스크롤백에서 되돌린다(짧은 프로그램 위의 복원 구분선은 안 끌어내린다, T86). 남은 것: ① 커서가 **맨 아래 줄**에 있는 경우는
+  xterm 기본(늘 때 끌어내림) 그대로다 — 셸 프롬프트의 정석 동작이라 바꾸지 않았다. ② 크기 변경 없이 사라진 477ecebd 계열(원본 바이트 링버퍼 제안)은 그대로 열려 있다.
 - Owner: 없음
 
 ### `electron-vite.config.ts` — 이 설정 파일은 읽히지 않는다
@@ -381,22 +384,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   메모 쓰기가 보류라면 대안: 사용자 메모와 **별도인 「AI 상태 한 줄」 필드**(AI 만 쓰고 사람 메모를 건드리지 않음 — 위 충돌 문제를 피한다)를 사이드바 세션 행 아래에.
 - Owner: Human Review
 
-### `src/renderer/src/utils/terminalResizeManager.ts` — 보이는 터미널의 창 크기 변경이 PTY resize 를 두 번 보낸다
-- Discovered: 2026-10-23 day-1023, 터미널 표 잘림(f77530f2 · 982d348d) 원인 추적.
-- Evidence: 창 크기를 바꾸면 rows 는 즉시, cols 는 100ms 뒤에 따로 PTY 로 간다 → Claude Code 가 두 번 다시 그리고, 다시 그릴 때마다 화면 줄만 지우고 새로 써서 스크롤백에 경계가 두 번 생길 수 있다(Claude 의 다시 그리기 방식은 `docs/integrations/CLAUDE.md`, PR #47).
-- Why deferred: 이번 수정(PR #47)은 숨긴 터미널의 첫 크기를 맞춘 것이고, 보이는 터미널의 resize 묶기는 별개 동작 변경이다.
-- Trigger: 창 크기·분할 크기를 바꾼 뒤 Claude 표가 잘리거나 겹친다는 제보가 다시 올 때.
-- Fix direction: rows·cols 를 한 번의 PTY resize 로 묶는다. 묶은 뒤 T4(리사이즈 폭풍)·T38(스트리밍 중 리사이즈)·T41 을 돌린다.
-- Owner: 없음
-
-### 렌더러·미러 공용 — 높이만 바뀌는 resize 를 「화면 아래 기준」으로 맞출지 (모듈화 사람 컨펌)
-- Discovered: 2026-10-23 day-1023, 982d348d 재현. 시제품 `~/Downloads/_batches/day-1023/review/climanager/terminal/evidence/anchor-replay.cjs`.
-- Evidence: 실제 Claude 녹화 재생에서 높이만 바뀐 resize 3건이 xterm 기본 동작으로는 답 첫 줄 사라짐·배너 중복을 냈고, 「화면 아래 기준」으로 맞추면 0건이었다(폭+높이 표 이상 1→0, resize 없는 녹화는 동일).
-- Why deferred: 렌더러(`TerminalView.tsx`)와 main 미러(`TerminalMirror.ts`)가 같은 로직을 써야 해서 `src/shared` 새 파일이 필요하다 — 새 공용 모듈은 사람 컨펌 뒤에 만든다.
-- Trigger: 사람이 공용 모듈을 승인할 때(day-1023 팀장 보고 「정할 것」).
-- Fix direction: `src/shared` 에 resize 보정 함수 하나 + 두 곳에서 import. T29·T38·T41 과 함께 녹화 재생 시험을 붙인다.
-- Owner: Human Review
-
 ### Claude Code 안내 창(「Teach auto mode about your environment?」)이 쉬는 세션을 막는다 — API 로는 닫을 길이 없다
 - Discovered: 2026-10-31, AI TOP 100 예선 — auto 모드로 연 인터뷰 세션들.
 - Evidence: Claude Code 가 auto 모드 세션이 턴을 마칠 때 `Teach auto mode about your environment? ❯ 1. Yes 2. Not now 3. Don't show again · Enter to confirm · Esc to cancel` 를 띄운다.
@@ -417,7 +404,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - 제안: 기본 템플릿에 `claude-auto`(`claude --permission-mode auto`)를 추가하고, `clim open --template claude-auto` 로 열 수 있게.
 - Owner: Human Review
 
-### 숨긴 세션의 시작 크기 — PR #47 뒤에 남은 것 (위 「높이만 바뀌는 resize」와 한 묶음)
+### 숨긴 세션의 시작 크기 — PR #47 뒤에 남은 것
 - Discovered: 2026-10-23 day-1023, PR #47 총괄 독립 리뷰.
 - Evidence: #47 은 숨긴 채 만든 세션도 상자 크기로 PTY 를 띄운다. 그래도 남는 경우가 셋이다.
   ① 숨긴 세션은 **보이기 전에 잰 크기**를 그대로 쓴다 — 앱 시작 중 사이드바·글꼴 로딩으로 상자가 최종 크기와 다르거나, 숨긴 동안 창 크기를 바꾸면 처음 볼 때 resize 가 한 번 일어난다(옛 코드보다 확률은 낮다).
@@ -426,6 +413,10 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: #47 이 가장 흔한 원인(80×30 시작)을 없앴고, 남은 셋은 처음 볼 때 resize 를 0 으로 만드는 일이라 위 「높이만 바뀌는 resize」 보정(공용 모듈, 사람 컨펌)과 같이 풀어야 덜 겹친다.
 - Trigger: 사람이 높이 보정 공용 모듈을 승인할 때, 또는 #47 뒤에도 재시작·분할 화면에서 표 잘림 제보가 올 때.
 - Fix direction: 보이기 직전에 한 번 더 재서 다르면 그때 PTY 를 맞추고(보이기 전이라 잔해가 화면에 안 남음), 분할 칸은 칸 상자로 잰다. T41 에 가드·분할·`existed` 경우를 더하고, 실제 Claude 녹화 재생을 고정 입력으로 쓴다.
+- 2026-11-05 resize-anchor-1105 판정: 높이 보정(공용 모듈)과 PTY resize 한 번 묶기는 들어갔다. ①·②는 **안 함** — 보이기 직전에 재든 직후에 재든 PTY resize 는 한 번이라
+  SIGWINCH·다시 그리기 횟수는 같고, 그 resize 가 높이만 다르면 이제 무해하다(T86·T87). 폭이 다른 경우(분할 칸·숨긴 동안 창 폭 변경)는 Claude 가 화면만 다시 칠하는 문제라
+  미리 재도 「어느 칸에 보일지」를 레이아웃보다 먼저 알아야 해서 위험 대비 이득이 작다. ③ 시험 공백은 그대로(T41 에 가드·분할·`existed` 경우 없음).
+- Trigger (갱신): 분할 화면에 처음 띄운 세션에서 표가 끊긴다는 제보(폭 변경 계열)가 오면 ②부터.
 - Owner: Human Review
 
 ### `tests/terminal/helpers.ts` — `closeApp` 이 닫기 실패를 삼키고 시험 앱을 남긴다
