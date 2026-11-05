@@ -3,6 +3,7 @@ import { ArrowDown, Clock, Loader2, Terminal as TerminalIcon } from 'lucide-reac
 import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
+import { endedOnAnswer } from './workBlocks'
 import { appendDraft, Composer, type ComposerHandle } from './Composer'
 import { ArtifactsChip, ContextChip, ModelChip, PlanChip } from './ComposerChips'
 import { ImageLightbox } from './ChatImages'
@@ -289,10 +290,14 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const agent = snapshot?.agent ?? null
     const agentName = agent ? NAMES[agent] : 'the agent'
     const prompt = snapshot?.prompt ?? null
-    // held a moment: Claude Code 2.1.318 hides its spinner row while an answer streams in, so the
-    // screen says «not working» for a second or two mid-turn — the row would blink (4359b4ee)
-    const working = useHeldTrue(Boolean(snapshot?.working && !prompt), WORKING_HOLD_MS) && !prompt
     const turns = snapshot?.turns ?? []
+    // held a moment: Claude Code 2.1.318 hides its spinner row while an answer streams in, so the
+    // screen says «not working» for a second or two mid-turn — the row would blink (4359b4ee). Not once
+    // the turn has written its final answer: then it is over, and the row goes at once.
+    const lastTurn = turns.at(-1)
+    const settled = lastTurn?.role === 'assistant' && endedOnAnswer(lastTurn)
+    const heldWorking = useHeldTrue(Boolean(snapshot?.working && !prompt), WORKING_HOLD_MS)
+    const working = (snapshot?.working || !settled ? heldWorking : false) && !prompt
     const todos = useMemo(() => latestTodos(turns), [turns])
     const artifacts = useMemo(() => artifactLinks(turns), [turns])
     const lastUser = useMemo(() => {
