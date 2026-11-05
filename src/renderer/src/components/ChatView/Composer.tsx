@@ -4,40 +4,9 @@ import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, Cha
 import { InputBusyNote } from './InputBusyNote'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH } from '../../../../shared/conversation'
 import { activeTrigger, fileMention, rankCommands } from './chatLib'
+import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 
-/**
- * A draft per session, kept while the app runs and across restarts
- * (localStorage `chat-drafts`) — switching sessions or views never loses one.
- */
-const DRAFTS_KEY = 'chat-drafts'
-const drafts: Record<string, string> = (() => {
-    try {
-        const parsed = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? '{}') as unknown
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {}
-    } catch {
-        return {}
-    }
-})()
-
-function saveDraft(sessionId: string, text: string): void {
-    if (text) drafts[sessionId] = text
-    else delete drafts[sessionId]
-    try {
-        localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts))
-    } catch {
-        // storage blocked: the draft still lives in memory
-    }
-}
-
-/**
- * Puts text after `sessionId`'s saved draft without showing it: a queued message withdrawn for Edit
- * after the view moved to another session goes back to its own session, not into the box on
- * screen (round2 N01).
- */
-export function appendDraft(sessionId: string, text: string): void {
-    const current = drafts[sessionId] ?? ''
-    saveDraft(sessionId, current.trim() ? `${current}\n${text}` : text)
-}
+export { appendDraft } from './draftStore'
 
 /** How often each `/` command was picked, so the menu offers the usual ones first (ovis `ovis:slash-usage`). */
 const USAGE_KEY = 'chat-command-usage'
@@ -135,7 +104,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, onSend, onInterrupt, status },
     ref
 ) {
-    const [text, setText] = useState(() => drafts[sessionId] ?? '')
+    const [text, setText] = useState(() => readDraft(sessionId))
     const [caret, setCaret] = useState(0)
     /** messages on their way into the terminal */
     const [sending, setSending] = useState(0)
@@ -156,7 +125,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     textRef.current = text
 
     useEffect(() => {
-        setText(drafts[sessionId] ?? '')
+        setText(readDraft(sessionId))
         setNotice(null)
         setBusyDraft(null)
         setCommands(null)
@@ -172,6 +141,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }, FOCUS_DELAY_MS)
         return () => window.clearTimeout(timer)
     }, [sessionId])
+
+    // The view switch moved text in or out while this box was there (4b9cb0c2).
+    useEffect(() => onDraftReplaced(sessionId, (next) => setText(next)), [sessionId])
 
     useEffect(() => {
         const element = box.current

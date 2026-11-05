@@ -1,5 +1,6 @@
 import { MessageSquareText, SquareTerminal } from 'lucide-react'
-import { setSessionViewMode, useSessionViewMode } from '../hooks/useSessionViewMode'
+import { useSessionViewMode } from '../hooks/useSessionViewMode'
+import { switchSessionView } from '../utils/sessionViewSwitch'
 import { useShortcutHint } from '../utils/shortcutHints'
 
 /**
@@ -22,7 +23,7 @@ export function SessionViewToggle({ sessionId, compact = false }: { sessionId: s
                 title={hint(value === 'chat' ? 'Chat — read and reply like a chat' : 'Terminal', 'toggleChatView')}
                 onClick={(event) => {
                     event.stopPropagation()
-                    setSessionViewMode(sessionId, value)
+                    switchSessionView(sessionId, value)
                 }}
                 className={`flex items-center gap-1 rounded ${compact ? 'px-1 py-0.5' : 'px-1.5 py-0.5'} transition-colors ${
                     active ? 'bg-white/15 text-gray-100' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'

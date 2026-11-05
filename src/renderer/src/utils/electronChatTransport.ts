@@ -57,6 +57,8 @@ export const electronChatTransport: ChatTransport = {
     cancelQueued: (sessionId) => window.api.cancelQueuedChat(sessionId),
     discardQueued: (sessionId, id) => window.api.discardQueuedChat(sessionId, id),
     sendQueuedNow: (sessionId, id) => window.api.sendQueuedChatNow(sessionId, id),
+    placeDraftInTerminal: (sessionId, text) => window.api.placeChatDraftInTerminal(sessionId, text),
+    takeTerminalDraft: (sessionId) => window.api.takeTerminalDraft(sessionId),
     interrupt: (sessionId) => window.api.interruptChat(sessionId),
     answerPrompt: (sessionId, answer) => window.api.answerPrompt(sessionId, answer),
     async attachFile(_sessionId, file): Promise<AttachResult> {

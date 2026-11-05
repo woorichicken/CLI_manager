@@ -1,4 +1,4 @@
-import type { AttachResult, ChatCommand, ChatSendResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
+import type { AttachResult, ChatCommand, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../../shared/conversation'
 import { chatPath, getJson, postJson, socketUrl } from './api'
 import { reconnectDelay } from './usePhoneTerminal'
@@ -102,6 +102,11 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
             return result.discarded === true
         },
         sendQueuedNow: (sessionId, id) => postJson<ChatSendResult>(chatPath(sessionId, 'send-queued-now'), { id }).catch(refuse),
+        // a failed request moves nothing: the text stays where it was
+        placeDraftInTerminal: (sessionId, text) =>
+            postJson<DraftToTerminalResult>(chatPath(sessionId, 'draft-to-terminal'), { text }).catch((): DraftToTerminalResult => ({ status: 'refused', reason: 'not_running' })),
+        takeTerminalDraft: (sessionId) =>
+            postJson<DraftFromTerminalResult>(chatPath(sessionId, 'draft-from-terminal'), {}).catch((): DraftFromTerminalResult => ({ status: 'empty' })),
         interrupt: (sessionId) =>
             postJson<InterruptResult>(chatPath(sessionId, 'interrupt'), {}).catch((error) => ({
                 status: 'rejected' as const,

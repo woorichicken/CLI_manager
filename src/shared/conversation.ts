@@ -208,6 +208,26 @@ export type ChatSendResult =
           draft?: string
       }
 
+/**
+ * Chat → Terminal (4b9cb0c2): the chat's unsent text put in Claude's input box without Enter.
+ * `busy`: the box already holds text (`draft`, when one row) — nothing was written over it.
+ */
+export type DraftToTerminalResult =
+    | { status: 'placed' }
+    | { status: 'busy'; draft?: string }
+    | { status: 'refused'; reason: 'awaiting_input' | 'not_running' | 'no_agent' | 'revoked' | 'empty' | 'too_large' }
+    | { status: 'unsupported' }
+
+/**
+ * Terminal → Chat (4b9cb0c2): a one-row draft in Claude's input box, moved out of it. `left`: the box
+ * holds more than one row (or a paste, bash mode) — it stays in the terminal, the chat only says so.
+ */
+export type DraftFromTerminalResult =
+    | { status: 'moved'; text: string }
+    | { status: 'left'; reason: 'several_lines' | 'kept' | 'not_cleared' }
+    | { status: 'empty' }
+    | { status: 'unsupported' }
+
 export interface ChatSendOptions {
     /**
      * Empty the agent's input box first — only while it still holds exactly this text (the draft a
@@ -291,6 +311,10 @@ export interface ChatTransport {
     discardQueued(sessionId: string, id: string): Promise<boolean>
     /** Sends one queued message now, while the agent still works (the agent decides when it reads it). */
     sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult>
+    /** Chat → Terminal: the unsent text into Claude's input box, without Enter (4b9cb0c2). Absent: not offered. */
+    placeDraftInTerminal?(sessionId: string, text: string): Promise<DraftToTerminalResult>
+    /** Terminal → Chat: a one-row draft out of Claude's input box (4b9cb0c2). Absent: not offered. */
+    takeTerminalDraft?(sessionId: string): Promise<DraftFromTerminalResult>
     /** Stops the agent's turn (Esc to its terminal) — refused unless its screen shows a turn in progress. */
     interrupt(sessionId: string): Promise<InterruptResult>
     answerPrompt(sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult>

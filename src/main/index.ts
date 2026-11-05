@@ -3383,6 +3383,15 @@ app.whenReady().then(async () => {
         else subs.set(sessionId, count - 1)
         conversationService.unsubscribe(sessionId)
     })
+    // the view switch carries what was being written (4b9cb0c2)
+    ipcMain.handle('chat-draft-to-terminal', (_e, sessionId: unknown, text: unknown) =>
+        typeof sessionId === 'string' && typeof text === 'string'
+            ? conversationService.placeDraftInTerminal(sessionId, text)
+            : { status: 'refused', reason: 'empty' }
+    )
+    ipcMain.handle('chat-draft-from-terminal', (_e, sessionId: unknown) =>
+        typeof sessionId === 'string' ? conversationService.takeTerminalDraft(sessionId) : { status: 'empty' }
+    )
     ipcMain.handle('chat-send', (_e, sessionId: string, text: string, options?: { clearDraft?: unknown }) =>
         typeof sessionId === 'string' && typeof text === 'string'
             ? conversationService.send(sessionId, text, undefined, typeof options?.clearDraft === 'string' ? { clearDraft: options.clearDraft } : {})

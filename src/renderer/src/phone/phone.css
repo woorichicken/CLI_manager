@@ -875,3 +875,9 @@ body.phone-body #root {
     background-color: #fff;
     z-index: 1;
 }
+
+/* the Terminal ↔ Chat notice (draftHandoff.ts): on the phone the bottom is the key bar and the chat box */
+.phone-app .draft-handoff-notice {
+    top: calc(56px + env(safe-area-inset-top));
+    bottom: auto;
+}

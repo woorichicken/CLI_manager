@@ -4,6 +4,8 @@ import type {
     ChatCommand,
     ChatSendOptions,
     ChatSendResult,
+    DraftFromTerminalResult,
+    DraftToTerminalResult,
     ConversationSnapshot,
     InterruptResult,
     PromptAnswer,
@@ -34,6 +36,8 @@ export interface PhoneConversation {
      * and `stillAllowed`, asked again right before any key goes (F02)
      */
     send(sessionId: string, text: string, from?: ChatSender, options?: ChatSendOptions): Promise<ChatSendResult>
+    placeDraftInTerminal(sessionId: string, text: string, from?: ChatSender): Promise<DraftToTerminalResult>
+    takeTerminalDraft(sessionId: string, from?: ChatSender): Promise<DraftFromTerminalResult>
     cancelQueued(sessionId: string): void
     discardQueued(sessionId: string, id: string): boolean
     sendQueuedNow(sessionId: string, id: string, from?: ChatSender): Promise<ChatSendResult>
@@ -72,7 +76,7 @@ function refuseRevoked(res: http.ServerResponse): void {
     send(res, 401, { status: 'rejected', reason: 'revoked', error: 'revoked', message: 'This device was disconnected from the Mac.' })
 }
 
-const DRIVE_ONLY = new Set(['send', 'cancel-queued', 'discard-queued', 'send-queued-now', 'interrupt', 'answer', 'attach'])
+const DRIVE_ONLY = new Set(['send', 'draft-to-terminal', 'draft-from-terminal', 'cancel-queued', 'discard-queued', 'send-queued-now', 'interrupt', 'answer', 'attach'])
 
 export async function handlePhoneApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL, deps: PhoneApiDeps): Promise<void> {
     const path = url.pathname
@@ -182,6 +186,19 @@ async function handleChat(
             const clearDraft = typeof body.clearDraft === 'string' ? body.clearDraft : undefined
             const result = await c.send(sessionId, text, sender, clearDraft !== undefined ? { clearDraft } : undefined)
             if (result.status !== 'rejected') deps.recordPhoneInput(sessionId, `chat message ${result.status} (${text.length} chars)`)
+            send(res, 200, result)
+            return
+        }
+        case 'draft-to-terminal': {
+            const text = typeof body.text === 'string' ? body.text : ''
+            const result = await c.placeDraftInTerminal(sessionId, text, sender)
+            if (result.status === 'placed') deps.recordPhoneInput(sessionId, `chat draft put in the terminal input (${text.length} chars, no Enter)`)
+            send(res, 200, result)
+            return
+        }
+        case 'draft-from-terminal': {
+            const result = await c.takeTerminalDraft(sessionId, sender)
+            if (result.status === 'moved') deps.recordPhoneInput(sessionId, 'terminal draft moved to the chat')
             send(res, 200, result)
             return
         }

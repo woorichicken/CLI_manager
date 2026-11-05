@@ -332,3 +332,84 @@ test.describe('T88 clear and send (phone-fixes C-1)', () => {
         expect(sent).toEqual([])
     })
 })
+
+/**
+ * 4b9cb0c2 (people's decision 11-05): switching Chat ↔ Terminal carries what was being written.
+ * Chat → Terminal: the chat's unsent text goes into Claude's box without Enter — never over text
+ * already there. Terminal → Chat: a one-row draft moves to the chat and the box empties; more rows
+ * stay where they are (the chat only says so). Claude sessions only.
+ */
+test.describe('T88 the draft follows the view (4b9cb0c2)', () => {
+    const screenWith = (row: string): string[] => ['⏺ done', '', PLAIN, row, PLAIN, '  ? for shortcuts']
+
+    async function session(row: string, opts: { agent?: string; clears?: boolean; lines?: string[] } = {}) {
+        const terminals = fakeTerminals()
+        const mirror = new TerminalMirror(terminals as never)
+        terminals.events.emit('created', 's1', COLS, ROWS)
+        terminals.events.emit('output', 's1', (opts.lines ?? screenWith(row)).join('\r\n'))
+        await mirror.flush('s1')
+        const writes: string[] = []
+        const service = new ConversationService({
+            session: () => ({ cwd: '/w', cliSessionId: undefined, cliToolName: opts.agent ?? 'claude' }),
+            reader: new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' }),
+            mirror,
+            hasTerminal: () => true,
+            writeInput: (_id, data) => {
+                writes.push(data)
+                if (data === '\x15' && opts.clears !== false) terminals.events.emit('output', 's1', '\x1b[2J\x1b[H' + screenWith('❯ ').join('\r\n'))
+            },
+            type: async () => true,
+            onChange: () => undefined
+        })
+        return { service, writes }
+    }
+
+    test('Chat → Terminal: an empty box gets the text, no Enter', async () => {
+        const { service, writes } = await session('❯ ')
+        expect(await service.placeDraftInTerminal('s1', 'half a thought')).toEqual({ status: 'placed' })
+        expect(writes).toEqual(['half a thought'])
+    })
+
+    test('Chat → Terminal: several lines go as one paste, so no line is sent on its own', async () => {
+        const { service, writes } = await session('❯ ')
+        expect(await service.placeDraftInTerminal('s1', 'one\ntwo')).toEqual({ status: 'placed' })
+        expect(writes).toEqual(['\x1b[200~one\ntwo\x1b[201~'])
+    })
+
+    test('Chat → Terminal: text already in the box is never written over', async () => {
+        const { service, writes } = await session('❯ typed at the Mac')
+        expect(await service.placeDraftInTerminal('s1', 'from chat')).toMatchObject({ status: 'busy', draft: 'typed at the Mac' })
+        expect(writes).toEqual([])
+    })
+
+    test('Chat → Terminal: a question on screen takes no text', async () => {
+        const { service, writes } = await session('', { lines: ['Do you want to proceed?', '❯ 1. Yes', '  2. No', '', 'Esc to cancel'] })
+        expect(await service.placeDraftInTerminal('s1', 'from chat')).toMatchObject({ status: 'refused' })
+        expect(writes).toEqual([])
+    })
+
+    test('Terminal → Chat: a one-row draft moves and the box empties', async () => {
+        const { service, writes } = await session('❯ left at the mac')
+        expect(await service.takeTerminalDraft('s1')).toEqual({ status: 'moved', text: 'left at the mac' })
+        expect(writes).toEqual(['\x0b', '\x15'])
+    })
+
+    test('Terminal → Chat: several rows stay in the terminal, and the chat is told', async () => {
+        const { service, writes } = await session('', { lines: ['⏺ done', PLAIN, '❯ first line', '  second line', PLAIN] })
+        expect(await service.takeTerminalDraft('s1')).toEqual({ status: 'left', reason: 'several_lines' })
+        expect(writes).toEqual([])
+    })
+
+    test('Terminal → Chat: an empty box has nothing to move', async () => {
+        const { service, writes } = await session('❯ ')
+        expect(await service.takeTerminalDraft('s1')).toEqual({ status: 'empty' })
+        expect(writes).toEqual([])
+    })
+
+    test('Codex: nothing is typed or taken — the chat only says so', async () => {
+        const { service, writes } = await session('❯ typed', { agent: 'codex' })
+        expect(await service.placeDraftInTerminal('s1', 'from chat')).toEqual({ status: 'unsupported' })
+        expect(await service.takeTerminalDraft('s1')).toEqual({ status: 'unsupported' })
+        expect(writes).toEqual([])
+    })
+})

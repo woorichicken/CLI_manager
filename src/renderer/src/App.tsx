@@ -18,8 +18,10 @@ import { SessionViewToggle } from './components/SessionViewToggle'
 import { SessionChatSlot } from './components/SessionChatSlot'
 import { ChatFilePreview } from './components/ChatFilePreview'
 import { isAgentSession } from './utils/agentSession'
-import { getSessionViewMode, setSessionViewMode } from './hooks/useSessionViewMode'
+import { getSessionViewMode } from './hooks/useSessionViewMode'
 import { sendChatCommand } from './components/ChatView/chatContext'
+import { HandoffNoticeToast } from './components/ChatView/HandoffNoticeToast'
+import { switchSessionView } from './utils/sessionViewSwitch'
 import { buildSessionBreadcrumb } from './utils/sessionBreadcrumb'
 import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
 import { HeaderChecklists } from './components/Checklists/HeaderChecklists'
@@ -1213,7 +1215,7 @@ function App() {
             const session = workspaces.flatMap(w => w.sessions ?? []).find(s => s.id === sessionId)
             if (!isAgentSession(session)) return
             const next = getSessionViewMode(sessionId) === 'chat' ? 'terminal' : 'chat'
-            setSessionViewMode(sessionId, next)
+            switchSessionView(sessionId, next)
             // the keys follow the eyes: the chat's box, or the terminal
             window.setTimeout(() => {
                 if (next === 'chat') sendChatCommand(sessionId, 'focus')
@@ -2134,6 +2136,8 @@ function App() {
 
             {/* Files the Chat view names: pictures and text previewed, the rest in the Mac's own app */}
             <ChatFilePreview />
+            {/* What the Terminal ↔ Chat switch could not carry (4b9cb0c2) */}
+            <HandoffNoticeToast />
 
             {/* Feedback widget — dev builds, or a machine unlocked in Settings > Feedback */}
             <FeedbackGate />

@@ -8,6 +8,7 @@ import { dropletFor, nextSeen, waitingElsewhere, type Droplet, type SeenState } 
 import { PairScreen } from './PairScreen'
 import { openPhoneFeedback, phoneFeedbackConfigured, PhoneFeedback } from './feedback/PhoneFeedback'
 import { PhoneSettingsMenu } from './PhoneSettingsMenu'
+import { HandoffNoticeToast } from '../components/ChatView/HandoffNoticeToast'
 import { usePhoneChatSettings } from './phoneChatSettings'
 import type { ChatPreferences } from '../../../shared/conversation'
 import { phoneFeedbackAvailable } from './feedbackGate'
@@ -332,6 +333,7 @@ export function PhoneApp() {
                 </main>
             )}
             {wide && !session && <main className="phone-main phone-empty">Pick a session.</main>}
+            <HandoffNoticeToast />
             <PhoneFeedback me={me} sessionId={session?.id ?? null} lens={session ? (session.agent ? lens : 'terminal') : null} />
             {droplet && (
                 <DropletPill

@@ -1,6 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
-import type { AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
 
@@ -256,6 +256,8 @@ declare global {
             onConversationChanged: (callback: (change: { sessionId: string; revision: number }) => void) => () => void
             sendChatMessage: (sessionId: string, text: string, options?: ChatSendOptions) => Promise<ChatSendResult>
             cancelQueuedChat: (sessionId: string) => Promise<void>
+            placeChatDraftInTerminal: (sessionId: string, text: string) => Promise<DraftToTerminalResult>
+            takeTerminalDraft: (sessionId: string) => Promise<DraftFromTerminalResult>
             discardQueuedChat: (sessionId: string, id: string) => Promise<boolean>
             sendQueuedChatNow: (sessionId: string, id: string) => Promise<ChatSendResult>
             interruptChat: (sessionId: string) => Promise<InterruptResult>
