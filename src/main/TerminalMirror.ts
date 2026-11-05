@@ -8,7 +8,7 @@ import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.js'
 // Same reason as above: bundled by file so the packaged app does not need it in node_modules.
 import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.js'
 import { TerminalManager } from './TerminalManager'
-import { INPUT_BOX_RULE, ScreenSummary, screenSummary } from './screenLines'
+import { isInputBoxRule, ScreenSummary, screenSummary } from './screenLines'
 import { resizeKeepingBottom } from '../shared/terminalResize'
 
 /**
@@ -354,7 +354,7 @@ export class TerminalMirror {
         const rules: number[] = []
         for (let row = mirror.term.rows - 1; row >= 0 && rules.length < 2; row--) {
             const text = buffer.getLine(buffer.viewportY + row)?.translateToString(true).trim() ?? ''
-            if (INPUT_BOX_RULE.test(text)) rules.push(row)
+            if (isInputBoxRule(text)) rules.push(row)
         }
         if (rules.length < 2) return null
 
@@ -506,7 +506,7 @@ const PROMPT_LINE = /^[❯>](?!\s*\d+\.\s)/
 function linesUnderInputBox(screen: string[]): string[] {
     const rules: number[] = []
     for (let row = screen.length - 1; row >= 0 && rules.length < 2; row--) {
-        if (INPUT_BOX_RULE.test(screen[row].trim())) rules.push(row)
+        if (isInputBoxRule(screen[row].trim())) rules.push(row)
     }
     if (rules.length < 2) return screen
     const [bottom, top] = rules

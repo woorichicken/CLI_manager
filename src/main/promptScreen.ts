@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import type { ConversationAgent, PromptAnswer, PromptKind, PromptMenu, PromptOption } from '../shared/conversation'
-import { INPUT_BOX_RULE } from './screenLines'
+import { isInputBoxRule } from './screenLines'
 
 /**
  * Reading an agent's question menu off its screen, for the Chat view's card.
@@ -65,7 +65,7 @@ function clean(line: string): string {
 function belowInputBox(screen: string[]): string[] {
     const rules: number[] = []
     for (let row = screen.length - 1; row >= 0 && rules.length < 2; row--) {
-        if (INPUT_BOX_RULE.test(screen[row].trim())) rules.push(row)
+        if (isInputBoxRule(screen[row].trim())) rules.push(row)
     }
     if (rules.length < 2) return screen
     const [bottom, top] = rules
@@ -279,7 +279,7 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     // The rows between the dialog's top edge (a full rule, or the prompt above it) and the question:
     // the command, the tab title. Dashed rules inside the dialog are skipped, not edges.
     let top = questionAt - 1
-    while (top >= 0 && !INPUT_BOX_RULE.test(above[top].trim()) && !/^[❯>⏺●⎿]/.test(above[top].trim()) && questionAt - top <= CONTEXT_MAX_LINES * 2) top--
+    while (top >= 0 && !isInputBoxRule(above[top].trim()) && !/^[❯>⏺●⎿]/.test(above[top].trim()) && questionAt - top <= CONTEXT_MAX_LINES * 2) top--
     // No edge found (Codex draws none): the rows above are the agent's output, not the dialog's.
     const edgeFound = top >= 0 && questionAt - top <= CONTEXT_MAX_LINES * 2
     const context = confirm ? confirm.context : (questionAt > 0 && edgeFound ? above.slice(top + 1, questionAt) : [])

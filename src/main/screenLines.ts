@@ -5,9 +5,17 @@
 
 /**
  * Claude Code draws its input box between two full-width rules. Matched on the
- * trimmed row, so a rule with a label inside it does not count.
+ * trimmed row. After `/rename` it writes the session's name into the top rule,
+ * ending it with a single dash: `──────── my-session ─`. A divider in an
+ * answer with a label in the middle (`──── 결과 ────`) or a short heading
+ * (`─── 결과 ─`) is not a box edge.
  */
-export const INPUT_BOX_RULE = /^─{20,}$/
+export const INPUT_BOX_RULE = /^─{20,}(?: [^─]*[^─\s] ─{1,2})?$/
+
+/** `trimmed` is a row with its edges' blanks removed. */
+export function isInputBoxRule(trimmed: string): boolean {
+    return INPUT_BOX_RULE.test(trimmed)
+}
 
 /** Long enough for a sentence; the dialog truncates further to fit. */
 const MAX_LAST_LINE_LENGTH = 200
@@ -19,7 +27,7 @@ const NOTHING_TO_READ = /^[\s─-╿▀-▟·•…⎿⏺❯>|]*$/
 function inputBoxTop(rows: string[]): number {
     const rules: number[] = []
     for (let row = rows.length - 1; row >= 0 && rules.length < 2; row--) {
-        if (INPUT_BOX_RULE.test(rows[row].trim())) rules.push(row)
+        if (isInputBoxRule(rows[row].trim())) rules.push(row)
     }
     return rules.length === 2 ? rules[1] : -1
 }
@@ -56,7 +64,7 @@ export function recapOf(rows: string[]): string {
         const parts = [rows[start].trim().replace(RECAP_START, '')]
         // Claude Code wraps the recap itself, indenting the rows that continue it.
         for (let row = start + 1; row < rows.length && /^\s+\S/.test(rows[row]); row++) {
-            if (INPUT_BOX_RULE.test(rows[row].trim())) break
+            if (isInputBoxRule(rows[row].trim())) break
             parts.push(rows[row].trim())
         }
         const text = parts.join(' ').replace(/\s+/g, ' ').replace(RECAP_HINT, '').trim()
