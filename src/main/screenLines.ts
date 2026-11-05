@@ -4,17 +4,24 @@
  */
 
 /**
- * Claude Code draws its input box between two full-width rules. Matched on the
- * trimmed row. After `/rename` it writes the session's name into the top rule,
- * ending it with a single dash: `──────── my-session ─`. A divider in an
- * answer with a label in the middle (`──── 결과 ────`) or a short heading
- * (`─── 결과 ─`) is not a box edge.
+ * A full-width rule: Claude Code's input box edges, and the top edge of its
+ * dialogs. Matched on the trimmed row.
  */
-export const INPUT_BOX_RULE = /^─{20,}(?: [^─]*[^─\s] ─{1,2})?$/
+export const INPUT_BOX_RULE = /^─{20,}$/
 
-/** `trimmed` is a row with its edges' blanks removed. */
+/**
+ * A labelled rule over an input box: Claude's named session after `/rename`
+ * (`──── my-session ─`), and OmO's own box while it works
+ * (`── • Running eval (7s • esc to interrupt) ───`). Only the box readers take
+ * it; a dialog's top edge stays INPUT_BOX_RULE. (ovis server/claude-input.ts
+ * BOX_LABELED_RULE_RE, MIT — our port had left it out, and every Chat send to a
+ * named session read the answer above the box as typed text.)
+ */
+const BOX_LABELED_RULE = /^─{2,}\s.*─$/
+
+/** One edge of an agent's input box. `trimmed` is a row with its edges' blanks removed. */
 export function isInputBoxRule(trimmed: string): boolean {
-    return INPUT_BOX_RULE.test(trimmed)
+    return INPUT_BOX_RULE.test(trimmed) || BOX_LABELED_RULE.test(trimmed)
 }
 
 /** Long enough for a sentence; the dialog truncates further to fit. */

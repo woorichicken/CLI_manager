@@ -77,23 +77,37 @@ function conversations(mirror: TerminalMirror) {
     return { service, sent }
 }
 
-test.describe('T88 the rule test', () => {
-    test('a plain rule and a rule carrying the session name are input box rules', () => {
+test.describe('T88 the rule test (ovis BOX_LABELED_RULE_RE)', () => {
+    test('a plain rule, a named session rule and OmO\'s working rule are input box edges', () => {
         expect(isInputBoxRule(PLAIN)).toBe(true)
         expect(isInputBoxRule(namedRule('클매-챗뷰-폰-v1.26.0'))).toBe(true)
         expect(isInputBoxRule(namedRule('fix login flow'))).toBe(true)
         // the shape from the real snapshot, cut down
         expect(isInputBoxRule('──────────────────────────────────────── 클매-챗뷰-폰-v1.26.0 ─')).toBe(true)
+        expect(isInputBoxRule('── • Running eval (7s • esc to interrupt) ───')).toBe(true)
     })
 
-    test('headings and labelled dividers in an answer are not', () => {
-        expect(isInputBoxRule('─── 결과 ─')).toBe(false)
-        expect(isInputBoxRule('──────────── 결과 ────────────')).toBe(false)
-        expect(isInputBoxRule('─'.repeat(30) + ' a ' + '─'.repeat(30))).toBe(false)
+    test('rows that only start or end with dashes are not', () => {
         expect(isInputBoxRule('⎿ ' + '─'.repeat(60))).toBe(false)
         expect(isInputBoxRule('─'.repeat(19))).toBe(false)
         expect(isInputBoxRule('─'.repeat(40) + ' name')).toBe(false)
         expect(isInputBoxRule('├' + '─'.repeat(40) + '┤')).toBe(false)
+        expect(isInputBoxRule('─ a')).toBe(false)
+    })
+
+    test('a dialog\'s top edge stays a full rule: a labelled rule in it is not taken for one', () => {
+        // promptScreen reads the rows between the dialog's edge and its question as context
+        const rows = [
+            '⏺ done',
+            '─'.repeat(COLS),
+            ' Bash command',
+            '── 결과 ─',
+            '   rm -rf build',
+            ' Do you want to proceed?',
+            ' ❯ 1. Yes',
+            '   2. No'
+        ]
+        expect(readPrompt(rows, 'claude')?.context).toEqual(['Bash command', '── 결과 ─', 'rm -rf build'])
     })
 })
 
@@ -126,5 +140,33 @@ test.describe('T88 a named session with an empty input box', () => {
         expect(lastMeaningfulLine(rows)).toBe('- 시험 3건 통과')
         expect(screenSummary(rows)).toEqual({ text: '', isRecap: false })
         expect(readPrompt(rows, 'claude')).toBeNull()
+    })
+})
+
+test.describe('T88 a draft taller than the screen (only the bottom rule shows)', () => {
+    const clippedScreen = ['  more of the draft', '  its last line', PLAIN, '  ⏵⏵ accept edits on (shift+tab to cycle)']
+
+    test('Claude: the box is clipped and a send is refused', async () => {
+        const mirror = await mirrorShowing(clippedScreen)
+        expect(mirror.inputBox('s1')).toEqual({ typed: '', suggestion: '', clipped: true })
+        const { service, sent } = conversations(mirror)
+        expect(await service.send('s1', 'hello')).toMatchObject({ status: 'rejected', reason: 'input_busy' })
+        expect(sent).toEqual([])
+    })
+
+    test('Codex: a lone rule is its output, not a box — the send goes', async () => {
+        const mirror = await mirrorShowing(['─ Worked for 1m 2s ' + '─'.repeat(60), '', '› '])
+        const sent: string[] = []
+        const service = new ConversationService({
+            session: () => ({ cwd: '/w', cliSessionId: undefined, cliToolName: 'codex' }),
+            reader: new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' }),
+            mirror,
+            hasTerminal: () => true,
+            writeInput: () => undefined,
+            type: async (_id, text) => (sent.push(text), true),
+            onChange: () => undefined
+        })
+        expect(await service.send('s1', 'hello')).toEqual({ status: 'sent' })
+        expect(sent).toEqual(['hello'])
     })
 })

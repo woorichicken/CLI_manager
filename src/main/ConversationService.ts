@@ -91,7 +91,7 @@ export interface ConversationMirror {
     lastOutputAt(id: string): number
     hasExited(id: string): boolean
     showsAwaitingInput(id: string): boolean
-    inputBox(id: string): { typed: string } | null
+    inputBox(id: string): { typed: string; clipped?: boolean } | null
 }
 
 export interface ConversationServiceDeps {
@@ -597,8 +597,10 @@ export class ConversationService {
                 message: 'The agent is asking a question. Answer it first — Enter would pick the highlighted option.'
             }
         }
-        const typed = this.deps.mirror.inputBox(sessionId)?.typed.trim()
-        if (typed) {
+        const box = this.deps.mirror.inputBox(sessionId)
+        // Only Claude's box is read from its rules; a lone rule on a Codex screen is its output.
+        const clipped = box?.clipped === true && agentOf(this.deps.session(sessionId)) === 'claude'
+        if (box?.typed.trim() || clipped) {
             return {
                 status: 'rejected',
                 reason: 'input_busy',

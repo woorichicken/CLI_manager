@@ -90,6 +90,11 @@ export interface InputBox {
     typed: string
     /** Text drawn dim — the agent's suggestion for the next prompt, never typed by anyone. */
     suggestion: string
+    /**
+     * Only the box's bottom rule is on screen: a draft taller than the screen pushed its top rule
+     * and its `❯` row off (ovis claudeInputBox "clipped", MIT). Nothing is read; it is not empty.
+     */
+    clipped?: boolean
 }
 
 interface Mirror {
@@ -356,7 +361,8 @@ export class TerminalMirror {
             const text = buffer.getLine(buffer.viewportY + row)?.translateToString(true).trim() ?? ''
             if (isInputBoxRule(text)) rules.push(row)
         }
-        if (rules.length < 2) return null
+        if (rules.length === 0) return null
+        if (rules.length === 1) return { typed: '', suggestion: '', clipped: true }
 
         const [bottom, top] = rules
         const typed: string[] = []
