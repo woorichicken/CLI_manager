@@ -90,7 +90,9 @@ export function SessionList({
                 >
                     <Search size={13} aria-hidden="true" />
                     <input
-                        type="search"
+                        // not type=search: its own clear ✕ would sit beside the head's
+                        type="text"
+                        inputMode="search"
                         // opened by a tap on the magnifier: the keyboard is wanted now
                         autoFocus
                         value={query}

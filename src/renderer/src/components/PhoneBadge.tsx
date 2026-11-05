@@ -52,9 +52,11 @@ export function PhoneBadge({ onOpenSettings }: { onOpenSettings: () => void }) {
                 <ConfirmationModal
                     title="Turn the phone connection off?"
                     message={
-                        connected === 1
-                            ? 'The 1 connected phone will be cut off.'
-                            : `All ${connected} connected phones will be cut off.`
+                        connected === 0
+                            ? 'No phone is connected now. Phones cannot reach this Mac until you turn it on again.'
+                            : connected === 1
+                              ? 'The 1 connected phone will be cut off.'
+                              : `All ${connected} connected phones will be cut off.`
                     }
                     confirmText="Turn off"
                     isDangerous
