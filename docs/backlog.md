@@ -28,6 +28,17 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: T20 은 앱 메인까지 SIGSTOP 하지 말고 PTY 아래만 멈추기 · T74 r2 카드 단계는 「카드가 뜨기 전 화면」을 기다리는 조건을 개수로 · 전체 실행은 다른 Electron 앱이 없는 깨끗한 맥미니(remote-job-runner)로.
 - Owner: 없음
 
+### 폰 페이지 — Mac 기능 전반(헤더 체크리스트·총괄 보기)을 폰에서 확인
+- Discovered: 2026-11-05, 사람 요청(「climanager 기능 총괄 / 체크리스트 등 핸드폰에서 확인 가능」) — 밤샘 갤럭시 시험 직후.
+- Evidence: 폰 페이지(`src/renderer/src/phone/*`)에는 세션 목록·Chat·Terminal·알림만 있다. 헤더 체크리스트는 `src/main/ChecklistStore.ts` 에 있고 Mac 헤더와
+  Control API(`/v1/checklists`)·MCP(`checklist_*`)로만 닿는다 — `src/main/phone`·`src/renderer/src/phone` 에서 `checklist` 0건. 총괄이 만든 목록(예: 03ec3e81 「폰 연결 머지 전」 3/5)은
+  Mac 앞에서만 보인다. 총괄 세션은 폰 세션 목록에 한 줄로 섞여 있어 「총괄이 지금 뭘 맡겼고 무엇이 남았나」를 따로 볼 화면이 없다.
+- Why deferred: 이번 범위(폰 연결 품질·검증) 밖. 먼저 `feat/phone-1103` 머지가 정해져야 한다.
+- Trigger: 사람이 Mac 을 떠나 폰으로 밤샘·배치 진행을 확인하는 일이 다시 생길 때, 또는 총괄 체크리스트를 폰에서 체크하려 할 때.
+- Fix direction: ① 폰 서버에 체크리스트 읽기 경로(+ control 역할만 항목 체크) — `ChecklistStore` 변경을 폰 소켓으로 밀어 실시간 반영 ② 폰 ☰ 에 「체크리스트」 화면(목록별 진행 n/m, 항목 탭 = 체크)
+  ③ 세션 목록에서 「대화:」·총괄 세션을 위로 묶거나 따로 표시 ④ Mac 에만 있는 기능 목록(헤더 체크리스트·Related·split view·설정)을 표로 만들어 폰에서 볼 것/뺄 것을 사람이 고른다. 보기 전용(watch) 기기는 읽기만.
+- Owner: 없음
+
 ### 폰 서버 — 앱을 켠 채 다시 빌드하면 폰 페이지 새 청크가 404
 - Discovered: 2026-11-04, 폰 품질 3회차(quality-phone) — 시험 앱을 띄운 채 `pnpm build` 를 하자 폰 페이지가 빈 화면(자산 404).
 - Evidence: `PhoneServer.assets()` 가 `out/renderer/.vite/manifest.json` 으로 만든 허용 목록을 처음 한 번만 읽고 `allowedAssets` 에 들고 있다(`src/main/phone/PhoneServer.ts` 403행 근처).
