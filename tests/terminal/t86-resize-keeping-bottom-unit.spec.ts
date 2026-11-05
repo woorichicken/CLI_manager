@@ -254,6 +254,25 @@ test.describe('T86 synthetic screens', () => {
         }
     })
 
+    test('an agent that keeps its last row blank (as Claude Code does): no line lost or doubled, even after two blank rows', async () => {
+        // Claude repaints rows - 1 rows; streaming an answer can leave a second blank row (e6).
+        const term = await seeded(80, 30)
+        const agent = Array.from({ length: 60 }, (_, i) => `agent line ${i + 1}`)
+        const box = [RULE, '❯ ', RULE, '  ⏵⏵ footer line']
+        await write(term, [...agent, ...box].join('\r\n') + `\r\n\r\n${ESC}[4A\r${ESC}[2C`)
+        const claudeRepaint = (rows: number) => {
+            const tail = agent.slice(agent.length - (rows - box.length - 1))
+            const clear = `${ESC}[H` + Array.from({ length: rows }, () => `${ESC}[2K`).join('\r\n')
+            return write(term, `${clear}${ESC}[H${[...tail, ...box].join('\r\n')}${ESC}[${tail.length + 2};3H`)
+        }
+        for (const rows of [24, 30, 43, 36]) {
+            resizeKeepingBottom(term, 80, rows)
+            await claudeRepaint(rows)
+            const lines = dump(term)
+            for (const line of [...agent, MARKER]) expect({ rows, line, n: lines.filter((l) => l === line).length }).toEqual({ rows, line, n: 1 })
+        }
+    })
+
     test('the cursor stays on its own line, and the program can keep drawing relative to it', async () => {
         const term = await seeded(80, 30)
         const agent = Array.from({ length: 40 }, (_, i) => `agent line ${i + 1}`)

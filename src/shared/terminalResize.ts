@@ -18,8 +18,9 @@
  * footer), the resize is done as if the cursor sat on the last non-blank row.
  * Then xterm's own rules give what other terminals do (Alacritty, Ghostty,
  * Windows Terminal): rows leave from the top into the scrollback and come back
- * from it. Blank rows at the bottom still go first, and when the screen ends
- * in more than a couple of blank rows growing pulls nothing down — the program's output is then
+ * from it. Extra blank rows at the bottom still go first (one is kept: Claude
+ * Code's frame ends in one), and when the screen ends in more than a couple of
+ * blank rows growing pulls nothing down — the program's output is then
  * shorter than the screen, so what is in the scrollback is not its to repaint
  * (a restored-history marker survived only this way). The cursor goes back to
  * its own line afterwards.
@@ -89,6 +90,15 @@ function blankRowsAtBottom(term: ResizableTerminal, cursorRow: number): number {
 export const FILLED_SCREEN_BLANK_ROWS = 2
 
 /**
+ * Claude Code repaints `rows - 1` rows and keeps the last one blank, so that
+ * blank row belongs to its frame: shrinking keeps it, and only blank rows above
+ * it are dropped before the top scrolls off. Dropping it too lost one line per
+ * shrink in the app (T87: the repaint started one line further down than the
+ * screen had kept). A program that fills every row has no blank row to keep.
+ */
+const FRAME_BLANK_ROWS = 1
+
+/**
  * The row the resize should treat as the cursor's, or null for xterm's own
  * behaviour. Exported for tests.
  */
@@ -97,7 +107,7 @@ export function anchorRowFor(term: ResizableTerminal, cursorRow: number, newRows
     const blank = blankRowsAtBottom(term, cursorRow)
     const contentBelowCursor = lastRow - cursorRow > blank
     if (!contentBelowCursor) return null
-    if (newRows < term.rows) return lastRow - blank
+    if (newRows < term.rows) return lastRow - Math.max(0, blank - FRAME_BLANK_ROWS)
     // Growing: only a filled screen has the program's own lines above it to bring back.
     return blank <= FILLED_SCREEN_BLANK_ROWS ? lastRow : null
 }
