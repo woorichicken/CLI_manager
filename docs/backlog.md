@@ -39,6 +39,17 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   ③ 세션 목록에서 「대화:」·총괄 세션을 위로 묶거나 따로 표시 ④ Mac 에만 있는 기능 목록(헤더 체크리스트·Related·split view·설정)을 표로 만들어 폰에서 볼 것/뺄 것을 사람이 고른다. 보기 전용(watch) 기기는 읽기만.
 - Owner: 없음
 
+### 폰 알림 — Chrome 「스팸일 수 있음」 안내 · 두 주소로 붙은 같은 폰에 알림 두 번 · 번역 팝업
+- Discovered: 2026-11-05 Tailscale 주소(`tailscale serve`) 점검, 갤럭시 M23 · Chrome 156.
+- Evidence: ① 처음 받는 알림은 주소마다 Chrome 이 내용을 「스팸일 수 있음(1개) — Chrome에서 <주소>의 스팸 가능성이 감지되었습니다」로 바꿔 보여 준다(localhost:8765 · *.ts.net 둘 다).
+  알림을 펼쳐 「알림 표시」 → 「항상 허용」을 한 번 누르면 그 주소의 다음 알림부터 제목·본문이 그대로 온다(`dumpsys notification`: title=CLI Manager · text=Test alert from your Mac). 앱 화면 어디에도 이 안내가 없다.
+  ② 같은 폰이 USB(localhost)와 Tailscale 두 주소에서 알림을 켜면 구독이 2개(`pushDevices: 2`)라 알림이 두 번 온다. Mac 기기 목록에는 같은 이름 「Galaxy M23」이 3줄로 보여 어느 게 어느 주소인지 모른다.
+  ③ `src/renderer/phone.html` 이 `lang="en"` 이라 한글 세션 이름이 많은 목록에서 Chrome 이 「페이지를 번역하시겠습니까?」를 띄운다.
+- Why deferred: 이번 범위(밤샘 검증) 밖이고 사람이 한 번 누르면 풀린다.
+- Trigger: 다른 사람·새 폰이 Tailscale 로 처음 붙을 때, 또는 알림이 두 번 온다는 말이 나올 때.
+- Fix direction: ① 알림 메뉴 「Send a test alert」 결과 줄에 「알림이 『스팸일 수 있음』으로 오면 펼쳐서 알림 표시 → 항상 허용」 한 줄 ② 기기 목록에 들어온 주소(USB/Tailscale)를 같이 표시하고, 같은 폰의 옛 구독은 새 구독이 생길 때 끄기를 제안 ③ `<meta name="google" content="notranslate">` 또는 `translate="no"`.
+- Owner: 없음
+
 ### 폰 서버 — 앱을 켠 채 다시 빌드하면 폰 페이지 새 청크가 404
 - Discovered: 2026-11-04, 폰 품질 3회차(quality-phone) — 시험 앱을 띄운 채 `pnpm build` 를 하자 폰 페이지가 빈 화면(자산 404).
 - Evidence: `PhoneServer.assets()` 가 `out/renderer/.vite/manifest.json` 으로 만든 허용 목록을 처음 한 번만 읽고 `allowedAssets` 에 들고 있다(`src/main/phone/PhoneServer.ts` 403행 근처).
