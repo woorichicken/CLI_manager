@@ -31,6 +31,9 @@ export function installViewportFix(): void {
     const touch = window.matchMedia('(pointer: coarse)')
     const sync = (): void => {
         const height = viewport?.height ?? window.innerHeight
+        // What is on screen above the keyboard, for overlays that size to it (the feedback report).
+        // 100vh is the large viewport on Chrome for Android and does not shrink for the keyboard.
+        root.style.setProperty('--phone-visible-height', `${Math.round(height)}px`)
         const keyboard = touch.matches && isTypingField(document.activeElement) && window.innerHeight - height > window.innerHeight * KEYBOARD_SHARE
         root.toggleAttribute('data-keyboard', keyboard)
         if (keyboard) root.style.setProperty('--app-height', `${Math.round(height)}px`)

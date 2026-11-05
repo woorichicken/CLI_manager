@@ -33,13 +33,14 @@ export function PhoneFeedback({ me, sessionId, lens }: PhoneFeedbackView) {
     )
 }
 
-/** The kit's floating button, hidden but still the one way into its report. */
+/** The kit's floating button, hidden but still the one way into it. */
 const KIT_BUTTON_ID = 'feedback-kit-floating-button'
 const OPEN_WAIT_MS = 3000
 
 /**
- * Opens the report the way the kit's own button does (it captures the screen with its UI hidden).
- * Waits a frame first so a closing drawer is not in the screenshot, and for the lazy chunk on a first tap.
+ * Starts the kit the way its own button does: pointing at an element (the kit's default mode). While
+ * it points every tap is a pick, ☰ too: its dock (bottom right) holds «whole screen» and «off».
+ * Waits a frame first so a closing drawer is not on screen, and for the lazy chunk on a first tap.
  */
 export async function openPhoneFeedback(): Promise<boolean> {
     const end = Date.now() + OPEN_WAIT_MS

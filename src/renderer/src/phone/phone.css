@@ -815,3 +815,19 @@ body.phone-body #root {
 [data-feedback-kit] > div:has(> #feedback-kit-floating-button) {
     display: none !important;
 }
+
+/* feedback-kit's report sizes itself to 100vh, which on Chrome for Android is the large viewport: with
+   the keyboard up the form runs under it and «보내기» cannot be reached (measured on a Galaxy, 11-05 —
+   innerHeight 416, the button at 450–488). Fit it to what is on screen (viewport.ts) and keep its
+   buttons in view at the bottom while it scrolls. Selectors are the kit's own (0.14). */
+[data-feedback-kit] [role="dialog"][aria-labelledby="feedback-kit-dialog-title"] {
+    max-height: calc(var(--phone-visible-height, 100dvh) - 24px) !important;
+}
+[data-feedback-kit] [aria-labelledby="feedback-kit-dialog-title"] form > div:has(> button[data-fk-focus-id]) {
+    position: sticky;
+    bottom: calc(-1 * clamp(14px, 4vw, 22px));
+    padding: 10px 0 clamp(14px, 4vw, 22px);
+    margin-bottom: calc(-1 * clamp(14px, 4vw, 22px));
+    background-color: #fff;
+    z-index: 1;
+}
