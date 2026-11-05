@@ -1961,6 +1961,7 @@ function App() {
                                             enabled={isAgentSession(session)}
                                             fontSize={settings.fontSize}
                                             preferences={settings.chat}
+                                            onSessionLink={handleSessionLink}
                                         />
                                         <SessionMemo
                                             ref={(handle) => {

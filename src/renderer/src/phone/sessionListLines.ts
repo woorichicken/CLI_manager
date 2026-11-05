@@ -38,3 +38,22 @@ export function listLines(data: PhoneSessionsResponse): ListLine[] {
     }
     return lines
 }
+
+/**
+ * The rows a search finds (1b92a570): every word of `query` in the session's name, its workspace's name
+ * or its session folder's name, ignoring case. Flat — the headings would only split a short result —
+ * and still in the Mac's order. An empty query is no search: null.
+ */
+export function searchLines(data: PhoneSessionsResponse, query: string): ListLine[] | null {
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+    if (words.length === 0) return null
+    const folderName = new Map(data.sessionFolders.map((folder) => [folder.id, folder.name]))
+    return data.sessions
+        .filter((session) => {
+            const haystack = [session.name, session.workspaceName, session.sessionFolderId ? folderName.get(session.sessionFolderId) ?? '' : '']
+                .join('\n')
+                .toLowerCase()
+            return words.every((word) => haystack.includes(word))
+        })
+        .map((session) => ({ kind: 'row', key: session.id, session }))
+}

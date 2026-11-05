@@ -7,7 +7,8 @@
 import { memo, useMemo, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { useChatActions } from '../chatContext'
-import { codeIsFilePath, FILE_LINK_COUNT, FILE_LINK_LIMIT, splitFilePaths } from '../chatLib'
+import { codeIsFilePath, codeIsSessionLink, FILE_LINK_COUNT, FILE_LINK_LIMIT, splitFilePaths, splitSessionLinks } from '../chatLib'
+import { parseSessionLink } from '../../../utils/sessionLink'
 import { foldCode, parseMarkdown, type InlineNode, type ListBlock, type MarkdownBlock } from './parseMarkdown'
 import { languageForFence } from './highlight'
 import { HighlightedCode } from './HighlightedCode'
@@ -21,8 +22,35 @@ export function FilePathLink({ path, code, open }: { path: string; code: boolean
     )
 }
 
-/** `text` with the file paths in it as links (`saved to docs/demo.mp4`). Plain where nothing can open one. */
+/** A session link: a button that reads as the link it replaced and shows that session (b2020233). */
+export function SessionLinkButton({ uri, code, open }: { uri: string; code: boolean; open: (uri: string) => void }) {
+    return (
+        <button type="button" className={`chat-file-link${code ? ' is-code' : ''}`} title="Show this session" data-testid="chat-session-link" onClick={() => open(uri)}>
+            {code ? <code>{uri}</code> : uri}
+        </button>
+    )
+}
+
+/** `text` with the file paths and session links in it as links (`saved to docs/demo.mp4`). Plain where nothing can open one. */
 export function LinkedText({ text }: { text: string }) {
+    const actions = useChatActions()
+    const openSession = actions?.openSessionLink
+    if (openSession && text.includes('climanager://')) {
+        const parts = splitSessionLinks(text)
+        if (parts.some((part) => typeof part !== 'string')) {
+            return (
+                <>
+                    {parts.map((part, index) =>
+                        typeof part === 'string' ? <FilePathText key={index} text={part} /> : <SessionLinkButton key={index} uri={part.sessionLink} code={false} open={openSession} />
+                    )}
+                </>
+            )
+        }
+    }
+    return <FilePathText text={text} />
+}
+
+function FilePathText({ text }: { text: string }) {
     const actions = useChatActions()
     if (!actions?.canOpenPaths || text.length > FILE_LINK_LIMIT) return <>{text}</>
     const parts = splitFilePaths(text)
@@ -48,6 +76,9 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                     case 'text':
                         return interactive && actions ? <LinkedText key={key} text={node.value} /> : <span key={key}>{node.value}</span>
                     case 'code':
+                        if (interactive && actions?.openSessionLink && codeIsSessionLink(node.value)) {
+                            return <SessionLinkButton key={key} uri={node.value.trim()} code open={actions.openSessionLink} />
+                        }
                         if (interactive && actions?.canOpenPaths && codeIsFilePath(node.value)) {
                             return <FilePathLink key={key} path={node.value} code open={actions.openPath} />
                         }
@@ -83,6 +114,15 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                             </del>
                         )
                     case 'link':
+                        // [that session](climanager://session/…): shown by the app, not handed to the OS
+                        if (interactive && actions?.openSessionLink && parseSessionLink(node.href)) {
+                            const open = actions.openSessionLink
+                            return (
+                                <button key={key} type="button" className="chat-file-link" title="Show this session" data-testid="chat-session-link" onClick={() => open(node.href)}>
+                                    <Inline nodes={node.children} interactive={false} />
+                                </button>
+                            )
+                        }
                         return interactive ? (
                             <a key={key} href={node.href} target="_blank" rel="noopener noreferrer">
                                 <Inline nodes={node.children} interactive={false} />

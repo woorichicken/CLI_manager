@@ -20,6 +20,8 @@ export interface ChatActions {
     openPath(path: string): void
     /** false where nothing can show a file (the phone page): paths stay plain words, not dead buttons (G9) */
     canOpenPaths: boolean
+    /** shows the session(s) a `climanager://session/…` link names; absent where nothing can (b2020233) */
+    openSessionLink?: (uri: string) => void
     openGallery(images: GalleryImage[], index: number): void
 }
 

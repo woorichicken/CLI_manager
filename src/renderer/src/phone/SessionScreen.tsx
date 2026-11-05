@@ -28,7 +28,8 @@ export function SessionScreen({
     menuBadge = 0,
     offline = false,
     refreshing = false,
-    chatPreferences
+    chatPreferences,
+    onSessionLink
 }: {
     session: PhoneSession
     lens: SessionLens
@@ -44,6 +45,8 @@ export function SessionScreen({
     refreshing?: boolean
     /** this phone's own chat settings (phoneChatSettings.ts) with the Mac's quick replies */
     chatPreferences?: ChatPreferences
+    /** a `climanager://session/…` link in the chat: open that session here (b2020233) */
+    onSessionLink?: (uri: string) => void
 }) {
     const transport = useMemo(() => createPhoneChatTransport(), [])
     const chatAvailable = session.agent !== null
@@ -102,6 +105,7 @@ export function SessionScreen({
                         preferences={chatPreferences}
                         readOnly={role === 'watch'}
                         canOpenFiles={false}
+                        onSessionLink={onSessionLink}
                         onOpenTerminal={() => onLens('terminal')}
                     />
                 ) : (

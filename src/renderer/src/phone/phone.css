@@ -129,6 +129,42 @@ body.phone-body #root {
     font-size: 11px;
     color: #fbbf24;
 }
+.phone-list-search-toggle {
+    width: 30px;
+    height: 30px;
+    margin: -6px -6px -6px 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+.phone-list-search-toggle[aria-pressed='true'] {
+    color: var(--text-primary);
+    background: var(--button-hover-bg);
+}
+/* the search box under the head (1b92a570) — 16px text: iOS zooms the page into anything smaller */
+.phone-list-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 12px 6px;
+    padding: 0 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-tertiary);
+    background: rgba(255, 255, 255, 0.04);
+}
+.phone-list-search input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    font-size: 16px;
+    background: transparent;
+    color: var(--text-primary);
+    outline: none;
+}
 .phone-list-title {
     font-size: 12px;
     font-weight: 600;

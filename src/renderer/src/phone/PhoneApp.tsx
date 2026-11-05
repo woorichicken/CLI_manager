@@ -9,6 +9,7 @@ import { PairScreen } from './PairScreen'
 import { openPhoneFeedback, phoneFeedbackConfigured, PhoneFeedback } from './feedback/PhoneFeedback'
 import { PhoneSettingsMenu } from './PhoneSettingsMenu'
 import { HandoffNoticeToast } from '../components/ChatView/HandoffNoticeToast'
+import { parseSessionLink } from '../utils/sessionLink'
 import { usePhoneChatSettings } from './phoneChatSettings'
 import type { ChatPreferences } from '../../../shared/conversation'
 import { phoneFeedbackAvailable } from './feedbackGate'
@@ -248,6 +249,15 @@ export function PhoneApp() {
         setDrawer(false)
         navigate(next.id, next.agent ? rememberedLens(next.id) ?? 'chat' : 'terminal')
     }
+    // A session link in the chat (b2020233): the phone shows one session, so the first one the link names
+    // that this list holds. Refs are full ids or their first 8+ characters, as on the Mac (sessionLink.ts).
+    const openSessionLink = (uri: string): void => {
+        const refs = parseSessionLink(uri) ?? []
+        for (const ref of refs) {
+            const target = data?.sessions.find((s) => s.id.toLowerCase().startsWith(ref))
+            if (target) return open(target)
+        }
+    }
     const showList = wide || !session || drawer
     const feedback = phoneFeedbackAvailable(me, phoneFeedbackConfigured())
     const badge = data ? waitingElsewhere(data.sessions, session?.id ?? null) : 0
@@ -324,6 +334,7 @@ export function PhoneApp() {
                         offline={offline}
                         refreshing={refreshing}
                         chatPreferences={chatPreferences}
+                        onSessionLink={openSessionLink}
                         onMenu={() => setDrawer(true)}
                         onLens={(next) => {
                             rememberLens(session.id, next)

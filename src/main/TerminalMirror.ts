@@ -8,7 +8,7 @@ import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.js'
 // Same reason as above: bundled by file so the packaged app does not need it in node_modules.
 import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.js'
 import { TerminalManager } from './TerminalManager'
-import { isInputBoxRule, ScreenSummary, screenSummary } from './screenLines'
+import { isBusyRow, isInputBoxRule, ScreenSummary, screenSummary } from './screenLines'
 import { resizeKeepingBottom } from '../shared/terminalResize'
 
 /**
@@ -45,11 +45,10 @@ const DEFAULT_ROWS = 30
 const MIRROR_SCROLLBACK = 2000
 
 /**
- * Agent CLIs print this while a turn is in progress — Claude Code
- * ("esc to interrupt") and Codex ("Esc to interrupt") both do. Output alone is
- * not enough: a model can think for a while without the screen changing much.
+ * A turn in progress is read from the agent's spinner row (`isBusyRow` — "esc to interrupt", or
+ * Claude Code 2.1.318's bare spinner). Output alone is not enough: a model can think for a while
+ * without the screen changing much.
  */
-const BUSY_PATTERN = /esc to interrupt/i
 
 /**
  * A question the agent cannot get past without an answer: permission prompts,
@@ -436,7 +435,7 @@ export class TerminalMirror {
 
     /** The screen currently shows an agent turn in progress. */
     showsBusy(id: string): boolean {
-        return this.screen(id).some((line) => BUSY_PATTERN.test(line))
+        return this.screen(id).some((line) => isBusyRow(line))
     }
 
     /**
@@ -465,7 +464,7 @@ export class TerminalMirror {
      */
     screenStatus(id: string): { busy: boolean; question: string | null } {
         const lines = this.screen(id)
-        if (lines.some((line) => BUSY_PATTERN.test(line))) return { busy: true, question: null }
+        if (lines.some((line) => isBusyRow(line))) return { busy: true, question: null }
         const region = questionRegion(linesUnderInputBox(lines))
         return { busy: false, question: showsQuestion(region) ? questionLine(region) : null }
     }

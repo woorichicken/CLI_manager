@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import type { ConversationAgent, PromptAnswer, PromptKind, PromptMenu, PromptOption } from '../shared/conversation'
-import { INPUT_BOX_RULE, isInputBoxRule } from './screenLines'
+import { INPUT_BOX_RULE, isBusyRow, isInputBoxRule } from './screenLines'
 
 /**
  * Reading an agent's question menu off its screen, for the Chat view's card.
@@ -20,8 +20,7 @@ import { INPUT_BOX_RULE, isInputBoxRule } from './screenLines'
  * would press Enter on the wrong option.
  */
 
-/** A turn in progress: a real question replaces the spinner (checked on 2.1.312). */
-const BUSY = /esc to interrupt/i
+// A turn in progress (`isBusyRow`): a real question replaces the spinner (checked on 2.1.312).
 
 /** The footers and phrases of a menu waiting on the user. */
 const MENU_MARKERS = [
@@ -202,7 +201,7 @@ function kindOf(text: string, options: PromptOption[]): PromptKind {
  * top to bottom (TerminalMirror.screen).
  */
 export function readPrompt(screen: string[], agent: ConversationAgent): PromptMenu | null {
-    if (screen.some((line) => BUSY.test(line))) return null
+    if (screen.some(isBusyRow)) return null
     const rows = belowInputBox(screen)
         .map(clean)
         .filter((line) => line.trim() !== '')

@@ -10,6 +10,8 @@
  *   --work-ms N           how long a turn "works" with the spinner (default 1200)
  *   --user-delay-ms N     write a submitted prompt to the transcript N ms late (default 0)
  *   --name <text>         a session renamed with /rename: Claude Code writes the name into the input box's top rule
+ *   --spinner 318         Claude Code 2.1.318's spinner row: no "esc to interrupt" — `✳ Galloping… (3s · ↓ 120 tokens)`
+ *                         (recorded 2026-11-05, 4359b4ee)
  *
  * Prompts:
  *   ASK       a permission question. The layout is copied from a real Claude Code 2.1.312 screen
@@ -21,6 +23,7 @@
  *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
  *   TABLE     answers with a five-column table wider than a phone (Korean cells).
+ *   LINK <id> answers with a session link to <id>'s first 8 characters, in backticks and in a sentence (b2020233).
  *   /name …   (Claude) a skill: records the 2.1.318 echo (no <command-args> when sent bare) and its body, then answers.
  *   /model X  (Claude) records the command and "Set model to `X 5`", as Claude Code 2.1.3xx does; the next
  *             answers name that model. Bare `/model`, `/config`: a panel only the terminal shows (Esc closes it).
@@ -45,6 +48,8 @@ const WORK_MS = Number(arg('--work-ms', '1200'))
 /** how long a submitted prompt takes to reach the transcript (Claude Code writes it at once; a slow disk does not) */
 const USER_DELAY_MS = Number(arg('--user-delay-ms', '0'))
 const NAME = arg('--name')
+const SPINNER_318 = arg('--spinner') === '318'
+let workStartedAt = 0
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
 const FRAMES = ['✻', '✢', '✳', '∗']
@@ -167,7 +172,13 @@ function menuLines() {
 function boxLines() {
     if (menu) return menuLines()
     if (panel) return [rule(), ` ${panel}`, '', ' (mock panel — only the terminal shows it)', '', ' Esc to close']
-    const status = busy ? [`${FRAMES[spinner % FRAMES.length]} Working… (${AGENT === 'codex' ? 'Esc' : 'esc'} to interrupt)`] : []
+    const glyph = FRAMES[spinner % FRAMES.length]
+    const seconds = Math.floor((Date.now() - workStartedAt) / 1000)
+    const status = !busy
+        ? []
+        : SPINNER_318 && AGENT !== 'codex'
+          ? [`${glyph === '∗' ? '✶' : glyph} Galloping… (${seconds}s · ↓ ${12 * (spinner + 1)} tokens)`]
+          : [`${glyph} Working… (${AGENT === 'codex' ? 'Esc' : 'esc'} to interrupt)`]
     if (AGENT === 'codex') return [...status, `› ${input}`, '  ? for shortcuts']
     return [...status, topRule(), `❯ ${input}`, rule(), '  ⏵⏵ accept edits on']
 }
@@ -194,6 +205,7 @@ function endWork() {
 
 function answerTurn(text, answer = null) {
     busy = true
+    workStartedAt = Date.now()
     draw()
     workSpin = setInterval(() => {
         spinner++
@@ -331,6 +343,10 @@ function submit(text) {
         recordPlan()
         answerTurn(text, 'Planned three steps.')
     } else if (text === 'TABLE') answerTurn(text, WIDE_TABLE)
+    else if (/^LINK [0-9a-f-]{8,}$/.test(text)) {
+        const ref = text.slice(5, 13)
+        answerTurn(text, `Opened it: \`climanager://session/${ref}\`\n\nOr go to climanager://session/${ref} and look.`)
+    }
     else answerTurn(text)
 }
 

@@ -13,6 +13,7 @@ import type {
     QueuedMessage
 } from '../shared/conversation'
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
+import { isBusyRow } from './screenLines'
 import { answerSteps, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 
@@ -43,7 +44,6 @@ const KEY_GAP_MS = 60
  */
 const CONFIRM_MS = 1500
 const CONFIRM_POLL_MS = 40
-const BUSY = /esc to interrupt/i
 /** `type` returned false: Enter was pressed (and retried) but the text is still in the agent's input box. */
 const NOT_SUBMITTED: ChatSendResult = {
     status: 'rejected',
@@ -731,7 +731,7 @@ export class ConversationService {
         await this.deps.mirror.flush(sessionId)
         entry.lastScreenAt = outputAt
         const screen = this.deps.mirror.screen(sessionId)
-        entry.working = screen.some((line) => BUSY.test(line))
+        entry.working = screen.some(isBusyRow)
         entry.prompt = entry.working ? null : readPrompt(screen, agentOf(this.deps.session(sessionId)) ?? 'claude')
     }
 
