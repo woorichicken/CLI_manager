@@ -23,7 +23,8 @@ Everything a phone needs already lives in main: the ptys, their history (the scr
 
 - **A second HTTP server, not the Control API.** `src/main/phone/PhoneServer.ts`, off by default
   (Settings › Phone), bound to `127.0.0.1` on its own port (47830). It knows a fixed set of routes —
-  the session list, one session's chat, one session's terminal socket, alerts, pairing — and
+  the session list, one session's chat, one session's terminal socket, alerts, pairing, and (when
+  the Mac shows the feedback widget, `drive` devices only) the feedback relay — and
   nothing that creates, deletes, renames or resizes. The Control API port is never forwarded:
   its token opens every session and a phone would have to carry it. The phone server calls the same
   `ConversationService` functions the Electron IPC handlers call, in the same process.

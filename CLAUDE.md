@@ -115,6 +115,7 @@ pnpm build && pnpm test:term
    - `FeedbackRelay.ts`: 피드백 위젯의 HTTP 요청을 main 에서 대신 보낸다 — 배포 렌더러는 `file://` 라 `Origin: null` 이 되고 라쏘런이 403 으로 거부한다. 수집 함수 경로만 허용
    - `TerminalEventLog.ts`: 터미널마다 최근 사건(시작·복원·다시 붙음·붙기 시간 초과·Cmd+K·PTY 크기 변경 `80x30→111x43`(창 끌기처럼 몰린 것은 한 줄)·프로그램의 스크롤백 삭제 CSI 3 J·종료 코드·닫힘)과 창 사건(렌더러 크래시·새로고침)을 메모리에만 둔다 — 제보가 「무엇이 먼저 있었나」를 싣는 원본
    - `phone/`: 폰 연결(Settings › Phone, 기본 꺼짐) — `PhoneServer.ts`(127.0.0.1 두 번째 서버, Control API 와 분리, 정해진 경로만) · `phoneAccess.ts`(접근 판정 순수 함수: Tailscale serve 주인 로그인 + tailnet XFF, 아니면 짝지은 기기, Funnel 거절) · `PhoneDevices.ts`(6자리 · 10분 · 5회, 해시만 0600) · `PhonePush.ts`(웹 푸시 — 질문 대기·턴 끝, Mac 앞이면 안 보냄, 세션당 1분) · `phoneApi.ts`(Chat 은 `ConversationService` 를 같은 프로세스에서) · `phoneSockets.ts`(터미널: 스냅샷 → 이어 붙이기, **크기 메시지 거절**) · `tailscaleStatus.ts`(`tailscale status --json` 읽기만) · `phoneSetup.ts`(배선·IPC) ([`docs/decisions/0009`](docs/decisions/0009-phone-connection-second-server.md))
+   - `feedbackMode.ts`: 렌더러가 알린 「피드백 위젯 켜짐」을 main 이 기억 — 폰 서버가 `/api/phone/me` 로 넘긴다(`phone/phoneFeedback.ts` 가 릴레이·터미널 맥락 경로)
    - `feedbackTerminalContext.ts` / `maskSecrets.ts`: 제보에 실을 터미널 상태와 최근 200줄을 만든다. 줄은 비밀값·홈 폴더·계정 이름을 가린 뒤 나간다. 오른쪽 끝에서 끊긴 키도 가린다 — zsh 는 긴 입력 줄을 스스로 끊어 wrap 표시가 없다
 
 2. **Renderer Process** (`src/renderer/`)
@@ -245,6 +246,7 @@ exec('/bin/zsh -l -c "code ."')
 - **모든 제보에 터미널 정보가 기본으로 실린다**(체크박스 없음 — 2026-10-18 사용자 결정). 대상 터미널은 지목한 요소가 든 터미널(또는 사이드바 세션 행) → 마지막으로 포커스된 보이는 터미널 → 하나뿐인 보이는 터미널 순이고, 여럿 보이는데 고른 게 없으면 싣지 않는다(추측하지 않는다). 숨긴 터미널은 `visibility: hidden` 이라 크기로는 못 가른다
   - 사건은 제보의 `logs` 로 가서 라쏘런 「앱 로그」에 뜬다(`[terminal] scrollback-erased` 등). 상태·최근 줄은 `context.extra.terminal` → 서버 `meta.extra.extra.terminal`(「기타」 카드에 JSON 으로 보인다)
   - 최근 줄은 비밀값을 가리지만 **스크린샷은 가리지 않는다** — 화면에 보이는 그대로 간다
+- **폰 화면(phone.html)에도 같은 위젯이 뜬다** — 조건은 Mac 과 같다(그 Mac 이 피드백 모드 켜짐 · 개발 빌드는 항상). 폰은 스스로 판정하지 않는다(`adb reverse` 면 폰 주소도 localhost): 렌더러가 켜짐을 `feedback-mode` IPC 로 알리고(`src/main/feedbackMode.ts`) `/api/phone/me` 의 `feedback` 플래그(drive 기기에만)로 판정, 꺼져 있으면 위젯 청크를 안 받는다. 보내기는 `POST /api/phone/feedback/relay` → 기존 `relayFeedbackRequest`(15MB 상한, watch 403, 꺼짐 403), 보던 세션의 터미널 줄은 `GET /api/phone/feedback/terminal`(`src/main/phone/phoneFeedback.ts`). 키트의 떠 있는 버튼은 CSS 로 숨기고(오른쪽 아래 = Chat 보내기·키 바) ☰ 서랍 머리 「Feedback」 버튼이 서랍을 닫고 연다, `defaultMode="report"`. 제보 `url` 은 `…/phone?screen=list|session`, `extra` 는 `surface: 'phone'`·appVersion·`phoneDevice`(짝지은 이름 — Tailscale 로그인 이메일은 안 실음)·`phoneSessionId`·`phoneView`·`terminal`(source `viewing`)
 - 비밀번호·릴리즈 빌드·검증 절차는 [`docs/operations/CLAUDE.md`](docs/operations/CLAUDE.md) 「Feedback widget」
 
 ### GitHub Integration
@@ -492,6 +494,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T80 ovis 원본 시험 이식 — ovis(3e51902) 시험 38파일에서 우리가 옮긴 모듈 몫 383건(`tests/terminal/ovis-port/*.ts`, fixture `tests/fixtures/ovis/` + `SOURCE.md`). 우리가 일부러 바꾼 동작은 `test.fixme`+근거, 아직 안 고친 차이는 `test.fail(true, 'ovis-port bug: …')`(고치면 「통과해서 실패」로 알려 준다). 성능 8건은 `OVIS_PERF=1` 일 때만
   - T81 폰·Chat 화면 고침(11-05 F13–F20·실기기 G1–G4·G7–G9) — 터치 폰 CDP 390×844·배율 3, 실제 앱+폰 서버 E2E 13건: 끊긴 동안 Send 막고 초안 유지 · 세션을 옮기면 Type·Ctrl·초안 안 따라감 · 암호 프롬프트는 password 칸 · 첫 /me 실패 뒤 재시도 · drop 한 번 · 대기열 Edit 는 철회 확인 뒤 · 카드 번호+보내기 = 보기 고름 · 새 세션 빈 상태 문구 · 한글 고정폭 글꼴(`CLIM Phone Mono`, 나눔고딕코딩 OFL 부분 글꼴 — 한글/라틴 2:1) · 첨부 말풍선은 칩 · 보기 전용 안내 · 2차 검수 N01(Edit 응답 전 세션 이동 → 그 세션 초안으로, 철회 응답을 붙잡는 `hold`)·N02(암호 프롬프트가 바뀌면 지움)
   - T82 Chat 기록·대기열 고침 유닛(11-05 F03·F04·F09–F12·F18 · ovis 대조 가1·다1) — 대기열을 에이전트·보낸 기기에 묶음(철회·폰 끔이면 그 기기 것 지움)·질문 카드 키를 세션마다 한 줄로·미제출을 sent 로 안 봄·Claude 되감기 가지·Codex history_base·파일 교체(inode)·하위 에이전트 XML 엔티티
+  - T84 폰 피드백 유닛 — Electron 없이 실제 PhoneServer: `/me` 의 `feedback` 플래그(drive·켜짐일 때만, watch·꺼짐·배선 없음엔 없음)·폰 판정은 `/me` 로만(localhost 여도 꺼짐)·릴레이 인증 없음 401·watch 403·꺼짐 403 `feedback_off`·수집 함수 밖 URL/메서드 400·15MB 초과 413·남의 Origin 403·본문 받는 중 철회 401·정상은 그대로 릴레이(폰 쿠키는 안 넘어감)·터미널 맥락 경로(401·403·세션 없음은 null)·제보 url `…/phone?screen=`·extra(Tailscale 로그인 없음)·`FeedbackModeState`
+  - T85 폰 피드백 — 앱 + 터치 폰(CDP 390×844·배율 3, 주인 머리말): 꺼진 Mac 이면 버튼·위젯 청크 없음, Mac 에서 켜면 ☰ → Feedback 이 서랍을 닫고 모달(캡처) → 보내기가 main 릴레이까지(main `fetch` 를 바꿔 밖으로 안 나감): url·extra·보던 세션 줄·스크린샷·로그인/쿠키/키 없음, Mac 에서 끄면 `/me`·릴레이 403·버튼 사라짐, 키트 떠 있는 버튼이 키 바·Send 를 안 가림. `PHONE_SHOTS` 면 제보 스크린샷 저장
   - T83 2차 교차 검수 남은 것 유닛(11-05 round2) — F02 철회가 서비스의 await(전경 읽기·lane·대기열·카드 키 사이) 중에 와도 안 침(`ChatSender.allowed` 를 키 직전에) · F03 대기 글은 쓴 대화(cliSessionId)에 묶임(/resume 이면 버림 · Send now 는 `conversation_changed`) · F04 카드 Enter 는 의도한 보기가 강조돼 있을 때만(raw ↓ 끼어들면 prompt_changed) · F21 푸시는 요청 전체 마감(fetch + AbortSignal.timeout — 헤더·본문을 조금씩 보내는 자체 서명 TLS 서버로)
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
