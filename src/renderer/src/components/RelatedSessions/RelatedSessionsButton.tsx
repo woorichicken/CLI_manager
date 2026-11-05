@@ -34,7 +34,8 @@ export function RelatedSessionsButton({ sessionId, count, onOpen, compact = fals
             data-related-count={count}
         >
             <Waypoints size={compact ? 12 : 14} />
-            {!compact && <span className="text-xs">Related</span>}
+            {/* below 640px the word goes: the header row is full there (found-defects 「390 헤더」) */}
+            {!compact && <span className="text-xs hidden sm:inline">Related</span>}
             {count > 0 && (
                 <span className={`rounded-full bg-white/10 text-gray-200 tabular-nums ${compact ? 'px-1 text-[10px]' : 'px-1.5 text-[11px]'}`}>
                     {count}

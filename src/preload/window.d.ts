@@ -1,5 +1,8 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
+import type { AttachResult, ChatCommand, ChatSendResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { PhoneState } from '../shared/types'
+import type { PhoneTestPushResult } from '../shared/phone'
 
 declare global {
     interface Window {
@@ -134,6 +137,8 @@ declare global {
             getAppVersion: () => Promise<string>
             feedbackRelay: (request: FeedbackRelayRequest) => Promise<FeedbackRelayResponse>
             feedbackTerminalContext: (sessionId: string | null) => Promise<FeedbackTerminalContext>
+            /** Tells main whether the feedback widget is shown here; the phone page follows it */
+            reportFeedbackMode: (on: boolean) => void
             checkTools: () => Promise<{ git: boolean; gh: boolean; brew: boolean }>
 
             // File utilities (for drag & drop)
@@ -222,6 +227,8 @@ declare global {
             moveSessionToSessionFolder: (sessionId: string, folderId: string | null) => Promise<boolean>
             getRecentSessions: () => Promise<string[]>
             pushRecentSession: (sessionId: string) => Promise<void>
+            /** The ids in the order the sidebar draws sessions (sessionsInSidebarOrder) — the phone's list starts from it. */
+            reportSidebarSessionOrder: (sessionIds: string[]) => void
             getInbox: () => Promise<InboxRequest[]>
             onInbox: (callback: (requests: InboxRequest[]) => void) => () => void
             markInboxRead: (id: string) => Promise<void>
@@ -235,6 +242,29 @@ declare global {
             updateChecklistItem: (id: string, itemId: string, patch: { text?: string; done?: boolean }) => Promise<boolean>
             removeChecklistItem: (id: string, itemId: string) => Promise<boolean>
             peekSessions: (sessionIds: string[]) => Promise<SessionPeek[]>
+            getPhoneState: () => Promise<PhoneState>
+            setPhoneEnabled: (enabled: boolean) => Promise<PhoneState>
+            startPhonePairing: (role: 'drive' | 'watch') => Promise<PhoneState>
+            cancelPhonePairing: () => Promise<PhoneState>
+            revokePhoneDevice: (id: string) => Promise<PhoneState>
+            revokeAllPhoneDevices: () => Promise<PhoneState>
+            testPhonePush: () => Promise<PhoneTestPushResult>
+            onPhoneStateChanged: (callback: (state: PhoneState) => void) => () => void
+            getConversation: (sessionId: string, limit?: number) => Promise<ConversationSnapshot | null>
+            subscribeConversation: (sessionId: string) => Promise<void>
+            unsubscribeConversation: (sessionId: string) => Promise<void>
+            onConversationChanged: (callback: (change: { sessionId: string; revision: number }) => void) => () => void
+            sendChatMessage: (sessionId: string, text: string) => Promise<ChatSendResult>
+            cancelQueuedChat: (sessionId: string) => Promise<void>
+            discardQueuedChat: (sessionId: string, id: string) => Promise<boolean>
+            sendQueuedChatNow: (sessionId: string, id: string) => Promise<ChatSendResult>
+            interruptChat: (sessionId: string) => Promise<InterruptResult>
+            getChatImage: (sessionId: string, ref: string) => Promise<string | null>
+            getChatToolOutput: (sessionId: string, ref: string) => Promise<string | null>
+            listChatCommands: (sessionId: string) => Promise<ChatCommand[]>
+            saveChatAttachment: (name: string, bytes: Uint8Array) => Promise<AttachResult>
+            openChatPath: (target: string) => Promise<{ success: boolean; error?: string }>
+            answerPrompt: (sessionId: string, answer: PromptAnswer) => Promise<PromptAnswerResult>
         }
     }
 }

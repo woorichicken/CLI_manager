@@ -46,6 +46,17 @@ function processTree(root: number): number[] {
     return tree
 }
 
+/**
+ * Wake order: the app's main process first, then everything under it children-first. Children-first is
+ * only needed inside the terminal (a shell that wakes before its stopped job takes it as Ctrl+Z); waking
+ * main last left Playwright's main-process evaluate to a context that came back reset — 6/10 under load
+ * on 11-05 04:10, gone with main first.
+ */
+function wakeOrder(frozen: number[]): number[] {
+    const [main, ...rest] = frozen
+    return main === undefined ? [] : [main, ...rest.reverse()]
+}
+
 function signalAll(pids: number[], signal: NodeJS.Signals): void {
     for (const pid of pids) {
         try {
@@ -68,7 +79,7 @@ test.describe('T20 Control API across sleep', () => {
 
     test.afterEach(async () => {
         // A failed assertion must not leave a stopped app behind.
-        signalAll(frozen, 'SIGCONT')
+        signalAll(wakeOrder(frozen), 'SIGCONT')
         frozen = []
         if (ctx) await closeApp(ctx)
         for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
@@ -87,6 +98,29 @@ test.describe('T20 Control API across sleep', () => {
             }
         )
         const { page, userDataDir, app } = ctx
+        // 2026-11-05 this test failed 3/3 for ~18 minutes with "Execution context was destroyed" and
+        // "other side closed" right after the wake-up, then passed on the same build. Keep what main
+        // said and whether it was still alive, so the next occurrence can be read instead of guessed.
+        const mainProc = app.process()
+        const mainOutput: string[] = []
+        const keep = (chunk: Buffer | string): void => {
+            mainOutput.push(String(chunk))
+            if (mainOutput.length > 200) mainOutput.shift()
+        }
+        mainProc.stdout?.on('data', keep)
+        mainProc.stderr?.on('data', keep)
+        let mainExit = 'still running'
+        mainProc.on('exit', (code, signal) => (mainExit = `exited code=${code} signal=${signal}`))
+        const describeMain = (): string => {
+            let alive = false
+            try {
+                process.kill(mainProc.pid!, 0)
+                alive = true
+            } catch {
+                // Gone.
+            }
+            return `[t20] main pid=${mainProc.pid} alive=${alive} ${mainExit}\n[t20] main output tail:\n${mainOutput.join('').split('\n').slice(-40).join('\n')}`
+        }
 
         const discoveryPath = path.join(climanagerHome, 'control-api.json')
         await expect.poll(() => fs.existsSync(discoveryPath), { timeout: 15_000 }).toBe(true)
@@ -132,17 +166,31 @@ test.describe('T20 Control API across sleep', () => {
         signalAll(frozen, 'SIGSTOP')
         const frozenAt = Date.now()
         await new Promise((resolve) => setTimeout(resolve, FROZEN_MS))
-        signalAll(frozen, 'SIGCONT')
+        // Children first. A shell that wakes before its stopped job reads it as Ctrl+Z — "zsh: suspended
+        // (signal)" — takes the terminal back, and the agent never answers (the wait times out). A real
+        // sleep stops nothing, so that race is this simulation's, not the app's. (Stopping goes parents
+        // first, so no shell is awake to see its job stop.)
+        signalAll(wakeOrder(frozen), 'SIGCONT')
         frozen = []
         // What Electron reports on a real wake-up, for anything listening to it.
-        await app.evaluate(({ powerMonitor }) => {
-            powerMonitor.emit('suspend')
-            powerMonitor.emit('resume')
-        })
-
-        const woke = await inFlight
+        let woke: Awaited<typeof inFlight>
+        try {
+            await app.evaluate(({ powerMonitor }) => {
+                powerMonitor.emit('suspend')
+                powerMonitor.emit('resume')
+            })
+            woke = await inFlight
+        } catch (error) {
+            const flight = await inFlight.then(
+                (r) => `answered status=${r.status} timedOut=${r.json?.timedOut}`,
+                (e: Error & { cause?: unknown }) => `failed: ${e.message} (${String(e.cause)})`
+            )
+            console.log(`${describeMain()}\n[t20] in-flight wait: ${flight}`)
+            throw error
+        }
         console.log(`[t20] in-flight wait: status=${woke.status} timedOut=${woke.json.timedOut} waitedMs=${woke.json.waitedMs} frozenMs=${Date.now() - frozenAt}`)
         expect(woke.status).toBe(200)
+        if (woke.json.timedOut) console.log(`${describeMain()}\n[t20] screen when the wait gave up:\n${woke.json.lines.slice(-15).join('\n')}`)
         expect(woke.json.timedOut).toBe(false)
         expect(woke.json.lines.join('\n')).toContain('ANSWER[2]: during sleep')
 

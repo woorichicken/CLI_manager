@@ -9,6 +9,7 @@ import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.js'
 import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.js'
 import { TerminalManager } from './TerminalManager'
 import { INPUT_BOX_RULE, ScreenSummary, screenSummary } from './screenLines'
+import { resizeKeepingBottom } from '../shared/terminalResize'
 
 /**
  * Keeps a headless xterm copy of every terminal in the main process.
@@ -456,7 +457,8 @@ export class TerminalMirror {
 
     private resize(mirror: Mirror, cols: number, rows: number): void {
         if (cols > 0 && rows > 0 && (mirror.term.cols !== cols || mirror.term.rows !== rows)) {
-            mirror.term.resize(cols, rows)
+            // Same as the renderer's xterm (TerminalView), so the two copies of history stay alike.
+            resizeKeepingBottom(mirror.term, cols, rows)
         }
     }
 }

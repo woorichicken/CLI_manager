@@ -112,6 +112,88 @@ rules stay in the root; this file is the inventory.
 - 없는 폴더를 가리키는 `sessionFolderId` 는 폴더 없음으로 읽는다(옛 판·다른 창에서 지운 경우). 1.19 이전 앱은 두 칸 모두 모른다 — 세션은 예전처럼 평평하게
 - 코드: `src/main/SessionFolders.ts`(저장 · T57) · `hooks/useSessionFolders.ts`(렌더러 상태 — 바로 바꾸고 뒤에서 저장) · `Sidebar/SidebarAllSessions.tsx`(목록·폴더 줄·놓기)
 
+#### 15. Chat view (Terminal / Chat)
+- 세션 헤더의 「Terminal / Chat」(단일 화면 오른쪽 줄 맨 앞, 분할 칸 헤더 아이콘) — Claude Code·Codex 세션(`cliToolName` 이 claude·codex)에만.
+  세션마다 기억한다(localStorage `session-view-modes`, Chat 만 저장). 터미널은 밑에 그대로 살아 있다 — Chat 은 그 위에 덮는 층이라
+  PTY 크기·리페인트가 없다(렌더링 불변식 2 그대로)
+- **읽기**: 에이전트의 대화 기록 파일 — Claude `<CLAUDE_CONFIG_DIR|~/.claude>/projects/<cwd 슬러그>/<cliSessionId>.jsonl`(없으면 projects 전체에서 찾음),
+  Codex `<CODEX_HOME|~/.codex>/sessions/YYYY/MM/DD/rollout-…-<id>[_<segment>].jsonl`. `TranscriptReader` 가 늘어난 바이트만 읽고(첫 읽기는 끝 16MB —
+  241MB 기록 42ms 실측), 해석은 ovis 에서 옮긴 `src/main/transcript/`(Claude·Codex 파서, MIT — `THIRD_PARTY_NOTICES.md`)
+- **화면 쪽**: 「일하는 중」(`esc to interrupt`)과 질문 메뉴는 기록이 아니라 살아 있는 화면(미러)에서 `promptScreen.readPrompt` 로 읽는다 —
+  보기·강조된 보기·설명·「Type something.」. 카드 답은 화살표 + Enter(직접 입력은 그 줄로 가서 글 + Enter). **보내기 직전 화면을 다시 읽어
+  같은 메뉴(질문·보기·강조 위치·맥락 = `signature`)가 아니면 보내지 않는다**(`prompt_changed`). Codex 메뉴·다중 선택은 실제 화면 사본이 없어
+  「Answer in Terminal」만
+- **보내기**: Control API 의 입력 경로(`ControlApiService.typeForChat` = `typeAndSubmit`, AI 표시 없음) — 질문 대기면 거부, 터미널 입력줄(입력 상자)에
+  글이 있으면 거부(사람·AI·Chat 글이 섞이지 않게), 일하는 중이면 main 의 대기열에 두고 턴이 끝나 1.5초 조용하면 보낸다
+- `ConversationService` 는 Chat 이 열린 세션(또는 대기열이 있는 세션)만 0.7초마다 본다 — 기록 stat + 출력이 있었을 때만 화면 읽기. 바뀌면
+  `conversation-changed` 로 알리고 화면이 다시 가져간다
+- **폰과의 약속**: `ChatView/` 는 `window.api` 를 부르지 않는다 — `ChatTransport`(`src/shared/conversation.ts`: 가져오기 · 구독 · 보내기 · 대기 취소 ·
+  카드 답)를 props 로 받는다. Electron 은 `utils/electronChatTransport.ts`(IPC), 폰 페이지는 같은 묶음을 HTTP·WebSocket 으로 채워 같은 부품을 쓴다.
+  데이터(`ConversationSnapshot`)는 main 에서 한 번만 만든다
+- **2회차(ovis 대비 빠진 것 — 배치 폴더 `gap.md` 107줄 전수)**:
+  - 파일: ＋ · 붙여넣기 · 끌어 놓기 → 메시지에 `@path`(공백이면 `@"…"`). 같은 Mac 이라 제 경로를 그대로, 경로 없는 붙여넣기만 `os.tmpdir()/climanager-chat/<날짜>/<시각>-<난수>.<확장자>`.
+    답·도구 줄의 경로(ovis `filePaths` 이식 — `:12`·`#L12`, 상대 경로는 세션 폴더 기준) → 앱 미리보기, PDF·영상 등은 `shell.openPath`.
+    그림(프롬프트·도구 결과)은 `TranscriptReader.image(ref)` 가 기록에서 그 줄을 다시 읽어 data: URL — 끝에서 거꾸로 찾는다(`findRecord`). 잘린 출력도 같은 길(`toolOutput`)
+  - 작업 상태: Stop = Esc 를 **화면이 일하는 중일 때만** 보낸다(쉬는 중 Esc 는 메뉴·입력칸에 떨어진다). 대기열은 id 를 가진 줄 — 하나씩 Send now(바로 친다,
+    읽는 때는 에이전트가 정함)·버리기. 치는 중(`sending`)에 온 보내기도 대기열 뒤로(두 보내기가 동시에 치지 않게)
+  - 모델: `transcript/metadata.ts`(ovis conversation-metadata 이식) — Claude 답의 `message.model`·`effort`·usage, /model 답(「Set model to `Sonnet 5`」),
+    Codex `turn_context`·`token_count`(창 크기 → %). 바꾸기는 에이전트의 `/model` 뿐: Claude 는 그 선택을 새 세션 기본값(settings.json)으로도 저장하므로
+    칩은 반드시 확인을 거친다. 인자 없는 `/model`·`/config` 처럼 터미널만 그리는 명령(`chatCommands.ts` 의 `terminal`)은 보낸 뒤 터미널 + 「Back to Chat」 띠
+  - 화면 읽기: `refreshScreen` 하나 — 미러를 flush 한 뒤 읽고 그 출력 시각까지만 「읽음」. (flush 없이 읽던 1회차는 그리기 전 화면을 읽어 답한 뒤에도
+    카드가 남거나, 새 질문 카드가 안 뜰 수 있었다)
+  - 단축키: `toggleChatView` ⌘⇧M · `focusChatInput` ⌘⇧I · `scrollPaneUp/Down` ⌘⇧PgUp/PgDn(그룹 「Chat View」). 입력칸 안에서도 먹도록 입력 칸 건너뛰기
+    앞에서 맞춘다. 저장된 키와 겹치는 새 기본값은 `effectiveShortcuts` 가 비운다
+- 아직 안 하는 것: 수식·Mermaid, 하위 에이전트 상세·BG, 가상 목록, Claude 회색 제안(Tab), 취소된 보내기 되돌리기, 답 댓글, 터미널 선택 인용,
+  Codex·다중 선택 카드 버튼(실제 화면 사본이 없다) — 이유와 크기는 `gap.md` 「다음 판」
+- 회귀: `t73-chat-view-unit.spec.ts`(해석·리더·메뉴 판정, Electron 없이) · `t74-chat-view.spec.ts`(앱 — `scripts/mock-cli/chat-mock.cjs` 가 화면과
+  기록 파일을 함께 만든다)
+
+#### 16. Phone connection (Settings › Phone)
+- 근거: [`../decisions/0009-phone-connection-second-server.md`](../decisions/0009-phone-connection-second-server.md). 기본 꺼짐 — 켜면 main 안
+  두 번째 서버(`src/main/phone/PhoneServer.ts`)가 `127.0.0.1:47830`(`settings.phone.port`, 시험은 0)에만 듣는다. Control API 와 포트·경로·토큰이 다르다
+- **길**: 사람이 `tailscale serve --bg --https=443 http://127.0.0.1:<port>` 를 돌린다(설정이 명령과 되돌리는 `tailscale serve --https=443 off` 를 보여
+  준다 — 앱은 돌리지 않는다). 폰 주소는 `https://<MagicDNS>/`(QR). Funnel 머리말이 있으면 거절
+- **누가**(`phoneAccess.ts`, 순수 함수 — T75 표): `Tailscale-User-Login` = 이 Mac 의 로그인(`tailscale status --json`, 5분 캐시, 읽기만) 이고
+  `X-Forwarded-For` 가 tailnet 주소면 주인(치기). 그 밖은 짝지은 기기 쿠키(`climanager_phone`, HttpOnly·SameSite=Strict)만 —
+  `PhoneDevices`: 6자리 · 10분 · 5회 틀리면 폐기 · 「can type / view only」 · 해시만 `userData/phone/devices.json`(0600). Host 는 loopback·`*.ts.net`·
+  tailnet 주소만(421), 바꾸는 요청·소켓은 Origin 이 같은 곳만(403)
+- **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/sessions`(세션 한 줄 목록 + 세션 폴더 이름 +
+  상태 점·질문 줄) · `/api/phone/chat/<id>/<conversation|send|answer|interrupt|cancel-queued|discard-queued|send-queued-now|attach|image|tool-output|commands>`
+  · WS `/api/phone/chat/<id>/events`(revision) · WS `/api/phone/terminal?session=<id>` · `POST /api/phone/push/<subscribe|unsubscribe|test>`.
+  만들기·지우기·이름 바꾸기·크기 바꾸기 경로는 없다. 치는 경로는 `drive` 만, 그리고 세션 사건 기록에 `phone-input`(무엇을 했는지만, 글은 안 남김)
+- **Chat**: 같은 프로세스에서 `ConversationService` 를 부른다(IPC 핸들러와 같은 함수). 질문 카드 글(화면에서 읽은 것)은 `maskSecretLines` 를 거친다.
+  변경 알림은 `ConversationService.onChange` → `phoneConversationListeners`
+- **Terminal**: `TerminalManager.attachRemote` — 있는 pty 에만 붙고(만들지 않음) 불변식 6 순서(flush → hold → 스냅샷 → 그 뒤 출력)를 따르되 서버가
+  바로 확인하고 순서를 스스로 지킨다(폰 네트워크가 Mac 출력을 붙잡지 않게). 소켓은 `input` 만 받는다 — 크기 메시지는 `resize_not_allowed`.
+  Mac 창이 크기를 바꾸면 `size` 로 알려 폰이 같은 칸 수로 다시 그린다. 폰은 Mac 칸 수로 그리고 폭에 맞춰 줄여 보인다(확대·가로 밀기)
+- **알림**(`PhonePush.ts`, `web-push`): 폰 서버가 켜져 있는 동안 자기 `SessionScreenStatusPoller` 를 돌려 에이전트 세션의 질문 대기·5초 넘게 일한 턴의
+  끝을 웹 푸시로. Mac 앞에서 앱을 쓰는 중(보이는·포커스된 창 + 2분 안 입력)이면 안 보냄, 세션당 1분에 한 번, 시험 알림은 늘. VAPID 키·구독은
+  `userData/phone/{vapid,push}.json`(0600), 404/410 이면 구독을 지운다. 누르면 `/?session=<id>&view=chat`
+- **폰 페이지**: 렌더러 두 번째 Vite 입구 `src/renderer/phone.html` → `src/renderer/src/phone/`(목록·서랍(768px 아래)·「Chat | Terminal」·키 바·입력줄·
+  짝짓기·알림). Chat 은 데스크톱 `ChatView` 에 `phoneChatTransport`(fetch + WS)를 준다. 서버는 `out/renderer/.vite/manifest.json` 으로 phone.html 이
+  싣는 청크만 낸다(데스크톱 입구·피드백 위젯 청크는 404). 매니페스트·서비스 워커·아이콘은 `src/renderer/public/phone/`
+- 끄기: 설정 스위치 · 사이드바 「Phone on · n connected」의 ✕ · 앱 종료 → 서버 닫힘 + 모든 소켓 끊김. 기기 끊기는 그 기기 소켓·알림까지
+- **세션 목록 순서 = Mac 사이드바 「All sessions」(List) 위→아래**(2회차). 따로 정렬하지 않는다 — main(`phoneSetup.listSessions`)이 사이드바의
+  함수를 그대로 부른다: 사이드바가 세션을 그리는 순서(`sessionsInSidebarOrder` — 렌더러가 `sidebar-session-order` 로 알려 준 id 순서, 작업 공간
+  끌어 옮기기는 렌더러에만 있으므로) → 고정 먼저·최근 본 순(`orderForAllSessions` + `RecentSessions`) → 세션 폴더 먼저(`groupBySessionFolder`,
+  `SidebarAllSessions` 도 같은 함수). 폰(`sessionListLines.ts`)은 받은 순서를 그대로 그리고 Mac 처럼 폴더 머리글·고정 아래 줄만 끼운다. 렌더러 보고가
+  오기 전에는 불러오는 순서(`workspacesInLoadOrder` — `get-workspaces` 와 같은 함수)
+- **터미널 확대**: −/+/핀치로 고른 배율은 그 폰의 `localStorage`(`phone-terminal-zoom`)에 남는다(기기마다 따로). 없으면 폭 맞춤(기본). 좁은 화면에서
+  고른 배율이 돌린 화면의 폭 맞춤보다 작으면 폭 맞춤으로 보인다. 확대 중엔 Mac 커서가 움직이면 보이게 스크롤한다(따라가기)
+- **화면 폭으로 감싸기**(3회차, ovis mirror fold — `terminalFold.ts`·`PhoneTerminalFold.tsx`): 도구줄 ⤶ 를 켜면 xterm 격자는 그대로(입력·버퍼) 두고 안 보이게,
+  화면 줄을 13px 글로 폰 폭에 감싸 다시 그린다. Mac 이 감싼 줄(`isWrapped`)은 합치고, 괘선만 있는 줄은 한 줄로 자르고, 틀의 오른쪽 끝(공백 뒤 `│`)은 버린다.
+  끝을 따라가고, 위·아래 끝을 넘어 밀면 Mac 기록을 넘긴다. 선택은 `localStorage`(`phone-terminal-wrap`) — **기본은 꺼짐(폭 맞춤)**. PTY 크기는 안 바뀐다
+- **앱 안 알림**(3회차, ovis droplet — `droplets.ts`·`DropletPill.tsx`): 폰 페이지가 열려 있는 동안 3초 목록 읽기에서 다른 세션이 새로 `waiting` 이 되거나
+  (에이전트가) 1분 넘게 일하고 `idle` 이 되면 머리줄 아래 알약(z 70 — Chat z 45·서랍 60 위). 누르면 그 세션 Chat. ☰ 에 다른 세션 대기 수 배지.
+  웹 푸시는 페이지가 앞에 있으면 안 뜨므로 그 빈자리를 메운다. Mac 에 새 메시지 없음
+- **터치 화면**(3회차): `(pointer: coarse)` 면 `ChatView touch` — 열 때 입력칸 포커스 안 줌(키보드), Return = 줄바꿈·보내기는 버튼(ovis Composer). 데스크톱 그대로.
+  키 바: Esc Tab ⇧Tab(CSI Z — Claude Code 모드 바꾸기) Ctrl ↑↓←→ ^C ⏎ 열 키가 폭을 똑같이 나눔, 화살표는 길게 누르면 400ms 뒤 50ms 마다 반복(ovis keyRepeat)
+- **재연결**(3회차): 터미널·Chat 소켓 모두 250ms → 5s 로 늘리는 간격(10s 버틴 연결 뒤 처음부터), 화면·네트워크로 돌아오면(`visibilitychange`·`online`·`pageshow`) 바로
+- 회귀: `t75-phone-unit.spec.ts`(접근 표·짝짓기·알림 규칙·키 바·카드 가리기·목록 순서·droplet·길게 누르기·재연결 간격·감싸기 줄) · `t76-phone.spec.ts`(앱 + 폰 창 — 가짜 Tailscale 상태 파일
+  `CLIMANAGER_PHONE_TAILSCALE_STATUS`, 알림은 `CLIMANAGER_PHONE_PUSH_LOG`, 둘 다 시험 userData 일 때만 읽는다) · `t77-phone-text-size.spec.ts`
+  (글씨 크기 세 모드 측정·확대 기억·Mac PTY 크기 그대로) · `t78-phone-quality.spec.ts`(터치 폰 — CDP 터치 에뮬레이션·`Input.dispatchTouchEvent`:
+  앱 안 알림·Return 줄바꿈·키 반복·⇧Tab·감싸기, Mac PTY 크기·`resized` 그대로)
+
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
 - **별칭도 인식한다** — 사용자가 `cldy`로 띄워도 `claude`로 판정한다. 시작 시 `zsh -ic alias`를
@@ -204,6 +286,9 @@ User Action (Renderer)
 }
 ```
 
+폰 연결(`settings.phone = { enabled, port }`)의 비밀은 config.json 이 아니라 `userData/phone/` 에 둔다 — `devices.json`(기기 토큰 해시) ·
+`vapid.json`(웹 푸시 키) · `push.json`(구독), 모두 0600.
+
 디스크에 따로 두는 것: `userData/scrollback/<sessionId>.ans` — 터미널 히스토리 스냅샷(이스케이프 시퀀스, 최대 2000줄).
 사이드바 세션이 지워지면 같이 지우고, 시작 때 고아 파일을 정리한다.
 
@@ -263,6 +348,7 @@ User Action (Renderer)
 - `get-session-relations` → 보이는 관계(`dismissed` 제외) · `session-relations` (main → renderer): 바뀔 때마다 전체 목록
 - `add-session-relation(from, to)` / `remove-session-relation(a, b)`: 손으로 추가·빼기(빼기는 `dismissed` 표시)
 - `get-recent-sessions` → 최근 본 세션 id(최신이 앞, 최대 20 — `RECENT_SESSIONS_MAX`) · `push-recent-session(id)`: 렌더러가 보는 세션(분할이면 포커스된 칸)이 바뀔 때 보고. 저장 키 `recentSessions`(config.json). 닫힘·시작 때 정리, 없는 세션은 탭이 숨김
+- `sidebar-session-order(ids)`(renderer → main, `send`): 사이드바가 세션을 그리는 순서(`sessionsInSidebarOrder`)의 id. 순서가 바뀔 때만, 주 창만 보낸다. main 은 메모리에만 두고 폰 세션 목록의 첫 단계로 쓴다
 - `peek-sessions(ids)` → `SessionPeek[]`: 상태·질문 대기·마지막 줄. 읽기만 한다 — API 읽기와 달리 AI 표시를 붙이지 않는다
 
 #### Inbox
@@ -275,6 +361,24 @@ User Action (Renderer)
 - `create-checklist(title, workspaceId?)` → 새 id 또는 `null` · `update-checklist(id, { title?, due?: string|null, workspaceId?: string|null })` · `remove-checklist(id)` · `add-checklist-item(id, text)` · `update-checklist-item(id, itemId, { text?, done? })` · `remove-checklist-item(id, itemId)` → `boolean`. 검사는 API 와 같은 `checkChecklistInput`·`checkItemTexts`
 - 헤더가 보여 줄 체크리스트(마지막에 본 것)는 렌더러 localStorage `checklists-last-viewed` — 세션을 바꿔도 그대로
 - 코드: `src/main/ChecklistStore.ts` · `ControlApiService.*Checklist*` · `hooks/useChecklists.ts` · `components/Checklists/`(칩·패널·항목 줄·마감 편집) · `utils/dueDate.ts`(마감 표시). 계약은 [`control-api.md`](control-api.md) 「Checklists」
+
+#### Chat view
+- `conversation-get(sessionId, limit?)` → `ConversationSnapshot`(마지막 `limit` 턴 · working · prompt · queued · revision) · `conversation-subscribe` /
+  `conversation-unsubscribe(sessionId)`(창이 닫히면 그 창 구독은 풀린다) · `conversation-changed` (main → renderer, `{ sessionId, revision }`)
+- `chat-send(sessionId, text)` → `ChatSendResult`(`sent` · `queued` · `rejected` + 이유) · `chat-cancel-queued(sessionId)` ·
+  `prompt-answer(sessionId, { signature, optionIndex | customText })` → `PromptAnswerResult`(`answered` · `rejected: prompt_changed …`)
+- 2회차: `chat-discard-queued(sessionId, id)` · `chat-send-queued-now(sessionId, id)` → `ChatSendResult` · `chat-interrupt(sessionId)` → `InterruptResult` ·
+  `chat-image(sessionId, ref)` → data: URL | null · `chat-tool-output(sessionId, ref)` → string | null · `chat-commands(sessionId)` → `ChatCommand[]` ·
+  `chat-save-attachment(name, bytes)` → `AttachResult`(32MB) · `chat-open-path(path)` → `shell.openPath`. `@` 파일 찾기는 기존 `search-files` 를 쓴다
+- 코드: `src/main/ConversationService.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · `chatCommands.ts` · `chatAttachments.ts` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
+  `SessionViewToggle.tsx` · `ChatFilePreview.tsx` · `ChatViewSettings.tsx` · `hooks/useSessionViewMode.ts`(peek 포함) · `utils/electronChatTransport.ts`
+
+#### Phone connection
+- `phone-get-state` → `PhoneState`(실제 상태: running·port·Tailscale 로그인·MagicDNS·serve 명령·기기·짝짓기 코드·연결 수·알림 기기 수) ·
+  `phone-set-enabled(boolean)`(즉시 적용, `settings.phone` 은 main 이 쥔다 — `save-settings` 가 옛 값으로 덮지 않는다) · `phone-start-pairing('drive'|'watch')` ·
+  `phone-cancel-pairing` · `phone-revoke-device(id)` · `phone-revoke-all` → `PhoneState` · `phone-test-push` → `PhoneTestPushResult` ·
+  `phone-state-changed` (main → renderer, 0.1초 묶음)
+- 코드: `src/main/phone/`(`phoneSetup.ts` 배선·IPC) · 렌더러 `components/PhoneSettings.tsx` · `PhoneBadge.tsx` · `hooks/usePhoneState.ts`
 
 #### Communication Patterns
 - **Invoke/Handle**: 비동기 요청-응답 패턴 (워크스페이스 CRUD, Git 작업)

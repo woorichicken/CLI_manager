@@ -1,14 +1,18 @@
+import { ChatViewSettings } from './ChatViewSettings'
 import React, { useState, useEffect } from 'react'
-import { UserSettings, EditorType, TerminalTemplate, HooksSettings, LoopDetectionConfig, LoopCountMode, DEFAULT_LOOP_DETECTION } from '../../../shared/types'
+import { UserSettings, EditorType, TerminalTemplate, HooksSettings, LoopDetectionConfig, LoopCountMode, DEFAULT_LOOP_DETECTION, DEFAULT_PHONE } from '../../../shared/types'
+import { Smartphone } from 'lucide-react'
 import { X, Check, AlertCircle, CircleAlert, Plus, Trash2, Code2, Play, Package, GitBranch, Terminal, Settings as SettingsIcon, Bell, Monitor, Github, FolderOpen, Folder, Download, RefreshCw, Loader2, Home, Keyboard, Bug, Webhook, HelpCircle, ExternalLink, GripVertical, Bot } from 'lucide-react'
 import { Reorder } from 'framer-motion'
 import { v4 as uuidv4 } from 'uuid'
 import { KeyboardSettings } from './KeyboardSettings'
 import { AgentIntegrationSettings } from './AgentIntegrationSettings'
 import { ControlApiSettings } from './ControlApiSettings'
+import { PhoneSettings } from './PhoneSettings'
 import { CHANGELOG_URL } from '../constants/links'
 import { FeedbackModeSetting } from './Feedback/FeedbackModeSetting'
 import { TerminalLinkSchemesSetting } from './TerminalLinkSchemesSetting'
+import { ThirdPartyNotices } from './ThirdPartyNotices'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
@@ -27,7 +31,7 @@ interface SettingsProps {
     onResetOnboarding?: () => void
 }
 
-type SettingsCategory = 'general' | 'editor' | 'terminal' | 'keyboard' | 'agents' | 'hooks' | 'notifications' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'loop' | 'developer'
+type SettingsCategory = 'general' | 'editor' | 'terminal' | 'keyboard' | 'agents' | 'phone' | 'hooks' | 'notifications' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'loop' | 'developer'
 
 export function Settings({ isOpen, onClose, onSave, initialCategory = 'general', onResetOnboarding }: SettingsProps) {
     const [settings, setSettings] = useState<UserSettings>({
@@ -255,6 +259,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
         { id: 'terminal' as const, label: 'Terminal', icon: <Terminal size={16} /> },
         { id: 'keyboard' as const, label: 'Keyboard', icon: <Keyboard size={16} /> },
         { id: 'agents' as const, label: 'Agents', icon: <Bot size={16} /> },
+        { id: 'phone' as const, label: 'Phone', icon: <Smartphone size={16} /> },
         { id: 'hooks' as const, label: 'Hooks', icon: <Webhook size={16} /> },
         { id: 'notifications' as const, label: 'Notifications', icon: <Bell size={16} /> },
         { id: 'port-monitoring' as const, label: 'Port Monitoring', icon: <Monitor size={16} /> },
@@ -289,6 +294,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                 {categories.map(category => (
                                     <button
                                         key={category.id}
+                                        data-testid={`settings-category-${category.id}`}
                                         onClick={() => setActiveCategory(category.id)}
                                         className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors ${activeCategory === category.id
                                                 ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
@@ -322,6 +328,8 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                         >
                                             view changelog
                                         </a>
+                                        <span className="text-[9px] text-gray-600"> · </span>
+                                        <ThirdPartyNotices />
                                     </div>
                                 )}
 
@@ -1006,6 +1014,9 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                         </div>
                                     </div>
 
+                                    {/* Chat view (the Terminal / Chat switch in agent sessions' headers) */}
+                                    <ChatViewSettings settings={settings} setSettings={setSettings} />
+
                                     {/* Terminal Preview */}
                                     <div className="mt-6 pt-6 border-t border-white/10">
                                         <h3 className="text-sm font-semibold text-white mb-3">Terminal Preview</h3>
@@ -1111,6 +1122,12 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                     onChange={({ agentHooks, usageAlerts }) =>
                                         setSettings(prev => ({ ...prev, agentHooks, usageAlerts }))
                                     }
+                                />
+                            )}
+
+                            {activeCategory === 'phone' && (
+                                <PhoneSettings
+                                    onEnabledChange={(enabled) => setSettings(prev => ({ ...prev, phone: { ...DEFAULT_PHONE, ...(prev.phone ?? {}), enabled } }))}
                                 />
                             )}
 

@@ -19,6 +19,7 @@ import {
     debugCountWriteError
 } from '../utils/terminalDebug'
 import { SessionStatus, HooksSettings } from '../../../shared/types'
+import { resizeKeepingBottom } from '../../../shared/terminalResize'
 import { watchStartupPrompts } from '../utils/startupPrompts'
 
 interface TerminalViewProps {
@@ -99,6 +100,16 @@ interface OpenPathRequest {
 /** Opens the path selected in that session's terminal, or the session folder when nothing is selected. */
 export function requestOpenTerminalPath(sessionId: string, target: OpenPathRequest['target']): void {
     window.dispatchEvent(new CustomEvent<OpenPathRequest>(OPEN_PATH_EVENT, { detail: { sessionId, target } }))
+}
+
+/**
+ * The Scroll pane up / down shortcut (ovis Mod+Shift+PageUp/PageDown) on a session shown as its
+ * terminal: one page of its scrollback, keeping one row of the last page in view. Scrolls the
+ * view only — nothing reaches the program, the size does not change.
+ */
+const PAGE_EVENT = 'climanager:page-terminal'
+export function requestTerminalPage(sessionId: string, direction: 1 | -1): void {
+    window.dispatchEvent(new CustomEvent<{ sessionId: string; direction: 1 | -1 }>(PAGE_EVENT, { detail: { sessionId, direction } }))
 }
 
 /** Paths the current selection may mean, best first; null when nothing is selected. */
@@ -277,7 +288,9 @@ export function TerminalView({
 
         let didResize = false
         if (terminal.cols !== dimensions.cols || terminal.rows !== dimensions.rows) {
-            terminal.resize(dimensions.cols, dimensions.rows)
+            // Rows leave from the top and come back from the scrollback, the way the
+            // agent's repaint expects — the same function the mirror in main uses.
+            resizeKeepingBottom(terminal, dimensions.cols, dimensions.rows)
             didResize = true
         }
 
@@ -548,9 +561,8 @@ export function TerminalView({
         resizeManagerRef.current = new TerminalResizeManager(
             () => visibleRef.current,
             () => xtermRef.current?.buffer.normal.length ?? 0,
-            (cols, rows) => applyTerminalDimensions({ cols, rows }),
-            (cols) => applyTerminalDimensions({ cols, rows: xtermRef.current?.rows ?? term.rows }),
-            (rows) => applyTerminalDimensions({ cols: xtermRef.current?.cols ?? term.cols, rows })
+            () => (xtermRef.current ? { cols: xtermRef.current.cols, rows: xtermRef.current.rows } : null),
+            (cols, rows) => applyTerminalDimensions({ cols, rows })
         )
 
         // Context menu handler for right-click on selected text
@@ -948,6 +960,17 @@ export function TerminalView({
         window.addEventListener(OPEN_PATH_EVENT, handleOpenPath)
         return () => window.removeEventListener(OPEN_PATH_EVENT, handleOpenPath)
     }, [id, cwd, openPathInEditor, revealPathInFinder])
+
+    useEffect(() => {
+        const handlePage = (event: Event) => {
+            const { sessionId, direction } = (event as CustomEvent<{ sessionId: string; direction: 1 | -1 }>).detail
+            const term = xtermRef.current
+            if (sessionId !== id || !term) return
+            term.scrollLines(direction * Math.max(1, term.rows - 1))
+        }
+        window.addEventListener(PAGE_EVENT, handlePage)
+        return () => window.removeEventListener(PAGE_EVENT, handlePage)
+    }, [id])
 
     const handleOpenAsLink = useCallback(async () => {
         let text = contextMenu.selectedText

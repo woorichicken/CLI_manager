@@ -7,6 +7,9 @@ import { CLISessionTracker } from './CLISessionTracker'
 import { SESSION_ID_ENV, TerminalAttachResult } from '../shared/types'
 const pty = require('node-pty')
 
+/** A login shell's own name, as `ps` shows it (without the leading `-`). */
+const SHELL_NAMES = /^(zsh|bash|sh|dash|ksh|mksh|tcsh|csh|fish|nu|xonsh|elvish|pwsh|powershell)$/
+
 // Default shell based on platform
 const DEFAULT_SHELL = os.platform() === 'win32' ? 'powershell.exe' : 'zsh'
 
@@ -123,6 +126,11 @@ export class TerminalManager {
     private holds: Map<string, Map<number, NodeJS.Timeout>> = new Map()
     private releaseWaiters: Map<string, Array<() => void>> = new Map()
     private nextAttachToken = 1
+    /**
+     * Views outside Electron (the phone page, through PhoneServer): they get the same flushed
+     * output the windows get, in the same order, and never resize the pty.
+     */
+    private remoteSinks: Map<string, Set<(data: string) => void>> = new Map()
 
     readonly events = new TerminalEventBus()
 
@@ -418,6 +426,47 @@ export class TerminalManager {
         return this.sizes.get(id) ?? null
     }
 
+    /**
+     * A view outside Electron (the phone) attaches to a running pty — never spawns one.
+     * Invariant 6 as `attachView`: output queued so far goes to the views already
+     * listening, output is held while the mirror is serialized, and only what came after
+     * reaches `sink`. The caller confirms at once (it keeps the order itself: it sends the
+     * snapshot before anything `sink` got), so the Mac's own views wait only for the
+     * snapshot, never for a phone's network. No size goes the other way: the phone has
+     * no path to `resize`.
+     */
+    async attachRemote(
+        id: string,
+        sink: (data: string) => void
+    ): Promise<{ snapshot: string | null; cols: number; rows: number; detach: () => void } | null> {
+        if (!this.terminals.has(id)) return null
+        while (this.holds.has(id)) await this.waitForRelease(id)
+        if (!this.terminals.has(id)) return null
+        this.flushOutput(id)
+        const token = this.holdOutput(id)
+        let sinks = this.remoteSinks.get(id)
+        if (!sinks) {
+            sinks = new Set()
+            this.remoteSinks.set(id, sinks)
+        }
+        sinks.add(sink)
+        let snapshot: { data: string; cols: number; rows: number } | null = null
+        try {
+            snapshot = (await this.history?.snapshot(id)) ?? null
+        } catch (e) {
+            console.warn(`[TerminalManager] snapshot(${id}) for a remote view failed:`, e)
+        }
+        const size = snapshot ? { cols: snapshot.cols, rows: snapshot.rows } : this.sizes.get(id) ?? { cols: 80, rows: 30 }
+        // released here: the caller has not sent the snapshot yet, and queues what `sink` gets meanwhile
+        this.releaseHold(id, token)
+        const detach = (): void => {
+            const current = this.remoteSinks.get(id)
+            current?.delete(sink)
+            if (current?.size === 0) this.remoteSinks.delete(id)
+        }
+        return { snapshot: snapshot?.data ?? null, cols: size.cols, rows: size.rows, detach }
+    }
+
     /** Pid of each terminal's shell → terminal id. */
     listPtyPids(): Map<number, string> {
         const pids = new Map<number, string>()
@@ -535,6 +584,32 @@ export class TerminalManager {
         return new Promise((resolve) => {
             execFile('pgrep', ['-P', String(ptyProcess.pid)], (error, stdout) => {
                 resolve(!error && stdout.trim().length > 0)
+            })
+        })
+    }
+
+    /**
+     * What runs in front in the terminal, as an id: its foreground process group. Null when the
+     * shell itself is in front (the agent exited). The Chat view binds a queued message to it: the
+     * agent exiting, or another program taking its place, changes it (ConversationService).
+     * The foreground group, not the shell's children: a background job is not in front, and a
+     * program the shell `exec`ed is the pty's own process. When `ps` cannot answer, 'unknown' —
+     * the binding then cannot tell, as before it existed.
+     */
+    foregroundProgram(id: string): Promise<string | null> {
+        const ptyProcess = this.terminals.get(id)
+        if (!ptyProcess) return Promise.resolve(null)
+        const pid = ptyProcess.pid
+        return new Promise((resolve) => {
+            execFile('ps', ['-o', 'tpgid=,comm=', '-p', String(pid)], (error, stdout) => {
+                const match = /^\s*(-?\d+)\s+(.+?)\s*$/.exec(stdout)
+                if (error || !match) {
+                    resolve('unknown')
+                    return
+                }
+                const group = Number(match[1])
+                const command = match[2].split('/').pop()!.replace(/^-/, '')
+                resolve(group === pid && SHELL_NAMES.test(command) ? null : String(group))
             })
         })
     }
@@ -737,6 +812,13 @@ export class TerminalManager {
                 win.webContents.send(`terminal-output-${id}`, data)
             }
         })
+        for (const sink of this.remoteSinks.get(id) ?? []) {
+            try {
+                sink(data)
+            } catch (e) {
+                console.warn(`[TerminalManager] remote view of ${id} failed:`, e)
+            }
+        }
     }
 
     private clearPendingOutput(id: string): void {

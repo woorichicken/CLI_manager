@@ -627,8 +627,26 @@ export class ControlApiService {
         return this.describe(workspace, session)
     }
 
+    /**
+     * The Chat view's send (ConversationService): the API's own typing path —
+     * bracketed paste for several lines, Enter retried while the prompt stays in
+     * the box, text refused (409 awaiting_input) while a question is on screen —
+     * but the person is typing, not an AI, so the session gets no AI mark.
+     */
+    /**
+     * `allowed`: the Chat sender may still type (a phone device can be disconnected while this waits
+     * — flush, Escape settle, the submit delay). Asked before the text and before every Enter;
+     * false throws `revoked` and nothing more goes (F02).
+     */
+    async typeForChat(sessionId: string, text: string, allowed?: () => boolean): Promise<boolean> {
+        return this.typeAndSubmit(sessionId, { text, submit: true }, allowed)
+    }
+
     /** Returns false only when the text is provably still sitting unsubmitted in the input box. */
-    private async typeAndSubmit(sessionId: string, input: SendInputInput): Promise<boolean> {
+    private async typeAndSubmit(sessionId: string, input: SendInputInput, allowed?: () => boolean): Promise<boolean> {
+        const stillAllowed = (): void => {
+            if (allowed && !allowed()) throw new ControlApiError(401, 'revoked', 'This device was disconnected from the Mac.')
+        }
         this.requireSession(sessionId)
         const keys = (input.keys ?? []).map((key) => resolveKey(key))
 
@@ -664,12 +682,14 @@ export class ControlApiService {
             const text = submit ? input.text.replace(/[\r\n]+$/, '') : input.text
             if (text.length > 0) {
                 await this.settleAfterEscape(sessionId)
+                stillAllowed()
                 this.write(sessionId, this.encodeText(sessionId, text))
             }
             if (submit) {
                 await sleep(submitDelay(text.length))
+                stillAllowed()
                 this.write(sessionId, '\r')
-                if (text.length > 0) submitted = await this.confirmSubmitted(sessionId, text)
+                if (text.length > 0) submitted = await this.confirmSubmitted(sessionId, text, stillAllowed)
             }
         }
 
@@ -699,7 +719,7 @@ export class ControlApiService {
      * program draws one and the prompt was visible in it; anything else (a
      * shell, a multi-line paste shown as a placeholder) is taken as submitted.
      */
-    private async confirmSubmitted(sessionId: string, text: string): Promise<boolean> {
+    private async confirmSubmitted(sessionId: string, text: string, beforeEnter: () => void = () => undefined): Promise<boolean> {
         const head = text.replace(/\s+/g, ' ').trim().slice(0, SUBMIT_HEAD_CHARS)
         if (!head) return true
         const stillInBox = async (): Promise<boolean> => {
@@ -716,6 +736,7 @@ export class ControlApiService {
             }
             if (attempt === SUBMIT_RETRIES) break
             console.warn(`[control-api] prompt still in the input box of ${sessionId}; pressing Enter again`)
+            beforeEnter()
             this.write(sessionId, '\r')
         }
         return !(await stillInBox())

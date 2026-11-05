@@ -38,7 +38,15 @@ import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
 import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText } from './ChecklistStore'
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
+import { TranscriptReader } from './TranscriptReader'
+import { ConversationService } from './ConversationService'
+import { createChatCommandLister } from './chatCommands'
+import { saveChatAttachment } from './chatAttachments'
+import type { PromptAnswer } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
+import { FeedbackModeState } from './feedbackMode'
+import { setupPhone, phoneConversationListeners, type PhoneSetup } from './phone/phoneSetup'
+import { workspacesInLoadOrder } from './workspaceLoadOrder'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
 
@@ -327,6 +335,18 @@ async function saveHistoryBeforeQuit(): Promise<void> {
 const sessionRelations = new SessionRelations(store, (visible) => broadcast(SESSION_RELATIONS_CHANNEL, visible))
 const sessionFolders = new SessionFolders(store)
 const recentSessions = new RecentSessions(store)
+/** sessionsInSidebarOrder as the renderer last computed it; null until the window has drawn its sidebar */
+let sidebarSessionOrder: string[] | null = null
+/** The feedback widget is shown on this Mac (the renderer reports it); the phone page follows it. */
+const feedbackMode = new FeedbackModeState()
+/** What a feedback report carries about a terminal — the desktop widget over IPC, the phone over its server. */
+const feedbackTerminalContext = (sessionId: unknown) => buildFeedbackTerminalContext(sessionId, {
+    terminals: terminalManager,
+    mirror: terminalMirror,
+    log: terminalEventLog,
+    agentStatus: (id) => agentStatusResolver.getStatus(id)?.status ?? null,
+    mask: { homeDir: os.homedir(), username: currentUsername() }
+})
 
 /** Unread inbox requests on the Dock icon, so a request is seen from the browser the user is signing in with. */
 function updateInboxBadge(unread: number): void {
@@ -356,6 +376,8 @@ const controlApiService = new ControlApiService({
         terminalEventLog.forget(sessionId)
         recentSessions.forget(sessionId)
         inbox.forget(sessionId)
+        conversationService.forget(sessionId)
+        phone?.forgetSession(sessionId)
     }
 })
 const controlApiServer = new ControlApiServer({
@@ -363,6 +385,37 @@ const controlApiServer = new ControlApiServer({
     store,
     appVersion: app.getVersion()
 })
+
+// Chat view: a session's conversation read from the agent's own transcript file, plus
+// what its screen says (working, a question menu). Watches only sessions a view is open on.
+const claudeConfigDir = (): string => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+const codexHome = (): string => process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
+const conversationService = new ConversationService({
+    session: (id) => {
+        const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
+        for (const workspace of workspaces) {
+            const session = workspace.sessions?.find((s) => s.id === id)
+            if (session) return { cwd: session.cwd || workspace.path, cliSessionId: session.cliSessionId, cliToolName: session.cliToolName }
+        }
+        return null
+    },
+    reader: new TranscriptReader({ claudeConfigDir, codexHome }),
+    listCommands: createChatCommandLister({ home: os.homedir(), claudeConfigDir, codexHome }),
+    home: os.homedir(),
+    mirror: terminalMirror,
+    hasTerminal: (id) => terminalManager.hasTerminal(id),
+    writeInput: (id, data) => terminalManager.writeInput(id, data),
+    type: (id, text, allowed) => controlApiService.typeForChat(id, text, allowed),
+    // a queued message goes only to the program it was queued for (F03)
+    agentProcess: (id) => terminalManager.foregroundProgram(id),
+    onChange: (sessionId, revision) => {
+        broadcast('conversation-changed', { sessionId, revision })
+        phoneConversationListeners.emit(sessionId, revision)
+    }
+})
+
+// Phone connection (Settings › Phone): a second server, off by default, set up once the app is ready.
+let phone: PhoneSetup | null = null
 
 // Sidebar status dots read from the screen mirrors (Settings > General). Off by default;
 // when off there is no timer at all.
@@ -1353,12 +1406,7 @@ app.whenReady().then(async () => {
         ensureHomeWorkspace()
         const workspaces = store.get('workspaces') as Workspace[]
 
-        // Sort: home first, then regular workspaces by createdAt
-        return workspaces.sort((a, b) => {
-            if (a.isHome) return -1
-            if (b.isHome) return 1
-            return a.createdAt - b.createdAt
-        })
+        return workspacesInLoadOrder(workspaces)
     })
 
     ipcMain.handle('sync-worktree-workspaces', async (): Promise<IPCResult<WorktreeSyncSummary>> => {
@@ -1823,6 +1871,10 @@ app.whenReady().then(async () => {
     })
 
     ipcMain.handle('save-settings', (_, settings: UserSettings) => {
+        // The phone switch is applied the moment it is flipped (phone-set-enabled, the sidebar
+        // badge); a Settings window opened before that must not save its old value back.
+        const savedPhone = (store.get('settings') as UserSettings | undefined)?.phone
+        if (savedPhone) settings = { ...settings, phone: savedPhone }
         store.set('settings', settings)
         applySessionStatusSetting(settings)
         return true
@@ -1889,13 +1941,10 @@ app.whenReady().then(async () => {
     // Feedback widget transport — see FeedbackRelay for why it leaves through main
     ipcMain.handle('feedback-relay', (_, request: FeedbackRelayRequest) => relayFeedbackRequest(request))
     // What a feedback report carries about the terminal it is about (see feedbackTerminalContext)
-    ipcMain.handle('feedback-terminal-context', (_, sessionId: unknown) => buildFeedbackTerminalContext(sessionId, {
-        terminals: terminalManager,
-        mirror: terminalMirror,
-        log: terminalEventLog,
-        agentStatus: (id) => agentStatusResolver.getStatus(id)?.status ?? null,
-        mask: { homeDir: os.homedir(), username: currentUsername() }
-    }))
+    ipcMain.handle('feedback-terminal-context', (_, sessionId: unknown) => feedbackTerminalContext(sessionId))
+    // Whether this Mac shows the widget — the renderer knows (build values, password unlock); the
+    // phone page asks main through /api/phone/me (see feedbackMode.ts)
+    ipcMain.on('feedback-mode', (_, on: unknown) => feedbackMode.report(on))
 
     // Template handlers
     ipcMain.handle('get-templates', () => {
@@ -3254,6 +3303,11 @@ app.whenReady().then(async () => {
     ipcMain.handle('push-recent-session', (_e, sessionId: string): void => {
         if (typeof sessionId === 'string' && sessionId) recentSessions.push(sessionId)
     })
+    // The order the sidebar draws sessions in. Its workspace order lives in the renderer (a drag
+    // reorders it there; a restart loads Home, then by createdAt), so the phone's list takes it from here.
+    ipcMain.on('sidebar-session-order', (_e, sessionIds: unknown) => {
+        if (Array.isArray(sessionIds)) sidebarSessionOrder = sessionIds.filter((id): id is string => typeof id === 'string')
+    })
     // Inbox: requests sessions sent through the Control API (InboxStore). The renderer reads
     // them here and marks one read only when the user checks it off, or all with "Mark all read"
     // (report b165acc4: opening a session must not clear what it asked for).
@@ -3299,6 +3353,84 @@ app.whenReady().then(async () => {
     ipcMain.handle('remove-checklist-item', (_e, id: unknown, itemId: unknown): boolean =>
         typeof id === 'string' && typeof itemId === 'string' && checklists.removeItem(id, itemId) !== null
     )
+    // Chat view (ConversationService). A window's subscriptions end with it.
+    const chatSubscriptions = new Map<number, Map<string, number>>()
+    ipcMain.handle('conversation-get', (_e, sessionId: string, limit?: number) =>
+        typeof sessionId === 'string' ? conversationService.getConversation(sessionId, typeof limit === 'number' ? limit : undefined) : null
+    )
+    ipcMain.handle('conversation-subscribe', (event, sessionId: string): void => {
+        if (typeof sessionId !== 'string') return
+        const sender = event.sender
+        let subs = chatSubscriptions.get(sender.id)
+        if (!subs) {
+            subs = new Map()
+            chatSubscriptions.set(sender.id, subs)
+            sender.once('destroyed', () => {
+                for (const [id, count] of chatSubscriptions.get(sender.id) ?? []) {
+                    for (let i = 0; i < count; i++) conversationService.unsubscribe(id)
+                }
+                chatSubscriptions.delete(sender.id)
+            })
+        }
+        subs.set(sessionId, (subs.get(sessionId) ?? 0) + 1)
+        conversationService.subscribe(sessionId)
+    })
+    ipcMain.handle('conversation-unsubscribe', (event, sessionId: string): void => {
+        const subs = chatSubscriptions.get(event.sender.id)
+        const count = subs?.get(sessionId) ?? 0
+        if (!subs || count === 0) return
+        if (count === 1) subs.delete(sessionId)
+        else subs.set(sessionId, count - 1)
+        conversationService.unsubscribe(sessionId)
+    })
+    ipcMain.handle('chat-send', (_e, sessionId: string, text: string) =>
+        typeof sessionId === 'string' && typeof text === 'string'
+            ? conversationService.send(sessionId, text)
+            : { status: 'rejected', reason: 'empty', message: 'Nothing to send.' }
+    )
+    ipcMain.handle('chat-cancel-queued', (_e, sessionId: string): void => {
+        if (typeof sessionId === 'string') conversationService.cancelQueued(sessionId)
+    })
+    ipcMain.handle('chat-discard-queued', (_e, sessionId: unknown, id: unknown): boolean => {
+        return typeof sessionId === 'string' && typeof id === 'string' ? conversationService.discardQueued(sessionId, id) : false
+    })
+    ipcMain.handle('chat-send-queued-now', (_e, sessionId: unknown, id: unknown) =>
+        typeof sessionId === 'string' && typeof id === 'string'
+            ? conversationService.sendQueuedNow(sessionId, id)
+            : { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
+    )
+    ipcMain.handle('chat-interrupt', (_e, sessionId: unknown) =>
+        typeof sessionId === 'string'
+            ? conversationService.interrupt(sessionId)
+            : { status: 'rejected', reason: 'not_running', message: 'No such session.' }
+    )
+    ipcMain.handle('chat-image', (_e, sessionId: unknown, ref: unknown) =>
+        typeof sessionId === 'string' && typeof ref === 'string' ? conversationService.getImage(sessionId, ref) : null
+    )
+    ipcMain.handle('chat-tool-output', (_e, sessionId: unknown, ref: unknown) =>
+        typeof sessionId === 'string' && typeof ref === 'string' ? conversationService.getToolOutput(sessionId, ref) : null
+    )
+    ipcMain.handle('chat-commands', (_e, sessionId: unknown) =>
+        typeof sessionId === 'string' ? conversationService.listCommands(sessionId) : []
+    )
+    // A pasted picture has no path of its own: it is stored for the agent to read (`@path` in the message).
+    ipcMain.handle('chat-save-attachment', (_e, name: unknown, bytes: unknown) =>
+        saveChatAttachment(path.join(os.tmpdir(), 'climanager-chat'), typeof name === 'string' ? name : 'pasted', bytes)
+    )
+    // A file the chat names that the preview cannot show (a PDF, a video): the Mac's own app for it.
+    ipcMain.handle('chat-open-path', async (_e, target: unknown): Promise<{ success: boolean; error?: string }> => {
+        if (typeof target !== 'string' || !path.isAbsolute(target) || !existsSync(target)) return { success: false, error: 'File not found' }
+        const error = await shell.openPath(target)
+        return error ? { success: false, error } : { success: true }
+    })
+    ipcMain.handle('prompt-answer', (_e, sessionId: string, answer: PromptAnswer) => {
+        const valid = typeof sessionId === 'string' && answer && typeof answer.signature === 'string' &&
+            (('optionIndex' in answer && Number.isInteger(answer.optionIndex)) || ('customText' in answer && typeof answer.customText === 'string'))
+        return valid
+            ? conversationService.answerPrompt(sessionId, answer)
+            : { status: 'rejected', reason: 'bad_answer', message: 'Pick an option or type an answer.' }
+    })
+
     ipcMain.handle('peek-sessions', (_e, sessionIds: string[]) =>
         controlApiService.peekSessions(Array.isArray(sessionIds) ? sessionIds.filter((id) => typeof id === 'string') : [])
     )
@@ -3357,6 +3489,28 @@ app.whenReady().then(async () => {
         if (state.error) console.error('[control-api]', state.error)
     })
 
+    phone = setupPhone({
+        store,
+        terminals: terminalManager,
+        mirror: terminalMirror,
+        eventLog: terminalEventLog,
+        conversation: conversationService,
+        hookStatus: (id) => agentStatusResolver.getStatus(id),
+        broadcast,
+        mask: { homeDir: os.homedir(), username: currentUsername() },
+        userDataDir: app.getPath('userData'),
+        staticDir: join(__dirname, '../renderer'),
+        recentSessions: () => recentSessions.list(),
+        sidebarSessionOrder: () => sidebarSessionOrder,
+        feedback: {
+            enabled: () => feedbackMode.enabled(),
+            appVersion: () => app.getVersion(),
+            relay: relayFeedbackRequest,
+            terminalContext: feedbackTerminalContext
+        }
+    })
+    void phone.start()
+
     createWindow()
 
     app.on('activate', function () {
@@ -3387,6 +3541,7 @@ app.on('window-all-closed', () => {
 // Remove the discovery file so tools do not try a server that is gone.
 app.on('will-quit', () => {
     void controlApiServer.stop()
+    void phone?.server.stop()
     terminalMirror.disposeAll()
 })
 

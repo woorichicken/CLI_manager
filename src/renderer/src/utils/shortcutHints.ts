@@ -1,11 +1,12 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { DEFAULT_SHORTCUTS, KeyBinding, KeyboardShortcutMap, ShortcutAction } from '../../../shared/types'
+import { DEFAULT_SHORTCUTS, effectiveShortcuts, KeyBinding, KeyboardShortcutMap, ShortcutAction } from '../../../shared/types'
 import { isMac } from './platform'
 
 // Keys a binding stores by name (`KeyboardEvent.key`), shown as their key-cap symbol.
 const KEY_SYMBOLS: Record<string, string> = {
     ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
     Backspace: isMac ? '⌫' : 'Backspace', Delete: isMac ? '⌦' : 'Delete', Enter: isMac ? '↩' : 'Enter',
+    PageUp: 'PgUp', PageDown: 'PgDn',
 }
 
 function formatModifier(mod: string): string {
@@ -27,7 +28,7 @@ export function formatBinding(binding: KeyBinding): string {
 
 /** "New page" + ⌘⌥N → "New page (⌘⌥N)". */
 export function withShortcut(label: string, binding: KeyBinding | undefined): string {
-    return binding ? `${label} (${formatBinding(binding)})` : label
+    return binding?.code ? `${label} (${formatBinding(binding)})` : label
 }
 
 /*
@@ -40,7 +41,7 @@ let activeKey = JSON.stringify(DEFAULT_SHORTCUTS)
 const listeners = new Set<() => void>()
 
 export function setActiveShortcuts(overrides: Partial<KeyboardShortcutMap> | undefined): void {
-    const next = { ...DEFAULT_SHORTCUTS, ...overrides }
+    const next = effectiveShortcuts(overrides)
     const nextKey = JSON.stringify(next)
     // Settings are replaced on every change; only a different binding should re-render the buttons.
     if (nextKey === activeKey) return

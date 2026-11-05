@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "CLI Manager",
+  "short_name": "CLI Manager",
+  "description": "Your Mac's CLI Manager sessions on the phone: chat with agents and use their terminals.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "lang": "en",
+  "theme_color": "#0f0f12",
+  "background_color": "#0f0f12",
+  "icons": [
+    { "src": "/phone/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/phone/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

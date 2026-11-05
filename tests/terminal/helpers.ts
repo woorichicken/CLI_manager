@@ -33,6 +33,8 @@ export interface SeedSession {
     memo?: string
     /** Memo pages after the first. */
     memoPages?: string[]
+    /** Pinned to the top of All sessions. */
+    isPinned?: boolean
 }
 
 export interface SeedWorkspace {
@@ -111,7 +113,8 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
                 ...(s.cliToolName ? { cliToolName: s.cliToolName } : {}),
                 ...(s.cliCommand ? { cliCommand: s.cliCommand } : {}),
                 ...(s.memo ? { memo: s.memo } : {}),
-                ...(s.memoPages ? { memoPages: s.memoPages } : {})
+                ...(s.memoPages ? { memoPages: s.memoPages } : {}),
+                ...(s.isPinned ? { isPinned: true } : {})
             })),
             // get-workspaces sorts by createdAt, so seeded order has to be encoded here
             createdAt: 1700000000000 + index,

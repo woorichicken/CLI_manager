@@ -30,6 +30,7 @@ know X".
 | [0006](0006-control-api-reaches-every-session.md) | While the Control API is on, it reaches every session | active (mirror lifetime superseded by 0008) |
 | [0007](0007-api-cleans-up-only-its-own-registrations.md) | The API cleans up only the workspaces it registered | active |
 | [0008](0008-terminal-history-lives-in-main.md) | Terminal history lives in the main process; views attach to it | active |
+| [0009](0009-phone-connection-second-server.md) | A phone reaches the app through a second, opt-in server — never the Control API | active |
 
 ## Template
 

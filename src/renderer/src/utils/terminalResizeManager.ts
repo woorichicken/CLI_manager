@@ -1,20 +1,24 @@
 /**
  * Adapted from VS Code's TerminalResizeDebouncer.
  * Keeps resize work cheap while the terminal is hidden and reduces horizontal reflow churn.
+ *
+ * Rows and columns always go out together, as one pty resize. They used to be
+ * split — rows at once, columns 100ms later — so one window drag sent two
+ * SIGWINCHes and Claude Code repainted twice, each repaint able to leave a seam
+ * in the scrollback (backlog 「PTY resize 를 두 번」, day-1023).
  */
 export class TerminalResizeManager {
     private latestCols = 0
     private latestRows = 0
-    private resizeXTimer: NodeJS.Timeout | null = null
-    private resizeYTimer: NodeJS.Timeout | null = null
+    private resizeTimer: NodeJS.Timeout | null = null
     private idleCallbackId: number | null = null
 
     constructor(
         private readonly isVisible: () => boolean,
         private readonly getBufferLength: () => number,
-        private readonly resizeBoth: (cols: number, rows: number) => void,
-        private readonly resizeX: (cols: number) => void,
-        private readonly resizeY: (rows: number) => void
+        /** The size the terminal has now; a change of rows alone needs no reflow and is not delayed. */
+        private readonly getCurrentSize: () => { cols: number; rows: number } | null,
+        private readonly resizeBoth: (cols: number, rows: number) => void
     ) { }
 
     resize(cols: number, rows: number, immediate: boolean): void {
@@ -32,21 +36,28 @@ export class TerminalResizeManager {
             return
         }
 
-        // Vertical resize is cheap. Horizontal resize triggers more reflow in xterm.
-        this.resizeY(rows)
-        if (this.resizeXTimer) {
-            clearTimeout(this.resizeXTimer)
+        // Only rows changed and no column change is waiting: cheap, apply now.
+        const current = this.getCurrentSize()
+        if (!this.resizeTimer && current && current.cols === cols) {
+            this.resizeBoth(cols, rows)
+            return
         }
-        this.resizeXTimer = setTimeout(() => {
-            this.resizeXTimer = null
-            this.resizeX(this.latestCols)
+
+        // A column change reflows the whole buffer: wait until the drag pauses,
+        // then send rows and columns in one go.
+        if (this.resizeTimer) {
+            clearTimeout(this.resizeTimer)
+        }
+        this.resizeTimer = setTimeout(() => {
+            this.resizeTimer = null
+            this.resizeBoth(this.latestCols, this.latestRows)
         }, 100)
     }
 
     flush(): void {
         this.cancelIdleResize()
 
-        if (this.resizeXTimer || this.resizeYTimer) {
+        if (this.resizeTimer) {
             this.clearTimers()
             this.resizeBoth(this.latestCols, this.latestRows)
         }
@@ -64,8 +75,7 @@ export class TerminalResizeManager {
 
         const callback = () => {
             this.idleCallbackId = null
-            this.resizeX(this.latestCols)
-            this.resizeY(this.latestRows)
+            this.resizeBoth(this.latestCols, this.latestRows)
         }
 
         if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
@@ -73,20 +83,16 @@ export class TerminalResizeManager {
             return
         }
 
-        this.resizeYTimer = setTimeout(() => {
-            this.resizeYTimer = null
+        this.resizeTimer = setTimeout(() => {
+            this.resizeTimer = null
             callback()
         }, 100)
     }
 
     private clearTimers(): void {
-        if (this.resizeXTimer) {
-            clearTimeout(this.resizeXTimer)
-            this.resizeXTimer = null
-        }
-        if (this.resizeYTimer) {
-            clearTimeout(this.resizeYTimer)
-            this.resizeYTimer = null
+        if (this.resizeTimer) {
+            clearTimeout(this.resizeTimer)
+            this.resizeTimer = null
         }
     }
 

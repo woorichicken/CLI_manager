@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Sidebar } from './components/Sidebar/index'
-import { TerminalView, requestOpenTerminalPath } from './components/TerminalView'
+import { PhoneBadge } from './components/PhoneBadge'
+import { TerminalView, requestOpenTerminalPath, requestTerminalPage } from './components/TerminalView'
 import { SessionMemo, SessionMemoHandle } from './components/SessionMemo'
 import { StatusBar } from './components/StatusBar'
 import { Settings } from './components/Settings'
@@ -13,6 +14,12 @@ import { getErrorMessage } from './utils/errorMessages'
 import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare, Bot } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
 import { SessionBreadcrumb } from './components/SessionBreadcrumb'
+import { SessionViewToggle } from './components/SessionViewToggle'
+import { SessionChatSlot } from './components/SessionChatSlot'
+import { ChatFilePreview } from './components/ChatFilePreview'
+import { isAgentSession } from './utils/agentSession'
+import { getSessionViewMode, setSessionViewMode } from './hooks/useSessionViewMode'
+import { sendChatCommand } from './components/ChatView/chatContext'
 import { buildSessionBreadcrumb } from './utils/sessionBreadcrumb'
 import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
 import { HeaderChecklists } from './components/Checklists/HeaderChecklists'
@@ -27,7 +34,7 @@ import { BusyOverlay } from './components/BusyOverlay'
 import { FeedbackGate } from './components/Feedback/FeedbackGate'
 import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { mostRecentOtherSession, neighborSession, sidebarWorkspaceOrder, type SessionLanding } from './utils/sessionNavigation'
+import { mostRecentOtherSession, neighborSession, sessionsInSidebarOrder, sidebarWorkspaceOrder, type SessionLanding } from './utils/sessionNavigation'
 import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
@@ -575,9 +582,10 @@ function App() {
         return () => clearTimeout(timer)
     }, [sessionLinkNotice])
 
-    const activeAiControl = activeSession
-        ? workspaces.find(w => w.id === activeWorkspace?.id)?.sessions.find(s => s.id === activeSession.id)?.aiControl
+    const activeLiveSession = activeSession
+        ? workspaces.find(w => w.id === activeWorkspace?.id)?.sessions.find(s => s.id === activeSession.id)
         : undefined
+    const activeAiControl = activeLiveSession?.aiControl
 
     // Single view only: a split view shows several sessions at once and has no one place in a history.
     const sessionHistory = useSessionHistory(
@@ -1140,6 +1148,19 @@ function App() {
         () => sidebarWorkspaceOrder(sortedWorkspaces, folders, settings.showWorktrees ?? true, settings.showPlayground ?? true),
         [sortedWorkspaces, folders, settings.showWorktrees, settings.showPlayground]
     )
+    // The phone's session list is the sidebar's All sessions: main takes the order the sidebar draws
+    // sessions in from here (a workspace drag lives only in this renderer) and applies the same
+    // All sessions steps to it. Sent only when the order itself changes.
+    const sidebarSessionIdsKey = useMemo(
+        () => sessionsInSidebarOrder(sortedWorkspaces, folders, settings.showWorktrees ?? true, settings.showPlayground ?? true)
+            .map(entry => entry.session.id).join('\n'),
+        [sortedWorkspaces, folders, settings.showWorktrees, settings.showPlayground]
+    )
+    useEffect(() => {
+        // grid/fullscreen windows render this App too, but only the main window has the sidebar
+        if (!sessionsRestored || new URLSearchParams(window.location.search).get('mode') === 'fullscreen') return
+        window.api.reportSidebarSessionOrder(sidebarSessionIdsKey ? sidebarSessionIdsKey.split('\n') : [])
+    }, [sidebarSessionIdsKey, sessionsRestored])
 
     // Centralized keyboard shortcuts (session/workspace navigation, search, sidebar, settings, etc.)
     useKeyboardShortcuts({
@@ -1187,6 +1208,26 @@ function App() {
             }
         },
         onOpenSessionPath: requestOpenTerminalPath,
+        // Chat view (Settings › Keyboard › Chat View). The session in view; only agent sessions have a chat.
+        onToggleChatView: (sessionId) => {
+            const session = workspaces.flatMap(w => w.sessions ?? []).find(s => s.id === sessionId)
+            if (!isAgentSession(session)) return
+            const next = getSessionViewMode(sessionId) === 'chat' ? 'terminal' : 'chat'
+            setSessionViewMode(sessionId, next)
+            // the keys follow the eyes: the chat's box, or the terminal
+            window.setTimeout(() => {
+                if (next === 'chat') sendChatCommand(sessionId, 'focus')
+                else document.querySelector<HTMLTextAreaElement>(`[data-session-id="${CSS.escape(sessionId)}"] .xterm-helper-textarea`)?.focus()
+            }, 60)
+        },
+        onFocusChatInput: (sessionId) => {
+            if (getSessionViewMode(sessionId) === 'chat' && sendChatCommand(sessionId, 'focus')) return
+            document.querySelector<HTMLTextAreaElement>(`[data-session-id="${CSS.escape(sessionId)}"] .xterm-helper-textarea`)?.focus()
+        },
+        onScrollPane: (sessionId, direction) => {
+            if (getSessionViewMode(sessionId) === 'chat' && sendChatCommand(sessionId, direction < 0 ? 'pageUp' : 'pageDown')) return
+            requestTerminalPage(sessionId, direction)
+        },
     })
 
     const handleAddWorktreeWorkspace = async (parentWorkspaceId: string, branchName: string) => {
@@ -1417,7 +1458,7 @@ function App() {
         }
     }
 
-    const handleOpenSettings = (category: 'general' | 'port-monitoring' | 'agents') => {
+    const handleOpenSettings = (category: 'general' | 'port-monitoring' | 'agents' | 'phone') => {
         setSettingsCategory(category)
         setSettingsOpen(true)
     }
@@ -1497,6 +1538,7 @@ function App() {
                     onDragEndSession={handleSidebarDragEnd}
                     sessionFolders={sessionFolders}
                     sessionFolderActions={sessionFolderActions}
+                    footerSlot={<PhoneBadge onOpenSettings={() => handleOpenSettings('phone')} />}
                     inboxSlot={
                         <InboxButton
                             placement="sidebar"
@@ -1511,8 +1553,10 @@ function App() {
             <div className="flex-1 glass-panel m-2 ml-0 rounded-lg overflow-hidden flex flex-col">
                 {/* Header - minimized in split view */}
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} border-b border-white/10 flex items-center px-4 draggable justify-between relative z-10 transition-all`}>
-                    {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers */}
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers.
+                        overflow-hidden: when the right row needs the whole width (390 wide), this side is cut rather than
+                        drawn under it; the sidebar button keeps its room (found-defects 「390 헤더 겹침」) */}
+                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden" style={!isSidebarOpen ? { minWidth: 32 } : undefined}>
                         {!isSidebarOpen && (
                             <button
                                 onClick={() => setIsSidebarOpen(true)}
@@ -1558,7 +1602,14 @@ function App() {
                             </span>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 no-drag shrink-0">
+                    {/* A row wider than the header scrolls sideways (no bar) instead of covering the left side */}
+                    <div className="flex items-center gap-2 no-drag min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                        {/* Terminal | Chat — first on the right, where the button row never covers it (found-defects:
+                            at 390 the row pushes into the left group). Read the live session: cliToolName arrives
+                            after the CLI starts. */}
+                        {!splitLayout && activeSession && isAgentSession(activeLiveSession) && (
+                            <SessionViewToggle sessionId={activeSession.id} />
+                        )}
                         {/* Checklists belong to no session, so they stay in split view too */}
                         <HeaderChecklists
                             open={checklistsOpen}
@@ -1902,6 +1953,13 @@ function App() {
                                             onSessionLink={handleSessionLink}
                                             linkSchemes={settings.terminalLinkSchemes}
                                         />
+                                        <SessionChatSlot
+                                            sessionId={session.id}
+                                            visible={isVisible && !isInGridView}
+                                            enabled={isAgentSession(session)}
+                                            fontSize={settings.fontSize}
+                                            preferences={settings.chat}
+                                        />
                                         <SessionMemo
                                             ref={(handle) => {
                                                 if (handle) {
@@ -2073,6 +2131,9 @@ function App() {
                 onFileSelect={handleFileSelect}
                 initialMode={fileSearchMode}
             />
+
+            {/* Files the Chat view names: pictures and text previewed, the rest in the Mac's own app */}
+            <ChatFilePreview />
 
             {/* Feedback widget — dev builds, or a machine unlocked in Settings > Feedback */}
             <FeedbackGate />

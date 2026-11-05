@@ -19,6 +19,9 @@
         "paths": {
             "@renderer/*": [
                 "src/renderer/src/*"
+            ],
+            "@tanstack/highlight/*": [
+                "node_modules/@tanstack/highlight/dist/*"
             ]
         }
     },

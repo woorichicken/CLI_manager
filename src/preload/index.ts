@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
+import type { AttachResult, ChatCommand, ChatSendResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { PhoneState } from '../shared/types'
+import type { PhoneTestPushResult } from '../shared/phone'
 
 // Custom APIs for renderer
 const api = {
@@ -36,6 +39,7 @@ const api = {
     getAppVersion: (): Promise<string> => ipcRenderer.invoke('get-app-version'),
     feedbackRelay: (request: FeedbackRelayRequest): Promise<FeedbackRelayResponse> => ipcRenderer.invoke('feedback-relay', request),
     feedbackTerminalContext: (sessionId: string | null): Promise<FeedbackTerminalContext> => ipcRenderer.invoke('feedback-terminal-context', sessionId),
+    reportFeedbackMode: (on: boolean): void => ipcRenderer.send('feedback-mode', on),
 
     // Templates
     getTemplates: (): Promise<any[]> => ipcRenderer.invoke('get-templates'),
@@ -322,6 +326,7 @@ const api = {
     moveSessionToSessionFolder: (sessionId: string, folderId: string | null): Promise<boolean> => ipcRenderer.invoke('move-session-to-session-folder', sessionId, folderId),
     getRecentSessions: (): Promise<string[]> => ipcRenderer.invoke('get-recent-sessions'),
     pushRecentSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('push-recent-session', sessionId),
+    reportSidebarSessionOrder: (sessionIds: string[]): void => ipcRenderer.send('sidebar-session-order', sessionIds),
     getInbox: (): Promise<InboxRequest[]> => ipcRenderer.invoke('get-inbox'),
     onInbox: (callback: (requests: InboxRequest[]) => void) => {
         const listener = (_e: unknown, requests: InboxRequest[]) => callback(requests)
@@ -342,7 +347,42 @@ const api = {
     addChecklistItem: (id: string, text: string): Promise<boolean> => ipcRenderer.invoke('add-checklist-item', id, text),
     updateChecklistItem: (id: string, itemId: string, patch: { text?: string; done?: boolean }): Promise<boolean> => ipcRenderer.invoke('update-checklist-item', id, itemId, patch),
     removeChecklistItem: (id: string, itemId: string): Promise<boolean> => ipcRenderer.invoke('remove-checklist-item', id, itemId),
-    peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds)
+    peekSessions: (sessionIds: string[]): Promise<SessionPeek[]> => ipcRenderer.invoke('peek-sessions', sessionIds),
+    // Chat view (ConversationService) — wrapped as a ChatTransport by renderer/src/utils/electronChatTransport.ts
+    // Phone connection (Settings › Phone)
+    getPhoneState: (): Promise<PhoneState> => ipcRenderer.invoke('phone-get-state'),
+    setPhoneEnabled: (enabled: boolean): Promise<PhoneState> => ipcRenderer.invoke('phone-set-enabled', enabled),
+    startPhonePairing: (role: 'drive' | 'watch'): Promise<PhoneState> => ipcRenderer.invoke('phone-start-pairing', role),
+    cancelPhonePairing: (): Promise<PhoneState> => ipcRenderer.invoke('phone-cancel-pairing'),
+    revokePhoneDevice: (id: string): Promise<PhoneState> => ipcRenderer.invoke('phone-revoke-device', id),
+    revokeAllPhoneDevices: (): Promise<PhoneState> => ipcRenderer.invoke('phone-revoke-all'),
+    testPhonePush: (): Promise<PhoneTestPushResult> => ipcRenderer.invoke('phone-test-push'),
+    onPhoneStateChanged: (callback: (state: PhoneState) => void) => {
+        const listener = (_e: unknown, state: PhoneState) => callback(state)
+        ipcRenderer.on('phone-state-changed', listener)
+        return () => ipcRenderer.removeListener('phone-state-changed', listener)
+    },
+    getConversation: (sessionId: string, limit?: number): Promise<ConversationSnapshot | null> =>
+        ipcRenderer.invoke('conversation-get', sessionId, limit),
+    subscribeConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('conversation-subscribe', sessionId),
+    unsubscribeConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('conversation-unsubscribe', sessionId),
+    onConversationChanged: (callback: (change: { sessionId: string; revision: number }) => void) => {
+        const listener = (_e: unknown, change: { sessionId: string; revision: number }) => callback(change)
+        ipcRenderer.on('conversation-changed', listener)
+        return () => ipcRenderer.removeListener('conversation-changed', listener)
+    },
+    sendChatMessage: (sessionId: string, text: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send', sessionId, text),
+    cancelQueuedChat: (sessionId: string): Promise<void> => ipcRenderer.invoke('chat-cancel-queued', sessionId),
+    discardQueuedChat: (sessionId: string, id: string): Promise<boolean> => ipcRenderer.invoke('chat-discard-queued', sessionId, id),
+    sendQueuedChatNow: (sessionId: string, id: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send-queued-now', sessionId, id),
+    interruptChat: (sessionId: string): Promise<InterruptResult> => ipcRenderer.invoke('chat-interrupt', sessionId),
+    getChatImage: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-image', sessionId, ref),
+    getChatToolOutput: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-tool-output', sessionId, ref),
+    listChatCommands: (sessionId: string): Promise<ChatCommand[]> => ipcRenderer.invoke('chat-commands', sessionId),
+    saveChatAttachment: (name: string, bytes: Uint8Array): Promise<AttachResult> => ipcRenderer.invoke('chat-save-attachment', name, bytes),
+    openChatPath: (target: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target),
+    answerPrompt: (sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult> =>
+        ipcRenderer.invoke('prompt-answer', sessionId, answer)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
