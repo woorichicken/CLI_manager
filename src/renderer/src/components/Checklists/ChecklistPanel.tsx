@@ -11,6 +11,8 @@ interface ChecklistPanelProps {
     activeWorkspaceId?: string
     todayKey: string
     onClose: () => void
+    /** Brings a session into view — the maker line opens the session that made the checklist (41323382). */
+    onShowSession?: (sessionId: string) => void
     style: React.CSSProperties
 }
 
@@ -31,7 +33,7 @@ function isTextField(target: EventTarget | null): boolean {
  * then the items and a field to add one. "New checklist" starts another one for the
  * project in view.
  */
-export function ChecklistPanel({ nav, workspaces, activeWorkspaceId, todayKey, onClose, style }: ChecklistPanelProps) {
+export function ChecklistPanel({ nav, workspaces, activeWorkspaceId, todayKey, onClose, onShowSession, style }: ChecklistPanelProps) {
     const { checklists, current, index, page, select } = nav
     const ref = useRef<HTMLDivElement>(null)
     const addRef = useRef<HTMLInputElement>(null)
@@ -200,7 +202,21 @@ export function ChecklistPanel({ nav, workspaces, activeWorkspaceId, todayKey, o
                             complete={total > 0 && done === total}
                             onSave={(due) => void window.api.updateChecklist(current.id, { due })}
                         />
-                        {maker && <span data-testid="checklist-maker" className="truncate">by {maker}</span>}
+                        {maker && current.createdBy && (onShowSession ? (
+                            <button
+                                data-testid="checklist-maker"
+                                onClick={() => {
+                                    onClose()
+                                    onShowSession(current.createdBy!)
+                                }}
+                                className="truncate rounded px-0.5 -mx-0.5 hover:bg-white/10 hover:text-gray-200"
+                                title={`Go to ${maker}`}
+                            >
+                                by {maker}
+                            </button>
+                        ) : (
+                            <span data-testid="checklist-maker" className="truncate">by {maker}</span>
+                        ))}
                     </div>
                     <div className="h-[3px] mx-3 mb-1 rounded bg-white/10" title={`${done} of ${total} checked`}>
                         <div className="h-full rounded bg-emerald-500 transition-all" style={{ width: total ? `${(done / total) * 100}%` : 0 }} />

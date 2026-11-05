@@ -17,6 +17,8 @@ interface HeaderChecklistsProps {
     activeWorkspaceId?: string
     /** The session in view (the active pane in split view): its terminal gets focus when nothing else had it. */
     viewedSessionId: string | null
+    /** Brings a session into view (the panel's "by <session>" line). */
+    onShowSession?: (sessionId: string) => void
 }
 
 // Same lookup the memo uses to give focus back to its terminal.
@@ -27,6 +29,8 @@ function focusTerminal(sessionId: string): void {
 
 const PANEL_WIDTH = 320
 const VIEWPORT_MARGIN = 8
+// The deadline / Done badge on the chip: tinted, no border, smaller than the title.
+const CHIP_BADGE = 'px-1 rounded-sm text-[9px] leading-[13px] font-medium'
 
 /**
  * The checklist chip in the main header and its panel. Checklists belong to no session,
@@ -34,8 +38,8 @@ const VIEWPORT_MARGIN = 8
  * The panel is a portal like the inbox popover: the header is a window-drag region and
  * sits below the terminal's own overlays in stacking order.
  */
-export function HeaderChecklists({ open, onOpenChange, compact, workspaces, activeWorkspaceId, viewedSessionId }: HeaderChecklistsProps) {
-    const nav = useCurrentChecklist()
+export function HeaderChecklists({ open, onOpenChange, compact, workspaces, activeWorkspaceId, viewedSessionId, onShowSession }: HeaderChecklistsProps) {
+    const nav = useCurrentChecklist(activeWorkspaceId)
     const hint = useShortcutHint()
     const { current } = nav
     const chipRef = useRef<HTMLButtonElement>(null)
@@ -108,11 +112,12 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
                         {/* The title goes first when the window is narrow: the progress is what matters at a glance. */}
                         <span data-testid="checklist-chip-title" className="hidden sm:inline max-w-[10rem] truncate">{current.title}</span>
                         <span className="tabular-nums text-gray-400">{done}/{total}</span>
+                        {/* Badges stay a step below the title (63947391: a bordered 10px badge read as the loudest thing in the header). */}
                         {complete ? (
-                            <span className="px-1 rounded border text-[10px] leading-4 text-emerald-300 bg-emerald-500/10 border-emerald-500/30">Done</span>
+                            <span className={`${CHIP_BADGE} text-emerald-300 bg-emerald-500/10`}>Done</span>
                         ) : (
                             due && (
-                                <span data-testid="checklist-chip-due" data-due-tone={due.tone} className={`hidden sm:inline px-1 rounded border text-[10px] leading-4 ${DUE_TONE_CLASSES[due.tone]}`}>
+                                <span data-testid="checklist-chip-due" data-due-tone={due.tone} className={`hidden sm:inline ${CHIP_BADGE} ${DUE_TONE_CLASSES[due.tone]}`}>
                                     {due.label}
                                 </span>
                             )
@@ -128,6 +133,7 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
                         activeWorkspaceId={activeWorkspaceId}
                         todayKey={todayKey}
                         onClose={close}
+                        onShowSession={onShowSession}
                         style={{
                             top: anchor.bottom + 4,
                             left: Math.min(Math.max(anchor.right - width, VIEWPORT_MARGIN), window.innerWidth - width - VIEWPORT_MARGIN),
