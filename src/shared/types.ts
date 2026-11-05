@@ -1125,6 +1125,28 @@ export interface PhonePairingCode {
     expiresAt: string
 }
 
+/** What a phone's requests say about it (phone/phoneConnections.ts). */
+export interface PhoneConnectionVisit {
+    /** this Mac's Tailscale login for the owner, the paired name for a device */
+    label: string
+    kind: 'owner' | 'device'
+    /** 'tailscale': through `tailscale serve`; 'local': straight to 127.0.0.1 — a USB cable (adb reverse) or this Mac */
+    route: 'tailscale' | 'local'
+    /** «Chrome · Android»; null when the User-Agent says nothing recognisable */
+    browser: string | null
+    role: 'drive' | 'watch'
+}
+
+/** A phone with the page open now. */
+export interface PhoneConnection extends PhoneConnectionVisit {
+    key: string
+    /** when it connected (this time) */
+    since: string
+    lastSeen: string
+    /** a socket (terminal or chat) is open now */
+    live: boolean
+}
+
 /** What Settings › Phone and the sidebar badge show: the server as it is. */
 export interface PhoneState {
     running: boolean
@@ -1150,6 +1172,8 @@ export interface PhoneState {
     pairing: PhonePairingCode | null
     /** phones with a page open right now (an open socket or a request in the last minute) */
     connected: number
+    /** those phones, oldest first — the owner's own phone over Tailscale too, which is never paired */
+    connections: PhoneConnection[]
     /** devices that turned alerts on */
     pushDevices: number
     /** the alert key file is there but malformed: no alert goes out until it is restored or deleted */

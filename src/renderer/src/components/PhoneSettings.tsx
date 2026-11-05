@@ -3,6 +3,7 @@ import { AlertTriangle, Bell, CheckCircle2, Copy, Check, Loader2, Smartphone, Tr
 import qrcode from 'qrcode-generator'
 import type { PhoneState } from '../../../shared/types'
 import { usePhoneState } from '../hooks/usePhoneState'
+import { PhoneConnectionsList } from './PhoneConnectionsList'
 
 /**
  * Settings › Phone. One switch: on starts a small server on 127.0.0.1 for the phone page,
@@ -135,6 +136,8 @@ export function PhoneSettings({ onEnabledChange }: { onEnabledChange: (enabled: 
                             Listening on <code>{state.localUrl}</code> · {state.connected} connected
                         </span>
                     </p>
+
+                    <PhoneConnectionsList state={state} onState={setState} />
 
                     <div>
                         <p className="text-sm text-gray-300">1. Let the phone reach it — run once in a terminal</p>
