@@ -19,6 +19,22 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 폰 연결 — N시간 안 쓰면 자동으로 끄기
+- Discovered: 2026-11-05 사람 질문(「N 시간 사용을 안하면 phone 기능을 끄는 기능이 있는지」). 2026-11-06 사람 결정: 백로그.
+- Evidence: 설정은 `enabled`·`port` 둘뿐이다(`src/shared/types.ts` `DEFAULT_PHONE`). 켜 두면 앱을 끌 때까지 tailnet 에 열려 있고, 켜고 끈 기록도 남지 않는다.
+- Why deferred: 지금 불편은 배지 ✕ 실수로 꺼지는 쪽이었고 v1.26.1 확인 창으로 막았다. 자동 끄기는 반대 방향(꺼지는 일이 늘어남)이라 정할 게 있다.
+- Trigger: 폰 연결을 켜 둔 채 잊는 일이 실제로 문제가 될 때, 또는 폰 화면 다음 회차.
+- Fix direction: 설정에 「N시간 안 쓰면 끄기」(기본 끔). 「안 씀」 기준(폰 소켓 연결 수 0 이 N시간)과 꺼질 때 Mac·폰에 무엇을 보여 줄지 먼저 정한다. 켜고 끈 사건 기록도 같이 넣으면 「왜 꺼졌나」를 잴 수 있다.
+- Owner: 없음
+
+### `src/renderer/src/phone/phone.css` — 폰 스타일이 한 파일(919줄)이다
+- Discovered: 2026-11-06 사람 질문(「한 파일이면 기능 추가가 힘들 것 같다」)에 구조를 재며. 폰 화면 TS/TSX 는 약 25개 파일로 나뉘어 있고 이 파일만 한 덩어리다.
+- Evidence: `wc -l` 919줄. 화면별 파일로 안 나뉘어 있어 기능을 넣을 때마다 같은 파일이 겹쳐 충돌하기 쉽다(병렬 세션이 많은 저장소).
+- Why deferred: 지금 막히는 일은 없고, 파일만 쪼개는 일은 사용자에게 보이는 변화가 없다.
+- Trigger: 폰 화면 기능을 여러 세션이 동시에 고쳐 이 파일에서 충돌이 날 때, 또는 1,500줄을 넘을 때.
+- Fix direction: 화면별 파일(목록·세션·터미널·설정)로 나눠 각 컴포넌트가 import. 공용 토큰만 `phone.css` 에 남긴다. 스타일 변화 없음을 폰 캡처 전후로 확인.
+- Owner: 없음
+
 ### 입력 상자 읽기 — edge-audit 나머지(4~13)와 복원 구분선
 - Discovered: 2026-11-05 phone-fixes(A 확장 1·2·3·14 는 끝, T88). `~/Downloads/_batches/plan-ovis-1103/fixes/edge-audit/report.md` 4~13번(Stop 뒤 Claude 가 되돌려 놓은 초안 · /rewind 대화상자 · 보이지 않는 글자로 붙잡힌 전송 · 200자 넘는 한 줄 · 화면 어디든 `esc to interrupt` 면 작업 중 · 질문 판정 범위 · 계획 승인 문구 · 끝이 `\`·`@` · 숨긴 중단 힌트 · `/btw`·상세 기록 보기)와 14c(좁은 칸 줄바꿈 head 비교).
 - Evidence: 새로 생긴 것 하나 — ovis 라벨 선(`/^─{2,}\s.*─$/`)이 우리 복원 구분선 `── Restored from previous session · saved … ──` 에도 맞는다. 복원 직후 Claude 가 상자를 그리기 전에는 선이 하나뿐이라 `clipped` → Claude 세션 Chat 이 잠깐 `input_busy`(실제 개발판 화면에서 그 줄을 봤다, 거절 자체는 재현 안 함).
@@ -162,6 +178,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   함께 확인된 것: kill 로 닫은 세션 4개가 이 재시작 때 그대로 되살아났다 — 탭이 남아 있으면 복원 대상이다(`clim close` 로 닫으면 안 돌아온다).
 - Why deferred: 리소스 점검 세션(workspace-sweep) 중 발견. 앱 코드 변경은 범위 밖.
 - Trigger: 다음에 세션 복원 코드를 만지거나, 재시작 직후 부하·MCP 누락 제보가 다시 나올 때.
+- Update 2026-11-06: v1.26.1 업데이트 재시작(09:00:56)에서 다시 잼 — claude 프로세스 65개의 시작 시각이 5초 안(`ps -axo etime,comm`). 31분 뒤 15분 부하 평균이 아직 15.56. 재시작 직후 최고 부하와 MCP 누락은 안 쟀다.
 - Fix direction: 복원을 몇 개씩 나눠 띄운다(예: 4개씩, 앞 묶음의 에이전트가 프롬프트를 띄운 뒤 다음). 오래 쉰 세션은 탭만 복원하고 프로세스는 첫 포커스 때 띄우는 선택지.
 - Owner: 없음
 
