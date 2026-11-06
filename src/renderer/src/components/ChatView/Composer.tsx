@@ -563,7 +563,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 <div className="chat-composer-row">
                     <div className="chat-composer-input">
                     {painted && (
-                        <div ref={backdrop} className="chat-composer-backdrop" aria-hidden="true" data-testid="chat-composer-backdrop">
+                        // translate="no": Chrome's page translation rewrites this copy but not the textarea's value — the
+                        // box then shows words that are not what gets sent (Galaxy M23, fb-1106)
+                        <div ref={backdrop} className="chat-composer-backdrop notranslate" translate="no" aria-hidden="true" data-testid="chat-composer-backdrop">
                             {pieces.map((piece, index) =>
                                 piece.command ? (
                                     <span key={index} className="chat-composer-token" data-testid="chat-composer-token">

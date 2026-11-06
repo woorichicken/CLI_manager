@@ -268,6 +268,8 @@ test('T96 Mac Chat: only the skill reads blue, at the start, in the middle, on a
     await shot(page, 't96-skill-line-1280')
     await check(async () => {
         await expect.poll(() => blueWords(page)).toEqual(['/progress-report'])
+        // Chrome's page translation must leave the painted copy alone: it does not touch the textarea's value
+        expect(await chat(page).getByTestId('chat-composer-backdrop').getAttribute('translate')).toBe('no')
         // the painted words sit exactly under the box's: same height, same scroll
         const sizes = await box.evaluate((el) => {
             const under = el.parentElement!.querySelector<HTMLElement>('[data-testid="chat-composer-backdrop"]')!
