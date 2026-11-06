@@ -23,6 +23,17 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 Chat 보내기 버튼 — 글을 써도 파란 배경이 안 나온다
+- Date: 2026-11-06
+- Where: `src/renderer/src/components/ChatView/chat.css` `.chat-composer-send { background: #2563eb }`. Tailwind 리셋의 `[type="button"] { background-color: transparent }` 이 클래스 하나와 무게가 같고 더 뒤에 와서 이긴다.
+- What: 입력칸에 글이 있을 때 보내기 버튼의 계산된 배경이 `rgba(0, 0, 0, 0)` 이다(앱에서 `getComputedStyle` 로 쟀다). 의도한 파랑이 한 번도 안 나온 것으로 보인다. 클래스 하나로 배경을 주는 다른 `<button type="button">`(`.chat-busy-draft-button` 등)도 같은 조건이다 — 그쪽은 재지 않았다.
+- Surfaced by: fb-1106 「내 마지막 말」 띠의 배경이 투명하게 나와 원인을 찾다가. 그 띠는 `button.chat-pinned-last` 로 고쳤다.
+- Impact: 보낼 수 있는 상태인지 색으로 안 갈린다. 동작은 정상이다.
+- Workaround: 없음. 화살표 색으로 구분된다.
+- Fix direction: 지금 화면에 익숙해졌을 수 있어 바로 바꾸지 않았다. 파랑을 원하면 선택자 무게만 올린다(`button.chat-composer-send`). 같은 조건의 버튼을 함께 재서 고친다.
+
+---
+
 ### 🐛 메인 헤더 — 창 폭 390 · 사이드바 닫힘에서 「Related」 글자가 ‹ › 버튼과 겹친다
 - Date: 2026-10-30
 - Where: `App.tsx` 메인 헤더 — 왼쪽 묶음(사이드바 열기 · `SessionHistoryButtons` ‹ › · 브레드크럼)과 오른쪽 묶음(`ParentSessionButton` ·
