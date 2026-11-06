@@ -135,6 +135,12 @@ export interface ConversationMeta {
      * context size when the record says it (Codex `model_context_window`); Claude's records do not.
      */
     context?: { used: number; window: number | null }
+    /**
+     * The agent's permission or sandbox mode in the chat's short words (`bypass`, `plan`, `workspace write`).
+     * Absent or null: the agent's default, which says nothing. Claude: the screen's row under the box when it
+     * shows one, else what the last prompt recorded (`permissionMode`); Codex: its turn_context.
+     */
+    mode?: string | null
 }
 
 /** A message sent from the chat while the agent worked, waiting for the turn to end. */
@@ -273,6 +279,10 @@ export interface ChatPreferences {
     quickReplies?: string[]
     /** A touch screen: Return sends too (the phone's own setting). Default off — Return breaks the line. */
     returnSendsOnTouch?: boolean
+    /** Keep the person's last message on top of the chat once it has scrolled away. Default off. */
+    pinLastMessage?: boolean
+    /** A path the chat names opens in the app's preview; off: in the Mac's default app. Default on. */
+    openFilesInApp?: boolean
 }
 
 export const DEFAULT_QUICK_REPLIES = ['continue', 'yes', 'no', 'retry']

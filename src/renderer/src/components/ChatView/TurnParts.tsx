@@ -3,7 +3,7 @@ import { BookOpen, ChevronDown, ChevronRight, FileText, Image as ImageIcon, Laye
 import type { ConversationPart, TaskResult } from '../../../../shared/conversation'
 import { LinkedText, Markdown } from './markdown/Markdown'
 import { ChatImageStrip } from './ChatImages'
-import { INTERRUPTED_TEXT, shouldFoldUserMessage, splitAppAttachments, type AppAttachmentMention } from './chatLib'
+import { foldUserMessage, INTERRUPTED_TEXT, splitAppAttachments, type AppAttachmentMention } from './chatLib'
 import { useChatActions } from './chatContext'
 
 /** What the person's seat holds: their words, a `!` command, a notice, a subagent's result. */
@@ -67,18 +67,19 @@ export const UserParts = memo(function UserParts({ parts }: { parts: Conversatio
     )
 })
 
-/** The person's words; a long paste folds behind "Show full message" (ovis userMessageFold). */
+/** The person's words; a long message folds to its first lines and «… +N lines», as Claude Code's (bcbbbec5). */
 function UserText({ text }: { text: string }) {
-    const foldable = shouldFoldUserMessage(text)
+    const fold = foldUserMessage(text)
     const [open, setOpen] = useState(false)
+    const shown = fold && !open ? fold.head : text
     return (
-        <div className={`chat-user-bubble${foldable && !open ? ' is-folded' : ''}`} data-testid="chat-user-text">
-            {splitAppAttachments(text).map((part, index) =>
+        <div className="chat-user-bubble" data-testid="chat-user-text">
+            {splitAppAttachments(shown).map((part, index) =>
                 typeof part === 'string' ? <LinkedText key={index} text={part} /> : <AttachmentChip key={index} attachment={part} />
             )}
-            {foldable && (
+            {fold && (
                 <button type="button" className="chat-user-fold" data-testid="chat-user-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
-                    {open ? 'Show less' : 'Show full message'}
+                    {open ? 'Show less' : fold.hiddenLines > 0 ? `… +${fold.hiddenLines} lines` : 'Show full message'}
                 </button>
             )}
         </div>

@@ -26,9 +26,10 @@ type Section = {
 }
 
 /**
- * The relation tab: its parents above this session, who shares its parent
- * beside it, its children below it, then the related sessions the tree places
- * elsewhere. Only for the Related dialog, hence not a shared component.
+ * The relation tab: its children first — what the person usually comes here
+ * for (474b70f8) — then its parents, who shares its parent, and the related
+ * sessions the tree places elsewhere. Only for the Related dialog, hence not a
+ * shared component.
  */
 export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, onToggle, onShow, onRemove, onCopyId }: RelationTreeProps) {
     const deepestAbove = tree.ancestors.reduce((max, entry) => Math.max(max, entry.depth), 0)
@@ -36,6 +37,11 @@ export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, 
         entries.map(entry => ({ ...entry, indent: indentOf(entry) }))
 
     const sections: Section[] = [
+        {
+            tree: 'down', group: 'fromHere', title: 'Below this session',
+            hint: 'Its agent opened them or started working in them, or they were dragged onto it or added here by hand. Their own children follow, indented.',
+            entries: withIndent(tree.descendants, entry => entry.depth - 1)
+        },
         {
             tree: 'up', group: 'toHere', title: 'Above this session',
             hint: 'An agent there opened this session or started working in it, or this session was dragged onto it by hand. Farthest first.',
@@ -46,11 +52,6 @@ export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, 
             tree: 'side', group: 'side', title: 'Beside this session',
             hint: 'Under the same session as this one.',
             entries: withIndent(tree.siblings, () => 0)
-        },
-        {
-            tree: 'down', group: 'fromHere', title: 'Below this session',
-            hint: 'Its agent opened them or started working in them, or they were dragged onto it or added here by hand. Their own children follow, indented.',
-            entries: withIndent(tree.descendants, entry => entry.depth - 1)
         },
         {
             tree: 'other', group: 'other', title: 'Also related',

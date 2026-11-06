@@ -112,7 +112,7 @@ export function lineDiff(before: string, after: string): DiffLine[] {
 
 // ---------------------------------------------------------------- long user messages (src/lib/userMessageFold.ts)
 
-export const USER_MESSAGE_FOLD_LINES = 12
+export const USER_MESSAGE_FOLD_LINES = 6
 export const USER_MESSAGE_FOLD_CHARS = 900
 const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:<[^>\n]*>|[^\s)]*)\)/g
 export function visibleUserMessageText(text: string): string {
@@ -122,6 +122,23 @@ export function shouldFoldUserMessage(text: string): boolean {
     const visible = visibleUserMessageText(text).trim()
     if (visible.length === 0) return false
     return visible.length > USER_MESSAGE_FOLD_CHARS || visible.split('\n').length > USER_MESSAGE_FOLD_LINES
+}
+
+/** What a folded message still shows: its first lines, as Claude Code's `… +N lines` (bcbbbec5). */
+const USER_MESSAGE_SHOWN_LINES = 4
+const USER_MESSAGE_SHOWN_CHARS = 400
+
+/** A long message's head and how many lines stay behind the fold; null when it does not fold. */
+export function foldUserMessage(text: string): { head: string; hiddenLines: number } | null {
+    if (!shouldFoldUserMessage(text)) return null
+    const lines = text.trim().split('\n')
+    let head = lines.slice(0, USER_MESSAGE_SHOWN_LINES).join('\n')
+    if (head.length > USER_MESSAGE_SHOWN_CHARS) {
+        // one long paragraph: cut at a word, so a path or a link is not left half
+        const cut = head.lastIndexOf(' ', USER_MESSAGE_SHOWN_CHARS)
+        head = head.slice(0, cut > 0 ? cut : USER_MESSAGE_SHOWN_CHARS)
+    }
+    return { head, hiddenLines: lines.length - head.split('\n').length }
 }
 
 // ---------------------------------------------------------------- model names (src/lib/modelName.ts)
@@ -300,6 +317,40 @@ export function activeTrigger(text: string, caret: number, codex: boolean): Trig
     const file = /(?:^|\s)@([^\s@"]*)$/.exec(before)
     if (file) return { kind: 'file', query: file[1], start: caret - file[1].length - 1 }
     return null
+}
+
+/** A `/name` or `$name` standing on its own: at the start, or after a space or a line break. */
+const COMMAND_WORD = /(^|\s)([/$])([\w:.-]+)(?=\s|$)/g
+
+/** The text may name a command: worth asking for the list. */
+export function mayNameCommand(text: string): boolean {
+    return new RegExp(COMMAND_WORD.source).test(text)
+}
+
+/**
+ * The draft cut into words and the commands among them, for painting only those blue (85259f8e · 1fcd9008 ·
+ * e833d0b9). The same rule as the `/` menu: mid-message only a skill or the person's own command runs, and
+ * a built-in only opening the message; a name the agent does not know (`/usr/bin`, a typo) stays words.
+ */
+export function commandPieces(text: string, commands: ChatCommand[], codex: boolean): { text: string; command: boolean }[] {
+    const opening = text.search(/\S/)
+    const midPrefix = codex ? '$' : '/'
+    const pieces: { text: string; command: boolean }[] = []
+    let last = 0
+    for (const match of text.matchAll(COMMAND_WORD)) {
+        const start = (match.index ?? 0) + match[1].length
+        const prefix = match[2]
+        const atOpening = start === opening
+        const known = commands.some(
+            (command) => command.name === match[3] && (command.trigger ?? '/') === prefix && (atOpening || (prefix === midPrefix && command.source !== 'builtin'))
+        )
+        if (!known) continue
+        if (start > last) pieces.push({ text: text.slice(last, start), command: false })
+        pieces.push({ text: `${prefix}${match[3]}`, command: true })
+        last = start + 1 + match[3].length
+    }
+    if (last < text.length) pieces.push({ text: text.slice(last), command: false })
+    return pieces
 }
 
 /** `@path`, quoted when the path holds a space (the mention ends at a space otherwise). */

@@ -5,23 +5,24 @@ import { setChatFileOpener } from '../utils/electronChatTransport'
 /**
  * Files the Chat view names (a path in an answer, a tool's file): pictures and text in the
  * app's own preview (the one ⌘P file search uses), anything else — a PDF, a video, a sound,
- * an office file — in the Mac's own app, as ovis's file viewer shows them.
+ * an office file — in the Mac's own app, as ovis's file viewer shows them. With Settings ›
+ * Terminal › Chat view's switch off (0a17912b), everything goes to the Mac's own app.
  */
 const SYSTEM_TYPES = new Set([
     'pdf', 'mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg',
     'zip', 'gz', 'tgz', 'dmg', 'pkg', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'key', 'pages', 'numbers', 'hwp', 'hwpx', 'psd', 'ai', 'sketch', 'fig'
 ])
 
-export function ChatFilePreview() {
+export function ChatFilePreview({ openInApp = true }: { openInApp?: boolean }) {
     const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
     useEffect(() => {
         setChatFileOpener((path, line) => {
             const extension = path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? ''
-            if (SYSTEM_TYPES.has(extension)) void window.api.openChatPath(path)
+            if (!openInApp || SYSTEM_TYPES.has(extension)) void window.api.openChatPath(path)
             else setTarget({ path, line })
         })
         return () => setChatFileOpener(null)
-    }, [])
+    }, [openInApp])
     if (!target) return null
     return (
         <div data-testid="chat-file-preview" data-path={target.path}>

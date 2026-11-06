@@ -71,6 +71,18 @@ function claudeCommandSetting(entry: RecordValue): { model: string | null; effor
     return effort && (command === null || command === 'effort') ? { model: null, effort: effort[1]! } : none
 }
 
+/** Claude Code's `permissionMode` values in the chat's words; `default` says nothing (no chip). */
+const CLAUDE_MODES: Record<string, string | null> = { default: null, bypassPermissions: 'bypass', acceptEdits: 'accept edits', plan: 'plan', auto: 'auto', dontAsk: "don't ask" }
+
+/** Codex's mode: a collaboration mode other than default, else how far its sandbox reaches. */
+function codexMode(event: RecordValue): string | null | undefined {
+    const collaboration = label(record(event.collaboration_mode).mode)
+    if (collaboration && collaboration !== 'default') return collaboration
+    const sandbox = label(record(event.sandbox_policy).type)
+    if (!sandbox) return undefined
+    return sandbox === 'danger-full-access' ? 'full access' : sandbox.replace(/-/g, ' ')
+}
+
 function claudeSetting(entry: RecordValue): { model?: string; effort?: string | null } {
     const set: { model?: string; effort?: string | null } = {}
     const model = entry.type === 'assistant' ? label(record(entry.message).model) : null
@@ -86,7 +98,7 @@ function claudeSetting(entry: RecordValue): { model?: string; effort?: string | 
 function mayNameMeta(line: string, agent: 'claude' | 'codex'): boolean {
     if (line.length === 0 || line.length > MAX_META_LINE) return false
     if (agent === 'codex') return line.includes('"turn_context"') || line.includes('"token_count"') || line.includes('"session_meta"')
-    return line.includes('"assistant"') || line.includes('local-command') || line.includes('local_command') || line.includes('/clear')
+    return line.includes('"assistant"') || line.includes('"permissionMode"') || line.includes('local-command') || line.includes('local_command') || line.includes('/clear')
 }
 
 /**
@@ -112,6 +124,10 @@ export function foldMetadata(text: string, agent: 'claude' | 'codex', before: Co
                     delete meta.context
                 }
                 continue
+            }
+            // each prompt records it; a subagent's own mode is not this session's
+            if (entry.type === 'user' && entry.isSidechain !== true && typeof entry.permissionMode === 'string') {
+                ensure().mode = entry.permissionMode in CLAUDE_MODES ? CLAUDE_MODES[entry.permissionMode] : entry.permissionMode
             }
             const set = claudeSetting(entry)
             if (set.model !== undefined) ensure().model = set.model
@@ -146,6 +162,8 @@ export function foldMetadata(text: string, agent: 'claude' | 'codex', before: Co
         const effort = 'effort' in event ? event.effort : 'reasoning_effort' in event ? event.reasoning_effort : settings.reasoning_effort
         if (model) ensure().model = model
         if (model || effort !== undefined) ensure().effort = label(effort)
+        const mode = codexMode(event)
+        if (mode !== undefined) ensure().mode = mode
     }
     return meta
 }

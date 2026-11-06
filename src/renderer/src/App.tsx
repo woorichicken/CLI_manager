@@ -2136,7 +2136,7 @@ function App() {
             />
 
             {/* Files the Chat view names: pictures and text previewed, the rest in the Mac's own app */}
-            <ChatFilePreview />
+            <ChatFilePreview openInApp={settings.chat?.openFilesInApp !== false} />
             {/* What the Terminal ↔ Chat switch could not carry (4b9cb0c2) */}
             <HandoffNoticeToast />
 

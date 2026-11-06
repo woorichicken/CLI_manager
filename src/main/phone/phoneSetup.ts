@@ -185,6 +185,8 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
             const chat = (deps.store.get('settings') as UserSettings | undefined)?.chat
             return (chat?.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim())
         },
+        quickRepliesSet: () => ((deps.store.get('settings') as UserSettings | undefined)?.chat?.quickReplies ?? []).some((reply) => reply.trim()),
+        pinLastMessage: () => (deps.store.get('settings') as UserSettings | undefined)?.chat?.pinLastMessage === true,
         // what a disconnected device left in a Chat queue is not typed later (F03)
         onDeviceRevoked: (deviceId) => {
             queueHooks.deviceRevoked(deviceId)

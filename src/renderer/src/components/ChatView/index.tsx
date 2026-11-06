@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Clock, Loader2, Terminal as TerminalIcon } from 'lucide-react'
+import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon } from 'lucide-react'
 import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
 import { endedOnAnswer } from './workBlocks'
 import { appendDraft, Composer, type ComposerHandle } from './Composer'
-import { ArtifactsChip, ContextChip, ModelChip, PlanChip } from './ComposerChips'
+import { ArtifactsChip, ContextChip, ModeChip, ModelChip, PlanChip } from './ComposerChips'
 import { ImageLightbox } from './ChatImages'
 import { PromptCard } from './PromptCard'
 import { QueuedMessages } from './QueuedMessages'
@@ -112,6 +112,15 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const [picked, setPicked] = useState<number | null>(null)
     const [gallery, setGallery] = useState<{ images: GalleryImage[]; index: number } | null>(null)
     const [railRoom, setRailRoom] = useState(false)
+    /** the person's last message has scrolled off the top (edf2aef3) */
+    const [lastAbove, setLastAbove] = useState(false)
+    const lastSaidIndex = useRef<number | null>(null)
+    const measureLastSaid = useCallback((): void => {
+        const element = scroller.current
+        const index = lastSaidIndex.current
+        const turn = index === null ? null : element?.querySelector(`[data-turn-index="${index}"]`)
+        setLastAbove(Boolean(element && turn && turn.getBoundingClientRect().bottom <= element.getBoundingClientRect().top))
+    }, [])
 
     // Opening a chat starts where it was left, or at its end.
     useEffect(() => {
@@ -145,6 +154,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_PX
         pinned.current = atBottom
         setShowJump(!atBottom)
+        measureLastSaid()
         scrollMemory.set(sessionId, { top: element.scrollTop, pinned: atBottom, limit: limitRef.current })
     }
 
@@ -316,6 +326,10 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
             }),
         [turns]
     )
+    const lastSaid = preferences.pinLastMessage === true ? rail.at(-1) ?? null : null
+    lastSaidIndex.current = lastSaid?.index ?? null
+    // runs after the scroll position above is settled (useLayoutEffect, in order)
+    useLayoutEffect(measureLastSaid, [measureLastSaid, snapshot, sessionId, lastSaid?.index])
     const jumpTo = (index: number): void => {
         const target = scroller.current?.querySelector(`[data-turn-index="${index}"]`)
         if (!target) return
@@ -329,6 +343,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 className="chat-view"
                 data-testid="chat-view"
                 data-session-id={sessionId}
+                data-touch={touch ? 'true' : undefined}
                 style={{ fontSize: `${fontSize}px` }}
                 onKeyDownCapture={(event) => {
                     // plain PageUp/PageDown read the chat, even from the message box (its draft and caret stay)
@@ -352,6 +367,12 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                             <button key={item.index} type="button" className="chat-rail-dash" data-testid="chat-rail-dash" title={item.words.slice(0, 120)} aria-label={`Go to: ${item.words.slice(0, 60)}`} onClick={() => jumpTo(item.index)} />
                         ))}
                     </nav>
+                )}
+                {lastSaid && lastAbove && (
+                    <button type="button" className="chat-pinned-last" data-testid="chat-pinned-last" title="Go to your last message" onClick={() => jumpTo(lastSaid.index)}>
+                        <CornerRightUp size={12} aria-hidden="true" />
+                        <span className="chat-pinned-last-text">{lastSaid.words}</span>
+                    </button>
                 )}
                 <div className="chat-scroll" ref={scroller} onScroll={onScroll} data-testid="chat-scroll">
                     <div className="chat-column" ref={column}>
@@ -447,6 +468,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                 <>
                                     <PlanChip items={todos} />
                                     <ArtifactsChip links={artifacts} onOpen={(url) => transport.openLink(url)} />
+                                    <ModeChip agent={agent} meta={snapshot?.meta ?? null} />
                                     <span className="chat-status-spacer" />
                                     <ModelChip agent={agent} meta={snapshot?.meta ?? null} working={working} onCommand={(text) => void sendText(text)} />
                                     <ContextChip meta={snapshot?.meta ?? null} canCompact={!working && !prompt} onCompact={() => void sendText('/compact')} />

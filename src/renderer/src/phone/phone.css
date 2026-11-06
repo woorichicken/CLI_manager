@@ -509,6 +509,8 @@ body.phone-body #root {
     flex: 1;
     min-height: 0;
     overflow: auto;
+    display: flex;
+    flex-direction: column;
     /* the browser pans sideways; a vertical drag scrolls the terminal's history (PhoneTerminal) */
     touch-action: pan-x;
     -webkit-overflow-scrolling: touch;
@@ -516,6 +518,9 @@ body.phone-body #root {
 .phone-term-sizer {
     position: relative;
     overflow: hidden;
+    flex-shrink: 0;
+    /* fitted to the width it is shorter than the room: the spare room goes above, the input stays by the thumb (183cbd1e) */
+    margin-top: auto;
 }
 .phone-term-host {
     position: absolute;

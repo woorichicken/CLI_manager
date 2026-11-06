@@ -185,7 +185,7 @@ test('T92 a wide table scrolls sideways; a skill reads blue and the most used on
     await shot(phone, 't92-skill-menu-390')
     await box.fill('/progress-report')
     await expect(box).toHaveAttribute('data-command', 'true')
-    expect(await box.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(147, 197, 253)')
+    expect(await phone.getByTestId('chat-composer-token').evaluate((el) => getComputedStyle(el).color)).toBe('rgb(147, 197, 253)')
     await box.fill('plain words')
     await expect(box).not.toHaveAttribute('data-command', 'true')
 })
@@ -196,12 +196,12 @@ test('T92 the phone\'s own settings: quick replies from the Mac\'s list, Return 
     const { phone, cdp } = await openPhone(app, `${base}/?session=${CLAUDE}&view=chat`, 't92-settings')
     const box = phone.getByTestId('chat-composer')
     await expect(box).toBeVisible({ timeout: 15_000 })
-    // default: Return is a new line, no chips
+    // default: Return is a new line; the Mac has phrases, so the chips are on (fb-1106)
     await box.fill('line one')
     await box.press('Enter')
     await expect(box).toHaveValue('line one\n')
     await box.fill('')
-    await expect(phone.getByTestId('chat-quick-replies')).toHaveCount(0)
+    await expect(phone.getByTestId('chat-quick-replies')).toBeVisible()
 
     await tap(cdp, phone, '[data-testid="phone-menu-button"]')
     await tap(cdp, phone, '[data-testid="phone-settings-button"]')
@@ -209,7 +209,7 @@ test('T92 the phone\'s own settings: quick replies from the Mac\'s list, Return 
     await expect(menu).toBeVisible()
     await expect(menu).toContainText(QUICK.join(' · '))
     await shot(phone, 't92-phone-settings-390')
-    await phone.getByTestId('phone-setting-quick-replies').check()
+    await expect(phone.getByTestId('phone-setting-quick-replies')).toBeChecked()
     await phone.getByTestId('phone-setting-return-sends').check()
     await tapScrim(cdp, phone)
 
