@@ -7,6 +7,22 @@ description: 릴리즈 — 빌드·공증·GitHub 게시·R2·웹사이트·chan
 전부 스크립트로 돈다. 손으로 하지 말 것 — 스크립트가 들고 있는 전제조건과 검증을
 빠뜨리기 쉽고, 빠뜨리면 비싸다. 절차와 근거는 `.claude/rules/deploy-workflow.md`.
 
+## 제보 — 스크립트가 안 챙긴다
+
+```bash
+S=~/.claude/skills/feedback-cycle/scripts
+P=3fa1c5e0-971e-45df-a514-675b18af0085
+
+# 빌드 전: 마지막 회차 뒤 들어온 제보를 「이번에 넣음 / 다음 회차」로 가른다
+node $S/feedback-table.mjs --project $P
+
+# post-release 뒤: 고친 내용이 들어간 커밋으로 닫는다. 먼저 --dry-run
+node $S/close-feedback.mjs --repo ~/Downloads/CLImanger --sha <커밋> --ids <id8,…> --project $P \
+  --by <승인한 사람> --note "<확인한 내용 한 줄>"
+```
+
+v1.26.1 에서 둘 다 빠졌다. 3회차 뒤 제보 4건을 안 본 채 빌드했고, 고친 제보 17건은 「릴리즈 끝」 보고 약 9시간 뒤에 닫았다.
+
 ## 순서
 
 ```bash
