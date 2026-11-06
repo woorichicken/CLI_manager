@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 데몬을 앱과 분리 — 앱을 꺼도 세션이 사는 구조(Paseo 방식)
+- Discovered: 2026-11-06 폰 기능 기획 세션에서 Paseo(`getpaseo/paseo`)와 비교하며. 사람 결정: 「파세오 - 데몬 관련해서는 일단 백로그로」.
+- Evidence: 지금은 앱 main 프로세스가 세션을 쥔다(`src/main/TerminalManager.ts` 의 node-pty, 폰 서버 `src/main/phone/PhoneServer.ts`). 그래서 앱을 끄면 세션과 폰 연결이 같이 끝난다. Paseo 는 데몬이 에이전트를 쥐고 데스크톱·모바일·웹이 클라이언트로 붙는다.
+- Why deferred: 구조 변경이 크다 — 지금 진행 중인 폰 화면 작업과 섞으면 둘 다 늦어진다.
+- Trigger: 앱을 끈 뒤에도 세션을 계속 돌려야 하는 요구가 실제로 나올 때.
+- Fix direction: 폰 기능 작업과 분리해 따로 기획한다. 터미널 히스토리 원본(결정 [`0008`](decisions/0008-terminal-history-lives-in-main.md))과 폰 서버(결정 [`0009`](decisions/0009-phone-connection-second-server.md))가 main 에 있다는 전제가 함께 바뀐다.
+- Owner: 없음
+
 ### 폰 연결 — N시간 안 쓰면 자동으로 끄기
 - Discovered: 2026-11-05 사람 질문(「N 시간 사용을 안하면 phone 기능을 끄는 기능이 있는지」). 2026-11-06 사람 결정: 백로그.
 - Evidence: 설정은 `enabled`·`port` 둘뿐이다(`src/shared/types.ts` `DEFAULT_PHONE`). 켜 두면 앱을 끌 때까지 tailnet 에 열려 있고, 켜고 끈 기록도 남지 않는다.
