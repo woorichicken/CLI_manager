@@ -1,0 +1,2049 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>리뷰 시험</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#16181d; --muted:#6b7280; --line:#e3e6ea;
+  --accent:#2f6df6; --accent-soft:#e8effe; --warn:#b45309; --ok:#047857;
+  --shot-bg:#ffffff; --radius:10px;
+  --fit-h:max(400px, calc(100vh - 220px));   /* JS 의 fitWidth() 와 같은 값을 유지한다 */
+  --board-h:230px;
+  --new:#047857; --new-bg:#d1fae5; --removed:#b91c1c; --removed-bg:#fee2e2;
+  --changed:#1d4ed8; --changed-bg:#dbeafe; --same:#4b5563; --same-bg:#e5e7eb;
+  --review:#b45309; --review-bg:#fef3c7;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0e1116; --panel:#161a21; --ink:#e6e9ee; --muted:#9aa3af; --line:#262c36;
+    --accent:#5b8cff; --accent-soft:#1b2740; --warn:#fbbf24; --ok:#34d399;
+    --new:#6ee7b7; --new-bg:#064e3b; --removed:#fca5a5; --removed-bg:#7f1d1d;
+    --changed:#93c5fd; --changed-bg:#1e3a8a; --same:#cbd5e1; --same-bg:#334155;
+    --review:#fcd34d; --review-bg:#78350f;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo",
+       "Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  background:var(--bg); color:var(--ink);
+}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:var(--accent)}
+/* 슬라이더를 끌 때 브라우저 기본 이미지 드래그(고스트)가 끼어들면 핸들이 안 따라온다. */
+img{-webkit-user-drag:none;user-drag:none}
+
+header{
+  position:sticky; top:0; z-index:40; background:var(--panel);
+  border-bottom:1px solid var(--line); padding:10px 16px;
+  display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+}
+.brand{min-width:0}
+.brand h1{margin:0;font-size:15px;font-weight:650;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand p{margin:1px 0 0;font-size:12px;color:var(--muted)}
+.spacer{flex:1 1 auto}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:0 0 auto}
+.seg button{background:transparent;border:0;padding:6px 10px;font-size:12.5px;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.btn{border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 11px;font-size:12.5px}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover{filter:brightness(1.08);color:#fff}
+.count-chip{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.count-chip b{color:var(--accent)}
+
+main{display:flex;align-items:flex-start;gap:0;min-height:calc(100vh - 56px)}
+nav{
+  width:236px;flex:0 0 236px;position:sticky;top:56px;align-self:flex-start;
+  max-height:calc(100vh - 56px);overflow:auto;border-right:1px solid var(--line);
+  padding:10px 8px 40px;background:var(--panel);
+}
+nav .grp{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+  padding:12px 8px 4px;font-weight:650}
+nav button.nav-item{
+  display:flex;gap:8px;align-items:flex-start;width:100%;text-align:left;background:transparent;
+  border:0;border-radius:8px;padding:7px 8px;font-size:13px;line-height:1.35;color:var(--ink);
+}
+nav button.nav-item:hover{background:var(--bg)}
+nav button.nav-item[aria-current="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.nav-num{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--muted);font-size:11.5px;padding-top:1px}
+nav button.nav-item[aria-current="true"] .nav-num{color:var(--accent)}
+.nav-label{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.nav-rev{flex:0 0 auto;font-size:10px;color:var(--muted);border:1px solid var(--line);
+  border-radius:4px;padding:0 4px;margin-top:2px}
+.nav-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--accent);
+  margin-top:6px;opacity:0}
+.nav-dot.on{opacity:1}
+section#stage{flex:1 1 auto;min-width:0;padding:18px 20px 120px}
+
+.item{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:16px 18px 18px;margin:0 auto 22px;max-width:1600px}
+.item-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px}
+.item-head h2{margin:0;font-size:16.5px;font-weight:650;letter-spacing:-.01em}
+.badge{font-size:11px;font-weight:650;padding:2px 7px;border-radius:999px;letter-spacing:.01em}
+.badge.changed{color:var(--changed);background:var(--changed-bg)}
+.badge.new{color:var(--new);background:var(--new-bg)}
+.badge.removed{color:var(--removed);background:var(--removed-bg)}
+.badge.unchanged{color:var(--same);background:var(--same-bg)}
+/* 배포 여부(release) — 「이미 나간 것」과 「지금 봐 줘야 하는 것」을 한눈에 가른다. 수정/신규 배지와 별개다. */
+.badge.rel-deployed{color:var(--new);background:var(--new-bg)}
+.badge.rel-review{color:var(--review);background:var(--review-bg);outline:1px solid var(--review)}
+.nav-rel{flex:0 0 auto;font-size:10px;font-weight:650;border-radius:4px;padding:0 4px;margin-top:2px;white-space:nowrap}
+.nav-rel.rel-deployed{color:var(--new);background:var(--new-bg)}
+.nav-rel.rel-review{color:var(--review);background:var(--review-bg)}
+.count-chip .rel-review{color:var(--review);font-weight:650}
+.count-chip .rel-deployed{color:var(--new);font-weight:650}
+.grp-chip{font-size:11.5px;color:var(--muted);border:1px solid var(--line);
+  border-radius:999px;padding:1px 8px}
+
+.why{margin:8px 0 0;padding:10px 12px;background:var(--bg);border-radius:8px;
+  border-left:3px solid var(--accent);font-size:13.5px;white-space:pre-wrap}
+.why .k{font-weight:650;color:var(--accent);margin-right:6px}
+.check{max-width:900px;margin:4px 0 10px;padding:9px 12px;border:1.5px solid var(--accent);
+  border-radius:8px;background:var(--accent-soft);font-size:13.5px;line-height:1.55}
+.check .row{display:flex;gap:8px}
+.check .k{flex:0 0 72px;font-weight:700;color:var(--accent)}
+.check .res-ok{color:var(--ok);font-weight:700}
+.check .res-bad{color:var(--warn);font-weight:700}
+#hdr-guide{margin:4px 0 0;font-size:12.5px;color:var(--fg);max-width:1100px;white-space:pre-wrap}
+#hdr-guide b{color:var(--accent)}
+.sources{margin:8px 0 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.sources .k{font-size:11.5px;color:var(--muted);margin-right:2px}
+.src{font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:2px 8px;
+  color:var(--muted);text-decoration:none;background:var(--panel);font-variant-numeric:tabular-nums}
+a.src:hover{border-color:var(--accent);color:var(--accent)}
+.notes{margin:8px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap}
+.media{margin:10px 0 0}
+.media .k{font-size:11.5px;color:var(--muted)}
+.media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:6px}
+.media-cell{margin:0;padding:10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+.media-cell audio{width:100%;display:block}
+.media-cell video,.media-cell img{width:100%;display:block;border-radius:6px;background:var(--shot-bg)}
+.media-cell img{cursor:zoom-in}
+.media-cell.wide{grid-column:1/-1}
+.media-cell.wide img{cursor:zoom-out;width:auto;max-width:100%;margin:0 auto}
+.media-cell figcaption{margin-top:6px;font-size:12.5px;font-weight:600}
+.media-cell figcaption span{font-weight:400;color:var(--muted)}
+
+/* ---------- 회차 ---------- */
+.revbar{margin:12px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  padding:9px 11px;background:var(--bg);border-radius:8px}
+.revbar .k{font-size:11.5px;color:var(--muted);font-weight:650}
+.revbar select{font:inherit;font-size:12.5px;padding:3px 7px;border-radius:6px;
+  border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+.revbar .arrow{color:var(--muted);font-size:13px}
+.revbar .qbtn{border:1px solid var(--line);background:var(--panel);border-radius:6px;
+  padding:3px 9px;font-size:11.5px;color:var(--muted)}
+.revbar .qbtn:hover{border-color:var(--accent);color:var(--accent)}
+.revbar .qbtn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);
+  background:var(--accent-soft);font-weight:600}
+.hist{margin:8px 0 0;font-size:12.5px}
+.hist summary{cursor:pointer;color:var(--muted);font-size:11.5px;font-weight:650;
+  list-style:none;display:flex;gap:5px;align-items:center}
+.hist summary::-webkit-details-marker{display:none}
+.hist summary::before{content:"\25B8";transition:transform .12s}
+.hist[open] summary::before{transform:rotate(90deg)}
+.hist ol{margin:7px 0 0;padding-left:12px;list-style:none;border-left:2px solid var(--line)}
+.hist li{margin:0 0 5px;line-height:1.55;color:var(--muted)}
+.hist li b{color:var(--ink);font-weight:650;margin-right:6px}
+.hist li.cur b{color:var(--accent)}
+.hist li .noimg{color:var(--warn);font-size:11px;margin-left:6px}
+
+.compare{margin-top:12px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pane{min-width:0}
+.cap{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  font-size:11.5px;color:var(--muted);margin-bottom:5px;font-weight:600;letter-spacing:.02em}
+.cap .zoom{border:1px solid var(--line);background:var(--panel);border-radius:6px;
+  padding:1px 8px;font-size:11px;font-weight:600;color:var(--muted);flex:0 0 auto}
+.cap .zoom:hover{border-color:var(--accent);color:var(--accent)}
+.cap .file{font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:10.5px;opacity:.75;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shot{background:var(--shot-bg);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:80px}
+.shot img{display:block;max-width:100%;height:auto;cursor:zoom-in}
+body.fit .pane .shot img{max-height:var(--fit-h);width:auto}
+.shot.empty{min-height:160px;color:var(--muted);font-size:12.5px;background:var(--bg);
+  border-style:dashed}
+
+/* 겹쳐서 보기 */
+.slider-wrap{position:relative;background:var(--shot-bg);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;user-select:none;touch-action:none;
+  margin:0 auto;cursor:ew-resize}
+.slider-wrap img{display:block;width:100%;height:auto;pointer-events:none}
+.slider-wrap .over{position:absolute;inset:0;overflow:hidden}
+.slider-wrap .over img{position:absolute;top:0;left:0;width:100%;height:auto;max-width:none}
+/* 어떤 스크린샷 위에서도 경계가 보이도록 흰 심지에 진한 테두리를 둘러 이중선을 만든다. */
+.handle{position:absolute;top:0;bottom:0;width:3px;background:#fff;
+  box-shadow:0 0 0 1px rgba(0,0,0,.55), 0 0 7px rgba(0,0,0,.35);
+  transform:translateX(-1.5px);pointer-events:none}
+.handle .knob{position:absolute;top:50%;left:50%;width:26px;height:26px;margin:-13px 0 0 -13px;
+  border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.5);
+  box-shadow:0 1px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;
+  color:#111;font-size:9px;letter-spacing:-1px;font-weight:700}
+.slider-tags{position:absolute;top:8px;left:8px;right:8px;display:flex;
+  justify-content:space-between;pointer-events:none}
+.slider-tags span{background:rgba(0,0,0,.62);color:#fff;font-size:11px;font-weight:600;
+  padding:2px 8px;border-radius:5px}
+
+/* 번갈아 보기 */
+.blink-wrap{position:relative;background:var(--shot-bg);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;text-align:center;margin:0 auto}
+.blink-wrap img{display:block;width:100%;height:auto}
+.blink-wrap img[hidden]{display:none}
+.blink-bar{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:8px;
+  font-size:12px;color:var(--muted);flex-wrap:wrap}
+
+.bg-white{--shot-bg:#fff}
+.bg-gray{--shot-bg:#8b8f96}
+.bg-dark{--shot-bg:#14161a}
+.bg-checker{--shot-bg:transparent}
+.bg-checker .shot,.bg-checker .slider-wrap,.bg-checker .blink-wrap,.bg-checker .bshot{
+  background-image:linear-gradient(45deg,#c9ced6 25%,transparent 25%),
+    linear-gradient(-45deg,#c9ced6 25%,transparent 25%),
+    linear-gradient(45deg,transparent 75%,#c9ced6 75%),
+    linear-gradient(-45deg,transparent 75%,#c9ced6 75%);
+  background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;
+  background-color:#eef1f4;
+}
+
+.cmt{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
+.verdict{display:flex;gap:6px;margin:0 0 10px}
+.vbtn{font:inherit;font-size:12.5px;font-weight:650;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--fg,inherit);cursor:pointer}
+.vbtn.v-approved.on{background:#15803d;border-color:#15803d;color:#fff}
+.vbtn.v-hold.on{background:#b45309;border-color:#b45309;color:#fff}
+.vbtn.v-rejected.on{background:#b91c1c;border-color:#b91c1c;color:#fff}
+.cmt label{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:650;
+  color:var(--muted);margin-bottom:6px}
+.cmt textarea{width:100%;min-height:64px;resize:vertical;padding:9px 11px;border-radius:8px;
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+.cmt textarea:focus{outline:none;border-color:var(--accent);background:var(--panel)}
+.cmt textarea.filled{border-color:var(--accent);background:var(--panel)}
+.cmt .hint{font-size:11.5px;color:var(--muted);margin-top:5px}
+/* 이 화면이 **사이트 어디에 있는지** — 리뷰어가 캡처만 보고는 못 찾는다(2026-09-21 리뷰:
+   "화면상 경로 브레드크럼 있었으면", "어디서 보이는지 설명이 있었으면"). */
+.iss-id{display:inline-block;font:600 12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
+  border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-right:6px;vertical-align:2px}
+.issues{max-width:900px;margin:2px 0 6px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}
+.issues .k{font-weight:700;color:var(--fg)}
+.issues .iss a{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.issues .iss-when{margin-left:6px}
+.origin{max-width:900px;margin:0 0 10px;font-size:12.5px;line-height:1.6}
+.origin summary{cursor:pointer;font-weight:700;color:var(--fg);width:max-content}
+.origin ul{margin:6px 0 0;padding-left:18px;color:var(--muted)}
+.origin li{margin:2px 0;white-space:pre-wrap}
+.origin li b{color:var(--fg);margin-right:6px}
+.where{max-width:900px;margin:2px 0 10px;font-size:12.5px;color:var(--muted);line-height:1.6}
+.where .k{display:inline-block;font-weight:700;color:var(--fg);margin-right:6px}
+.where code{font:11.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel);
+  border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+
+/* ---------- 보드(전체 보기) ---------- */
+.board-top{max-width:1900px;margin:0 auto 12px;display:flex;gap:10px;align-items:center;
+  flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.board-group{max-width:1900px;margin:0 auto 26px}
+.board-group h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+  margin:0 0 9px;font-weight:650}
+.board-row{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.board-row .rowlab{flex:0 0 62px;font-size:11px;font-weight:700;color:var(--muted);
+  text-align:right;padding-top:7px;letter-spacing:.03em;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.board-scroll{flex:1 1 auto;min-width:0;overflow-x:auto;overflow-y:hidden;padding-bottom:4px}
+.board-track{display:flex;gap:10px;align-items:flex-start;width:max-content}
+.bcell{width:var(--cell-w);flex:0 0 auto}
+.bshot{height:var(--board-h);background:var(--shot-bg);border:1px solid var(--line);
+  border-radius:8px;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;
+  cursor:zoom-in;position:relative}
+.bshot:hover{border-color:var(--accent)}
+.bshot img{display:block;width:100%;height:auto;max-width:100%}
+.board-fit .bshot img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain}
+.bshot.empty{align-items:center;color:var(--muted);font-size:11px;border-style:dashed;
+  background:var(--bg);cursor:default}
+.bshot .cbadge{position:absolute;top:5px;right:5px;background:var(--accent);color:#fff;
+  font-size:10px;font-weight:700;border-radius:999px;padding:1px 6px}
+.bcap{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.35;
+  display:flex;gap:5px;align-items:baseline;cursor:pointer}
+.bcap:hover{color:var(--accent)}
+.bcap b{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+.bcap:hover b{color:var(--accent)}
+.bcap .t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-caps{display:flex;gap:10px;align-items:flex-start}
+.board-caps .rowlab{flex:0 0 62px}
+
+/* 확대는 "화면에 맞추기"로 끝나지 않는다 — 페이지 전체 캡처는 3만 px 를 넘어서 맞추면
+   아무것도 안 보이고, 맞춰 놓으면 원하는 자리를 볼 방법이 없다. 그래서 기본은 폭 맞춤이고,
+   누른 자리를 중심으로 확대하고, 끌어서 옮긴다(transform-origin:0 0 + 직접 계산). */
+#lb{position:fixed;inset:0;z-index:100;background:rgba(8,10,14,.95);display:none;
+  flex-direction:column;padding:0}
+#lb.on{display:flex}
+#lb .lbstage{flex:1 1 auto;overflow:hidden;position:relative;cursor:grab;touch-action:none}
+#lb .lbstage.dragging{cursor:grabbing}
+#lb img{position:absolute;top:0;left:0;transform-origin:0 0;max-width:none;max-height:none;
+  background:var(--shot-bg);will-change:transform}
+#lb .pct{font-variant-numeric:tabular-nums;min-width:52px;text-align:center}
+#lb .hint{color:#9aa0ab}
+#lb .lbbar{margin:0;padding:10px 14px;background:#12151b;display:flex;gap:10px;align-items:center;color:#e6e9ee;
+  font-size:12.5px;flex-wrap:wrap;justify-content:center}
+#lb .lbbar button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
+  color:#fff;border-radius:7px;padding:5px 10px;font-size:12px}
+
+#guide{position:fixed;right:18px;bottom:18px;z-index:120;width:400px;max-width:calc(100vw - 36px);
+  background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:15px 16px;
+  box-shadow:0 12px 36px rgba(0,0,0,.22);display:none}
+#guide.on{display:block}
+#guide h4{margin:0 0 4px;font-size:14px;font-weight:700;color:var(--ok)}
+#guide p{margin:6px 0 0;font-size:12.5px;line-height:1.65}
+#guide ol{margin:8px 0 0;padding-left:19px;font-size:12.5px;line-height:1.75}
+#guide code{background:var(--bg);border:1px solid var(--line);border-radius:4px;
+  padding:1px 5px;font-size:11.5px}
+#guide .x{position:absolute;top:9px;right:11px;background:transparent;border:0;
+  color:var(--muted);font-size:17px;line-height:1}
+#guide .warn{color:var(--warn);font-weight:600}
+
+.empty-state{max-width:640px;margin:60px auto;text-align:center;color:var(--muted)}
+kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px;
+  font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--panel)}
+.kbd-help{max-width:1600px;margin:0 auto;font-size:11.5px;color:var(--muted);
+  padding:2px 4px 0;display:flex;gap:14px;flex-wrap:wrap}
+
+body.board-view nav{display:none}
+@media (max-width:900px){ nav{display:none} .pair{grid-template-columns:1fr} }
+
+/* 기준선 — 레이아웃을 볼 때 "여기에 맞아야 한다"는 선을 직접 긋는다.
+   선은 픽셀이 아니라 이미지 기준 비율(0~1)로 들고 다닌다. 그래서 짝이 다른 배율로
+   그려져 있어도 같은 콘텐츠 위치에 선다 — 그게 이 기능의 전부다. */
+.shot{position:relative}
+.ruler{position:absolute;pointer-events:none;z-index:4;overflow:hidden}
+body.ruler-on .ruler{pointer-events:auto;cursor:crosshair}
+body.ruler-on .shot img,body.ruler-on .bshot img,
+body.ruler-on .slider-wrap,body.ruler-on .blink-wrap{cursor:crosshair}
+.ruler .ln{position:absolute;background:#ff2d55;pointer-events:none}
+.ruler .ln.h{left:0;right:0;height:1px;margin-top:-.5px}
+.ruler .ln.v{top:0;bottom:0;width:1px;margin-left:-.5px}
+/* 어떤 스크린샷 위에서도 보이도록 흰 테두리를 두른 이중선 */
+.ruler .ln{box-shadow:0 0 0 .5px rgba(255,255,255,.9)}
+body.ruler-on .ruler .ln{pointer-events:auto;cursor:pointer}
+/* 얇은 선을 정확히 누르기 어려우므로 잡히는 영역만 넓힌다 */
+.ruler .ln::after{content:"";position:absolute}
+.ruler .ln.h::after{left:0;right:0;top:-5px;height:11px}
+.ruler .ln.v::after{top:0;bottom:0;left:-5px;width:11px}
+.ruler .tag{position:absolute;font:600 10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:rgba(0,0,0,.72);color:#fff;padding:1px 4px;border-radius:3px;
+  pointer-events:none;white-space:nowrap}
+.ruler .tag.h{left:3px;transform:translateY(-50%)}
+.ruler .tag.v{top:3px;transform:translateX(-50%)}
+.ruler-hint{font-size:11.5px;color:var(--muted);margin:6px 0 0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1 id="hdr-title">리뷰</h1>
+    <p id="hdr-sub"></p>
+    <p id="hdr-guide" hidden></p>
+  </div>
+  <div class="spacer"></div>
+
+  <div class="seg" id="seg-view" role="group" aria-label="보기 방식">
+    <button data-view="focus" aria-pressed="true">한 화면씩</button>
+    <button data-view="board" aria-pressed="false">전체 보기</button>
+  </div>
+
+  <div class="seg" id="seg-mode" role="group" aria-label="비교 방식">
+    <button data-mode="side" aria-pressed="true">나란히</button>
+    <button data-mode="slider" aria-pressed="false">겹쳐서</button>
+    <button data-mode="blink" aria-pressed="false">번갈아</button>
+  </div>
+
+  <div class="seg" id="seg-bg" role="group" aria-label="배경">
+    <button data-bg="white" aria-pressed="true">흰</button>
+    <button data-bg="gray" aria-pressed="false">회</button>
+    <button data-bg="dark" aria-pressed="false">검</button>
+    <button data-bg="checker" aria-pressed="false">투명</button>
+  </div>
+
+  <button class="btn" id="btn-fit" aria-pressed="true"
+          title="세로가 긴 캡처를 화면 높이에 맞춰 줄입니다 (F)">높이 맞춤</button>
+  <button class="btn" id="btn-ruler" aria-pressed="false"
+          title="이미지를 누르면 기준선이 그어지고, 짝에도 같은 자리에 그어집니다. Shift+클릭은 세로선 (L)">기준선</button>
+  <button class="btn" id="btn-approved" aria-pressed="false" hidden
+          title="승인한 항목은 기본으로 숨긴다. 눌러야 다시 보인다">승인된 것 보기</button>
+  <button class="btn" id="btn-ruler-clear" hidden
+          title="이 페이지의 기준선을 모두 지웁니다">선 지우기</button>
+  <span class="count-chip" id="rel-count" hidden></span>
+  <span class="count-chip" id="cmt-count">코멘트 <b>0</b></span>
+  <button class="btn primary" id="btn-copy">코멘트 복사 →</button>
+  <button class="btn" id="btn-clear" title="이 페이지에 저장된 코멘트를 모두 지웁니다">비우기</button>
+</header>
+
+<main>
+  <nav id="nav"></nav>
+  <section id="stage"></section>
+</main>
+
+<div id="lb" role="dialog" aria-modal="true">
+  <div class="lbstage" id="lb-stage"><img id="lb-img" alt=""></div>
+  <div class="lbbar">
+    <span id="lb-cap"></span>
+    <button id="lb-prev">◀ 이전 회차</button>
+    <button id="lb-next">다음 회차 ▶</button>
+    <button id="lb-out">&minus;</button>
+    <span class="pct" id="lb-pct">100%</span>
+    <button id="lb-in">+</button>
+    <button id="lb-fit">폭 맞춤 (0)</button>
+    <button id="lb-actual">실제 크기 (A)</button>
+    <button id="lb-close">닫기 (Esc)</button>
+    <span class="hint">휠·트랙패드로 이동 · Cmd(Ctrl)+휠 또는 핀치로 확대 · 눌러서 그 자리 확대 · PageUp/Down·↑↓ 로도 이동</span>
+  </div>
+</div>
+
+<div id="guide" role="status">
+  <button class="x" id="guide-x" aria-label="닫기">×</button>
+  <h4 id="guide-h">복사했습니다</h4>
+  <div id="guide-body"></div>
+</div>
+
+<script>window.__REVIEW__ = {"title":"리뷰 시험","subtitle":"lab","guide":"","storeKey":"/fixture/data.json","sourcePath":"data.json","items":[{"title":"화면 하나","group":"g","why":"왜","id":"화면-하나","revisions":[{"label":"Before","why":"","src":"data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAACQAQCdASoIAAgAAMAWJaACdLoAA5gA/vyNh//V23/q7b/1dt/1dt+N5vNasQAA","file":"shots/before.png"},{"label":"After","why":"","src":"data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoIAAgAAMAWJaACdLoB+AADsACb/998Pe+HvfD/dH/812+a7fNdv+aDAAA=","file":"shots/after.png"}],"media":[],"leftIdx":0,"rightIdx":1}]};</script>
+<script>
+(function(){
+"use strict";
+
+var D = window.__REVIEW__ || {title:"리뷰", items:[]};
+
+var STATUS_KO = {changed:"수정", "new":"신규", removed:"삭제", unchanged:"변경 없음"};
+var RELEASE_KO = {deployed:"배포됨", review:"리뷰 필요"};
+var STORE_KEY = "bar:" + (D.storeKey || D.title || "review");
+var NL = String.fromCharCode(10);
+
+function load(k,dflt){ try{ return localStorage.getItem(STORE_KEY+":"+k) || dflt; }catch(e){ return dflt; } }
+function save(k,v){ try{ localStorage.setItem(STORE_KEY+":"+k, v); }catch(e){} }
+
+/* 제목에 「8086e515 · 」처럼 이슈 번호가 이미 있으면 뗀다 — 헤더가 앞에 칩으로 붙인다. */
+function stripIssueIds(title, issues){
+  (Array.isArray(issues) ? issues : []).forEach(function(x){
+    if(x && x.id8) title = title.replace(new RegExp("\\[?\\b" + x.id8 + "\\b\\]?\\s*[·:\\-–—]?\\s*"), "");
+  });
+  return title.trim();
+}
+/* 「제보 09-17 · 5일째」 — 달력 날짜 차이로 센다(밤 11시 제보가 「오늘」로 찍히지 않게). */
+function issueWhen(created){
+  var t = Date.parse(created||""); if(isNaN(t)) return "";
+  var d = new Date(t), now = new Date();
+  var mid = function(x){ return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+  var days = Math.round((mid(now) - mid(d)) / 86400000);
+  var mm = String(d.getMonth()+1).padStart(2,"0"), dd = String(d.getDate()).padStart(2,"0");
+  return "제보 " + (d.getFullYear() === now.getFullYear() ? "" : d.getFullYear() + "-") + mm + "-" + dd + (days >= 1 ? " · " + days + "일째" : " · 오늘");
+}
+
+/* 모든 항목은 revisions(회차) 배열로 다룬다. before/after 만 있는 항목은 빌드 단계에서
+   이미 회차 2개로 정규화돼 들어온다 — 그래서 4차·5차로 늘어나도 코드가 갈라지지 않는다. */
+var items = (D.items||[]).map(function(it,i){
+  var revs = (it.revisions||[]).map(function(r,ri){
+    return { label: r.label || (ri===0 ? "최초" : (ri+1)+"차"), why: r.why||"",
+             src: r.src||"", file: r.file||"" };
+  });
+  if(!revs.length) revs = [{label:"Before",why:"",src:"",file:""}];
+  var st = it.status;
+  if(!st){
+    var first = revs[0].src, last = revs[revs.length-1].src;
+    st = (!first && last) ? "new" : (first && !last) ? "removed" : "changed";
+  }
+  var lastIdx = revs.length - 1;
+  return {
+    idx:i,
+    id: it.id || ("item-"+(i+1)),
+    // 번호는 뷰어가 붙인다(it.no). 데이터 제목에 이미 「1. 」이 있으면 「1. 1. …」로 겹치고,
+    // 항목이 빠진 회차는 목록 번호와 제목 번호가 어긋난다(2026-09-22 contentops: 3 ↔ 「4. 설정」).
+    title: stripIssueIds(String(it.title || ("항목 "+(i+1))).replace(/^\s*\d+\s*[.)]\s+/, ""), it.issues),
+    // 이 항목이 고친 제보(라쏘런 등). [{id8, url, created}] — 제목 앞 번호와 「라쏘런에서 보기」가 여기서 나온다.
+    issues: Array.isArray(it.issues) ? it.issues.filter(function(x){ return x && x.id8; }) : [],
+    group: it.group || "",
+    where: it.where || "",
+    // 원래 요청 원문. 문자열 하나 또는 [{label, text, href}] — 빈 항목은 버린다.
+    origin: (Array.isArray(it.origin) ? it.origin : (it.origin ? [it.origin] : [])).map(function(o){
+      return typeof o === "string" ? { label: "", text: o, href: "" }
+        : { label: String(o.label || ""), text: String(o.text || ""), href: String(o.href || "") };
+    }).filter(function(o){ return o.text.trim(); }),
+    // 리뷰어가 이 항목에서 볼 곳과 통과 기준(2026-10-12 리뷰 요청). 문자열이면 「볼 곳」만.
+    check: (function(c){
+      if(!c) return null;
+      if(typeof c === "string") return { look: c, pass: "", result: "", ok: null };
+      return { look: String(c.look || ""), pass: String(c.pass || ""), result: String(c.result || ""),
+               ok: c.ok === true ? true : (c.ok === false ? false : null) };
+    })(it.check),
+    why: it.why || "",
+    notes: it.notes || "",
+    sources: it.sources || [],
+    media: Array.isArray(it.media) ? it.media : [],
+    revisions: revs,
+    li: Math.min(Math.max(it.leftIdx||0, 0), lastIdx),
+    ri: Math.min(Math.max(it.rightIdx==null ? lastIdx : it.rightIdx, 0), lastIdx),
+    status: st,
+    // 배포 여부. 없는 데이터(옛 리뷰)는 아무 표시도 안 한다.
+    release: RELEASE_KO[it.release] ? it.release : "",
+    releaseNote: it.releaseNote || ""
+  };
+});
+
+/* group 이 같은 항목을 한데 모은다(먼저 나온 group 이 앞). 이래야 목록과 좌우 이동
+   순서가 같아진다 — 둘이 어긋나면 "다음"이 어디로 갈지 예측이 안 된다. */
+(function regroup(){
+  var order = [], bucket = {};
+  items.forEach(function(it){
+    var g = it.group || " 기타";
+    if(!bucket[g]){ bucket[g] = []; order.push(g); }
+    bucket[g].push(it);
+  });
+  var flat = [];
+  order.forEach(function(g){ bucket[g].forEach(function(it){ flat.push(it); }); });
+  flat.forEach(function(it,i){ it.idx = i; });
+  items = flat;
+})();
+
+function L(it){ return it.revisions[it.li] || it.revisions[0]; }
+function R(it){ return it.revisions[it.ri] || it.revisions[it.revisions.length-1]; }
+function multi(it){ return it.revisions.length > 2; }
+
+var state = {
+  view: load("view","focus"),
+  mode: load("mode","side"),
+  bg:   load("bg","white"),
+  fit:  load("fit","1") !== "0",
+  boardRows: load("boardRows","both"),
+  boardSize: load("boardSize","auto"),
+  boardCrop: load("boardCrop","top"),
+  ruler: load("ruler","0") === "1",
+  cur:  0
+};
+
+var comments = {};
+try{ comments = JSON.parse(localStorage.getItem(STORE_KEY+":comments")||"{}") || {}; }catch(e){ comments = {}; }
+
+try{
+  var savedRev = JSON.parse(localStorage.getItem(STORE_KEY+":revsel")||"{}") || {};
+  items.forEach(function(it){
+    var s = savedRev[it.id];
+    if(!s) return;
+    var lastIdx = it.revisions.length - 1;
+    if(s.l != null) it.li = Math.min(Math.max(s.l,0), lastIdx);
+    if(s.r != null) it.ri = Math.min(Math.max(s.r,0), lastIdx);
+  });
+}catch(e){}
+
+/* ---------- 판정(승인·보류·거절) — 사용자 요청 2026-09-21 ----------
+   승인된 항목은 기본으로 숨긴다. 헤더의 「승인된 것 보기」를 켜야 보인다.
+   코멘트를 적으면 자동으로 「보류」가 된다 — 코멘트가 있다는 건 고쳐야 한다는 뜻이다.
+   번호(no)는 처음 번호로 고정한다. 숨길 때마다 번호가 바뀌면 코멘트 속 「3번」이 가리키는 게 달라진다. */
+var VERDICT_KO = { approved:"승인", hold:"보류(수정 필요)", rejected:"거절" };
+/* 판정 단축키 — 사용자 요청 2026-10-20(「승인 관련된 단축키도 있었으면」). 키 이름이 아니라 자리(e.code)로 본다:
+   한글 입력 상태면 e.key 가 ㅁ·ㅗ·ㄱ 이 되어 안 먹는다. 한 화면씩 보기에서만 — 전체 보기에는 「지금 항목」이 없다 */
+var VERDICT_KEYS = { KeyA:"approved", KeyH:"hold", KeyR:"rejected" };
+var VERDICT_KEY_LABEL = { approved:"A", hold:"H", rejected:"R" };
+var verdicts = {};
+try{ verdicts = JSON.parse(localStorage.getItem(STORE_KEY+":verdict")||"{}") || {}; }catch(e){ verdicts = {}; }
+function saveVerdicts(){ try{ localStorage.setItem(STORE_KEY+":verdict", JSON.stringify(verdicts)); }catch(e){} }
+var ALL_ITEMS = items.slice();
+ALL_ITEMS.forEach(function(it){ it.no = it.idx + 1; });
+var showApproved = load("showApproved","0") === "1";
+function applyVerdictFilter(){
+  items = ALL_ITEMS.filter(function(it){ return showApproved || verdicts[it.id] !== "approved"; });
+  items.forEach(function(it,i){ it.idx = i; });
+  if(state.cur > items.length - 1) state.cur = Math.max(0, items.length - 1);
+  var b = document.getElementById("btn-approved");
+  if(b){
+    var n = ALL_ITEMS.filter(function(it){ return verdicts[it.id] === "approved"; }).length;
+    b.textContent = "승인된 것 보기" + (n ? " (" + n + ")" : "");
+    b.setAttribute("aria-pressed", String(showApproved));
+    b.classList.toggle("primary", showApproved);
+    b.hidden = !n && !showApproved;
+  }
+}
+
+function saveComments(){
+  try{ localStorage.setItem(STORE_KEY+":comments", JSON.stringify(comments)); }catch(e){}
+}
+
+function saveRevSel(){
+  try{
+    var m = {};
+    items.forEach(function(it){ if(multi(it)) m[it.id] = {l:it.li, r:it.ri}; });
+    localStorage.setItem(STORE_KEY+":revsel", JSON.stringify(m));
+  }catch(e){}
+}
+
+/* ---------- 기준선 ----------
+   레이아웃 정렬은 "두 장에 같은 자리에 선을 긋고 무엇이 그 선에 걸리는지"로 본다.
+   그래서 선은 **이미지 기준 비율**로 저장하고, 그릴 때는 이미지가 실제로 그려진 상자에
+   맞춘다. 박스가 아니라 이미지에 맞추는 게 핵심이다 — 전체 보기는 이미지를 잘라서
+   보여주고(크롭), 나란히 보기는 좌우로 남는 공간이 생겨서(레터박스) 박스와 이미지가
+   서로 다르다. 박스에 맞추면 짝끼리 선이 어긋난다. */
+var rules = {};
+try{ rules = JSON.parse(localStorage.getItem(STORE_KEY+":rules")||"{}") || {}; }catch(e){ rules = {}; }
+function saveRules(){ try{ localStorage.setItem(STORE_KEY+":rules", JSON.stringify(rules)); }catch(e){} }
+function ruleCount(){
+  var n = 0;
+  for(var k in rules) if(rules.hasOwnProperty(k)) n += (rules[k]||[]).length;
+  return n;
+}
+function refreshRulerChip(){
+  var b = document.getElementById("btn-ruler-clear");
+  if(b) b.hidden = ruleCount() === 0;
+}
+function clamp01(v){ return Math.max(0, Math.min(1, v)); }
+
+var ruleHosts = [];
+function paintRules(host){
+  var arr = rules[host.id] || [];
+  host.node.innerHTML = "";
+  arr.forEach(function(r, i){
+    var ln = el("div","ln " + r.a);
+    ln.style[r.a === "h" ? "top" : "left"] = (r.p*100) + "%";
+    ln.title = "누르면 이 선을 지웁니다";
+    ln.addEventListener("click", function(e){
+      if(!state.ruler) return;
+      e.stopPropagation(); e.preventDefault();
+      (rules[host.id]||[]).splice(i,1);
+      saveRules(); repaintRules(host.id); refreshRulerChip();
+    });
+    host.node.appendChild(ln);
+    var tag = el("div","tag " + r.a, (r.p*100).toFixed(1) + "%");
+    tag.style[r.a === "h" ? "top" : "left"] = (r.p*100) + "%";
+    host.node.appendChild(tag);
+  });
+}
+function repaintRules(id){
+  ruleHosts.forEach(function(h){ if(h.id === id) paintRules(h); });
+}
+function placeAllRules(){
+  ruleHosts.forEach(function(h){ h.place(); });
+}
+/* box 는 position:relative 인 상자, img 는 그 안에서 기준이 될 이미지. */
+function attachRuler(box, img, itemId){
+  var node = el("div","ruler");
+  box.appendChild(node);
+  function place(){
+    node.style.left   = img.offsetLeft + "px";
+    node.style.top    = img.offsetTop + "px";
+    node.style.width  = img.offsetWidth + "px";
+    node.style.height = img.offsetHeight + "px";
+  }
+  var host = { id: itemId, node: node, place: place };
+  ruleHosts.push(host);
+  // 겹쳐보기의 드래그·이미지 클릭 확대가 선 긋기를 가로채지 않게 한다.
+  node.addEventListener("pointerdown", function(e){ if(state.ruler) e.stopPropagation(); });
+  node.addEventListener("click", function(e){
+    if(!state.ruler) return;
+    e.stopPropagation(); e.preventDefault();
+    var r = node.getBoundingClientRect();
+    if(!r.width || !r.height) return;
+    var arr = rules[itemId] || (rules[itemId] = []);
+    if(e.shiftKey) arr.push({ a:"v", p: clamp01((e.clientX - r.left)/r.width) });
+    else           arr.push({ a:"h", p: clamp01((e.clientY - r.top)/r.height) });
+    saveRules(); repaintRules(itemId); refreshRulerChip();
+  });
+  img.addEventListener("load", place);
+  place();
+  paintRules(host);
+  return node;
+}
+
+function el(tag, cls, txt){
+  var n = document.createElement(tag);
+  if(cls) n.className = cls;
+  if(txt != null) n.textContent = txt;
+  return n;
+}
+function commentCount(){
+  var n = 0;
+  for(var k in comments){ if(comments[k] && comments[k].trim()) n++; }
+  return n;
+}
+function refreshCount(){
+  document.querySelector("#cmt-count b").textContent = commentCount();
+  document.querySelectorAll("nav .nav-dot").forEach(function(d){
+    var id = d.getAttribute("data-for");
+    d.classList.toggle("on", !!(comments[id] && comments[id].trim()));
+  });
+}
+
+document.getElementById("hdr-title").textContent = D.title || "리뷰";
+(function releaseCount(){
+  var nReview = items.filter(function(it){ return it.release === "review"; }).length;
+  var nDeployed = items.filter(function(it){ return it.release === "deployed"; }).length;
+  if(!nReview && !nDeployed) return;
+  var chip = document.getElementById("rel-count");
+  chip.hidden = false;
+  chip.appendChild(el("span","rel-review","리뷰 필요 " + nReview));
+  chip.appendChild(document.createTextNode(" · "));
+  chip.appendChild(el("span","rel-deployed","배포됨 " + nDeployed));
+})();
+document.title = D.title || "Before / After 리뷰";
+var sub = [];
+if(D.subtitle) sub.push(D.subtitle);
+sub.push(items.length + "개 항목");
+var maxRev = items.reduce(function(m,it){ return Math.max(m, it.revisions.length); }, 0);
+if(maxRev > 2) sub.push("최대 " + maxRev + "회차");
+document.getElementById("hdr-sub").textContent = sub.join(" · ");
+// 이 페이지를 어떻게 보면 되는지 — 항목이 많으면 어디부터 볼지 모른다(2026-10-12 리뷰: 「어디를 봐야할지 모르겠음」).
+if(D.guide){
+  var gd = document.getElementById("hdr-guide");
+  gd.hidden = false;
+  gd.appendChild(el("b", null, "보는 법 "));
+  gd.appendChild(document.createTextNode(String(D.guide)));
+}
+
+/* ---------- 목록 ---------- */
+function buildNav(){
+  var nav = document.getElementById("nav");
+  nav.innerHTML = "";
+  var lastGroup = null;
+  items.forEach(function(it){
+    if(it.group !== lastGroup){
+      lastGroup = it.group;
+      nav.appendChild(el("div","grp", it.group || "기타"));
+    }
+    var b = el("button","nav-item");
+    b.type = "button";
+    b.setAttribute("data-idx", it.idx);
+    b.appendChild(el("span","nav-num", String(it.no)));
+    b.appendChild(el("span","nav-label", it.title));
+    if(multi(it)) b.appendChild(el("span","nav-rev", it.revisions.length + "회차"));
+    if(it.release) b.appendChild(el("span","nav-rel rel-"+it.release, RELEASE_KO[it.release]));
+    var dot = el("span","nav-dot");
+    dot.setAttribute("data-for", it.id);
+    b.appendChild(dot);
+    b.addEventListener("click", function(){ goto(it.idx); });
+    nav.appendChild(b);
+  });
+}
+function markNav(){
+  document.querySelectorAll("nav .nav-item").forEach(function(b){
+    var on = state.view==="focus" && Number(b.getAttribute("data-idx"))===state.cur;
+    b.setAttribute("aria-current", on ? "true" : "false");
+  });
+}
+
+function sourcesNode(it){
+  if(!it.sources || !it.sources.length) return null;
+  var wrap = el("div","sources");
+  wrap.appendChild(el("span","k","출처"));
+  it.sources.forEach(function(s){
+    var label, href;
+    if(typeof s === "string"){ label = s; href = ""; }
+    else { label = s.label || s.href || ""; href = s.href || ""; }
+    if(!label) return;
+    if(href){
+      var a = el("a","src",label);
+      a.href = href; a.target = "_blank"; a.rel = "noreferrer noopener";
+      wrap.appendChild(a);
+    } else wrap.appendChild(el("span","src",label));
+  });
+  return wrap;
+}
+
+/* 소리·영상·참고 이미지 — 캡처 비교로는 판단이 안 되는 것을 같은 카드에서 바로 듣고 본다 */
+function mediaNode(it){
+  if(!it.media || !it.media.length) return null;
+  var wrap = el("div","media");
+  wrap.appendChild(el("span","k","들어 보기 · 참고"));
+  var grid = el("div","media-grid");
+  it.media.forEach(function(m){
+    var cell = el("figure","media-cell"), node;
+    if(m.kind === "audio" || m.kind === "video"){
+      node = document.createElement(m.kind);
+      node.controls = true; node.preload = "metadata"; node.src = m.src;
+      if(m.kind === "video") node.playsInline = true;
+    } else {
+      node = document.createElement("img");
+      node.src = m.src; node.alt = m.label || ""; node.loading = "lazy";
+      node.addEventListener("click", function(){ cell.classList.toggle("wide"); });   // 누르면 한 줄을 다 쓰게 펼친다
+    }
+    cell.appendChild(node);
+    var cap = el("figcaption", null, m.label || "");
+    if(m.note) cap.appendChild(el("span", null, " — " + m.note));
+    cell.appendChild(cap);
+    grid.appendChild(cell);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+/* ---------- 회차 선택 + 이력 ---------- */
+function revBar(it, onChange){
+  if(!multi(it)) return null;
+  var bar = el("div","revbar");
+  bar.appendChild(el("span","k","비교할 회차"));
+
+  function sel(which){
+    var s = document.createElement("select");
+    it.revisions.forEach(function(r,i){
+      var o = document.createElement("option");
+      o.value = i;
+      o.textContent = (i+1) + ". " + r.label + (r.src ? "" : " (이미지 없음)");
+      s.appendChild(o);
+    });
+    s.value = which === "l" ? it.li : it.ri;
+    s.addEventListener("change", function(){
+      var v = Number(s.value);
+      if(which === "l") it.li = v; else it.ri = v;
+      saveRevSel(); onChange();
+    });
+    return s;
+  }
+  bar.appendChild(sel("l"));
+  bar.appendChild(el("span","arrow","↔"));
+  bar.appendChild(sel("r"));
+
+  // 자주 쓰는 두 조합은 한 번에 갈 수 있게 둔다.
+  var last = it.revisions.length - 1;
+  [["처음 ↔ 마지막", 0, last],
+   ["직전 ↔ 마지막", Math.max(0,last-1), last]].forEach(function(q){
+    var b = el("button","qbtn",q[0]);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(it.li===q[1] && it.ri===q[2]));
+    b.addEventListener("click", function(){ it.li=q[1]; it.ri=q[2]; saveRevSel(); onChange(); });
+    bar.appendChild(b);
+  });
+  return bar;
+}
+
+function revHistory(it){
+  if(!multi(it)) return null;
+  var d = document.createElement("details");
+  d.className = "hist";
+  if(load("histOpen","0") === "1") d.open = true;
+  d.addEventListener("toggle", function(){ save("histOpen", d.open ? "1" : "0"); });
+  var sum = document.createElement("summary");
+  sum.textContent = "회차 이력 " + it.revisions.length + "건";
+  d.appendChild(sum);
+  var ol = el("ol");
+  it.revisions.forEach(function(r,i){
+    var li = el("li");
+    if(i===it.li || i===it.ri) li.className = "cur";
+    li.appendChild(el("b", null, (i+1) + ". " + r.label));
+    li.appendChild(document.createTextNode(r.why || "(변경 이유 없음)"));
+    if(!r.src) li.appendChild(el("span","noimg","이미지 없음"));
+    ol.appendChild(li);
+  });
+  d.appendChild(ol);
+  return d;
+}
+
+/* ---------- 비교 화면 ---------- */
+function shotNode(rev, it, which){
+  var box = el("div","shot");
+  if(!rev.src){
+    box.classList.add("empty");
+    box.textContent = which==="l" ? "이 회차의 화면 없음" : "이후 화면 없음";
+    return box;
+  }
+  var img = new Image();
+  img.src = rev.src; img.alt = it.title + " " + rev.label;
+  img.loading = "lazy"; img.draggable = false;
+  img.addEventListener("click", function(){ openLightbox(it, which==="l" ? it.li : it.ri); });
+  box.appendChild(img);
+  attachRuler(box, img, it.id);
+  return box;
+}
+
+function sideNode(it){
+  var pair = el("div","pair");
+  [["l", L(it)], ["r", R(it)]].forEach(function(t){
+    var rev = t[1];
+    var pane = el("div","pane");
+    var cap = el("div","cap");
+    cap.appendChild(el("span",null,rev.label));
+    if(rev.file){
+      // 어느 캡처를 보고 있는지가 화면에 보여야 나중에 되짚을 수 있다.
+      var f = el("span","file", rev.file.split("/").pop());
+      f.title = rev.file;
+      cap.appendChild(f);
+    }
+    pane.appendChild(cap);
+    pane.appendChild(shotNode(rev, it, t[0]));
+    pair.appendChild(pane);
+  });
+  return pair;
+}
+
+/* 겹쳐보기·번갈아보기는 두 장을 같은 자리에 포개므로 높이를 CSS 로 자를 수 없다.
+   대신 폭을 줄여 높이를 맞춘다. 원본보다 크게 늘리지도 않는다. */
+function fitWidth(imgA, imgB){
+  var w = Math.max(imgA.naturalWidth || 0, imgB.naturalWidth || 0);
+  var h = Math.max(imgA.naturalHeight || 0, imgB.naturalHeight || 0);
+  if(!w) return 9999;
+  if(state.fit && h){
+    var fitH = Math.max(400, window.innerHeight - 220);  // CSS --fit-h 와 같은 값
+    if(h > fitH) return Math.min(w, Math.round(w * fitH / h));
+  }
+  return w;
+}
+
+function sliderNode(it){
+  var lr = L(it), rr = R(it);
+  if(!lr.src || !rr.src) return sideNode(it);
+
+  var wrap = el("div","slider-wrap");
+  var base = new Image(); base.src = rr.src; base.alt = it.title+" "+rr.label; base.draggable = false;
+  var over = el("div","over");
+  var top = new Image(); top.src = lr.src; top.alt = it.title+" "+lr.label; top.draggable = false;
+  over.appendChild(top);
+  var handle = el("div","handle");
+  handle.appendChild(el("div","knob","◀▶"));
+  var tags = el("div","slider-tags");
+  tags.appendChild(el("span",null,lr.label));
+  tags.appendChild(el("span",null,rr.label));
+  wrap.appendChild(base); wrap.appendChild(over); wrap.appendChild(handle); wrap.appendChild(tags);
+  attachRuler(wrap, base, it.id);
+
+  var pct = 50;
+  function setPct(p){
+    pct = Math.max(0, Math.min(100, p));
+    over.style.width = pct + "%";
+    handle.style.left = pct + "%";
+    top.style.width = wrap.clientWidth + "px";  // 잘린 폭과 무관하게 두 장을 같은 자리에 겹친다
+  }
+  function capWidth(){
+    wrap.style.maxWidth = fitWidth(base, top) + "px";
+    setPct(pct);
+  }
+  var dragging = false;
+  function fromEvent(e){
+    var r = wrap.getBoundingClientRect();
+    var x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    setPct(x / r.width * 100);
+  }
+  wrap.addEventListener("pointerdown", function(e){
+    dragging = true;
+    try{ wrap.setPointerCapture(e.pointerId); }catch(err){}
+    fromEvent(e); e.preventDefault();
+  });
+  wrap.addEventListener("pointermove", function(e){ if(dragging){ fromEvent(e); e.preventDefault(); } });
+  wrap.addEventListener("pointerup", function(){ dragging = false; });
+  wrap.addEventListener("pointercancel", function(){ dragging = false; });
+  wrap.addEventListener("dragstart", function(e){ e.preventDefault(); });
+  base.addEventListener("load", capWidth);
+  top.addEventListener("load", capWidth);
+  capWidth();
+
+  var host = el("div");
+  var cap = el("div","cap");
+  cap.appendChild(el("span",null,"이미지 아무 곳이나 누르거나 끌면 경계가 따라옵니다 · 왼쪽 " +
+                                 lr.label + " / 오른쪽 " + rr.label));
+  var zoom = el("button","zoom","크게 보기");
+  zoom.type = "button";
+  zoom.addEventListener("click", function(){ openLightbox(it, it.ri); });
+  cap.appendChild(zoom);
+  host.appendChild(cap);
+  host.appendChild(wrap);
+  return host;
+}
+
+function blinkNode(it){
+  var lr = L(it), rr = R(it);
+  if(!lr.src || !rr.src) return sideNode(it);
+
+  var host = el("div");
+  var wrap = el("div","blink-wrap");
+  var b = new Image(); b.src = lr.src; b.alt = lr.label; b.draggable = false;
+  var a = new Image(); a.src = rr.src; a.alt = rr.label; a.draggable = false;
+  a.hidden = true;
+  wrap.appendChild(b); wrap.appendChild(a);
+  attachRuler(wrap, b, it.id);
+  function capWidth(){ wrap.style.maxWidth = fitWidth(b, a) + "px"; }
+  b.addEventListener("load", capWidth);
+  a.addEventListener("load", capWidth);
+  capWidth();
+
+  var bar = el("div","blink-bar");
+  var which = el("strong",null,lr.label);
+  var btn = el("button","btn","전환 (스페이스)");
+  var autoBtn = el("button","btn","자동 깜빡임");
+  var timer = null;
+  function flip(){
+    var showLeft = b.hidden;
+    b.hidden = !showLeft; a.hidden = showLeft;
+    which.textContent = showLeft ? lr.label : rr.label;
+  }
+  btn.addEventListener("click", flip);
+  autoBtn.addEventListener("click", function(){
+    if(timer){ clearInterval(timer); timer = null; autoBtn.textContent = "자동 깜빡임"; }
+    else { timer = setInterval(flip, 700); autoBtn.textContent = "정지"; }
+  });
+  var zoom = el("button","btn","크게 보기");
+  zoom.addEventListener("click", function(e){
+    e.stopPropagation(); openLightbox(it, b.hidden ? it.ri : it.li);
+  });
+  wrap.addEventListener("click", function(){ openLightbox(it, b.hidden ? it.ri : it.li); });
+  bar.appendChild(el("span",null,"지금 보이는 화면:"));
+  bar.appendChild(which); bar.appendChild(btn); bar.appendChild(autoBtn); bar.appendChild(zoom);
+  host.appendChild(wrap); host.appendChild(bar);
+  host._flip = flip;
+  return host;
+}
+
+function compareNode(it){
+  var c = el("div","compare");
+  var inner = state.mode==="slider" ? sliderNode(it)
+            : state.mode==="blink"  ? blinkNode(it)
+            : sideNode(it);
+  c.appendChild(inner);
+  c._flip = inner._flip;
+  return c;
+}
+
+function commentNode(it){
+  var box = el("div","cmt");
+  var lab = el("label");
+  lab.appendChild(el("span",null,"💬 이 화면에 대한 코멘트"));
+  lab.htmlFor = "cmt-" + it.id;
+  var ta = el("textarea");
+  ta.id = "cmt-" + it.id;
+  ta.placeholder = "고쳐야 할 점을 여기에 적으면 「코멘트 복사」에 담깁니다. 예) 버튼이 너무 아래 붙었어요. 하단 여백 24px 주세요.";
+  ta.value = comments[it.id] || "";
+  if(ta.value.trim()) ta.classList.add("filled");
+  var vrow = el("div","verdict");
+  function paintVerdict(){
+    vrow.querySelectorAll("button").forEach(function(b){
+      var on = verdicts[it.id] === b.getAttribute("data-v");
+      b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on));
+    });
+  }
+  [["approved","승인"],["hold","보류"],["rejected","거절"]].forEach(function(v){
+    var b = el("button", "vbtn v-" + v[0], v[1]);
+    b.type = "button"; b.setAttribute("data-v", v[0]);
+    b.title = v[1] + " (" + VERDICT_KEY_LABEL[v[0]] + ")";
+    b.addEventListener("click", function(){
+      verdicts[it.id] = verdicts[it.id] === v[0] ? undefined : v[0];
+      if(!verdicts[it.id]) delete verdicts[it.id];
+      saveVerdicts(); paintVerdict();
+      // 승인하면 바로 숨긴다(보기가 꺼져 있을 때). 다음 항목으로 넘어가게 한다.
+      if(v[0] === "approved" && verdicts[it.id] && !showApproved){ render(); }
+    });
+    vrow.appendChild(b);
+  });
+  paintVerdict();
+  ta.addEventListener("input", function(){
+    comments[it.id] = ta.value;
+    ta.classList.toggle("filled", !!ta.value.trim());
+    // 코멘트가 달렸다 = 고쳐야 한다 = 보류. 거절은 사람이 고른 것이니 건드리지 않는다.
+    if(ta.value.trim() && verdicts[it.id] !== "rejected" && verdicts[it.id] !== "hold"){
+      verdicts[it.id] = "hold"; saveVerdicts(); paintVerdict();
+    }
+    saveComments(); refreshCount();
+  });
+  box.appendChild(vrow);
+  box.appendChild(lab);
+  box.appendChild(ta);
+  box.appendChild(el("div","hint","입력하는 대로 이 브라우저에 저장됩니다. 페이지를 다시 열어도 남아 있습니다."));
+  return box;
+}
+
+/* ---------- 한 화면씩 ---------- */
+function renderFocus(){
+  var stage = document.getElementById("stage");
+  stage.innerHTML = "";
+  if(!items.length){
+    stage.appendChild(el("div","empty-state", ALL_ITEMS.length ? "모두 승인됐습니다. 헤더의 「승인된 것 보기」로 다시 볼 수 있습니다." : "비교할 항목이 없습니다."));
+    return;
+  }
+  var it = items[state.cur];
+  var card = el("div","item");
+
+  var head = el("div","item-head");
+  var h2 = el("h2", null, it.no + ". ");
+  it.issues.forEach(function(x){ h2.appendChild(el("span","iss-id", x.id8)); });
+  h2.appendChild(document.createTextNode(it.title));
+  head.appendChild(h2);
+  head.appendChild(el("span","badge "+it.status, STATUS_KO[it.status] || it.status));
+  if(it.release){
+    var rel = el("span","badge rel-"+it.release, RELEASE_KO[it.release] + (it.releaseNote ? " · " + it.releaseNote : ""));
+    rel.setAttribute("data-release", it.release);
+    head.appendChild(rel);
+  }
+  if(it.group) head.appendChild(el("span","grp-chip", it.group));
+  card.appendChild(head);
+
+  if(it.check){
+    var ck = el("div","check");
+    [["볼 곳", it.check.look], ["통과 기준", it.check.pass]].forEach(function(r){
+      if(!r[1]) return;
+      var row = el("div","row"); row.appendChild(el("span","k",r[0])); row.appendChild(el("span",null,r[1])); ck.appendChild(row);
+    });
+    if(it.check.result){
+      var rr0 = el("div","row"); rr0.appendChild(el("span","k","측정"));
+      var cls = it.check.ok === true ? "res-ok" : (it.check.ok === false ? "res-bad" : null);
+      rr0.appendChild(el("span", cls, (it.check.ok === true ? "통과 · " : (it.check.ok === false ? "실패 · " : "")) + it.check.result));
+      ck.appendChild(rr0);
+    }
+    card.appendChild(ck);
+  }
+
+  // 고친 제보로 바로 간다 — 리뷰하다 원래 제보(사진·코멘트)를 다시 보려고 할 때(2026-09-22 요청).
+  if(it.issues.length){
+    var iss = el("div","issues");
+    iss.appendChild(el("span","k","라쏘런"));
+    it.issues.forEach(function(x){
+      var one = el("span","iss");
+      if(x.url){ var a = el("a", null, x.id8 + " ↗"); a.href = x.url; a.target = "_blank"; a.rel = "noopener"; one.appendChild(a); }
+      else one.appendChild(el("b", null, x.id8));
+      var w = issueWhen(x.created); if(w) one.appendChild(el("span","iss-when", w));
+      iss.appendChild(one);
+    });
+    card.appendChild(iss);
+  }
+
+  // 어디서 보이는 화면인지 — 경로를 먼저 보여 줘야 리뷰어가 직접 열어 볼 수 있다.
+  if(it.where){
+    var wh = el("div","where");
+    wh.appendChild(el("span","k","어디서 보이나"));
+    wh.appendChild(document.createTextNode(it.where));
+    card.appendChild(wh);
+  }
+
+  // 이 수정이 답하는 원래 요청(제보·점검표 행) — 리뷰어가 "원래 뭐라고 했더라"를 다른 창에서
+  // 찾지 않게 한다. 마우스를 올리면 툴팁으로 전문이 보인다(2026-10-08 사용자 요청).
+  if(it.origin.length){
+    var og = el("details","origin");
+    // 접어 두면 아무도 안 연다 — 펼친 채로 둔다(2026-10-12 리뷰: 「여기에 제보 원문이 있었으면」).
+    og.open = true;
+    var sm = el("summary", null, "이슈 원문 (" + it.origin.length + ")");
+    sm.title = it.origin.map(function(o){ return (o.label ? o.label + ": " : "") + o.text; }).join(NL + NL);
+    og.appendChild(sm);
+    var ul = el("ul");
+    it.origin.forEach(function(o){
+      var li = el("li");
+      if(o.label) li.appendChild(el("b", null, o.label));
+      li.appendChild(document.createTextNode(o.text));
+      if(o.href){ var a = el("a", null, " ↗"); a.href = o.href; a.target = "_blank"; a.rel = "noreferrer noopener"; li.appendChild(a); }
+      ul.appendChild(li);
+    });
+    og.appendChild(ul);
+    card.appendChild(og);
+  }
+
+  if(it.why){
+    var w = el("div","why");
+    w.appendChild(el("span","k","왜 바꿨나"));
+    w.appendChild(document.createTextNode(it.why));
+    card.appendChild(w);
+  }
+  var s = sourcesNode(it);
+  if(s) card.appendChild(s);
+  if(it.notes) card.appendChild(el("div","notes", it.notes));
+  var md = mediaNode(it);
+  if(md) card.appendChild(md);
+
+  var rb = revBar(it, function(){ renderFocus(); });
+  if(rb) card.appendChild(rb);
+  var hist = revHistory(it);
+  if(hist) card.appendChild(hist);
+
+  var cmp = compareNode(it);
+  card.appendChild(cmp);
+  card.appendChild(commentNode(it));
+  stage.appendChild(card);
+
+  var help = el("div","kbd-help");
+  help.innerHTML =
+    '<span><kbd>←</kbd> <kbd>→</kbd> 항목 이동</span>' +
+    '<span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 비교 방식</span>' +
+    '<span><kbd>G</kbd> 전체 보기</span>' +
+    '<span><kbd>F</kbd> 높이 맞춤</span>' +
+    '<span><kbd>B</kbd> 배경</span>' +
+    '<span><kbd>Space</kbd> 번갈아 전환</span>' +
+    '<span><kbd>A</kbd><kbd>H</kbd><kbd>R</kbd> 승인·보류·거절</span>';
+  stage.appendChild(help);
+  stage._flip = cmp._flip;
+  markNav(); refreshCount();
+}
+
+/* ---------- 전체 보기(보드) ----------
+   페이지 여러 장을 한눈에 보려면 카드로 쌓는 것보다 이전 행 / 나중 행으로 가로로
+   늘어놓는 게 낫다. 같은 위치끼리 위아래로 맞아서 흐름이 그대로 읽힌다. */
+var BOARD_SIZE = { s:{h:150,w:190}, m:{h:240,w:300}, l:{h:380,w:460} };
+
+/* "한눈에" 는 그룹에서 가장 많은 항목 수와 지금 컨테이너 폭으로 셀 크기를 역산한다.
+   6장이든 12장이든 가로 스크롤 없이 한 줄에 들어가는 게 목적이다. */
+function autoSize(maxCount, rows){
+  var stage = document.getElementById("stage");
+  // clientWidth 는 padding 을 포함한다 — 빼지 않으면 셀이 딱 그만큼 넘쳐서 가로 스크롤이 생긴다.
+  var pad = 40, rowLab = 62, rowGap = 10, slack = 16;
+  var avail = (stage.clientWidth || 1240) - pad - rowLab - rowGap - slack;
+  var gap = 10;
+  var w = Math.floor((avail - gap * (maxCount - 1)) / Math.max(1, maxCount));
+  w = Math.max(110, Math.min(w, 520));
+  var perRow = Math.max(130, Math.floor((window.innerHeight - 300) / Math.max(1, rows)));
+  return { w: w, h: Math.max(130, Math.min(Math.round(w * 1.5), perRow)) };
+}
+
+function boardCell(it, rev, which, w){
+  var cell = el("div","bcell");
+  cell.style.setProperty("--cell-w", w + "px");
+  var box = el("div","bshot");
+  if(rev && rev.src){
+    var im = new Image();
+    im.src = rev.src; im.alt = it.title + " " + rev.label;
+    im.loading = "lazy"; im.draggable = false;
+    box.appendChild(im);
+    attachRuler(box, im, it.id);
+    box.addEventListener("click", function(){ openLightbox(it, which==="l" ? it.li : it.ri); });
+  } else {
+    box.classList.add("empty");
+    box.textContent = "없음";
+  }
+  if(which === "r" && comments[it.id] && comments[it.id].trim())
+    box.appendChild(el("span","cbadge","💬"));
+  cell.appendChild(box);
+  return cell;
+}
+
+function renderBoard(){
+  var stage = document.getElementById("stage");
+  stage.innerHTML = "";
+
+  var groupsOrder = [], groupMap = {};
+  items.forEach(function(it){
+    var g = it.group || "기타";
+    if(!groupMap[g]){ groupMap[g] = []; groupsOrder.push(g); }
+    groupMap[g].push(it);
+  });
+  var maxCount = groupsOrder.reduce(function(m,g){ return Math.max(m, groupMap[g].length); }, 1);
+  var rowsShown = state.boardRows === "both" ? 2 : 1;
+  var sz = state.boardSize === "auto" ? autoSize(maxCount, rowsShown)
+                                      : (BOARD_SIZE[state.boardSize] || BOARD_SIZE.m);
+
+  var top = el("div","board-top");
+  top.appendChild(el("span",null,"행"));
+  var segRows = el("div","seg");
+  [["both","둘 다"],["r","나중 것만"],["l","이전 것만"]].forEach(function(t){
+    var b = el("button",null,t[1]);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(state.boardRows===t[0]));
+    b.addEventListener("click", function(){ state.boardRows=t[0]; save("boardRows",t[0]); render(); });
+    segRows.appendChild(b);
+  });
+  top.appendChild(segRows);
+  top.appendChild(el("span",null,"크기"));
+  var segSize = el("div","seg");
+  [["auto","한눈에"],["s","작게"],["m","보통"],["l","크게"]].forEach(function(t){
+    var b = el("button",null,t[1]);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(state.boardSize===t[0]));
+    b.addEventListener("click", function(){ state.boardSize=t[0]; save("boardSize",t[0]); render(); });
+    segSize.appendChild(b);
+  });
+  top.appendChild(segSize);
+  top.appendChild(el("span",null,"잘라보기"));
+  var segCrop = el("div","seg");
+  [["top","윗부분"],["fit","전체"]].forEach(function(t){
+    var b = el("button",null,t[1]);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(state.boardCrop===t[0]));
+    b.addEventListener("click", function(){ state.boardCrop=t[0]; save("boardCrop",t[0]); render(); });
+    segCrop.appendChild(b);
+  });
+  top.appendChild(segCrop);
+  top.appendChild(el("span",null,"썸네일을 누르면 크게, 제목을 누르면 그 화면으로 갑니다"));
+  stage.appendChild(top);
+
+  var order = groupsOrder, byGroup = groupMap;
+
+  order.forEach(function(g){
+    var list = byGroup[g];
+    var sec = el("div","board-group");
+    sec.style.setProperty("--board-h", sz.h + "px");
+    sec.appendChild(el("h3", null, g + " · " + list.length + "개"));
+
+    // 행들이 같은 가로 위치를 유지해야 위아래 비교가 성립한다 → 스크롤을 서로 묶는다.
+    var scrolls = [];
+    function syncScroll(sc){
+      sc.addEventListener("scroll", function(){
+        scrolls.forEach(function(o){ if(o !== sc) o.scrollLeft = sc.scrollLeft; });
+      });
+      scrolls.push(sc);
+    }
+    function row(which){
+      var labels = {};
+      list.forEach(function(it){
+        var lb = (which==="l" ? L(it) : R(it)).label;
+        labels[lb] = (labels[lb]||0) + 1;
+      });
+      var names = Object.keys(labels);
+      var rowLabel = names.length === 1 ? names[0] : (which==="l" ? "이전" : "나중");
+
+      var r = el("div","board-row");
+      r.appendChild(el("div","rowlab", rowLabel));
+      var sc = el("div","board-scroll");
+      var track = el("div","board-track");
+      list.forEach(function(it){
+        track.appendChild(boardCell(it, which==="l" ? L(it) : R(it), which, sz.w));
+      });
+      sc.appendChild(track);
+      syncScroll(sc);
+      r.appendChild(sc);
+      return r;
+    }
+    if(state.boardRows !== "r") sec.appendChild(row("l"));
+    if(state.boardRows !== "l") sec.appendChild(row("r"));
+
+    // 제목 줄은 한 번만 둔다 — 두 행 사이에 끼우면 위아래 정렬이 흐트러진다.
+    var caps = el("div","board-caps");
+    caps.appendChild(el("div","rowlab",""));
+    var capScroll = el("div","board-scroll");
+    var capTrack = el("div","board-track");
+    list.forEach(function(it){
+      var c = el("div","bcell");
+      c.style.setProperty("--cell-w", sz.w + "px");
+      var cap = el("div","bcap");
+      cap.appendChild(el("b", null, String(it.no)));
+      cap.appendChild(el("span","t", it.title));
+      if(multi(it)) cap.appendChild(el("span",null, it.revisions.length + "회차"));
+      if(it.release) cap.appendChild(el("span","nav-rel rel-"+it.release, RELEASE_KO[it.release]));
+      cap.addEventListener("click", function(){ goto(it.idx); });
+      c.appendChild(cap);
+      capTrack.appendChild(c);
+    });
+    capScroll.appendChild(capTrack);
+    syncScroll(capScroll);
+    caps.appendChild(capScroll);
+    sec.appendChild(caps);
+    stage.appendChild(sec);
+  });
+  markNav(); refreshCount();
+}
+
+function render(){
+  applyVerdictFilter();
+  // 목록도 다시 그린다 — 처음에 한 번만 그리면 승인해서 숨긴 항목이 목록에 남는다.
+  // buildNav 는 비우고 다시 그리므로 여러 번 불러도 같다.
+  buildNav();
+  // 렌더할 때마다 노드가 새로 만들어지므로 기준선 호스트도 매번 새로 모은다.
+  ruleHosts = [];
+  document.body.className = "bg-" + state.bg + (state.fit ? " fit" : "") +
+    (state.view === "board" ? " board-view" : "") +
+    (state.boardCrop === "fit" ? " board-fit" : "") +
+    (state.ruler ? " ruler-on" : "");
+  var fitBtn = document.getElementById("btn-fit");
+  fitBtn.setAttribute("aria-pressed", String(state.fit));
+  fitBtn.classList.toggle("primary", state.fit);
+  var rBtn = document.getElementById("btn-ruler");
+  rBtn.setAttribute("aria-pressed", String(state.ruler));
+  rBtn.classList.toggle("primary", state.ruler);
+  if(state.view === "board") renderBoard(); else renderFocus();
+  refreshRulerChip();
+  // 이미지가 캐시에서 즉시 잡히면 load 가 안 뜨므로 레이아웃 후 한 번 더 맞춘다.
+  requestAnimationFrame(placeAllRules);
+  document.querySelectorAll("#seg-view button").forEach(function(b){
+    b.setAttribute("aria-pressed", String(b.dataset.view === state.view));
+  });
+  document.querySelectorAll("#seg-mode button").forEach(function(b){
+    b.setAttribute("aria-pressed", String(b.dataset.mode === state.mode));
+  });
+  document.querySelectorAll("#seg-bg button").forEach(function(b){
+    b.setAttribute("aria-pressed", String(b.dataset.bg === state.bg));
+  });
+}
+function goto(i){
+  state.cur = Math.max(0, Math.min(items.length-1, i));
+  state.view = "focus"; save("view","focus");
+  render();
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+
+/* ---------- 확대 ---------- */
+var lbItem = null, lbRev = 0;
+function openLightbox(it, revIdx){
+  lbItem = it;
+  lbRev = Math.min(Math.max(revIdx||0, 0), it.revisions.length-1);
+  if(!it.revisions[lbRev].src){
+    for(var i=0;i<it.revisions.length;i++){
+      if(it.revisions[i].src){ lbRev = i; break; }
+    }
+  }
+  paintLightbox();
+  document.getElementById("lb").classList.add("on");
+}
+function paintLightbox(){
+  if(!lbItem) return;
+  var r = lbItem.revisions[lbRev] || {};
+  document.getElementById("lb-img").src = r.src || "";
+  document.getElementById("lb-cap").textContent =
+    lbItem.title + " — " + (lbRev+1) + ". " + (r.label||"") + (r.file ? "  ·  " + r.file : "");
+  var many = lbItem.revisions.filter(function(x){ return !!x.src; }).length > 1;
+  document.getElementById("lb-prev").style.display = many ? "" : "none";
+  document.getElementById("lb-next").style.display = many ? "" : "none";
+}
+function stepLightbox(d){
+  if(!lbItem) return;
+  var n = lbItem.revisions.length;
+  for(var k=1;k<=n;k++){
+    var i = ((lbRev + d*k) % n + n) % n;
+    if(lbItem.revisions[i].src){ lbRev = i; break; }
+  }
+  paintLightbox();
+}
+function closeLightbox(){
+  var lb = document.getElementById("lb");
+  lb.classList.remove("on");
+  lb.classList.remove("actual");
+  lbItem = null;
+}
+document.getElementById("lb-prev").addEventListener("click", function(e){ e.stopPropagation(); stepLightbox(-1); });
+document.getElementById("lb-next").addEventListener("click", function(e){ e.stopPropagation(); stepLightbox(1); });
+/* ---------- 확대경: 누른 자리를 중심으로 ---------- */
+var lbView = { scale:1, x:0, y:0, fit:1 };
+function lbStage(){ return document.getElementById("lb-stage"); }
+function lbApply(){
+  var img = document.getElementById("lb-img");
+  img.style.transform = "translate("+lbView.x+"px,"+lbView.y+"px) scale("+lbView.scale+")";
+  document.getElementById("lb-pct").textContent = Math.round(lbView.scale*100) + "%";
+}
+function lbClamp(){
+  var img = document.getElementById("lb-img"), st = lbStage();
+  var w = img.naturalWidth*lbView.scale, h = img.naturalHeight*lbView.scale;
+  var sw = st.clientWidth, sh = st.clientHeight;
+  lbView.x = w <= sw ? (sw-w)/2 : Math.min(0, Math.max(sw-w, lbView.x));
+  lbView.y = h <= sh ? (sh-h)/2 : Math.min(0, Math.max(sh-h, lbView.y));
+}
+function lbFit(){
+  var img = document.getElementById("lb-img"), st = lbStage();
+  if(!img.naturalWidth) return;
+  lbView.fit = st.clientWidth / img.naturalWidth;
+  lbView.scale = lbView.fit; lbView.x = 0; lbView.y = 0;   /* 긴 페이지는 위에서 시작 */
+  lbClamp(); lbApply();
+}
+function lbPan(dx, dy){ lbView.x += dx; lbView.y += dy; lbClamp(); lbApply(); }
+function lbZoomAt(px, py, factor){
+  var next = Math.min(8, Math.max(lbView.fit*0.5, lbView.scale*factor));
+  var ratio = next/lbView.scale;
+  lbView.x = px - (px-lbView.x)*ratio;
+  lbView.y = py - (py-lbView.y)*ratio;
+  lbView.scale = next; lbClamp(); lbApply();
+}
+document.getElementById("lb-img").addEventListener("load", lbFit);
+document.getElementById("lb-actual").addEventListener("click", function(e){
+  e.stopPropagation();
+  var st = lbStage();
+  lbZoomAt(st.clientWidth/2, st.clientHeight/2, 1/lbView.scale);   /* 1:1 */
+});
+document.getElementById("lb-fit").addEventListener("click", function(e){ e.stopPropagation(); lbFit(); });
+document.getElementById("lb-in").addEventListener("click", function(e){
+  e.stopPropagation(); var st=lbStage(); lbZoomAt(st.clientWidth/2, st.clientHeight/2, 1.4); });
+document.getElementById("lb-out").addEventListener("click", function(e){
+  e.stopPropagation(); var st=lbStage(); lbZoomAt(st.clientWidth/2, st.clientHeight/2, 1/1.4); });
+lbStage().addEventListener("wheel", function(e){
+  e.preventDefault();
+  /* 그냥 휠은 **이동**이다. 전체 높이 캡처는 8,000px 도 되는데 휠이 확대에 묶여 있으면
+     아래를 볼 방법이 드래그밖에 없어서 "스크롤이 안 된다"가 된다(2026-09-06 실사고,
+     screen-review-board 와 같은 규칙). 확대는 트랙패드 핀치(ctrlKey 가 실려 온다)와
+     Cmd/Ctrl+휠 로만 한다. */
+  if (e.ctrlKey || e.metaKey) {
+    var r = lbStage().getBoundingClientRect();
+    lbZoomAt(e.clientX-r.left, e.clientY-r.top, e.deltaY < 0 ? 1.18 : 1/1.18);
+    return;
+  }
+  lbView.x -= e.deltaX;
+  lbView.y -= e.deltaY;
+  lbClamp(); lbApply();
+}, { passive:false });
+var lbDrag = null;
+lbStage().addEventListener("pointerdown", function(e){
+  lbDrag = { x:e.clientX, y:e.clientY, ox:lbView.x, oy:lbView.y, moved:false };
+  lbStage().setPointerCapture(e.pointerId); lbStage().classList.add("dragging");
+});
+lbStage().addEventListener("pointermove", function(e){
+  if(!lbDrag) return;
+  var dx = e.clientX-lbDrag.x, dy = e.clientY-lbDrag.y;
+  if(Math.abs(dx)+Math.abs(dy) > 4) lbDrag.moved = true;
+  lbView.x = lbDrag.ox+dx; lbView.y = lbDrag.oy+dy; lbClamp(); lbApply();
+});
+lbStage().addEventListener("pointerup", function(e){
+  var wasDrag = lbDrag && lbDrag.moved; lbDrag = null;
+  lbStage().classList.remove("dragging");
+  if(wasDrag) return;                       /* 끌었으면 확대하지 않는다 */
+  var r = lbStage().getBoundingClientRect();
+  lbZoomAt(e.clientX-r.left, e.clientY-r.top, e.altKey ? 1/1.8 : 1.8);
+});
+lbStage().addEventListener("dblclick", lbFit);
+window.addEventListener("resize", function(){
+  if(document.getElementById("lb").classList.contains("on")){ lbClamp(); lbApply(); }
+});
+document.getElementById("lb-close").addEventListener("click", closeLightbox);
+document.getElementById("lb").addEventListener("click", function(e){
+  if(e.target.id === "lb") closeLightbox();
+});
+
+/* ---------- 코멘트 복사 ---------- */
+function oneLine(s){ return String(s).split(NL).join(" ").trim(); }
+
+function buildMarkdown(){
+  var lines = [];
+  lines.push("아래는 디자인 리뷰에서 남긴 코멘트입니다. 각 항목을 확인하고 반영해 주세요.");
+  lines.push("반영한 뒤에는 화면을 다시 캡처해서 이 리뷰 페이지를 갱신해 주세요.");
+  lines.push("");
+  lines.push("# 리뷰: " + (D.title || ""));
+  if(D.subtitle) lines.push("- 컨텍스트: " + D.subtitle);
+  if(D.sourcePath) lines.push("- 리뷰 데이터: `" + D.sourcePath + "`");
+  lines.push("");
+
+  var n = 0;
+  items.forEach(function(it){
+    var c = (comments[it.id] || "").trim();
+    if(!c) return;
+    n++;
+    var lr = L(it), rr = R(it);
+    lines.push("## " + it.no + ". " + it.title + (it.group ? "  [" + it.group + "]" : ""));
+    if(verdicts[it.id]) lines.push("- 판정: **" + VERDICT_KO[verdicts[it.id]] + "**");
+    lines.push("- 상태: " + (STATUS_KO[it.status] || it.status));
+    if(it.release) lines.push("- 배포: " + RELEASE_KO[it.release] + (it.releaseNote ? " (" + it.releaseNote + ")" : ""));
+    if(multi(it)){
+      lines.push("- 보고 있던 회차: " + it.revisions.length + "회차 중 **" +
+                 (it.li+1) + "." + lr.label + " ↔ " + (it.ri+1) + "." + rr.label + "**");
+      lines.push("- 회차 이력: " + it.revisions.map(function(r,i){
+        return (i+1) + "." + r.label + (r.why ? "(" + oneLine(r.why) + ")" : "");
+      }).join(" → "));
+    }
+    if(it.where) lines.push("- 어디서 보이나: " + oneLine(it.where));
+    if(it.check){
+      if(it.check.look) lines.push("- 볼 곳: " + oneLine(it.check.look));
+      if(it.check.pass) lines.push("- 통과 기준: " + oneLine(it.check.pass));
+      if(it.check.result) lines.push("- 측정: " + (it.check.ok === true ? "통과 · " : (it.check.ok === false ? "실패 · " : "")) + oneLine(it.check.result));
+    }
+    if(it.origin.length) lines.push("- 이슈 원문: " + it.origin.map(function(o){
+      return (o.label ? o.label + ": " : "") + oneLine(o.text);
+    }).join(" / "));
+    if(it.why) lines.push("- 이 화면을 바꾼 이유: " + oneLine(it.why));
+    if(rr.why && rr.why !== it.why) lines.push("- 이 회차의 변경: " + oneLine(rr.why));
+    if(it.sources && it.sources.length){
+      lines.push("- 근거: " + it.sources.map(function(s){
+        return typeof s === "string" ? s : (s.label || s.href || "");
+      }).filter(Boolean).join(" / "));
+    }
+    if(it.media && it.media.length) lines.push("- 들어 보기·참고: " + it.media.map(function(m){ return m.label + (m.file ? " (" + m.file + ")" : ""); }).join(" / "));
+    var files = [lr.file, rr.file].filter(Boolean);
+    if(files.length) lines.push("- 캡처: " + files.join(" → "));
+    // 리뷰어가 무엇을 기준으로 봤는지가 코멘트 해석을 바꾼다.
+    var rl = rules[it.id] || [];
+    if(rl.length){
+      lines.push("- 그어둔 기준선: " + rl.map(function(r){
+        return (r.a === "h" ? "가로 위에서 " : "세로 왼쪽에서 ") + (r.p*100).toFixed(1) + "%";
+      }).join(" / "));
+    }
+    lines.push("- **코멘트: " + c.split(NL).join(NL + "  ") + "**");
+    lines.push("");
+  });
+
+  if(!n) return null;
+  lines.push("---");
+  lines.push("코멘트 " + n + "건 / 전체 " + items.length + "항목. 코멘트가 없는 항목은 그대로 두면 됩니다.");
+  return lines.join(NL);
+}
+
+function showGuide(title, html, ok){
+  var g = document.getElementById("guide");
+  var h = document.getElementById("guide-h");
+  h.textContent = title;
+  h.style.color = ok ? "" : "var(--warn)";
+  document.getElementById("guide-body").innerHTML = html;
+  g.classList.add("on");
+}
+document.getElementById("guide-x").addEventListener("click", function(){
+  document.getElementById("guide").classList.remove("on");
+});
+
+function toggleRuler(){
+  state.ruler = !state.ruler;
+  save("ruler", state.ruler ? "1" : "0");
+  render();
+}
+document.getElementById("btn-ruler").addEventListener("click", toggleRuler);
+document.getElementById("btn-approved").addEventListener("click", function(){
+  showApproved = !showApproved; save("showApproved", showApproved ? "1" : "0"); render();
+});
+document.getElementById("btn-ruler-clear").addEventListener("click", function(){
+  if(!ruleCount()) return;
+  if(!confirm("이 페이지의 기준선 " + ruleCount() + "개를 모두 지웁니다.")) return;
+  rules = {}; saveRules(); render();
+});
+
+document.getElementById("btn-copy").addEventListener("click", function(){
+  var md = buildMarkdown();
+  if(!md){
+    showGuide("아직 코멘트가 없습니다",
+      "<p>각 화면 아래 <b>💬 코멘트</b> 칸에 고쳐야 할 점을 적은 뒤 다시 눌러 주세요.</p>", false);
+    return;
+  }
+  var n = commentCount();
+  function done(){
+    showGuide("코멘트 " + n + "건을 복사했습니다",
+      "<ol>" +
+      "<li>Claude Code 터미널로 돌아가서</li>" +
+      "<li><kbd>⌘V</kbd> 로 붙여넣고 <kbd>Enter</kbd></li>" +
+      "<li>수정이 끝나면 화면을 다시 캡처하고 <code>리뷰 다시 만들어줘</code> 라고 하면 " +
+      "이 페이지가 갱신됩니다. <b>적어둔 코멘트와 회차 선택은 그대로 남습니다.</b></li>" +
+      "</ol>" +
+      "<p class='warn'>붙여넣기가 안 되면 아래 텍스트를 직접 선택해서 복사하세요.</p>", true);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(md).then(done, function(){ fallbackCopy(md, done); });
+  } else fallbackCopy(md, done);
+});
+
+function fallbackCopy(text, cb){
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed"; ta.style.top = "-1000px";
+  document.body.appendChild(ta);
+  ta.select();
+  var ok = false;
+  try{ ok = document.execCommand("copy"); }catch(e){ ok = false; }
+  document.body.removeChild(ta);
+  if(ok){ cb(); return; }
+  showGuide("자동 복사가 막혔습니다",
+    "<p>아래 상자의 내용을 직접 선택해서 복사한 뒤 터미널에 붙여넣어 주세요.</p>" +
+    "<textarea style='width:100%;height:150px;margin-top:8px;font:11px ui-monospace,Menlo,monospace'>" +
+    text.replace(/</g,"&lt;") + "</textarea>", false);
+}
+
+document.getElementById("btn-clear").addEventListener("click", function(){
+  if(!commentCount()) return;
+  if(!confirm("이 페이지에 저장된 코멘트를 모두 지웁니다. 계속할까요?")) return;
+  comments = {};
+  saveComments();
+  render();
+});
+
+document.getElementById("seg-view").addEventListener("click", function(e){
+  var b = e.target.closest("button");
+  if(!b) return;
+  state.view = b.dataset.view; save("view", state.view); render();
+});
+document.getElementById("seg-mode").addEventListener("click", function(e){
+  var b = e.target.closest("button");
+  if(!b) return;
+  state.mode = b.dataset.mode; save("mode", state.mode); render();
+});
+document.getElementById("btn-fit").addEventListener("click", function(){
+  state.fit = !state.fit; save("fit", state.fit ? "1" : "0"); render();
+});
+document.getElementById("seg-bg").addEventListener("click", function(e){
+  var b = e.target.closest("button");
+  if(!b) return;
+  state.bg = b.dataset.bg; save("bg", state.bg); render();
+});
+
+var BGS = ["white","gray","dark","checker"];
+document.addEventListener("keydown", function(e){
+  var t = e.target;
+  if(t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT")) return;
+  if(document.getElementById("lb").classList.contains("on")){
+    if(e.key === "Escape") closeLightbox();
+    else if(e.key === "ArrowRight") stepLightbox(1);
+    else if(e.key === "ArrowLeft") stepLightbox(-1);
+    else if(e.key === "a" || e.key === "A"){ var s=lbStage(); lbZoomAt(s.clientWidth/2, s.clientHeight/2, 1/lbView.scale); }
+    else if(e.key === "0") lbFit();
+    else if(e.key === "+" || e.key === "="){ var si=lbStage(); lbZoomAt(si.clientWidth/2, si.clientHeight/2, 1.4); }
+    else if(e.key === "-"){ var so=lbStage(); lbZoomAt(so.clientWidth/2, so.clientHeight/2, 1/1.4); }
+    /* 긴 캡처를 키보드로도 훑는다. ←→ 는 회차 이동이라 그대로 두고 세로만 넣는다. */
+    else if(e.key === "PageDown" || e.key === " "){ e.preventDefault(); lbPan(0, -lbStage().clientHeight*0.9); }
+    else if(e.key === "PageUp"){ e.preventDefault(); lbPan(0, lbStage().clientHeight*0.9); }
+    else if(e.key === "Home"){ e.preventDefault(); lbView.y = 0; lbClamp(); lbApply(); }
+    else if(e.key === "End"){ e.preventDefault(); lbView.y = -1e9; lbClamp(); lbApply(); }
+    else if(e.key === "ArrowDown"){ e.preventDefault(); lbPan(0, -80); }
+    else if(e.key === "ArrowUp"){ e.preventDefault(); lbPan(0, 80); }
+    return;
+  }
+  // ⌘A(전체 선택)·⌘R(새로고침) 같은 브라우저 단축키는 그대로 둔다. 버튼을 누른 것과 똑같이 — 같은 키를 또 누르면 풀린다
+  if(VERDICT_KEYS[e.code] && !e.metaKey && !e.ctrlKey && !e.altKey){
+    var vb = state.view !== "board" && document.querySelector("#stage .verdict .v-" + VERDICT_KEYS[e.code]);
+    if(vb){ vb.click(); e.preventDefault(); }
+    return;
+  }
+  if(e.key === "ArrowRight"){ goto(state.cur+1); e.preventDefault(); }
+  else if(e.key === "ArrowLeft"){ goto(state.cur-1); e.preventDefault(); }
+  else if(e.key === "1"){ state.mode="side"; save("mode","side"); render(); }
+  else if(e.key === "2"){ state.mode="slider"; save("mode","slider"); render(); }
+  else if(e.key === "3"){ state.mode="blink"; save("mode","blink"); render(); }
+  else if(e.key === "g" || e.key === "G"){
+    state.view = state.view==="board" ? "focus" : "board";
+    save("view", state.view); render();
+  }
+  else if(e.key === "l" || e.key === "L"){ toggleRuler(); }
+  else if(e.key === "f" || e.key === "F"){
+    state.fit = !state.fit; save("fit", state.fit ? "1" : "0"); render();
+  }
+  else if(e.key === "b" || e.key === "B"){
+    state.bg = BGS[(BGS.indexOf(state.bg)+1) % BGS.length];
+    save("bg", state.bg); render();
+  }
+  else if(e.key === " "){
+    var stage = document.getElementById("stage");
+    if(stage._flip){ stage._flip(); e.preventDefault(); }
+  }
+});
+
+var reflow;
+window.addEventListener("resize", function(){
+  clearTimeout(reflow);
+  reflow = setTimeout(function(){
+    if(state.fit || (state.view === "board" && state.boardSize === "auto")) render();
+    else placeAllRules();   // 재렌더가 없어도 이미지 상자는 움직인다
+  }, 180);
+});
+
+/* 복사 없이 결과를 확인하고 싶을 때(그리고 자동 테스트에서) 쓴다.
+   콘솔에 copy(__reviewMarkdown()) 를 치면 같은 텍스트를 얻는다. */
+window.__reviewMarkdown = buildMarkdown;
+
+buildNav();
+render();
+})();
+</script>
+<!-- point-feedback:start -->
+<style>#pf-tools,#pf-list,#pf-editor,#pf-export,#pf-pins{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17212e;box-sizing:border-box}
+#pf-tools{position:fixed;right:16px;bottom:16px;z-index:9000;display:flex;gap:6px;padding:8px;background:#fff;border:1px solid #bcc6d4;border-radius:8px;max-width:calc(100vw - 32px);flex-wrap:wrap}
+.pf-button{font:inherit!important;font-size:13px!important;color:#17212e!important;background:#fff!important;border:1px solid #bcc6d4!important;padding:8px 12px!important;border-radius:4px!important;cursor:pointer}
+.pf-button[aria-pressed=true],.pf-primary{color:#fff!important;background:#2563eb!important;border-color:#2563eb!important}
+.pf-button:focus-visible,.pf-pin:focus-visible{outline:3px solid #8cb3ff;outline-offset:2px}
+#pf-status{flex-basis:100%;font-size:12px;max-width:340px;color:#475569}
+body.pf-armed .shot-frame,body.pf-armed [data-feedback-target]{cursor:crosshair!important}
+#pf-list{position:fixed;right:16px;top:16px;bottom:100px;width:min(400px,calc(100vw - 32px));z-index:9001;background:#fff;border:1px solid #bcc6d4;border-radius:8px;padding:16px;overflow:auto}
+#pf-list[hidden],#pf-pins[hidden]{display:none}
+.pf-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.pf-head strong{font-size:18px}
+.pf-row{border-top:1px solid #dde3eb;padding:12px 0;display:grid;gap:6px}.pf-row p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}.pf-row small{font-size:12px;color:#475569}.pf-row-actions{display:flex;gap:6px;flex-wrap:wrap}
+#pf-pins{position:fixed;inset:0;z-index:8999;pointer-events:none;overflow:hidden}
+.pf-pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;width:28px;height:28px;border:2px solid white;border-radius:50%;padding:0;background:#bd3128;color:white;font:bold 12px/24px sans-serif;cursor:pointer}
+#pf-editor,#pf-export{width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;background:white;border:1px solid #bcc6d4;border-radius:8px;padding:20px;z-index:10000}
+#pf-editor::backdrop,#pf-export::backdrop{background:rgba(15,23,42,.28)}
+#pf-editor label{display:grid;gap:4px;margin:12px 0;font-size:13px}
+#pf-editor textarea,#pf-editor input,#pf-editor select,#pf-export textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #aab6c5;border-radius:4px;font:14px/1.5 sans-serif;color:#17212e;background:#fff}
+#pf-editor textarea{min-height:90px;resize:vertical}#pf-export textarea{height:45vh;white-space:pre-wrap}
+#pf-replies{padding:0;list-style:none}#pf-replies li{border-left:3px solid #dde3eb;padding:8px 12px;margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.pf-muted{font-size:12px;color:#475569}#pf-editor footer{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;border:0;padding:0}
+#pf-list .pf-review-response{padding:10px;background:#f1f5f9;border-left:3px solid #2563eb;font-size:13px}
+.pf-section-btn{font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1d4ed8;background:#fff;border:1px solid #93b4f5;border-radius:999px;padding:6px 11px;cursor:pointer;white-space:nowrap;letter-spacing:0}
+.pf-section-btn:hover{background:#eef3ff}.pf-section-btn:focus-visible,.pf-section-note:focus-visible{outline:3px solid #8cb3ff;outline-offset:2px}.pf-section-btn[hidden],.pf-section-notes[hidden]{display:none}
+section>.pf-section-btn{margin:2px 0 10px}
+.pf-section-notes{display:grid;gap:6px;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.pf-section-note{display:grid;gap:2px;text-align:left;width:100%;padding:8px 10px;background:#f6f8fc;border:0;border-left:3px solid #2563eb;border-radius:0 4px 4px 0;color:#17212e;cursor:pointer;font:inherit}
+.pf-section-note small{font-size:11.5px;color:#475569}.pf-section-note span{white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+@media print{.pf-section-btn{display:none!important}}
+@media print{#pf-tools,#pf-list,#pf-editor,#pf-export,#pf-pins{display:none!important}}
+</style>
+<script id="point-feedback-config" type="application/json">{"id":"bar-pins:/fixture/data.json","title":"리뷰 시험","seed":[],"auto":true}</script>
+<script>(() => {
+  'use strict';
+  const config = JSON.parse(document.getElementById('point-feedback-config').textContent);
+  const key = 'fvr:points:v1:' + config.id;
+  const statuses = { open: '확인 필요', planned: '개선 예정', resolved: '반영 완료' };
+  const kinds = { fix: '수정 요청', opinion: '질문·의견', mixed: '수정 + 의견' };
+  const seedById = new Map(config.seed.map(item => [item.id, item]));
+  const kindOf = item => item.kind || seedById.get(item.id)?.kind || 'opinion';
+  const reviewOf = item => seedById.get(item.id)?.review || item.review;
+  const uid = () => globalThis.crypto?.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2);
+  // 섹션 코멘트 — build.mjs 가 찍은 표식(data-feedback-section · data-pf-section-btn · data-pf-section-notes)을 살린다.
+  // 위치(가로·세로)가 없는 의견이고, target 은 `section:<key>` 다. 표식이 없는 HTML 에서는 아무 일도 안 한다.
+  const SECTION_PREFIX = 'section:';
+  const isSectionItem = item => String(item?.target || '').startsWith(SECTION_PREFIX);
+  const sectionOf = key => document.querySelector('[data-feedback-section="' + CSS.escape(key) + '"]');
+  const sectionTitle = key => sectionOf(key)?.dataset.feedbackSectionTitle || key;
+  // auto 모드 — 표식(data-feedback-target)이 없는 아무 HTML 에서도 핀을 꽂게 한다(템플릿 수정용).
+  // 가장 안쪽의 "덩어리"(카드·섹션·표·그림)에 표식을 붙인다. id 는 DOM 경로라 다시 열어도 같다 —
+  // 그래야 저장된 핀이 제자리로 돌아온다. 덩어리 밖을 누르면 「페이지 전체」에 꽂힌다.
+  if (config.auto && !document.querySelector('[data-feedback-target], article.step')) {
+    const pathOf = el => { const parts = []; for (let n = el; n && n !== document.body; n = n.parentElement) { const same = Array.from(n.parentElement?.children || []).filter(c => c.tagName === n.tagName); parts.unshift(n.tagName.toLowerCase() + (same.length > 1 ? '[' + (same.indexOf(n) + 1) + ']' : '')); } return 'auto:' + parts.join('>'); };
+    const cands = Array.from(document.querySelectorAll('section, article, figure, table, aside, [class*="card"], [class*="panel"], [class*="slide"], [class*="job"]'))
+      .filter(el => { const r = el.getBoundingClientRect(); return r.width >= 180 && r.height >= 60; });
+    cands.filter(el => !cands.some(o => o !== el && el.contains(o))).forEach(el => {
+      el.dataset.feedbackTarget = pathOf(el);
+      el.dataset.feedbackTitle = (el.querySelector('h1,h2,h3,h4,figcaption,caption')?.textContent || el.getAttribute('aria-label') || el.tagName.toLowerCase()).trim().slice(0, 40);
+    });
+  }
+  const normalize = value => {
+    if (!value || value.version !== 1 || !Array.isArray(value.items)) throw new Error('피드백 저장 형식을 읽을 수 없습니다.');
+    return value;
+  };
+  let saved, storageBroken = false;
+  try { const raw = localStorage.getItem(key); saved = raw ? normalize(JSON.parse(raw)) : { version: 1, items: [], removed: [] }; }
+  catch (_) { saved = { version: 1, items: [], removed: [] }; storageBroken = true; }
+  let items = saved.items;
+  let removed = saved.removed || [];
+  for (const seed of config.seed) {
+    if (!items.some(item => item.id === seed.id) && !removed.includes(seed.id)) items.push({ ...seed, x: null, y: null, status: 'open', replies: [], author: '사용자 · 기존 피드백', createdAt: seed.createdAt || '기존 대화' });
+  }
+  let armed = false, showPins = false, activeId = null, draft = null, frame = null;
+  let undoClear = null;
+  const tools = document.createElement('div'); tools.id = 'pf-tools';
+  tools.innerHTML = '<button class="pf-button" id="pf-mode" aria-pressed="false">위치에 의견 남기기</button><button class="pf-button" id="pf-show" aria-pressed="false">핀 표시</button><button class="pf-button" id="pf-open">피드백 목록</button><div id="pf-status" role="status">이 브라우저에 저장됩니다. 전달하려면 내보내기를 사용하세요.</div>';
+  document.body.append(tools);
+  const list = document.createElement('aside'); list.id = 'pf-list'; list.hidden = true; list.setAttribute('aria-label', '피드백 목록');
+  list.innerHTML = '<div class="pf-head"><strong>피드백</strong><button class="pf-button" id="pf-close">닫기</button></div><p class="pf-muted">기존 의견과 위치 의견에 답글을 남길 수 있습니다. 저장은 이 브라우저에만 적용됩니다.</p><div class="pf-row-actions"><button class="pf-button" id="pf-copy">전체 복사</button><button class="pf-button" id="pf-json">JSON 내보내기</button><button class="pf-button" id="pf-clear-all">의견 전체 삭제</button><button class="pf-button" id="pf-undo-clear" hidden>전체 삭제 되돌리기</button></div><p id="pf-list-status" class="pf-muted" role="status"></p><div id="pf-rows"></div>';
+  document.body.append(list);
+  const filter = document.createElement('select'); filter.id = 'pf-kind-filter'; filter.className = 'pf-button'; filter.setAttribute('aria-label', '피드백 종류');
+  for (const [value, label] of Object.entries({ all: '모든 의견', ...kinds })) { const option = document.createElement('option'); option.value = value; option.textContent = label; filter.append(option); }
+  list.insertBefore(filter, document.getElementById('pf-rows'));
+  const pins = document.createElement('div'); pins.id = 'pf-pins'; pins.hidden = true; document.body.append(pins);
+  const editor = document.createElement('dialog'); editor.id = 'pf-editor'; editor.setAttribute('aria-labelledby', 'pf-editor-title');
+  editor.innerHTML = '<form method="dialog"><div class="pf-head"><strong id="pf-editor-title">의견 작성</strong><button class="pf-button" value="cancel">닫기</button></div></form><p id="pf-context" class="pf-muted"></p><label>작성자 (선택)<input id="pf-author" placeholder="이름 또는 역할"></label><label>의견<textarea id="pf-text" placeholder="이 위치에서 궁금한 점 또는 고칠 내용을 적어주세요."></textarea></label><label>처리 상태<select id="pf-state"><option value="open">확인 필요</option><option value="planned">개선 예정</option><option value="resolved">반영 완료</option></select></label><ul id="pf-replies"></ul><label>이 피드백에 답글<textarea id="pf-reply" placeholder="설명, 보완 의견, 반영 결과를 남겨주세요."></textarea></label><footer><button class="pf-button pf-primary" id="pf-save">저장</button><button class="pf-button" id="pf-copy-here">전체 복사</button><button class="pf-button" id="pf-reset-here">입력 비우기</button><button class="pf-button" id="pf-delete">의견 삭제</button></footer><p id="pf-editor-status" role="status" class="pf-muted"></p>';
+  document.body.append(editor);
+  const kindLabel = document.createElement('label'); kindLabel.textContent = '의견 분류';
+  const kindSelect = document.createElement('select'); kindSelect.id = 'pf-kind';
+  for (const [value, label] of Object.entries(kinds)) { const option = document.createElement('option'); option.value = value; option.textContent = label; kindSelect.append(option); }
+  kindLabel.append(kindSelect); editor.insertBefore(kindLabel, editor.querySelector('#pf-replies'));
+  const reviewText = document.createElement('p'); reviewText.id = 'pf-review'; reviewText.className = 'pf-muted'; reviewText.style.whiteSpace = 'pre-wrap';
+  editor.insertBefore(reviewText, editor.querySelector('#pf-replies'));
+  const exportDialog = document.createElement('dialog'); exportDialog.id = 'pf-export';
+  exportDialog.innerHTML = '<form method="dialog"><div class="pf-head"><strong>피드백 내보내기</strong><button class="pf-button">닫기</button></div></form><p>자동 복사가 차단됐습니다. 아래 내용을 직접 복사하세요.</p><textarea aria-label="복사할 피드백" readonly></textarea>';
+  document.body.append(exportDialog);
+  const $ = id => document.getElementById(id);
+  const say = text => { $('pf-status').textContent = text; };
+  function persist() {
+    if (storageBroken) { say('저장소를 읽지 못해 덮어쓰지 않았습니다. JSON을 내려받아 보관하세요.'); return false; }
+    try { localStorage.setItem(key, JSON.stringify({ version: 1, items, removed })); say('이 브라우저에 저장됨 · 전달하려면 전체 복사 또는 JSON 내보내기'); return true; }
+    catch (_) { say('브라우저 저장 실패 · JSON을 내려받아 보관하세요.'); return false; }
+  }
+  function descriptors() {
+    const result = [];
+    document.querySelectorAll('article.step').forEach(card => {
+      const image = card.querySelector('.shot-frame img'); if (!image) return;
+      result.push({ el: image, target: card.dataset.stepId || card.dataset.step, title: card.dataset.title, journey: card.closest('[data-journey-panel]')?.dataset.journeyPanel || '', route: Array.from(card.querySelectorAll('.step-meta div')).find(row => row.querySelector('dt')?.textContent === '경로')?.querySelector('dd')?.textContent || '' });
+    });
+    document.querySelectorAll('[data-feedback-target]').forEach(el => result.push({ el, target: el.dataset.feedbackTarget, title: el.dataset.feedbackTitle || el.getAttribute('aria-label') || el.id, journey: el.dataset.feedbackJourney || el.closest('.view-panel')?.id || '', route: el.dataset.feedbackRoute || '' }));
+    // 열린 모달(확대 보기) 안의 것을 먼저 — 뒤에 깔린 카드 이미지에 핀이 그려지면 안 보인다.
+    result.sort((a, b) => Number(!!b.el.closest('dialog[open]')) - Number(!!a.el.closest('dialog[open]')));
+    if (config.auto) result.push({ el: document.body, target: 'page', title: '페이지 전체', journey: '', route: '' });
+    return result;
+  }
+  const visible = el => el.getClientRects().length && el.getBoundingClientRect().width > 0;
+  function origin(item) {
+    return descriptors().find(d => d.target === item.target && visible(d.el) && (!item.journey || d.journey === item.journey)) || descriptors().find(d => d.target === item.target && visible(d.el));
+  }
+  function locationText(item) { return item.x == null ? (isSectionItem(item) ? '섹션 전체 의견' : '화면 전체 의견 · 위치 미지정') : '가로 ' + item.x + '% · 세로 ' + item.y + '%'; }
+  function paint() {
+    frame = null; pins.replaceChildren(); pins.hidden = !showPins;
+    if (!showPins) return;
+    items.forEach((item, index) => {
+      if (item.x == null || item.y == null) return;
+      const d = origin(item); if (!d) return;
+      const rect = d.el.getBoundingClientRect();
+      const x = rect.left + rect.width * item.x / 100, y = rect.top + rect.height * item.y / 100;
+      if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return;
+      // Overflow containers can hide an image even when it has a client rect.
+      let parent = d.el.parentElement;
+      while (parent && parent !== document.body) {
+        const style = getComputedStyle(parent), bounds = parent.getBoundingClientRect();
+        if (/(hidden|auto|scroll)/.test(style.overflowX) && (x < bounds.left || x > bounds.right)) return;
+        if (/(hidden|auto|scroll)/.test(style.overflowY) && (y < bounds.top || y > bounds.bottom)) return;
+        parent = parent.parentElement;
+      }
+      const button = document.createElement('button'); button.className = 'pf-pin'; button.type = 'button'; button.textContent = index + 1;
+      button.style.left = x + 'px'; button.style.top = y + 'px'; button.setAttribute('aria-label', '피드백 ' + (index + 1) + ': ' + item.text);
+      button.addEventListener('click', () => edit(item)); pins.append(button);
+    });
+  }
+  const schedule = () => { if (!frame) frame = requestAnimationFrame(paint); };
+  // 확대 보기 같은 모달 <dialog> 는 top layer 에 뜬다. 바·핀·목록이 body 에 남아 있으면 그 뒤에 깔려
+  // 누를 수 없다(2026-09-25 리뷰: 「자세히 보기 상태에서 위치바 누르면, 옮겨지면 좋을듯」).
+  // 그래서 우리 것이 아닌 모달이 열리면 셋을 그 안으로 옮기고, 닫히면 body 로 돌려놓는다.
+  const floating = () => [tools, list, pins];
+  const hostDialog = () => Array.from(document.querySelectorAll('dialog[open]')).filter(d => !d.id.startsWith('pf-')).pop();
+  function rehome() {
+    const host = hostDialog() || document.body;
+    for (const el of floating()) if (el.parentElement !== host) host.append(el);
+    schedule();
+  }
+  new MutationObserver(rehome).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['open'] });
+  function renderList() {
+    $('pf-open').textContent = '피드백 ' + items.length;
+    $('pf-undo-clear').hidden = !undoClear;
+    const rows = $('pf-rows'); rows.replaceChildren();
+    if (!items.length) { const empty = document.createElement('p'); empty.textContent = '등록된 의견이 없습니다.'; rows.append(empty); }
+    items.forEach((item, index) => {
+      if (filter.value !== 'all' && kindOf(item) !== filter.value && !(filter.value === 'fix' && kindOf(item) === 'mixed')) return;
+      const row = document.createElement('div'); row.className = 'pf-row';
+      const heading = document.createElement('strong'); heading.textContent = '#' + (index + 1) + ' ' + (item.title || item.target);
+      const meta = document.createElement('small'); meta.textContent = kinds[kindOf(item)] + ' · ' + statuses[item.status] + ' · ' + locationText(item);
+      const text = document.createElement('p'); text.textContent = item.text;
+      const actions = document.createElement('div'); actions.className = 'pf-row-actions';
+      const open = document.createElement('button'); open.className = 'pf-button'; open.textContent = '답글·수정 (' + (item.replies || []).length + ')'; open.onclick = () => edit(item);
+      const jump = document.createElement('button'); jump.className = 'pf-button'; jump.textContent = isSectionItem(item) ? '섹션 보기' : '화면 보기'; jump.onclick = () => reveal(item);
+      actions.append(jump, open); row.append(heading, meta, text);
+      const review = reviewOf(item);
+      if (review) { const response = document.createElement('p'); response.className = 'pf-review-response'; response.textContent = '처리 답변 · ' + review.result + '\n' + review.summary; row.append(response); }
+      if (review?.href && /^(https?:\/\/|\.{1,2}\/)/.test(review.href)) { const link = document.createElement('a'); link.href = review.href; link.textContent = '변경 화면 보기'; row.append(link); }
+      row.append(actions); rows.append(row);
+    });
+    renderSections();
+  }
+  // 섹션마다 버튼에 개수를, 제목 아래에 그 섹션 의견을 짧게 보여 준다 — 목록을 열지 않아도 그 자리에서 읽힌다.
+  function renderSections() {
+    document.querySelectorAll('[data-pf-section-btn]').forEach(button => {
+      const key = button.dataset.pfSectionBtn;
+      const count = items.filter(item => item.target === SECTION_PREFIX + key).length;
+      button.textContent = count ? '코멘트 ' + count : '코멘트';
+      button.setAttribute('aria-label', sectionTitle(key) + ' 섹션에 코멘트 남기기' + (count ? ' · 지금 ' + count + '개' : ''));
+    });
+    document.querySelectorAll('[data-pf-section-notes]').forEach(box => {
+      const target = SECTION_PREFIX + box.dataset.pfSectionNotes;
+      const mine = items.map((item, index) => ({ item, index })).filter(entry => entry.item.target === target);
+      box.replaceChildren(); box.hidden = !mine.length;
+      for (const { item, index } of mine) {
+        const note = document.createElement('button'); note.type = 'button'; note.className = 'pf-section-note';
+        const meta = document.createElement('small');
+        meta.textContent = '#' + (index + 1) + ' · ' + kinds[kindOf(item)] + ' · ' + statuses[item.status] + (item.author ? ' · ' + item.author : '') + ((item.replies || []).length ? ' · 답글 ' + item.replies.length : '');
+        const text = document.createElement('span'); text.textContent = item.text;
+        note.append(meta, text);
+        note.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); edit(item); });
+        box.append(note);
+      }
+    });
+  }
+  function revealSection(item) {
+    const el = sectionOf(item.target.slice(SECTION_PREFIX.length));
+    if (!el) { say('현재 문서에서 해당 섹션을 찾지 못했습니다: ' + (item.title || item.target)); return; }
+    // 여정·유즈케이스 칸이면 그 탭을 먼저 연다. 펼침 상자면 펼친다.
+    const panelId = el.dataset.journeyPanel || el.dataset.useCasePanel;
+    if (el.hidden && panelId) document.querySelector('[data-use-case-btn="' + CSS.escape(panelId) + '"]')?.click();
+    const box = el.closest('details'); if (box && !box.open) box.open = true;
+    list.hidden = true; el.scrollIntoView({ block: 'start' });
+  }
+  function reveal(item) {
+    if (isSectionItem(item)) { revealSection(item); return; }
+    const d = descriptors().find(d => d.target === item.target && d.journey === item.journey) || descriptors().find(d => d.target === item.target);
+    if (!d) { say('현재 문서에서 해당 화면을 찾지 못했습니다. 원본 화면 ID: ' + item.target); return; }
+    if (d.journey.startsWith('view-')) document.querySelector('[data-view="' + CSS.escape(d.journey.slice(5)) + '"]')?.click();
+    else if (d.journey) document.querySelector('[data-journey-btn="' + CSS.escape(d.journey) + '"]')?.click();
+    list.hidden = true; d.el.scrollIntoView({ block: 'center', inline: 'center' });
+    showPins = true; $('pf-show').setAttribute('aria-pressed', 'true'); schedule();
+  }
+  function edit(item) {
+    activeId = items.some(entry => entry.id === item.id) ? item.id : null; draft = item;
+    $('pf-context').textContent = (item.title || item.target) + ' · ' + locationText(item) + (item.journey ? ' · ' + item.journey : '');
+    $('pf-author').value = item.author || ''; $('pf-text').value = item.text || ''; $('pf-state').value = item.status || 'open'; $('pf-reply').value = ''; $('pf-editor-status').textContent = '';
+    $('pf-kind').value = kindOf(item);
+    const review = reviewOf(item);
+    $('pf-review').textContent = review ? '처리 답변 · ' + review.result + '\n' + review.summary + (review.evidence ? '\n근거: ' + review.evidence : '') : '';
+    $('pf-delete').hidden = !activeId;
+    $('pf-text').placeholder = isSectionItem(item) ? '이 섹션 전체에 대한 의견 — 빠진 것, 고칠 것, 궁금한 점을 적어주세요.' : '이 위치에서 궁금한 점 또는 고칠 내용을 적어주세요.';
+    $('pf-replies').replaceChildren();
+    for (const reply of item.replies || []) { const li = document.createElement('li'); li.textContent = (reply.author || '답변자') + ' · ' + reply.createdAt + '\n' + reply.text; $('pf-replies').append(li); }
+    editor.showModal(); $('pf-text').focus();
+  }
+  document.addEventListener('click', event => {
+    if (!armed || event.target.closest('#pf-tools,#pf-list,#pf-editor,#pf-export,#pf-pins')) return;
+    const d = descriptors().find(d => d.el === event.target || d.el.contains(event.target)); if (!d) return;
+    const rect = d.el.getBoundingClientRect();
+    event.preventDefault(); event.stopImmediatePropagation();
+    const ratio = (n, size) => Math.max(0, Math.min(100, Math.round(n / size * 1000) / 10));
+    edit({ id: uid(), target: d.target, title: d.title, journey: d.journey, route: d.route, x: ratio(event.clientX - rect.left, rect.width), y: ratio(event.clientY - rect.top, rect.height), text: '', status: 'open', replies: [], createdAt: new Date().toISOString() });
+  }, true);
+  // 모달에서 Cmd(맥)·Ctrl + Enter 로 바로 저장 — 손을 마우스로 옮기지 않게.
+  editor.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); $('pf-save').click(); }
+  });
+  $('pf-save').onclick = () => {
+    const text = $('pf-text').value.trim(); if (!text) { $('pf-editor-status').textContent = '의견을 입력해 주세요.'; return; }
+    undoClear = null;
+    const author = $('pf-author').value.trim() || '리뷰어';
+    const item = { ...draft, text, kind: $('pf-kind').value, author: activeId ? draft.author : author, status: $('pf-state').value, updatedAt: new Date().toISOString(), replies: [...(draft.replies || [])] };
+    const reply = $('pf-reply').value.trim(); if (reply) item.replies.push({ id: uid(), author, text: reply, createdAt: item.updatedAt });
+    if (activeId) items = items.map(entry => entry.id === activeId ? item : entry); else items.push(item);
+    persist(); renderList(); schedule(); editor.close();
+  };
+  // 모달에서 바로 — 목록 화면으로 옮겨 가지 않고 복사하고, 잘못 적었으면 입력만 비운다.
+  $('pf-copy-here').onclick = event => { event.preventDefault(); $('pf-copy').click(); };
+  $('pf-reset-here').onclick = event => {
+    event.preventDefault();
+    $('pf-text').value = ''; $('pf-reply').value = ''; $('pf-state').value = 'open';
+    $('pf-editor-status').textContent = '입력을 비웠습니다. 저장한 의견은 그대로입니다.';
+    $('pf-text').focus();
+  };
+  $('pf-delete').onclick = () => {
+    if (!activeId || !confirm('이 의견과 답글을 삭제할까요?')) return;
+    undoClear = null;
+    removed.push(activeId); items = items.filter(item => item.id !== activeId); persist(); renderList(); schedule(); editor.close();
+  };
+  // 섹션 버튼 — summary 안에 있으면 누를 때 상자가 접히지 않게 기본 동작을 막는다.
+  document.querySelectorAll('[data-pf-section-btn]').forEach(button => {
+    button.hidden = false;
+    button.addEventListener('click', event => {
+      event.preventDefault(); event.stopPropagation();
+      const key = button.dataset.pfSectionBtn;
+      edit({ id: uid(), target: SECTION_PREFIX + key, title: sectionTitle(key), journey: '', route: '', x: null, y: null, text: '', status: 'open', replies: [], createdAt: new Date().toISOString() });
+    });
+  });
+  $('pf-mode').onclick = () => { armed = !armed; document.body.classList.toggle('pf-armed', armed); $('pf-mode').setAttribute('aria-pressed', String(armed)); if (armed) { list.hidden = true; showPins = true; $('pf-show').setAttribute('aria-pressed', 'true'); } say(armed ? '화면 또는 도식의 원하는 위치를 클릭하세요. Esc: 위치 모드 종료' : '일반 보기 · 화면을 클릭하면 기존 동작을 수행합니다.'); schedule(); };
+  $('pf-show').onclick = () => { showPins = !showPins; $('pf-show').setAttribute('aria-pressed', String(showPins)); schedule(); };
+  $('pf-open').onclick = () => { list.hidden = !list.hidden; renderList(); };
+  $('pf-close').onclick = () => { list.hidden = true; };
+  filter.onchange = renderList;
+  const legacyNotes = () => Array.from(document.querySelectorAll('[data-comment]'));
+  function setNotes(notes) {
+    for (const { id, text } of notes) {
+      const input = legacyNotes().find(input => input.dataset.comment === id);
+      if (!input) continue;
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  $('pf-clear-all').onclick = () => {
+    const notes = legacyNotes().map(input => ({ id: input.dataset.comment, text: input.value }));
+    const count = notes.filter(note => note.text.trim()).length;
+    if (!items.length && !count) { $('pf-list-status').textContent = '삭제할 의견이 없습니다.'; return; }
+    if (storageBroken) { $('pf-list-status').textContent = '저장소를 읽지 못해 삭제하지 않았습니다. 먼저 JSON을 내보내 주세요.'; return; }
+    const replies = items.reduce((sum, item) => sum + (item.replies || []).length, 0);
+    if (!confirm('이 리포트의 의견 ' + items.length + '개(핀 포함), 답글 ' + replies + '개, 단계 메모 ' + count + '개를 모두 삭제할까요?\n다른 리포트와 제품 데이터는 삭제하지 않습니다. 필요하면 먼저 JSON을 내보내 주세요.')) return;
+    const backup = { items, removed, notes };
+    removed = [...new Set([...removed, ...items.map(item => item.id), ...config.seed.map(item => item.id)])];
+    items = [];
+    if (!persist()) { items = backup.items; removed = backup.removed; $('pf-list-status').textContent = '저장 실패로 삭제를 취소했습니다.'; return; }
+    undoClear = backup;
+    setNotes(notes.map(note => ({ ...note, text: '' })));
+    renderList(); schedule();
+    $('pf-list-status').textContent = '전체 삭제했습니다. 새로고침하거나 새 의견을 저장하기 전까지 되돌릴 수 있습니다.';
+  };
+  $('pf-undo-clear').onclick = () => {
+    if (!undoClear) return;
+    const current = { items, removed };
+    items = undoClear.items; removed = undoClear.removed;
+    if (!persist()) { items = current.items; removed = current.removed; $('pf-list-status').textContent = '저장 실패로 복원하지 못했습니다.'; return; }
+    setNotes(undoClear.notes); undoClear = null; renderList(); schedule();
+    $('pf-list-status').textContent = '전체 삭제 전 의견·답글·단계 메모를 복원했습니다.';
+  };
+  function packet() {
+    return { version: 1, reportId: config.id, title: config.title, exportedAt: new Date().toISOString(), items: items.map(item => ({ ...item, kind: kindOf(item), review: reviewOf(item) })), removed, generalComments: Array.from(document.querySelectorAll('article.step')).map(card => ({ screenId: card.dataset.stepId, journey: card.closest('[data-journey-panel]')?.dataset.journeyPanel || '', title: card.dataset.title, text: card.querySelector('[data-comment]')?.value || '' })).filter(item => item.text.trim()) };
+  }
+  $('pf-json').onclick = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(packet(), null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'flow-feedback.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  $('pf-copy').onclick = async () => {
+    const data = packet();
+    const text = '# ' + config.title + '\n' + data.items.map((item, index) => '\n■ ' + (index + 1) + '. ' + (item.title || item.target) + '\n' + (isSectionItem(item) ? '섹션: ' + (item.title || item.target) : '화면 ID: ' + item.target + ' · 여정: ' + (item.journey || '공통')) + '\n' + kinds[item.kind] + ' · ' + locationText(item) + ' · ' + statuses[item.status] + '\n' + item.text + (item.review ? '\n처리 답변 · ' + item.review.result + '\n' + item.review.summary : '') + (item.replies || []).map(reply => '\n↳ ' + reply.author + ': ' + reply.text).join('')).join('\n') + data.generalComments.map(item => '\n■ ' + item.title + '\n' + item.text).join('\n');
+    try { await navigator.clipboard.writeText(text); say('복사됐습니다. 대화창에 붙여넣어 주세요.'); }
+    catch (_) { exportDialog.querySelector('textarea').value = text; exportDialog.showModal(); exportDialog.querySelector('textarea').select(); }
+  };
+  // Existing report copy control must include point comments and replies, too.
+  document.getElementById('copy-all')?.addEventListener('click', event => { event.stopImmediatePropagation(); $('pf-copy').click(); }, true);
+  const legacyClear = document.getElementById('clear-all');
+  if (legacyClear) legacyClear.textContent = '단계 메모만 지우기';
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !editor.open && armed) $('pf-mode').click(); });
+  document.addEventListener('scroll', schedule, true); window.addEventListener('resize', schedule); window.addEventListener('load', schedule);
+  new MutationObserver(records => { if (records.some(record => !record.target.closest?.('#pf-tools,#pf-list,#pf-editor,#pf-export,#pf-pins'))) schedule(); }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'data-feedback-target'] });
+  window.addEventListener('storage', event => {
+    if (event.key !== key || editor.open) return;
+    try { const next = normalize(JSON.parse(event.newValue)); items = next.items; removed = next.removed || []; undoClear = null; renderList(); schedule(); } catch (_) { say('다른 창의 저장 내용을 읽지 못했습니다. 현재 내용을 내보내 주세요.'); }
+  });
+  renderList(); if (storageBroken) say('저장소를 읽지 못했습니다. 기존 저장값은 보존하며 JSON 내보내기를 사용하세요.');
+})();
+</script>
+<!-- point-feedback:end -->
+</body>
+</html>

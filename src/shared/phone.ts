@@ -222,6 +222,79 @@ export interface PhoneFileRefused {
     message: string
 }
 
+// ---------------------------------------------------------------------------
+// Documents — POST /api/phone/doc/open · GET /doc/<token>/<path>
+//
+// An HTML report opens in a sandboxed frame, and its comments reach a session only through the phone page's own
+// sheet (decision 0011). The frame talks to the page and to nothing else.
+// ---------------------------------------------------------------------------
+
+/** Where a document and the files beside it are served: outside `/api/`, whose gate a sandboxed page's requests cannot pass. */
+export const PHONE_DOC_PREFIX = '/doc/'
+/** Both the frame's attribute and the response's header. Never `allow-same-origin`: the page's code would be the phone page's. */
+export const PHONE_DOC_SANDBOX = 'allow-scripts allow-forms allow-modals'
+/** A before-after review holds its pictures: the largest measured was 42.6 MB. */
+export const PHONE_MAX_DOC_BYTES = 64 * 1024 * 1024
+/** Below what `readJson` takes (256 KB) at three bytes a character: past that the send reads as an empty message. */
+export const PHONE_MAX_COMMENT_CHARS = 50_000
+/** What this phone keeps of one document's comments. It travels in the frame's address: 256 KB fits, 1 MB does not (measured). */
+export const PHONE_MAX_DOC_STORE_BYTES = 256 * 1024
+
+export type PhoneDocRefusal = PhoneFileRefusal | 'not_html'
+
+/** The session a document's comments go to. */
+export interface PhoneDocTarget {
+    id: string
+    name: string
+    agent: 'claude' | 'codex'
+}
+
+/** POST /api/phone/doc/open `{ session, path }` */
+export interface PhoneDocOpened {
+    status: 'ok'
+    /** `/doc/<token>/<name>`: the frame's address */
+    url: string
+    /** the page's own `<title>`, or its file name */
+    title: string
+    /** the folder, `~` for home: what a comment names */
+    displayRoot: string
+    /** the document inside that folder */
+    rel: string
+    size: number
+    /** ISO 8601 */
+    modifiedAt: string
+    /** the folder: this phone files a page's comments under this and the page's name, however the page was reached */
+    storeKey: string
+    /** null: the session has no agent. The sheet asks which one */
+    target: PhoneDocTarget | null
+    /** the file's bytes, for saving it (D1's raw route) */
+    rawUrl: string
+}
+
+export interface PhoneDocRefused {
+    status: 'refused'
+    reason: PhoneDocRefusal
+    message: string
+}
+
+/** What a document's frame tells the phone page, and all it can. The page sends nothing back. */
+export type PhoneDocMessage =
+    /**
+     * A page loaded in the frame; `path` is inside the document's folder. `seeded`: it came with its kept comments. A page
+     * reached by a link or a script comes without, and is loaded again with them; `hash` is its place on the page.
+     */
+    | { type: 'doc-ready'; title: string; path: string; seeded: boolean; hash: string }
+    /** the page's storage changed */
+    | { type: 'doc-store'; value: string }
+    /** the page copied or saved its comments */
+    | { type: 'doc-comment'; text: string; via: 'clipboard' | 'execCommand' | 'download' }
+    /** a link to the web */
+    | { type: 'doc-link'; url: string }
+    /** a link to a file of the Mac, judged like any other */
+    | { type: 'doc-open'; path: string }
+    /** how many pictures, styles or scripts failed to load so far */
+    | { type: 'doc-missing'; count: number }
+
 /** Phone server routes, so the page and the server spell them the same. */
 export const PHONE_API = {
     me: '/api/phone/me',
@@ -238,6 +311,8 @@ export const PHONE_API = {
     file: '/api/phone/file',
     /** a file's bytes */
     fileRaw: '/api/phone/file/raw',
+    /** POST: a token for one document (`phoneDoc.ts`) */
+    docOpen: '/api/phone/doc/open',
     /** POST: one HTTP request of the feedback widget, sent by main's FeedbackRelay */
     feedbackRelay: '/api/phone/feedback/relay',
     /** GET `?session=<id>`: the terminal a report is about, as the desktop widget gets it over IPC */

@@ -174,6 +174,10 @@ rules stay in the root; this file is the inventory.
 - **폰 페이지**: 렌더러 두 번째 Vite 입구 `src/renderer/phone.html` → `src/renderer/src/phone/`(목록·서랍(768px 아래)·「Chat | Terminal」·키 바·입력줄·
   짝짓기·알림). Chat 은 데스크톱 `ChatView` 에 `phoneChatTransport`(fetch + WS)를 준다. 서버는 `out/renderer/.vite/manifest.json` 으로 phone.html 이
   싣는 청크만 낸다(데스크톱 입구·피드백 위젯 청크는 404). 매니페스트·서비스 워커·아이콘은 `src/renderer/public/phone/`
+- **문서 보기·코멘트**(결정 [`0011`](../decisions/0011-phone-documents-in-a-sandboxed-frame.md)): Chat 의 `.html` 링크(줄 번호 없음) → `PhoneDocPanel`(`SessionScreen` 이 고른다, `report.html:42` 는 코드 보기) → `POST /api/phone/doc/open`
+  (`phoneDoc.ts`, 판정은 `openGrantedFile`, 상한 64MiB, `drive` 만) → 토큰 주소 `GET /doc/<token>/<path>` 를 `sandbox="allow-scripts allow-forms allow-modals"` 칸(`PhoneDocFrame`)에서 연다. `/api/` 밖이다 — Chromium 은 칸의 사진 요청에 쿠키를 안 싣는다.
+  문서 앞에 `phoneDocBridge.ts` 를 끼워 `localStorage`·클립보드·`execCommand('copy')`·`a.download` 를 부모로 보내는 메시지로 바꾼다(키트 수정 없음, 옛 보고서도 동작). 받은 글은 `DocSendSheet` 에 전부 보이고 **Send 를 눌러야** 기존 `chat/<id>/send` 로 간다
+  (칸 `inert` · 열린 동안 새 메시지 무시 · 600ms 비활성). 코멘트 저장은 폰 `localStorage`(`phone-doc-store:<폴더 해시>:<문서>`, 문서당 256KB · 50문서)이고 주소 조각 `#seed=` 로 되돌린다(링크로 온 페이지는 저장값을 실어 다시 부른다). 순수 함수는 `docMessages.ts`. Dock 행 → 문서는 합칠 때 잇는다.
 - 끄기: 설정 스위치 · 사이드바 「Phone on · n connected」의 ✕ · 앱 종료 → 서버 닫힘 + 모든 소켓 끊김. 기기 끊기는 그 기기 소켓·알림까지
 - **세션 목록 순서 = Mac 사이드바 「All sessions」(List) 위→아래**(2회차). 따로 정렬하지 않는다 — main(`phoneSetup.listSessions`)이 사이드바의
   함수를 그대로 부른다: 사이드바가 세션을 그리는 순서(`sessionsInSidebarOrder` — 렌더러가 `sidebar-session-order` 로 알려 준 id 순서, 작업 공간

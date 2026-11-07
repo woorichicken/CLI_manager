@@ -5,6 +5,7 @@ import { Menu, MessageSquareText, TerminalSquare } from 'lucide-react'
 import type { PhoneRole, PhoneSession } from '../../../shared/phone'
 import { ChatView } from '../components/ChatView'
 import { createPhoneChatTransport } from './phoneChatTransport'
+import { PhoneDocPanel } from './PhoneDocPanel'
 import { PhoneFilePanel, type PhoneFileTarget } from './PhoneFilePanel'
 import { PhoneTerminal } from './PhoneTerminal'
 
@@ -15,6 +16,24 @@ import { PhoneTerminal } from './PhoneTerminal'
  */
 
 export type SessionLens = 'chat' | 'terminal'
+
+/** Long enough for a Back to land; a page in the frame can take that Back for its own, and then no popstate comes here. */
+const BACK_SETTLES_MS = 300
+
+function afterHistoryBack(then: () => void): void {
+    let done = false
+    const once = (): void => {
+        if (done) return
+        done = true
+        window.removeEventListener('popstate', once)
+        then()
+    }
+    window.addEventListener('popstate', once)
+    window.setTimeout(once, BACK_SETTLES_MS)
+}
+
+/** An HTML page opens as itself (decision 0011). A line asked for is a place in its source: the code view. */
+const opensAsDocument = (target: PhoneFileTarget): boolean => target.line === undefined && /\.html?$/i.test(target.path)
 
 /** a finger, not a mouse: the chat's Return breaks the line and opening it leaves the keyboard down */
 const COARSE_POINTER = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
@@ -57,6 +76,11 @@ export function SessionScreen({
         setFile({ sessionId, path, ...(line !== undefined ? { line } : {}) })
     }, [])
     const closeFile = useCallback(() => window.history.back(), [])
+    // a page in the frame can add history of its own, and Back would walk through that first: this closes at once
+    const closeDocument = useCallback(() => {
+        setFile(null)
+        window.history.back()
+    }, [])
     const fileOpen = file !== null
     useEffect(() => {
         if (!fileOpen) return
@@ -131,7 +155,24 @@ export function SessionScreen({
                     <PhoneTerminal key={session.id} sessionId={session.id} deviceRole={role} />
                 )}
             </div>
-            {file && file.sessionId === session.id && <PhoneFilePanel key={`${file.path}:${file.line ?? ''}`} target={file} onClose={closeFile} />}
+            {file && file.sessionId === session.id && !opensAsDocument(file) && <PhoneFilePanel key={`${file.path}:${file.line ?? ''}`} target={file} onClose={closeFile} />}
+            {file && file.sessionId === session.id && opensAsDocument(file) && (
+                <PhoneDocPanel
+                    key={file.path}
+                    target={file}
+                    onClose={closeDocument}
+                    // the panel it replaces cannot be gone back to: the entry already there stands for this one
+                    onOpenFile={(sessionId, path) => setFile({ sessionId, path })}
+                    onOpenChat={(id) => {
+                        // after Back has landed: moving first, Back would undo the move
+                        afterHistoryBack(() => {
+                            if (id === session.id) onLens('chat')
+                            else onSessionLink?.(`climanager://session/${id}`)
+                        })
+                        closeDocument()
+                    }}
+                />
+            )}
         </div>
     )
 }
