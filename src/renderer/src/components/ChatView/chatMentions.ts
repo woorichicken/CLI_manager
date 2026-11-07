@@ -1,5 +1,5 @@
 import type { ConversationPart, ConversationTurn, ToolPart } from '../../../../shared/conversation'
-import { codeIsFilePath, codeIsSessionLink, fileLineTarget, FILE_LINK_COUNT, FILE_LINK_LIMIT, resolveChatPath, splitAppAttachments, splitFilePaths, splitSessionLinks, toolFile } from './chatLib'
+import { codeIsFilePath, codeIsSessionLink, fileLineTarget, FILE_LINK_COUNT, FILE_LINK_LIMIT, foldUserMessage, resolveChatPath, splitAppAttachments, splitFilePaths, splitSessionLinks, toolFile } from './chatLib'
 import { parseMarkdown, type InlineNode, type MarkdownBlock } from './markdown/parseMarkdown'
 
 /**
@@ -106,9 +106,12 @@ function addPart(out: Set<string>, part: ConversationPart, role: ConversationTur
                 addMarkdown(out, part.text, cwd, home)
                 break
             }
-            for (const piece of splitAppAttachments(part.text)) {
-                if (typeof piece === 'string') addLinkedText(out, piece, cwd, home)
-                else addTarget(out, piece.path, cwd, home)
+            // UserText draws the folded head or the whole text: the limits apply to each on its own
+            for (const shown of [part.text, foldUserMessage(part.text)?.head ?? '']) {
+                for (const piece of splitAppAttachments(shown)) {
+                    if (typeof piece === 'string') addLinkedText(out, piece, cwd, home)
+                    else addTarget(out, piece.path, cwd, home)
+                }
             }
             break
         case 'tool':

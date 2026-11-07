@@ -312,6 +312,8 @@ export async function handlePhoneFile(req: http.IncomingMessage, res: http.Serve
     try {
         if (file.size > PHONE_MAX_DOWNLOAD_BYTES) return refuse(res, 'too_large')
         const info = await describe(file, url, deps.files)
+        // reading took a while too: what was read does not go to a device disconnected meanwhile
+        if (!deps.stillAllowed()) return refuse(res, 'revoked')
         deps.files.record(asked.sessionId, `file opened (${info.kind}, ${formatSize(file.size)})`)
         send(res, 200, info)
     } finally {

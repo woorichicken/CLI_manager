@@ -175,8 +175,8 @@ export class ConversationService {
      * not read the keys yet).
      */
     private readonly lastAnswer = new Map<string, { signature: string; outputAt: number }>()
-    /** paths in tool outputs read whole: links on the page that the turns do not hold */
-    private readonly wholeOutputPaths = new Map<string, Set<string>>()
+    /** paths in tool outputs read whole: links on the page that the turns do not hold. Of one conversation: `/resume` leaves them behind */
+    private readonly wholeOutputPaths = new Map<string, { conversation: string; paths: Set<string> }>()
     private timer: NodeJS.Timeout | null = null
     private polling = false
 
@@ -493,11 +493,18 @@ export class ConversationService {
         // shown whole, its paths are links too — the turns only hold the cut part
         if (output) {
             const info = this.deps.session(sessionId)
-            const named = this.wholeOutputPaths.get(sessionId) ?? new Set<string>()
+            const named = new Set<string>(this.wholePathsOf(sessionId))
             addLinkedText(named, output, info?.cwd, this.deps.home)
-            this.wholeOutputPaths.set(sessionId, named)
+            this.wholeOutputPaths.set(sessionId, { conversation: `${agentOf(info)}:${info?.cliSessionId}`, paths: named })
         }
         return output
+    }
+
+    /** The paths read whole in the conversation the session holds now. */
+    private wholePathsOf(sessionId: string): ReadonlySet<string> {
+        const info = this.deps.session(sessionId)
+        const held = this.wholeOutputPaths.get(sessionId)
+        return held && held.conversation === `${agentOf(info)}:${info?.cliSessionId}` ? held.paths : new Set<string>()
     }
 
     /**
@@ -507,15 +514,15 @@ export class ConversationService {
     async mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }> {
         const info = this.deps.session(sessionId)
         const agent = agentOf(info)
-        const whole = this.wholeOutputPaths.get(sessionId)
-        const none = { paths: whole ?? new Set<string>(), ...(info?.cwd ? { cwd: info.cwd } : {}) }
+        const whole = this.wholePathsOf(sessionId)
+        const none = { paths: whole, ...(info?.cwd ? { cwd: info.cwd } : {}) }
         if (!info?.cliSessionId || !agent) return none
         const entry = this.entry(sessionId)
         try {
             const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
             if (!read) return none
             const paths = mentionedPaths(read.turns, info.cwd, this.deps.home)
-            for (const path of whole ?? []) paths.add(path)
+            for (const path of whole) paths.add(path)
             return { ...none, paths }
         } catch (error) {
             console.error('[conversation] mentions failed', sessionId, error)

@@ -37,6 +37,8 @@ interface Harness {
     devices: PhoneDevices
     logged: string[]
     drive: string
+    /** runs while a file's text is being prepared: what can happen in the middle of a request */
+    duringRead: () => void
     stop(): Promise<void>
 }
 
@@ -58,6 +60,7 @@ async function startHarness(): Promise<Harness> {
     const devices = new PhoneDevices(path.join(data, 'devices.json'))
     const named = new Set<string>()
     const logged: string[] = []
+    const harness = { duringRead: () => undefined } as Harness
     const push = { forgetOwner: () => undefined, publicKey: () => 'key', keysProblem: () => null, count: () => 0, onStatus: () => undefined }
     const server = new PhoneServer({
         devices,
@@ -77,7 +80,10 @@ async function startHarness(): Promise<Harness> {
         files: {
             home,
             protectedPlaces: [data],
-            maskLines: (lines) => maskSecretLines(lines, { joinLines: false }),
+            maskLines: (lines) => {
+                harness.duringRead()
+                return maskSecretLines(lines, { joinLines: false })
+            },
             record: (_id, detail) => logged.push(detail)
         }
     })
@@ -86,7 +92,8 @@ async function startHarness(): Promise<Harness> {
     const { code } = devices.startPairing('drive')
     const paired = devices.pair(code, 'Phone')
     if ('error' in paired) throw new Error(paired.error)
-    return { home, project, named, base: `http://127.0.0.1:${state.port}`, devices, logged, drive: `climanager_phone=${paired.token}`, stop: () => server.stop() }
+    Object.assign(harness, { home, project, named, base: `http://127.0.0.1:${state.port}`, devices, logged, drive: `climanager_phone=${paired.token}`, stop: () => server.stop() })
+    return harness
 }
 
 function ask(h: Harness, target: string, options: { raw?: boolean; session?: string; headers?: Record<string, string>; download?: boolean } = {}): Promise<Response> {
@@ -535,6 +542,18 @@ test.describe('T97 who may ask', () => {
         expect((await ask(h, file)).status).toBe(401)
     })
 
+    test('a device disconnected while its file was being read gets no words', async () => {
+        const file = namedFile(h, 'notes.txt', 'the words\n')
+        const device = h.devices.list()[0]
+        h.duringRead = () => h.devices.revoke(device.id)
+        const response = await ask(h, file)
+        expect(response.status).toBe(401)
+        const text = await response.text()
+        expect(JSON.parse(text).reason).toBe('revoked')
+        expect(text).not.toContain('the words')
+        expect(h.logged).toEqual([])
+    })
+
     test('what is logged says what kind and how big, never the path', async () => {
         const file = namedFile(h, 'secret-project-name.txt', 'x')
         await info(h, file)
@@ -568,6 +587,15 @@ test.describe('T97 what a chat names', () => {
 
     test('a person’s words and the attachment they sent', () => {
         expect(names([user('look at docs/a.png @/tmp/x/climanager-chat/2026-11-07/p.png please')])).toEqual(['/repo/docs/a.png', '/tmp/x/climanager-chat/2026-11-07/p.png'])
+    })
+
+    test('a long message: the folded head draws its own links, whatever the whole text does', () => {
+        // over the chat's count, the whole text links nothing; folded, its first lines still do
+        const many = Array.from({ length: 501 }, (_, i) => `/repo/file${i}.ts`).join('\n')
+        const shown = names([user(many)])
+        expect(shown.length).toBeGreaterThan(0)
+        expect(shown).toContain('/repo/file0.ts')
+        expect(shown).not.toContain('/repo/file500.ts')
     })
 
     test('a tool’s file and its output; not its command', () => {
@@ -617,8 +645,9 @@ test.describe('T97 what a chat names', () => {
         const reader = new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' })
         reader.read = () => ({ turns: [cut], truncated: false, changed: false, meta: null })
         reader.toolOutput = async () => 'start of it, then in/deep.md at the end'
+        let conversation = 'c1'
         const service = new ConversationService({
-            session: () => ({ cwd: CWD, cliSessionId: 'c1', cliToolName: 'claude' }),
+            session: () => ({ cwd: CWD, cliSessionId: conversation, cliToolName: 'claude' }),
             reader,
             mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }) },
             hasTerminal: () => true,
@@ -633,6 +662,11 @@ test.describe('T97 what a chat names', () => {
         expect([...named.paths]).toEqual(['/repo/in/deep.md'])
         expect(named.cwd).toBe(CWD)
         expect([...(await service.mentionedPaths('B')).paths]).toEqual([])
+        // `/resume` in the same terminal: another conversation, and what the last one showed is not its link
+        conversation = 'c2'
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
+        conversation = 'c1'
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual(['/repo/in/deep.md'])
         service.forget('A')
         expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
     })
