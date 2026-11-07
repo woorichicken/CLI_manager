@@ -178,7 +178,9 @@ export async function openGrantedFile(source: PhoneFileSource, access: PhoneFile
     }
     if (!withinRoots(real, await realRoots(access.home, source.cwd))) return refusal('outside_roots')
     const homes = [access.home, realHome]
-    const places = access.protectedPlaces ?? []
+    // a place behind a symlink (a moved data folder) is protected where it really is, too
+    const named = access.protectedPlaces ?? []
+    const places = [...named, ...(await Promise.all(named.map((place) => realpath(place).catch(() => place))))]
     if (isProtectedPath(requested, homes, places) || isProtectedPath(real, homes, places)) return refusal('protected')
 
     let handle: FileHandle

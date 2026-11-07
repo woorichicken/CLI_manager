@@ -331,6 +331,20 @@ test.describe('T97 the eight steps', () => {
         expect(opened).toEqual({ ok: false, reason: 'not_a_file' })
     })
 
+    test('a protected place behind a symlink is protected where it really is', async () => {
+        const real = path.join(h.home, 'moved-data')
+        const place = path.join(h.home, 'data-link')
+        fs.mkdirSync(real)
+        fs.writeFileSync(path.join(real, 'vapid.json'), '{}')
+        fs.symlinkSync(real, place)
+        const other = path.join(h.project, 'other-link')
+        fs.symlinkSync(real, other)
+        const access: PhoneFileAccess = { role: 'drive', fetchSite: null, home: h.home, protectedPlaces: [place] }
+        for (const target of [path.join(place, 'vapid.json'), path.join(real, 'vapid.json'), path.join(other, 'vapid.json')]) {
+            expect(await openGrantedFile({ path: target, grants: () => true }, access), target).toEqual({ ok: false, reason: 'protected' })
+        }
+    })
+
     test('the session’s folder counts as an allowed place, even outside home', async () => {
         const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't97-elsewhere-')))
         // os.tmpdir() is itself allowed: only a source's own `cwd` is under test, so ask for a folder outside it
@@ -616,6 +630,22 @@ test.describe('T97 what a chat names', () => {
             parts: [{ kind: 'thinking', text: 'maybe in/thought.md' }, { kind: 'shell', command: 'cat in/cmd.md', stdout: 'in/out.md' }]
         }
         expect(names([turn])).toEqual([])
+    })
+
+    test('what the screen does not link is not named: a plan, a notice in an agent’s turn, a tool in a person’s', () => {
+        const plan: ConversationTurn = {
+            role: 'assistant',
+            ts: null,
+            parts: [{ kind: 'tool', name: 'TodoWrite', summary: 'x', input: JSON.stringify({ todos: [{ content: 'read', status: 'pending', activeForm: 'reading' }] }), output: 'wrote in/plan.md' }]
+        }
+        expect(names([plan])).toEqual([])
+        // a plan that cannot be read draws as an ordinary tool row, so its output is linked
+        const broken: ConversationTurn = { role: 'assistant', ts: null, parts: [{ kind: 'tool', name: 'TodoWrite', summary: 'x', input: 'not json', output: 'wrote in/plan.md' }] }
+        expect(names([broken])).toEqual(['/repo/in/plan.md'])
+        const agentTurn: ConversationTurn = { role: 'assistant', ts: null, parts: [{ kind: 'notice', text: 'see in/notice.md' }, { kind: 'compact', text: 'see in/compact.md' }] }
+        expect(names([agentTurn])).toEqual([])
+        const personTurn: ConversationTurn = { role: 'user', ts: null, parts: [{ kind: 'tool', name: 'Read', summary: 'x', input: JSON.stringify({ file_path: '/repo/read.ts' }), output: '' }] }
+        expect(names([personTurn])).toEqual([])
     })
 
     test('notes, summaries and task results', () => {

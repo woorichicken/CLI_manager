@@ -1,5 +1,5 @@
 import type { ConversationPart, ConversationTurn, ToolPart } from '../../../../shared/conversation'
-import { codeIsFilePath, codeIsSessionLink, fileLineTarget, FILE_LINK_COUNT, FILE_LINK_LIMIT, foldUserMessage, resolveChatPath, splitAppAttachments, splitFilePaths, splitSessionLinks, toolFile } from './chatLib'
+import { codeIsFilePath, codeIsSessionLink, fileLineTarget, FILE_LINK_COUNT, FILE_LINK_LIMIT, foldUserMessage, isTodoTool, resolveChatPath, splitAppAttachments, splitFilePaths, splitSessionLinks, todoSnapshot, toolFile } from './chatLib'
 import { parseMarkdown, type InlineNode, type MarkdownBlock } from './markdown/parseMarkdown'
 
 /**
@@ -87,6 +87,8 @@ function addMarkdown(out: Set<string>, text: string, cwd: string | undefined, ho
 }
 
 function addTool(out: Set<string>, tool: ToolPart, cwd: string | undefined, home: string | undefined): void {
+    // a plan draws as its checklist (WorkBlock.tsx TodoRow): no file button, no output
+    if (isTodoTool(tool.name) && todoSnapshot(tool)) return
     let input: Record<string, unknown> = {}
     try {
         const parsed: unknown = JSON.parse(tool.input)
@@ -114,12 +116,14 @@ function addPart(out: Set<string>, part: ConversationPart, role: ConversationTur
                 }
             }
             break
+        // the turn's role decides what is drawn: a person's turn has no tool rows (TurnParts.tsx), and in an
+        // agent's turn a notice is plain words and a summary is not drawn at all (WorkBlock.tsx WorkPart)
         case 'tool':
-            addTool(out, part, cwd, home)
+            if (role === 'assistant') addTool(out, part, cwd, home)
             break
         case 'notice':
         case 'compact':
-            addMarkdown(out, part.text, cwd, home)
+            if (role === 'user') addMarkdown(out, part.text, cwd, home)
             break
         case 'task_result':
             for (const task of part.tasks) if (task.result) addMarkdown(out, task.result, cwd, home)
