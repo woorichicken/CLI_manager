@@ -23,6 +23,24 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 저장된 명령이 에이전트 이름이 아니면 재시작 때 맨 `claude`·`codex` 로 친다
+- Date: 2026-11-08
+- Where: `src/shared/agentCommand.ts` `decideAgentCommand` 의 `fallback` 이 `inputCommand: agent` 를 준다. 저장값은 `storedCommand` 로 남는다. 재시작 입력은 `src/main/index.ts` · `src/renderer/src/utils/resumeCommand.ts`.
+- What: `node /x/mock.cjs` 로 저장된 세션을 재시작하자 `claude --resume <id>` 가 입력됐다. `origin/main` 은 저장값을 그대로 쳤다. `ccr code`·`npx …` 처럼 감싼 명령도 같은 길을 탈 것이다(코드 근거, 그 명령들로 재지는 않았다).
+- Surfaced by: 합친 판 실기기 시험(`feat/phone-1107`). `tests/terminal/helpers.ts` 가 모의를 `claude` 이름으로 감싸서 스위트에는 안 잡힌다.
+- Impact: 감싼 명령을 쓰는 사람은 재시작에서 그 명령을 잃고 맨 CLI 가 뜬다.
+- Workaround: 터미널에서 감싼 명령으로 직접 resume 한다.
+- Fix direction: D4 N2 의 계약(모르는 명령을 다시 치지 않음)과 맞물려 사람이 정한다. 맨 CLI 로 칠지, 저장값을 칠지, 치지 않고 안내할지.
+
+### 🐛 Claude 로그인 메뉴가 떠 있어도 Chat 전송이 「Sent」로 끝난다
+- Date: 2026-11-08
+- Where: `AWAITING_INPUT_PATTERNS`(`src/main/TerminalMirror.ts` 쪽 판정) · `ConversationService` 보내기 확인. 격리 Claude 2.1.319 의 `Select login method` 메뉴.
+- What: 그 메뉴에 문서 코멘트 120자를 보냈는데 시트는 `Sent to …` 를 보이고 대화 기록은 0건이었다. `phone-input` 은 1건 남았고 메뉴는 그대로였다.
+- Surfaced by: 합친 판 실기기 시험(위 결함으로 실제 CLI 가 뜬 세션).
+- Impact: 로그인 전 세션에서만 생긴다. 보낸 글이 사라지는데 성공으로 보인다.
+- Workaround: 터미널에서 로그인한 뒤 다시 보낸다.
+- Fix direction: 이 메뉴를 질문 대기로 읽거나, 보낸 뒤 기록에 글이 들어왔는지로 판정한다.
+
 ### 🐛 모드 칩 — shift+tab 으로 기본 모드로 돌려도 다음 프롬프트까지 옛 칩이 남는다
 - Date: 2026-11-07
 - Where: `src/main/ConversationService.ts:241` · `src/main/screenLines.ts` `screenAgentMode`. 화면의 모드 줄을 먼저 보고, 없으면(`null`) 기록의 `permissionMode` 로 돌아간다. 기본 모드는 화면에 모드 줄이 없어 `null` 이다.
