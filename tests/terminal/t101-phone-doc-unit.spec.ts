@@ -6,7 +6,7 @@ import path from 'path'
 import { sameOrigin } from '../../src/main/phone/phoneAccess'
 import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhoneServer } from '../../src/main/phone/PhoneServer'
-import { bridgeOffset, docContentSecurityPolicy, docRelativePath, documentCharset, documentTitle, PhoneDocTokens } from '../../src/main/phone/phoneDoc'
+import { bridgeOffset, docContentSecurityPolicy, docRelativePath, documentCharset, documentTitle, handlePhoneDocFile, PhoneDocTokens } from '../../src/main/phone/phoneDoc'
 import { PHONE_DOC_BRIDGE } from '../../src/main/phone/phoneDocBridge'
 import { commentTooLong, composeComment, frameAddress, fromDocFrame, keepDocStore, parseDocMessage, readDocStore, sendOutcome } from '../../src/renderer/src/phone/docMessages'
 import { PHONE_DOC_SANDBOX, PHONE_MAX_COMMENT_CHARS, PHONE_MAX_DOC_BYTES, PHONE_MAX_DOC_STORE_BYTES, type PhoneDocOpened, type PhoneDocRefused } from '../../src/shared/phone'
@@ -383,6 +383,42 @@ test.describe('T101 what a token serves', () => {
         expect((await fromFrame(h, doc.url)).status).toBe(404)
     })
 
+    test('disconnected while the first bytes are read: nothing goes out', async () => {
+        const home = h.home
+        const folder = path.join(h.project, 'late')
+        fs.mkdirSync(folder)
+        fs.writeFileSync(path.join(folder, 'report.html'), '<p>private words</p>')
+        const tokens = new PhoneDocTokens()
+        const access = { level: 'full', role: 'drive', via: 'device', deviceId: 'd1' } as never
+        const token = tokens.mint({ root: folder, sideFiles: true, document: 'report.html', access, owner: 'device:d1' })
+        // allowed when the token is looked at and when the file has opened; not any more once its head is read
+        let asked = 0
+        const server = http.createServer((req, res) => {
+            void handlePhoneDocFile(req, res, new URL(req.url!, 'http://phone.local'), {
+                files: { home, maskLines: (lines) => ({ lines, masked: 0 }), record: () => undefined },
+                tokens,
+                stillAllowed: () => ++asked <= 2,
+                trackDownload: () => () => undefined
+            })
+        })
+        await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+        const { port } = server.address() as import('net').AddressInfo
+        const response = await fetch(`http://127.0.0.1:${port}/doc/${token.token}/report.html`)
+        const body = await response.text()
+        await new Promise((resolve) => server.close(resolve))
+        expect(asked, 'asked again after the last read').toBe(3)
+        expect(response.status).toBe(404)
+        expect(body).not.toContain('private words')
+    })
+
+    test('a module beside the document is served for an opaque origin, whatever its extension', async () => {
+        const doc = await opened(h, namedFile(h, 'report.html', '<p>x'))
+        namedFile(h, 'app.js', 'export {}')
+        namedFile(h, 'app.mjs', 'export {}')
+        expect((await fromFrame(h, beside(doc, 'app.js'))).headers.get('access-control-allow-origin')).toBe('null')
+        expect((await fromFrame(h, beside(doc, 'app.mjs'))).headers.get('access-control-allow-origin')).toBe('null')
+    })
+
     test('switching the phone off ends every token', async () => {
         const doc = await opened(h, namedFile(h, 'a.html', '<p>x'))
         const state = await h.server.apply({ enabled: false } as never)
@@ -511,7 +547,7 @@ test.describe('T101 what a frame may say', () => {
         expect(parseDocMessage({ type: 'doc-store', value: '{}' })).toEqual({ type: 'doc-store', value: '{}' })
         expect(parseDocMessage({ type: 'doc-link', url: 'https://a.example/x' })?.type).toBe('doc-link')
         expect(parseDocMessage({ type: 'doc-link', url: 'mailto:a@b.c' })?.type).toBe('doc-link')
-        expect(parseDocMessage({ type: 'doc-open', path: '/Users/x/a.html' })?.type).toBe('doc-open')
+        expect(parseDocMessage({ type: 'doc-open', path: '/home/x/a.html' })?.type).toBe('doc-open')
         expect(parseDocMessage({ type: 'doc-missing', count: 3 })?.type).toBe('doc-missing')
         for (const bad of [
             null,

@@ -132,7 +132,8 @@ async function launch(): Promise<Launched> {
     fs.writeFileSync(path.join(project, 'outside.png'), fs.readFileSync(path.join(FIXTURES, 'a.png')))
     fs.writeFileSync(path.join(review, 'missing.html'), '<!doctype html><title>Missing</title><img src="../outside.png"><img src="http://127.0.0.1:47999/x.png"><img id="here" src="a.png"><p>words</p>')
     fs.copyFileSync(path.join(REPO_ROOT, 'src/renderer/src/phone/fonts/clim-phone-mono-ksx1001.woff2'), path.join(review, 'mono.woff2'))
-    fs.writeFileSync(path.join(review, 'font.html'), '<!doctype html><title>Font</title><style>@font-face{font-family:T102;src:url(mono.woff2)}body{font-family:T102}</style><p>가나다</p>')
+    fs.writeFileSync(path.join(review, 'font.html'), '<!doctype html><title>Font</title><style>@font-face{font-family:T102;src:url(mono.woff2)}body{font-family:T102}</style><script type="module" src="mod.js"></script><p>가나다</p>')
+    fs.writeFileSync(path.join(review, 'mod.js'), 'window.__t102Module = 1\n')
     fs.writeFileSync(path.join(review, 'plain.html'), '<!doctype html><html lang="ko"><title>Plain page</title><p id="words">hello from the page</p></html>')
     const claudeDir = path.join(home, 'claude')
     const folder = path.join(claudeDir, 'projects', slug(project))
@@ -592,6 +593,8 @@ test('T102 links, missing pictures and fonts: the page stays where it is and say
     // a font next to the page: a font request is CORS even from the same host
     await openDoc(cdp, phone, 'the font page')
     await expect.poll(() => docFrame(phone).evaluate(async () => (await document.fonts.load('16px T102')).length), { timeout: 10_000 }).toBeGreaterThan(0)
+    // and so is a module, whatever its extension
+    await expect.poll(() => docFrame(phone).evaluate(() => (window as unknown as { __t102Module?: number }).__t102Module ?? 0), { timeout: 5_000 }).toBe(1)
     await tap(cdp, phone, phone.getByTestId('phone-doc-close'))
 
     // the charset and <html lang> of a page survive the script put in front of them

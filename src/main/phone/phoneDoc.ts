@@ -50,8 +50,8 @@ const FILE_TYPES: Record<string, string> = {
     otf: 'font/otf'
 }
 
-/** A font or a module is requested with CORS even from the same host, and the page's origin is `null`. */
-const CORS_EXTENSIONS = new Set(['woff', 'woff2', 'ttf', 'otf', 'mjs'])
+/** A font or a module is requested with CORS even from the same host, and the page's origin is `null`. A module can be a `.js`. */
+const CORS_EXTENSIONS = new Set(['woff', 'woff2', 'ttf', 'otf', 'mjs', 'js'])
 
 export interface PhoneDocToken {
     token: string
@@ -418,7 +418,8 @@ async function serveDocument(req: http.IncomingMessage, res: http.ServerResponse
         return notFound(res)
     }
     const charset = documentCharset(head)
-    if (charset === null) {
+    // the read above can outlast the device: from here on nothing would stop it, and a disconnect has no stream to cut yet
+    if (charset === null || !deps.stillAllowed(access)) {
         await file.handle.close().catch(() => undefined)
         res.removeHeader('Content-Security-Policy')
         return notFound(res)
