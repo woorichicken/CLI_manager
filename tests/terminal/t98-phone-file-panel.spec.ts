@@ -399,6 +399,7 @@ test('T98 the drawer swipe stays out of the panel; another session closes it; th
     await tapLink(cdp, phone, 'docs/shot.png')
     const offline = panel.getByTestId('phone-file-offline')
     await expect(offline).toContainText('The Mac is not answering', { timeout: 15_000 })
+    await shot(phone, 'panel-offline')
     await page.evaluate(() => window.api.setPhoneEnabled(true))
     await tapTestId(cdp, phone, 'phone-file-retry')
     await expect(panel.getByTestId('phone-file-image')).toBeVisible({ timeout: 15_000 })

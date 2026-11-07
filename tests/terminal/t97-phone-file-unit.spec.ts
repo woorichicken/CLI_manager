@@ -4,6 +4,8 @@ import fs from 'fs'
 import http from 'http'
 import os from 'os'
 import path from 'path'
+import { ConversationService } from '../../src/main/ConversationService'
+import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhoneServer } from '../../src/main/phone/PhoneServer'
 import { isProtectedPath, MAX_PATH_BYTES, usablePath, withinRoots } from '../../src/main/phone/phoneFileAccess'
@@ -608,6 +610,31 @@ test.describe('T97 what a chat names', () => {
         const many = new Set<string>()
         addLinkedText(many, Array.from({ length: 501 }, (_, i) => `in/f${i}.md`).join(' '), CWD, HOME)
         expect(many.size).toBe(0)
+    })
+
+    test('a tool output read whole: its paths are links on the page, so they count; another session’s do not', async () => {
+        const cut: ConversationTurn = { role: 'assistant', ts: null, parts: [{ kind: 'tool', name: 'Bash', summary: 'x', input: '{}', output: 'start', output_ref: 'r1', output_size: 9 }] }
+        const reader = new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' })
+        reader.read = () => ({ turns: [cut], truncated: false, changed: false, meta: null })
+        reader.toolOutput = async () => 'start of it, then in/deep.md at the end'
+        const service = new ConversationService({
+            session: () => ({ cwd: CWD, cliSessionId: 'c1', cliToolName: 'claude' }),
+            reader,
+            mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }) },
+            hasTerminal: () => true,
+            writeInput: () => undefined,
+            type: async () => true,
+            onChange: () => undefined,
+            home: HOME
+        })
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
+        expect(await service.getToolOutput('A', 'r1')).toContain('in/deep.md')
+        const named = await service.mentionedPaths('A')
+        expect([...named.paths]).toEqual(['/repo/in/deep.md'])
+        expect(named.cwd).toBe(CWD)
+        expect([...(await service.mentionedPaths('B')).paths]).toEqual([])
+        service.forget('A')
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
     })
 
     test('the synthetic Claude and Codex records', () => {
