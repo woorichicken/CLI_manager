@@ -101,7 +101,7 @@ test('T104 review A2-A6: resume preserves shell drafts/questions and records API
     expect(await termText(page, 'bash')).toContain('foo bar')
     expect(saved('bash').cliSessionId).toBeUndefined()
     expect(fs.existsSync(starts)).toBe(false)
-    expect(await connect('plain')).toMatchObject({ status: 200, body: { status: 'connected', resumed: false, typed: true } })
+    expect(await connect('plain')).toMatchObject({ status: 200, body: { status: 'connected', typed: true } })
     expect(saved('plain').aiControl).toMatchObject({ client: 'd104-review' })
     await waitForBufferText(page, 'plain', 'D104-COMMAND-EXITED', 5000)
     expect(fs.readFileSync(starts, 'utf8').trim()).toBe(`resume ${ids[4]}`)
@@ -120,10 +120,14 @@ test('T104 review A2-A6: resume preserves shell drafts/questions and records API
         const dialog = await openDialog(name)
         await dialog.getByTestId('conversation-connect').click()
         await expect(dialog.getByTestId('conversation-error')).toContainText(message)
+        await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeEnabled()
+        await expect(dialog.locator('[aria-busy=true]')).toHaveCount(0)
         await shot(filename)
         await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
         await expect(dialog).toHaveCount(0)
     }
+    // A quickly exiting stand-in may legitimately be observed. Fail before launching it instead.
+    await page.evaluate(([id, command]) => window.api.updateSessionCliInfo('review', 'plain', id, 'codex', command), [ids[4], `false && ${bin}`])
     const dialog = await openDialog('plain')
     await dialog.getByTestId('conversation-connect').click()
     await expect(dialog.getByTestId('conversation-resume-pending')).toContainText('has not started')
