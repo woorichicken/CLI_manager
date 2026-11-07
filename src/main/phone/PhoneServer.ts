@@ -15,6 +15,7 @@ import type { TailscaleStatus } from './tailscaleStatus'
 import { handlePhoneApi, type PhoneApiDeps } from './phoneApi'
 import { handleChatSocket, handleTerminalSocket, type PhoneSocketDeps } from './phoneSockets'
 import { handlePhoneFeedback, isPhoneFeedbackPath, type PhoneFeedbackDeps } from './phoneFeedback'
+import { handlePhoneDocFile, handlePhoneDocOpen, isPhoneDocPath, PhoneDocTokens } from './phoneDoc'
 
 /**
  * The phone connection: a second HTTP server in main, apart from the Control API.
@@ -106,6 +107,8 @@ export class PhoneServer {
     private readonly sockets = new Set<{ ws: WebSocket; who: string; deviceId?: string }>()
     /** files on their way to a paired device (the owner cannot be revoked): a disconnect ends them too */
     private readonly downloads = new Set<{ deviceId?: string; stop: () => void }>()
+    /** what opens a document's folder for its sandboxed frame (decision 0011) */
+    private readonly docTokens = new PhoneDocTokens()
 
     constructor(private readonly deps: PhoneServerDeps) {
         deps.devices.onRevoke((deviceId) => {
@@ -117,6 +120,7 @@ export class PhoneServer {
             for (const download of [...this.downloads]) {
                 if (deviceId === null ? download.deviceId !== undefined : download.deviceId === deviceId) download.stop()
             }
+            this.docTokens.forgetDevice(deviceId)
             deps.push.forgetOwner(deviceId === null ? null : `device:${deviceId}`)
             this.connections.forget((key) => (deviceId === null ? key.startsWith('device:') : key === `device:${deviceId}`))
             deps.onDeviceRevoked?.(deviceId)
@@ -161,6 +165,7 @@ export class PhoneServer {
         this.sockets.clear()
         for (const download of [...this.downloads]) download.stop()
         this.downloads.clear()
+        this.docTokens.clear()
         this.connections.clear()
         this.wss?.close()
         this.wss = null
@@ -299,6 +304,17 @@ export class PhoneServer {
         const url = new URL(req.url ?? '/', 'http://phone.local')
         const path = url.pathname
 
+        // before `/api/`: a sandboxed page's requests cannot pass its gate. phoneDoc.ts asks what it would have asked first
+        if (isPhoneDocPath(path)) {
+            await handlePhoneDocFile(req, res, url, {
+                files: this.deps.files,
+                tokens: this.docTokens,
+                stillAllowed: (access) => this.stillAllowed(access),
+                trackDownload: (access, stop) => this.trackDownload(access, stop)
+            })
+            return
+        }
+
         if (path.startsWith('/api/')) {
             if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(header(req, 'origin'), req.headers.host)) {
                 send(res, 403, { error: 'bad_origin' })
@@ -326,16 +342,26 @@ export class PhoneServer {
                 })
                 return
             }
+            if (path === PHONE_API.docOpen && this.deps.files) {
+                await handlePhoneDocOpen(req, res, {
+                    files: this.deps.files,
+                    tokens: this.docTokens,
+                    access,
+                    owner: who.owner!,
+                    role: access.role,
+                    sessionExists: (id) => this.deps.sessionExists(id),
+                    listSessions: () => this.deps.listSessions(),
+                    mentionedPaths: (id) => this.deps.conversation.mentionedPaths(id),
+                    stillAllowed: () => this.stillAllowed(access)
+                })
+                return
+            }
             await handlePhoneApi(req, res, url, {
                 ...this.deps,
                 access,
                 owner: who.owner!,
                 stillAllowed: () => this.stillAllowed(access),
-                trackDownload: (stop) => {
-                    const entry = { ...(access.via === 'device' ? { deviceId: access.deviceId } : {}), stop }
-                    this.downloads.add(entry)
-                    return () => this.downloads.delete(entry)
-                }
+                trackDownload: (stop) => this.trackDownload(access, stop)
             })
             return
         }
@@ -345,6 +371,13 @@ export class PhoneServer {
             return
         }
         this.serveStatic(path, res)
+    }
+
+    /** Bytes on their way to a paired device (the owner cannot be revoked): a disconnect ends them. */
+    private trackDownload(access: Extract<PhoneAccess, { level: 'full' }>, stop: () => void): () => void {
+        const entry = { ...(access.via === 'device' ? { deviceId: access.deviceId } : {}), stop }
+        this.downloads.add(entry)
+        return () => this.downloads.delete(entry)
     }
 
     private me(access: PhoneAccess): PhoneMe {

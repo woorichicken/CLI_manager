@@ -1,0 +1,145 @@
+/**
+ * The script put in front of every document the phone opens (decision 0011). Reports were written for a browser tab:
+ * they keep comments in localStorage and hand them over through the clipboard or a saved file. A sandboxed page has none
+ * of those, and four kits do it three ways, so this stands in for the browser's own objects rather than asking each kit
+ * to change — reports already on disk work too.
+ *
+ * It adds no power: the page's code could post these messages itself, and the phone page acts on none of them without the
+ * person's press. ASCII only, whatever the page's encoding, and no closing script tag.
+ */
+export const PHONE_DOC_BRIDGE = String.raw`(function () {
+    'use strict'
+    window.__climDocBridge = true
+    var post = function (message) { parent.postMessage(message, '*') }
+
+    // Storage. The seed comes in the address's fragment, which never reaches the server, and leaves it at once.
+    var seed = {}
+    try {
+        var found = /^#seed=(.*)$/.exec(location.hash)
+        if (found) {
+            seed = JSON.parse(decodeURIComponent(found[1])) || {}
+            history.replaceState(null, '', location.pathname + location.search)
+        }
+    } catch (e) {}
+    var makeStore = function (data, changed) {
+        var has = function (key) { return Object.prototype.hasOwnProperty.call(data, key) }
+        return {
+            getItem: function (key) { return has(key) ? data[key] : null },
+            setItem: function (key, value) { data[key] = String(value); changed() },
+            removeItem: function (key) { delete data[key]; changed() },
+            clear: function () { Object.keys(data).forEach(function (key) { delete data[key] }); changed() },
+            key: function (index) { return Object.keys(data)[index] || null },
+            get length() { return Object.keys(data).length }
+        }
+    }
+    var kept = makeStore(seed, function () { post({ type: 'doc-store', value: JSON.stringify(seed) }) })
+    Object.defineProperty(window, 'localStorage', { value: kept, configurable: true })
+    Object.defineProperty(window, 'sessionStorage', { value: makeStore({}, function () {}), configurable: true })
+    Object.defineProperty(document, 'cookie', { get: function () { return '' }, set: function () {}, configurable: true })
+
+    // Comments: however a kit hands them over, they become the text of the phone page's sheet.
+    var give = function (text, via) {
+        if (String(text).trim()) post({ type: 'doc-comment', text: String(text), via: via })
+        // before-after then says "go to the terminal and paste": not here. Its other guides stay
+        setTimeout(function () {
+            var guide = document.getElementById('guide')
+            if (guide) guide.classList.remove('on')
+        }, 0)
+    }
+    Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: function (text) { give(text, 'clipboard'); return Promise.resolve() } },
+        configurable: true
+    })
+    var exec = document.execCommand.bind(document)
+    document.execCommand = function (command) {
+        if (String(command).toLowerCase() !== 'copy') return exec.apply(null, arguments)
+        var field = document.activeElement
+        give(field && typeof field.value === 'string' ? field.value.slice(field.selectionStart, field.selectionEnd) : String(getSelection()), 'execCommand')
+        return true
+    }
+    var blobs = new Map()
+    var makeUrl = URL.createObjectURL.bind(URL)
+    URL.createObjectURL = function (blob) {
+        var url = makeUrl(blob)
+        blobs.set(url, blob)
+        return url
+    }
+    var saved = function (anchor) {
+        var blob = blobs.get(anchor.href)
+        if (!blob) return false
+        var reader = new FileReader()
+        reader.onload = function () { give(reader.result, 'download') }
+        reader.readAsText(blob)
+        return true
+    }
+    var anchorClick = HTMLAnchorElement.prototype.click
+    HTMLAnchorElement.prototype.click = function () {
+        if (this.download && saved(this)) return
+        return anchorClick.apply(this, arguments)
+    }
+
+    // Links. Moving inside the folder replaces the page: a history entry would be one more press of the panel's back.
+    var base = location.pathname.split('/').slice(0, 3).join('/') + '/'
+    document.addEventListener('click', function (event) {
+        var anchor = event.target && event.target.closest && event.target.closest('a[href]')
+        if (!anchor) return
+        if (anchor.download && saved(anchor)) { event.preventDefault(); return }
+        var raw = anchor.getAttribute('href') || ''
+        if (raw.charAt(0) === '#') {
+            event.preventDefault()
+            location.replace(raw)
+            return
+        }
+        var url
+        try { url = new URL(anchor.href) } catch (e) { return }
+        if (url.protocol === 'file:') {
+            event.preventDefault()
+            post({ type: 'doc-open', path: decodeURIComponent(url.pathname) })
+        } else if (url.host === location.host && url.pathname.indexOf(base) === 0) {
+            if (/\.html?$/i.test(url.pathname)) {
+                event.preventDefault()
+                location.replace(url.href)
+            }
+        } else if (url.host === location.host) {
+            // an absolute path written for a browser opening files: a path of the Mac, judged like any other
+            event.preventDefault()
+            post({ type: 'doc-open', path: decodeURIComponent(url.pathname) })
+        } else if (/^(https?|mailto):$/.test(url.protocol)) {
+            event.preventDefault()
+            post({ type: 'doc-link', url: url.href })
+        } else {
+            event.preventDefault()
+        }
+    }, true)
+
+    // What did not load: outside this folder, or on the web. Said by the phone page, not left as a broken picture.
+    var missing = 0
+    var report = null
+    window.addEventListener('error', function (event) {
+        var tag = event.target && event.target.tagName
+        if (tag !== 'IMG' && tag !== 'LINK' && tag !== 'SCRIPT' && tag !== 'SOURCE' && tag !== 'VIDEO' && tag !== 'AUDIO') return
+        missing += 1
+        if (report === null) {
+            report = setTimeout(function () {
+                report = null
+                post({ type: 'doc-missing', count: missing })
+            }, 200)
+        }
+    }, true)
+
+    // Each kit's own button says what it does here.
+    var relabel = function () {
+        ['eli5-fb-copy', 'btn-copy', 'hfk-copy', 'pf-copy'].forEach(function (id) {
+            var button = document.getElementById(id)
+            if (button) button.textContent = 'Send to session'
+        })
+    }
+    document.addEventListener('DOMContentLoaded', relabel)
+    window.addEventListener('load', relabel)
+
+    var path = location.pathname.slice(base.length)
+    try { path = decodeURIComponent(path) } catch (e) {}
+    post({ type: 'doc-ready', title: document.title, path: path })
+    document.addEventListener('DOMContentLoaded', function () { post({ type: 'doc-ready', title: document.title, path: path }) })
+})()
+`
