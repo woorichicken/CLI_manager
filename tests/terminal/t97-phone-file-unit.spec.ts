@@ -4,6 +4,8 @@ import fs from 'fs'
 import http from 'http'
 import os from 'os'
 import path from 'path'
+import { ConversationService } from '../../src/main/ConversationService'
+import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhoneServer } from '../../src/main/phone/PhoneServer'
 import { isProtectedPath, MAX_PATH_BYTES, usablePath, withinRoots } from '../../src/main/phone/phoneFileAccess'
@@ -35,6 +37,8 @@ interface Harness {
     devices: PhoneDevices
     logged: string[]
     drive: string
+    /** runs while a file's text is being prepared: what can happen in the middle of a request */
+    duringRead: () => void
     stop(): Promise<void>
 }
 
@@ -56,6 +60,7 @@ async function startHarness(): Promise<Harness> {
     const devices = new PhoneDevices(path.join(data, 'devices.json'))
     const named = new Set<string>()
     const logged: string[] = []
+    const harness = { duringRead: () => undefined } as Harness
     const push = { forgetOwner: () => undefined, publicKey: () => 'key', keysProblem: () => null, count: () => 0, onStatus: () => undefined }
     const server = new PhoneServer({
         devices,
@@ -75,7 +80,10 @@ async function startHarness(): Promise<Harness> {
         files: {
             home,
             protectedPlaces: [data],
-            maskLines: (lines) => maskSecretLines(lines, { joinLines: false }),
+            maskLines: (lines) => {
+                harness.duringRead()
+                return maskSecretLines(lines, { joinLines: false })
+            },
             record: (_id, detail) => logged.push(detail)
         }
     })
@@ -84,7 +92,8 @@ async function startHarness(): Promise<Harness> {
     const { code } = devices.startPairing('drive')
     const paired = devices.pair(code, 'Phone')
     if ('error' in paired) throw new Error(paired.error)
-    return { home, project, named, base: `http://127.0.0.1:${state.port}`, devices, logged, drive: `climanager_phone=${paired.token}`, stop: () => server.stop() }
+    Object.assign(harness, { home, project, named, base: `http://127.0.0.1:${state.port}`, devices, logged, drive: `climanager_phone=${paired.token}`, stop: () => server.stop() })
+    return harness
 }
 
 function ask(h: Harness, target: string, options: { raw?: boolean; session?: string; headers?: Record<string, string>; download?: boolean } = {}): Promise<Response> {
@@ -322,6 +331,20 @@ test.describe('T97 the eight steps', () => {
         expect(opened).toEqual({ ok: false, reason: 'not_a_file' })
     })
 
+    test('a protected place behind a symlink is protected where it really is', async () => {
+        const real = path.join(h.home, 'moved-data')
+        const place = path.join(h.home, 'data-link')
+        fs.mkdirSync(real)
+        fs.writeFileSync(path.join(real, 'vapid.json'), '{}')
+        fs.symlinkSync(real, place)
+        const other = path.join(h.project, 'other-link')
+        fs.symlinkSync(real, other)
+        const access: PhoneFileAccess = { role: 'drive', fetchSite: null, home: h.home, protectedPlaces: [place] }
+        for (const target of [path.join(place, 'vapid.json'), path.join(real, 'vapid.json'), path.join(other, 'vapid.json')]) {
+            expect(await openGrantedFile({ path: target, grants: () => true }, access), target).toEqual({ ok: false, reason: 'protected' })
+        }
+    })
+
     test('the session’s folder counts as an allowed place, even outside home', async () => {
         const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't97-elsewhere-')))
         // os.tmpdir() is itself allowed: only a source's own `cwd` is under test, so ask for a folder outside it
@@ -533,6 +556,18 @@ test.describe('T97 who may ask', () => {
         expect((await ask(h, file)).status).toBe(401)
     })
 
+    test('a device disconnected while its file was being read gets no words', async () => {
+        const file = namedFile(h, 'notes.txt', 'the words\n')
+        const device = h.devices.list()[0]
+        h.duringRead = () => h.devices.revoke(device.id)
+        const response = await ask(h, file)
+        expect(response.status).toBe(401)
+        const text = await response.text()
+        expect(JSON.parse(text).reason).toBe('revoked')
+        expect(text).not.toContain('the words')
+        expect(h.logged).toEqual([])
+    })
+
     test('what is logged says what kind and how big, never the path', async () => {
         const file = namedFile(h, 'secret-project-name.txt', 'x')
         await info(h, file)
@@ -568,6 +603,15 @@ test.describe('T97 what a chat names', () => {
         expect(names([user('look at docs/a.png @/tmp/x/climanager-chat/2026-11-07/p.png please')])).toEqual(['/repo/docs/a.png', '/tmp/x/climanager-chat/2026-11-07/p.png'])
     })
 
+    test('a long message: the folded head draws its own links, whatever the whole text does', () => {
+        // over the chat's count, the whole text links nothing; folded, its first lines still do
+        const many = Array.from({ length: 501 }, (_, i) => `/repo/file${i}.ts`).join('\n')
+        const shown = names([user(many)])
+        expect(shown.length).toBeGreaterThan(0)
+        expect(shown).toContain('/repo/file0.ts')
+        expect(shown).not.toContain('/repo/file500.ts')
+    })
+
     test('a tool’s file and its output; not its command', () => {
         const turn: ConversationTurn = {
             role: 'assistant',
@@ -586,6 +630,22 @@ test.describe('T97 what a chat names', () => {
             parts: [{ kind: 'thinking', text: 'maybe in/thought.md' }, { kind: 'shell', command: 'cat in/cmd.md', stdout: 'in/out.md' }]
         }
         expect(names([turn])).toEqual([])
+    })
+
+    test('what the screen does not link is not named: a plan, a notice in an agent’s turn, a tool in a person’s', () => {
+        const plan: ConversationTurn = {
+            role: 'assistant',
+            ts: null,
+            parts: [{ kind: 'tool', name: 'TodoWrite', summary: 'x', input: JSON.stringify({ todos: [{ content: 'read', status: 'pending', activeForm: 'reading' }] }), output: 'wrote in/plan.md' }]
+        }
+        expect(names([plan])).toEqual([])
+        // a plan that cannot be read draws as an ordinary tool row, so its output is linked
+        const broken: ConversationTurn = { role: 'assistant', ts: null, parts: [{ kind: 'tool', name: 'TodoWrite', summary: 'x', input: 'not json', output: 'wrote in/plan.md' }] }
+        expect(names([broken])).toEqual(['/repo/in/plan.md'])
+        const agentTurn: ConversationTurn = { role: 'assistant', ts: null, parts: [{ kind: 'notice', text: 'see in/notice.md' }, { kind: 'compact', text: 'see in/compact.md' }] }
+        expect(names([agentTurn])).toEqual([])
+        const personTurn: ConversationTurn = { role: 'user', ts: null, parts: [{ kind: 'tool', name: 'Read', summary: 'x', input: JSON.stringify({ file_path: '/repo/read.ts' }), output: '' }] }
+        expect(names([personTurn])).toEqual([])
     })
 
     test('notes, summaries and task results', () => {
@@ -608,6 +668,65 @@ test.describe('T97 what a chat names', () => {
         const many = new Set<string>()
         addLinkedText(many, Array.from({ length: 501 }, (_, i) => `in/f${i}.md`).join(' '), CWD, HOME)
         expect(many.size).toBe(0)
+    })
+
+    test('a tool output read whole: its paths count while that tool is in the chat, and no longer', async () => {
+        const cut: ConversationTurn = { role: 'assistant', ts: null, parts: [{ kind: 'tool', name: 'Bash', summary: 'x', input: '{}', output: 'start', output_ref: 'r1', output_size: 9 }] }
+        const other: ConversationTurn = user('a new request')
+        let turns = [cut]
+        const reader = new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' })
+        reader.read = () => ({ turns, truncated: false, changed: false, meta: null })
+        reader.toolOutput = async () => 'start of it, then in/deep.md at the end'
+        const service = new ConversationService({
+            session: () => ({ cwd: CWD, cliSessionId: 'c1', cliToolName: 'claude' }),
+            reader,
+            mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }) },
+            hasTerminal: () => true,
+            writeInput: () => undefined,
+            type: async () => true,
+            onChange: () => undefined,
+            home: HOME
+        })
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
+        expect(await service.getToolOutput('A', 'r1')).toContain('in/deep.md')
+        const named = await service.mentionedPaths('A')
+        expect([...named.paths]).toEqual(['/repo/in/deep.md'])
+        expect(named.cwd).toBe(CWD)
+        expect([...(await service.mentionedPaths('B')).paths]).toEqual([])
+        // a `/resume` or a rewind: that tool is no longer in the chat, so its links are not either
+        turns = [other]
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
+        // the output finishes reading after the chat has moved on: the same
+        expect(await service.getToolOutput('A', 'r1')).toContain('in/deep.md')
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
+        turns = [cut]
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual(['/repo/in/deep.md'])
+        service.forget('A')
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
+    })
+
+    test('a file request that takes new records from the transcript tells whoever watches the chat', async () => {
+        const reader = new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' })
+        let changed = true
+        reader.read = () => ({ turns: [], truncated: false, changed, meta: null })
+        const told: number[] = []
+        const service = new ConversationService({
+            session: () => ({ cwd: CWD, cliSessionId: 'c1', cliToolName: 'claude' }),
+            reader,
+            mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }) },
+            hasTerminal: () => true,
+            writeInput: () => undefined,
+            type: async () => true,
+            onChange: (_id, revision) => told.push(revision)
+        })
+        service.subscribe('A')
+        const before = told.length
+        await service.mentionedPaths('A')
+        expect(told.length).toBe(before + 1)
+        changed = false
+        await service.mentionedPaths('A')
+        expect(told.length).toBe(before + 1)
+        service.unsubscribe('A')
     })
 
     test('the synthetic Claude and Codex records', () => {

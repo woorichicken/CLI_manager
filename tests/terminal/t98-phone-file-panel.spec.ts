@@ -63,7 +63,7 @@ function seedTranscript(file: string, project: string, attachment: string): void
         '',
         'Notes are in [the readme](README.md), the page is [the report](report.html), the clip is [the demo](demo.mp4).',
         '',
-        'Old copy: [gone](gone/missing.txt). Secrets: [env](.env).',
+        'Old copy: [gone](gone/missing.txt). Secrets: [env](.env). The whole [long log](big.log#L15000), [old line](big.log#L50000).',
         ...Array.from({ length: 60 }, (_, index) => `\nFiller line ${index} so that the chat has somewhere to scroll.`)
     ].join('\n')
     const lines = [
@@ -102,6 +102,7 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; base: s
     fs.writeFileSync(path.join(project, 'report.html'), '<!doctype html><title>Report</title><p>hello</p>')
     fs.writeFileSync(path.join(project, 'demo.mp4'), Buffer.concat([Buffer.from([0, 0, 0, 32]), Buffer.alloc(4096, 7)]))
     fs.writeFileSync(path.join(project, '.env'), 'API_TOKEN=abc\n')
+    fs.writeFileSync(path.join(project, 'big.log'), Array.from({ length: 20_001 }, (_, index) => `row ${index + 1}`).join('\n'))
     const claudeDir = path.join(home, 'claude')
     const folder = path.join(claudeDir, 'projects', slug(project))
     fs.mkdirSync(folder, { recursive: true })
@@ -213,7 +214,7 @@ test('T98 every path the chat links is a path the server grants (the phone and t
     )
     expect(titles.length).toBeGreaterThanOrEqual(8)
     for (const title of titles) {
-        const bare = title.replace(/:\d+$/, '')
+        const bare = title.replace(/(?::\d+|#L\d+)$/, '')
         const target = bare.startsWith('/') ? bare : path.join(project, bare)
         const { body } = await fileInfo(phone, AGENT, target)
         expect(body.reason, title).not.toBe('not_mentioned')
@@ -352,6 +353,28 @@ test('T98 Markdown reads as a document with its source a tap away; a video downl
     expect(raw.headers['cache-control']).toBe('no-store')
     await phone.goBack()
 
+    // past the rows a page can draw: read a stretch at a time, from the line asked for, with true line numbers
+    await tapLink(cdp, phone, 'long log')
+    const target = panel.locator('.hl-line.is-target')
+    await expect(target).toHaveText('row 15000', { timeout: 10_000 })
+    expect(await panel.getByTestId('phone-file-code').evaluate((el) => (el as HTMLElement).style.getPropertyValue('--phone-file-first'))).toBe('10000')
+    await expect.poll(() => target.evaluate((el) => {
+        const box = el.getBoundingClientRect()
+        return box.top >= 0 && box.bottom <= window.innerHeight
+    })).toBe(true)
+    await tapTestId(cdp, phone, 'phone-file-later')
+    await expect(panel.locator('.hl-line').first()).toHaveText('row 15001')
+    await expect(target).toHaveCount(0)
+    await expect(panel.getByTestId('phone-file-later')).toBeVisible()
+    await panel.getByTestId('phone-file-earlier').scrollIntoViewIfNeeded()
+    await tapTestId(cdp, phone, 'phone-file-earlier')
+    await expect(target).toHaveText('row 15000')
+    await phone.goBack()
+    // a line past the end, from a message older than the file: the file's last stretch, not an empty panel
+    await tapLink(cdp, phone, 'old line')
+    await expect(panel.locator('.hl-line').first()).toHaveText('row 20001', { timeout: 10_000 })
+    await phone.goBack()
+
     await tapLink(cdp, phone, 'gone')
     await expect(panel.getByTestId('phone-file-refused')).toHaveAttribute('data-reason', 'not_found', { timeout: 10_000 })
     await expect(panel.getByTestId('phone-file-refused')).toContainText('Not on the Mac')
@@ -399,9 +422,20 @@ test('T98 the drawer swipe stays out of the panel; another session closes it; th
     await tapLink(cdp, phone, 'docs/shot.png')
     const offline = panel.getByTestId('phone-file-offline')
     await expect(offline).toContainText('The Mac is not answering', { timeout: 15_000 })
+    await shot(phone, 'panel-offline')
     await page.evaluate(() => window.api.setPhoneEnabled(true))
     await tapTestId(cdp, phone, 'phone-file-retry')
     await expect(panel.getByTestId('phone-file-image')).toBeVisible({ timeout: 15_000 })
+    await phone.goBack()
+    await expect(panel).toHaveCount(0)
+
+    // the answer came, the picture's own request did not: Retry again, not a broken image
+    await phone.route('**/api/phone/file/raw**', (route) => route.abort())
+    await tapLink(cdp, phone, 'docs/shot.png')
+    await expect(panel.getByTestId('phone-file-offline')).toBeVisible({ timeout: 15_000 })
+    await phone.unroute('**/api/phone/file/raw**')
+    await tapTestId(cdp, phone, 'phone-file-retry')
+    await expect.poll(() => panel.getByTestId('phone-file-image').evaluate((el) => (el as HTMLImageElement).naturalWidth), { timeout: 15_000 }).toBeGreaterThan(0)
 })
 
 test('T98 a view-only device sees no links and the server refuses it', async () => {

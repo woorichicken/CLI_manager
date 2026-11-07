@@ -106,7 +106,8 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 12px;
     line-height: 1.5;
-    counter-reset: phone-file-line;
+    /* a long file's stretch does not start at line 1 */
+    counter-reset: phone-file-line var(--phone-file-first, 0);
     width: max-content;
     min-width: 100%;
 }
@@ -127,6 +128,14 @@
 }
 .phone-file-code .hl-line.is-target {
     background: rgba(250, 204, 21, 0.18);
+}
+.phone-file-stretch {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    font-size: 13px;
+    color: #60a5fa;
+    border-block: 1px solid var(--border-color);
 }
 .phone-file-code .hl-note {
     padding: 0 12px 12px;

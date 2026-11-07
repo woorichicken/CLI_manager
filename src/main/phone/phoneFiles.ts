@@ -127,6 +127,9 @@ export type GrantedFileResult = { ok: true; file: GrantedFile } | { ok: false; r
 
 const refusal = (reason: PhoneFileRefusal): GrantedFileResult => ({ ok: false, reason })
 
+/** Absent: a client that is not a browser, with no page to ride on. */
+const fromThePage = (fetchSite: string | null): boolean => fetchSite === null || fetchSite === 'same-origin' || fetchSite === 'none'
+
 /** The folders a phone's files may be in, as the disk names them. A folder that cannot be read counts as named. */
 async function realRoots(home: string, cwd: string | undefined): Promise<string[]> {
     const roots = [home, os.tmpdir(), '/private/tmp', '/tmp', ...(cwd ? [cwd] : [])]
@@ -156,7 +159,7 @@ async function bytesOf(handle: FileHandle, length: number): Promise<Buffer> {
  */
 export async function openGrantedFile(source: PhoneFileSource, access: PhoneFileAccess): Promise<GrantedFileResult> {
     if (access.role !== 'drive') return refusal('view_only')
-    if (access.fetchSite !== null && access.fetchSite !== 'same-origin' && access.fetchSite !== 'none') return refusal('cross_site')
+    if (!fromThePage(access.fetchSite)) return refusal('cross_site')
     const requested = usablePath(source.path)
     if (requested === null) return refusal('bad_path')
     if (!(await source.grants(requested.normalize('NFC')))) return refusal('not_mentioned')
@@ -175,7 +178,9 @@ export async function openGrantedFile(source: PhoneFileSource, access: PhoneFile
     }
     if (!withinRoots(real, await realRoots(access.home, source.cwd))) return refusal('outside_roots')
     const homes = [access.home, realHome]
-    const places = access.protectedPlaces ?? []
+    // a place behind a symlink (a moved data folder) is protected where it really is, too
+    const named = access.protectedPlaces ?? []
+    const places = [...named, ...(await Promise.all(named.map((place) => realpath(place).catch(() => place))))]
     if (isProtectedPath(requested, homes, places) || isProtectedPath(real, homes, places)) return refusal('protected')
 
     let handle: FileHandle
@@ -289,6 +294,8 @@ export async function handlePhoneFile(req: http.IncomingMessage, res: http.Serve
         return
     }
     const fetchSite = headerOf(req, 'sec-fetch-site')
+    // before the session is looked up: another site learns nothing, not even which sessions exist
+    if (deps.role === 'drive' && !fromThePage(fetchSite)) return refuse(res, 'cross_site')
     const asked = await sourceOf(url, deps)
     if (typeof asked === 'string') return refuse(res, asked)
     const result = await openGrantedFile(asked.source, { role: deps.role, fetchSite, home: deps.files.home, ...(deps.files.protectedPlaces ? { protectedPlaces: deps.files.protectedPlaces } : {}) })
@@ -307,6 +314,8 @@ export async function handlePhoneFile(req: http.IncomingMessage, res: http.Serve
     try {
         if (file.size > PHONE_MAX_DOWNLOAD_BYTES) return refuse(res, 'too_large')
         const info = await describe(file, url, deps.files)
+        // reading took a while too: what was read does not go to a device disconnected meanwhile
+        if (!deps.stillAllowed()) return refuse(res, 'revoked')
         deps.files.record(asked.sessionId, `file opened (${info.kind}, ${formatSize(file.size)})`)
         send(res, 200, info)
     } finally {
@@ -355,6 +364,8 @@ function serveRaw(res: http.ServerResponse, url: URL, file: GrantedFile, session
     })
     pipeline(stream, res, () => {
         untrack()
+        // a file cut while it was read: the length promised was not sent, and the phone must not wait for the rest
+        if (stream.bytesRead < file.size) res.destroy()
         void file.handle.close().catch(() => undefined)
     })
 }

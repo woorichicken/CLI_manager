@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, Download, FileQuestion, RotateCw, ShieldAlert } from 'lucide-react'
 import type { PhoneFileInfo, PhoneFileRefused } from '../../../shared/phone'
 import { PHONE_API } from '../../../shared/phone'
 import { HighlightedCode } from '../components/ChatView/markdown/HighlightedCode'
-import { languageForFence } from '../components/ChatView/markdown/highlight'
+import { countLines, languageForFence, LINE_ELEMENT_LIMIT } from '../components/ChatView/markdown/highlight'
 import { Markdown } from '../components/ChatView/markdown/Markdown'
 import './phone-file.css'
 
@@ -45,20 +45,46 @@ async function fetchFile(target: PhoneFileTarget): Promise<Loaded> {
     }
 }
 
+/**
+ * Lines of a very long file shown at once. Past LINE_ELEMENT_LIMIT, HighlightedCode draws one block of text with no
+ * rows to number or scroll to, so such a file is read a stretch at a time, starting at the line asked for.
+ */
+const LONG_FILE_STRETCH = 5_000
+
 /** Code with its line numbers; `line` is marked and scrolled to. */
 function CodeBody({ content, language, line }: { content: string; language: string | null; line?: number }) {
     const box = useRef<HTMLDivElement>(null)
     const grammar = useMemo(() => languageForFence(language ?? ''), [language])
+    const allLines = useMemo(() => (countLines(content) > LINE_ELEMENT_LIMIT ? content.split('\n') : null), [content])
+    // a line from an old message can be past the end of the file as it is now: the last stretch, not an empty one
+    const stretchOf = (index: number): number => Math.floor(index / LONG_FILE_STRETCH) * LONG_FILE_STRETCH
+    const [first, setFirst] = useState(() => (allLines && line ? Math.min(stretchOf(line - 1), stretchOf(allLines.length - 1)) : 0))
+    const shown = allLines ? allLines.slice(first, first + LONG_FILE_STRETCH).join('\n') : content
     useEffect(() => {
-        if (!line) return
-        const row = box.current?.querySelectorAll('.hl-line')[line - 1]
-        if (!row) return
-        row.classList.add('is-target')
-        row.scrollIntoView({ block: 'center' })
-    }, [line, content])
+        const rows = box.current?.querySelectorAll('.hl-line')
+        box.current?.querySelector('.is-target')?.classList.remove('is-target')
+        const row = line ? rows?.[line - 1 - first] : undefined
+        if (row) {
+            row.classList.add('is-target')
+            row.scrollIntoView({ block: 'center' })
+        } else {
+            // another stretch of a long file starts at its top
+            box.current?.parentElement?.scrollTo({ top: 0 })
+        }
+    }, [line, shown, first])
     return (
-        <div className="phone-file-code" ref={box} data-testid="phone-file-code">
-            <HighlightedCode code={content} language={grammar} />
+        <div className="phone-file-code" ref={box} data-testid="phone-file-code" style={{ '--phone-file-first': first } as CSSProperties}>
+            {allLines && first > 0 && (
+                <button type="button" className="phone-file-stretch" data-testid="phone-file-earlier" onClick={() => setFirst(Math.max(0, first - LONG_FILE_STRETCH))}>
+                    Earlier lines
+                </button>
+            )}
+            <HighlightedCode code={shown} language={grammar} />
+            {allLines && first + LONG_FILE_STRETCH < allLines.length && (
+                <button type="button" className="phone-file-stretch" data-testid="phone-file-later" onClick={() => setFirst(first + LONG_FILE_STRETCH)}>
+                    Later lines
+                </button>
+            )}
         </div>
     )
 }
@@ -167,7 +193,8 @@ export function PhoneFilePanel({ target, onClose }: { target: PhoneFileTarget; o
                 )}
                 {info?.kind === 'image' && (
                     <div className="phone-file-picture">
-                        <img src={info.rawUrl} alt={info.name} data-testid="phone-file-image" />
+                        {/* the bytes are a request of their own: the Mac can go away between it and the answer above */}
+                        <img src={info.rawUrl} alt={info.name} data-testid="phone-file-image" onError={() => setLoaded({ state: 'offline' })} />
                     </div>
                 )}
                 {/* HTML reads as code here; the document view takes this place (decision 0011) */}
