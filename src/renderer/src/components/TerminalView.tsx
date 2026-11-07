@@ -740,11 +740,20 @@ export function TerminalView({
                 } else if (resumeCommand) {
                     // Resume a previous CLI session (takes priority over initialCommand)
                     initialCommandExecutedRef.current = true
-                    setTimeout(() => {
-                        window.api.writeTerminal(id, resumeCommand + '\n')
-                        // A restored agent can stop on a startup question: Claude's folder
-                        // trust (cursor on "No, exit") or Codex's update offer (cursor on "Update now").
-                        watchStartupPrompts(term, (key) => window.api.writeTerminal(id, key))
+                    setTimeout(async () => {
+                        if (disposed) return
+                        try {
+                            // Main knows the loaded shell aliases. Recheck the stored command
+                            // read-only at the last moment; never type the renderer's earlier copy.
+                            const command = await window.api.getSessionResumeCommand(id)
+                            if (disposed || !command) return
+                            window.api.writeRestoredTerminal(id, command + '\n')
+                            // A restored agent can stop on a startup question: Claude's folder
+                            // trust (cursor on "No, exit") or Codex's update offer (cursor on "Update now").
+                            watchStartupPrompts(term, (key) => window.api.writeTerminal(id, key))
+                        } catch (error) {
+                            console.error(`[Terminal ${id.slice(0, 8)}] resume command unavailable:`, error)
+                        }
                     }, 500)
                 } else if (initialCommand) {
                     initialCommandExecutedRef.current = true

@@ -188,6 +188,20 @@ const TOOLS: ToolDefinition[] = [
         }
     },
     {
+        name: 'list_agent_conversations',
+        description: 'List recent Claude and Codex conversations in the terminal folder, with foreground and connection conflicts.',
+        inputSchema: { type: 'object', properties: { ...sessionIdProperty }, required: ['session_id'] }
+    },
+    {
+        name: 'connect_agent_conversation',
+        description: 'Connect a terminal to a conversation UUID. resume:true prepares the command without Enter. Read the terminal with read_output, then explicitly send Enter with send_input to execute it. force only bypasses an ambiguous Codex start time; running-agent and duplicate-link conflicts cannot be forced.',
+        inputSchema: {
+            type: 'object',
+            properties: { ...sessionIdProperty, agent: { type: 'string', enum: ['claude', 'codex'] }, id: { type: 'string' }, resume: { type: 'boolean' }, force: { type: 'boolean' } },
+            required: ['session_id', 'agent', 'id']
+        }
+    },
+    {
         name: 'focus_session',
         description:
             'Switch CLI Manager to show this session. Only when the user asked to see it: switching interrupts whatever terminal they were typing in.',
@@ -499,6 +513,13 @@ async function callTool(
                 await service.readOutput(str(args, 'session_id', true)!, { mode, lines: num(args, 'lines'), client, caller })
             )
         }
+        case 'list_agent_conversations':
+            return JSON.stringify(await service.listAgentConversations(str(args, 'session_id', true)!), null, 1)
+        case 'connect_agent_conversation':
+            return JSON.stringify(await service.connectAgentConversation(str(args, 'session_id', true)!, {
+                agent: str(args, 'agent', true) as 'claude' | 'codex', id: str(args, 'id', true)!,
+                resume: bool(args, 'resume'), force: bool(args, 'force')
+            }, client, caller), null, 1)
         case 'focus_session':
             return JSON.stringify(service.focusSession(str(args, 'session_id', true)!, client, caller), null, 1)
         case 'rename_session':

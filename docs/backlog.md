@@ -11,7 +11,16 @@ last-reviewed: 2026-09-30
 Work that was **seen in this repository**, with evidence, and deliberately left undone. Not a
 roadmap and not a wishlist: every entry names a path and a trigger that makes it actionable.
 
-Any session may append to `## Open` without running a curation skill — the session that found the
+Any session may append to `## Open
+
+### D4 통합 뒤 명령 판정·이어짐 입력·복원 브리지 후속 (N16~N20)
+- Discovered: 2026-11-08 D4 재검수 3회차(`review-claude-3.md`).
+- Evidence: `shared/agentCommand.ts`는 프롬프트 뒤 옵션(N17)을 버리고, 불명확한 마지막 구간에서 준비/감싸는 명령도 입력에서 빠지며(N18), 앞 구간에 있는 에이전트 프롬프트는 남을 수 있다(N19). `preload.writeRestoredTerminal(id, data)`는 임의 글을 받는 형태다(N20, 권한 문제는 아님). `TerminalMirror.hasContinuationPrompt`는 cmdand/cmdor/if/subsh/cursh/array/복합·사용자 PROMPT2를 모두 알지 못한다(N16).
+- Why deferred: 기획 세션 fix-3 지시로 통합 이후 범위. 이번에는 판정/패턴을 늘리지 않고 수동 Connect의 Enter를 제거했다. 따라서 판정이 빗나가 글이 붙어 보이더라도 Connect가 Enter를 보내 실행하지는 않는다. 세션 재시작은 별도의 기존 Enter 동작을 유지한다.
+- Trigger: D1~D4 통합·실기기 확인 뒤 후속 명령/복원 계약을 재설계할 때.
+- Fix direction: N17 뒤 옵션/원문 보존, N18 준비 구간과 마지막 도구 fallback 분리, N19 앞 구간 에이전트 재전송 차단, N20 main의 restoreSession(id)로 입력 조립 범위 축소, N16 이어짐/사용자 PROMPT2 한계 정리. 이번 커밋에서 해당 패턴과 판정은 바꾸지 않는다.
+- Owner: 기획 세션 후속.
+` without running a curation skill — the session that found the
 problem is the one holding the evidence. Appending sessions do not reorder or remove other entries.
 
 Remove an entry in the same change that resolves it. If resolving it produced a durable rule, that
@@ -34,14 +43,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 릴리즈 중이었고 이번 범위가 아니다.
 - Trigger: 사전 점검에서 T1 이 다시 실패할 때, 또는 터미널 출력 경로를 만질 때.
 - Fix direction: 명령 줄에 없는 글을 기다린다(예: `echo SEQ-DONE-$((1+1))` 처럼 셸이 계산한 값). 그 뒤에도 `last` 가 모자라면 그때는 진짜 유실로 본다. 단일 터미널 시험(`:29`)도 같은 모양이라 함께 고친다.
-- Owner: 없음
-
-### Codex 세션 찾기 고침 + 세션을 에이전트 대화에 직접 연결
-- Discovered: 2026-11-07 기획 세션. 사람: 「등록 안되어 있을때, 특정 에이전트로 열수 있는 방법도 체크」.
-- Evidence: [`found-defects.md`](found-defects.md) 「Codex 세션을 열고 15분 안에 첫 말을 안 하면」. 지금은 연결 UI·Control API 가 없다 — `update-session-cli-info` 는 `TerminalView` 만 부른다(`src/renderer/src/components/TerminalView.tsx:756`).
-- Why deferred: 이번 회차 범위가 아니다(11-07 「제품 코드는 이번에 고치지 않는다」).
-- Trigger: 다음 Chat 회차.
-- Fix direction(제안, 미정): ① 감시를 15분에서 끊지 않고 프로세스가 사는 동안 느리게 본다. 짝은 「가장 이른 것」이 아니라 머리 시각이 시작 시각과 맞는 파일로 고른다(같은 폴더 Codex 둘이 뒤바뀌지 않게). ② 세션 메뉴 「Connect to agent conversation」: 그 폴더의 최근 대화(시각·첫 말)를 보여 주고 고르면 연결한다. 자동을 믿지 않고 사람이 고르는 길이다.
 - Owner: 없음
 
 ### Muse Code Chat 지원

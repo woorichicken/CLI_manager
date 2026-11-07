@@ -286,6 +286,15 @@ export class TerminalMirror {
         return trimTrailingBlank(lines)
     }
 
+    /** Only known continuation prompts are read from the screen; ordinary prompt themes are arbitrary. */
+    hasContinuationPrompt(id: string): boolean {
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return false
+        const buffer = mirror.term.buffer.active
+        const line = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX).trim() ?? ''
+        return /^(?:>|dquote>|quote>|cmdsubst>|bquote>|heredoc>|pipe>|then>|else>|for>|while>|function>|do>|case>)$/.test(line)
+    }
+
     /** One line about the session: the agent's recap above its input box, else the last row worth reading. */
     summary(id: string): ScreenSummary {
         const mirror = this.mirrors.get(id)

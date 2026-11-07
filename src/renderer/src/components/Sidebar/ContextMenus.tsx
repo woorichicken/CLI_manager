@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash } from 'lucide-react'
+import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash, Link2 } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { getTemplateIcon } from '../../constants/icons'
 import { MENU_Z_INDEX } from '../../constants/styles'
@@ -654,6 +654,7 @@ interface SessionContextMenuProps {
     onRename: () => void
     onDelete: () => void
     onClear: () => void
+    onConnectConversation: () => void
     /** Present only for a session an AI is driving through the Control API. */
     onDisconnectAi?: () => void
     onClose: () => void
@@ -675,10 +676,20 @@ export function SessionContextMenu({
     onRename,
     onDelete,
     onClear,
+    onConnectConversation,
     onDisconnectAi,
     onClose
 }: SessionContextMenuProps) {
     const menuRef = useCloseOnOutside(onClose)
+    useLayoutEffect(() => {
+        const menu = menuRef.current
+        if (!menu) return
+        // The conversation entry wraps onto two lines; keep the whole menu reachable near an edge.
+        const margin = 8
+        const { width, height } = menu.getBoundingClientRect()
+        menu.style.left = `${Math.max(margin, Math.min(x, window.innerWidth - width - margin))}px`
+        menu.style.top = `${Math.max(margin, Math.min(y, window.innerHeight - height - margin))}px`
+    }, [x, y])
     const handleCopy = (text: string, label: string) => {
         onCopy(text, label)
         onClose()
@@ -689,7 +700,7 @@ export function SessionContextMenu({
             ref={menuRef}
             data-sidebar-menu="session"
             className={`fixed z-[${MENU_Z_INDEX}] bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-40 backdrop-blur-md`}
-            style={{ top: y, left: x }}
+            style={{ top: y, left: x, maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }}
             onClick={e => e.stopPropagation()}
         >
             <button
@@ -741,6 +752,17 @@ export function SessionContextMenu({
             >
                 <Hash size={12} className="text-gray-400 shrink-0" />
                 <span className="truncate">Copy Session ID</span>
+            </button>
+            <button
+                data-testid="connect-agent-conversation"
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                onClick={() => {
+                    onConnectConversation()
+                    onClose()
+                }}
+            >
+                <Link2 size={12} className="text-gray-400 shrink-0" />
+                <span>Connect to agent conversation…</span>
             </button>
             <div className="border-t border-white/10 my-0.5"></div>
             <button
