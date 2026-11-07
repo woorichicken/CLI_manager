@@ -94,6 +94,13 @@ export function sendOutcome(result: ChatSendResult, target: PhoneDocTarget): Sen
     }
 }
 
+/** The chat route refused before reaching the session, in its own shape (a status code, not a send result). */
+export function routeRefusal(code: string, message: string): SendOutcome {
+    // closed while the document stayed open: the words are still good, and only the person knows where they go next
+    if (code === 'unknown_session') return { kind: 'refused', message: 'That session is gone from the Mac. Choose another.', retry: true, pick: true, openChat: false }
+    return { kind: 'refused', message, retry: false, pick: false, openChat: false }
+}
+
 // ---------------------------------------------------------------------------
 // What this phone keeps of a document's comments: its own localStorage, because the frame has none
 // ---------------------------------------------------------------------------

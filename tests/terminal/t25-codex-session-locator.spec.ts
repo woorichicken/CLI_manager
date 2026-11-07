@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { codexResumeFromArgv, CodexSessionLocator, isInteractiveCodex, parseCodexResume, parseAgentProcesses, classifyAgentProcess, selectForegroundAgentProcess, findCodexProcess, readAgentProcesses, heldCodexRollouts } from '../../src/main/CodexSessionLocator'
+import { codexResumeFromArgv, CodexSessionLocator, isInteractiveCodex, parseCodexRolloutHead, parseCodexResume, parseAgentProcesses, classifyAgentProcess, selectForegroundAgentProcess, findCodexProcess, readAgentProcesses, heldCodexRollouts } from '../../src/main/CodexSessionLocator'
 import { CLISessionTracker } from '../../src/main/CLISessionTracker'
 
 const IDS = Array.from({ length: 8 }, (_, n) => `00000000-0000-0000-0000-${String(n + 1).padStart(12, '0')}`)
@@ -437,6 +437,16 @@ test.describe('T25 Codex session locator', () => {
             expect(tracker.codexResume(line)).toEqual({ id: IDS[0], baseCommand: `${prefix} -m resume` })
         }
         for (const prefix of ['node -e codex', 'node --require /x/bin/codex.js /x/other.js', 'vim codex', 'less /x/bin/codex']) expect(tracker.codexResume(`${prefix} resume ${IDS[0]}`)).toBeNull()
+    })
+
+    test('cross-review 2: the originators Codex itself writes are conversations; anything else is not', () => {
+        const head = (originator: string, source = 'cli'): string =>
+            JSON.stringify({ type: 'session_meta', payload: { id: IDS[0], timestamp: '2026-11-08T00:00:00.000Z', cwd: '/tmp/x', source, originator } })
+        for (const originator of ['codex-tui', 'codex_cli_rs', 'codex_vscode']) expect(parseCodexRolloutHead(head(originator)), originator).not.toBeNull()
+        expect(parseCodexRolloutHead(head('codex_vscode', 'vscode'))).not.toBeNull()
+        expect(parseCodexRolloutHead(head('codex-exec'))).toBeNull()
+        expect(parseCodexRolloutHead(head('someone-else'))).toBeNull()
+        expect(parseCodexRolloutHead(head('codex_cli_rs', 'exec')), 'a non-interactive source stays out').toBeNull()
     })
 
     test('cross-review: a quoted option value stays one word, and is replayed as written', () => {

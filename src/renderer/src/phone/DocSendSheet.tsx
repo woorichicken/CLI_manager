@@ -5,7 +5,7 @@ import type { PhoneDocTarget } from '../../../shared/phone'
 import { PHONE_MAX_COMMENT_CHARS } from '../../../shared/phone'
 import { InputBusyNote } from '../components/ChatView/InputBusyNote'
 import { chatPath, getSessions, PhoneApiError, postJson } from './api'
-import { commentTooLong, sendOutcome, type SendOutcome } from './docMessages'
+import { commentTooLong, routeRefusal, sendOutcome, type SendOutcome } from './docMessages'
 
 /**
  * What a document's comment is about to do, in the phone page's own hands: the words in full, who gets them, and the one
@@ -61,7 +61,9 @@ export function DocSendSheet({ text, target: initial, onCancel, onDone, onOpenCh
                 outcome = sendOutcome(result, target)
             } catch (error) {
                 // the server's own gates (view only, the phone switched off) say so; anything else never got there
-                outcome = { kind: 'refused', message: error instanceof PhoneApiError ? error.message : 'The Mac is not answering', retry: !(error instanceof PhoneApiError), pick: false, openChat: false }
+                outcome = error instanceof PhoneApiError ? routeRefusal(error.code, error.message) : { kind: 'refused', message: 'The Mac is not answering', retry: true, pick: false, openChat: false }
+                // Send must not stay aimed at a session that is gone
+                if (error instanceof PhoneApiError && error.code === 'unknown_session') setTarget(null)
             }
             setSending(false)
             if (outcome.kind === 'done') onDone(outcome.notice, target)

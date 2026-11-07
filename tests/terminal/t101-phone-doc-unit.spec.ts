@@ -8,7 +8,7 @@ import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhoneServer } from '../../src/main/phone/PhoneServer'
 import { bridgeOffset, docContentSecurityPolicy, docRelativePath, documentCharset, documentTitle, handlePhoneDocFile, PhoneDocTokens } from '../../src/main/phone/phoneDoc'
 import { PHONE_DOC_BRIDGE } from '../../src/main/phone/phoneDocBridge'
-import { commentTooLong, composeComment, docStoreKey, frameAddress, fromDocFrame, keepDocStore, parseDocMessage, phoneDocStorage, readDocStore, sendOutcome } from '../../src/renderer/src/phone/docMessages'
+import { commentTooLong, composeComment, docStoreKey, frameAddress, fromDocFrame, keepDocStore, parseDocMessage, phoneDocStorage, readDocStore, routeRefusal, sendOutcome } from '../../src/renderer/src/phone/docMessages'
 import { PHONE_DOC_SANDBOX, PHONE_MAX_COMMENT_CHARS, PHONE_MAX_DOC_BYTES, PHONE_MAX_DOC_STORE_BYTES, type PhoneDocOpened, type PhoneDocRefused } from '../../src/shared/phone'
 import type { ChatSendResult } from '../../src/shared/conversation'
 
@@ -645,6 +645,10 @@ test.describe('T101 what a comment becomes', () => {
     test('what each answer of the send route means', () => {
         const target = { id: 's', name: 'AI: fb', agent: 'claude' as const }
         const rejected = (reason: string, extra: object = {}): ChatSendResult => ({ status: 'rejected', reason, message: `server says ${reason}`, ...extra }) as ChatSendResult
+        // the chat route's own 404: the session went while the document was open, so the words need somewhere else to go
+        expect(routeRefusal('unknown_session', 'unknown_session')).toMatchObject({ kind: 'refused', retry: true, pick: true, openChat: false })
+        expect(routeRefusal('unknown_session', 'unknown_session')).not.toMatchObject({ message: 'unknown_session' })
+        expect(routeRefusal('view_only', 'This device can only watch.')).toMatchObject({ kind: 'refused', retry: false, pick: false, message: 'This device can only watch.' })
         expect(sendOutcome({ status: 'sent' }, target)).toEqual({ kind: 'done', notice: 'Sent to AI: fb' })
         expect(sendOutcome({ status: 'queued' }, target)).toEqual({ kind: 'done', notice: 'Claude is working — it gets this when the turn ends.' })
         expect(sendOutcome({ status: 'queued' }, { ...target, agent: 'codex' })).toMatchObject({ notice: expect.stringContaining('Codex') })

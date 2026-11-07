@@ -203,6 +203,9 @@ export function readCodexRolloutMeta(file: string): RolloutMeta | null {
     return readMeta(file) ?? null
 }
 
+/** What Codex itself writes for a conversation a person had: the TUI, its older CLI name, the VS Code extension. */
+const CONVERSATION_ORIGINATORS = new Set(['codex-tui', 'codex_cli_rs', 'codex_vscode'])
+
 /** Metadata-only filtering can run before the bounded transcript parser reads the first message. */
 export function parseCodexRolloutHead(head: string, file = ''): RolloutMeta | null {
     try {
@@ -213,7 +216,7 @@ export function parseCodexRolloutHead(head: string, file = ''): RolloutMeta | nu
         const source = /"source"\s*:\s*("(?:[^"\\]|\\.)*"|[^,}]+)/.exec(head)?.[1]
         const originator = /"originator"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(head)?.[1]
         if (source !== undefined && source !== '"cli"' && source !== '"vscode"') return null
-        if (originator && originator !== 'codex-tui') return null
+        if (originator && !CONVERSATION_ORIGINATORS.has(originator)) return null
         if (!id || !cwd || !timestamp || !Number.isFinite(Date.parse(timestamp))) return null
         return { id, cwd: canonical(JSON.parse(`"${cwd}"`)), startedAt: Date.parse(timestamp), file }
     } catch { return null }

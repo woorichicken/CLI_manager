@@ -483,6 +483,31 @@ test('T105 the phone\'s Back walks the same way; a row with no session asks who 
     await expect(phone.getByTestId('phone-sidebar')).toBeVisible()
 })
 
+test('T105 the row\'s session closes while its report is open: the words stay and the person chooses again', async () => {
+    test.setTimeout(150_000)
+    const { app, page, base, transcript } = await launch()
+    const { phone, cdp } = await openPhone(app, `${base}/`, 't105-gone')
+    await tap(cdp, phone, phone.getByTestId('phone-dock-entry'))
+    await expect(phone.getByTestId('phone-dock-row').first()).toBeVisible({ timeout: 10_000 })
+    await tap(cdp, phone, rowBody(phone, 'Session report'))
+    const frame = frameOf(phone)
+    await expect(frame.locator('.eli5-fb-btn').first()).toBeVisible({ timeout: 15_000 })
+    await tapInFrame(cdp, phone, frame.locator('.eli5-fb-btn').first())
+    await frame.locator('#eli5-fb-ta-0').fill('gone-session-words')
+    await tapInFrame(cdp, phone, frame.locator('#eli5-fb-copy'))
+    await expect(phone.getByTestId('phone-doc-target')).toContainText('T105 Claude', { timeout: 5_000 })
+
+    await page.evaluate(([workspace, session]) => window.api.removeSession(workspace, session), ['w-t105', CLAUDE])
+    await expect.poll(() => phone.evaluate((id) => fetch('/api/phone/sessions').then((r) => r.json()).then((d) => d.sessions.some((s: { id: string }) => s.id === id)), CLAUDE), { timeout: 10_000 }).toBe(false)
+    await expect(phone.getByTestId('phone-doc-send')).toBeEnabled({ timeout: 3_000 })
+    await tap(cdp, phone, phone.getByTestId('phone-doc-send'))
+    await expect(phone.getByTestId('phone-doc-refusal')).toContainText('gone', { timeout: 10_000 })
+    await expect(phone.getByTestId('phone-doc-target-select'), 'somewhere else to send them').toBeVisible({ timeout: 5_000 })
+    await expect(phone.getByTestId('phone-doc-send'), 'not at the session that is gone').toBeDisabled()
+    expect(await phone.getByTestId('phone-doc-text').textContent()).toContain('gone-session-words')
+    expect(fs.readFileSync(transcript, 'utf8')).not.toContain('gone-session-words')
+})
+
 test('T105 a deleted row and a link row open no document', async () => {
     test.setTimeout(120_000)
     const { app, base } = await launch()
