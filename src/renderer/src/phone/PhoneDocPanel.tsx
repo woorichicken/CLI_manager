@@ -30,6 +30,7 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
     const [notice, setNotice] = useState<{ text: string; target: PhoneDocTarget } | null>(null)
     /** the page now in the frame: a link inside the folder may have replaced the one opened */
     const rel = useRef<string | null>(null)
+    const [onOpenedPage, setOnOpenedPage] = useState(true)
     const sheetOpen = useRef(false)
     sheetOpen.current = sheet !== null
 
@@ -59,11 +60,12 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
                     // a page says it twice (its head, its DOMContentLoaded): what it counted so far still stands
                     if (path !== current) setMissing(0)
                     rel.current = path
+                    setOnOpenedPage(path === opened.rel)
                     if (message.title) setTitle(message.title)
                     return
                 }
                 case 'doc-store':
-                    setNotKept(!keepDocStore(docStoreKey(opened.storeKey, opened.rel, current), message.value, phoneDocStorage()))
+                    setNotKept(!keepDocStore(docStoreKey(opened.storeKey, current), message.value, phoneDocStorage()))
                     return
                 case 'doc-missing':
                     setMissing(message.count)
@@ -100,7 +102,8 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
                 <span className="phone-header-title" data-testid="phone-doc-name">
                     {name}
                 </span>
-                {opened && (
+                {/* the chat named this document; a page reached from it is one the file route would refuse */}
+                {opened && onOpenedPage && (
                     <a className="phone-icon-button" href={`${opened.rawUrl}&download=1`} download={opened.rel} aria-label={`Download ${opened.rel}`} data-testid="phone-doc-save">
                         <Download size={18} />
                     </a>

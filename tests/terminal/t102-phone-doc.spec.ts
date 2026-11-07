@@ -533,8 +533,15 @@ test('T102 a refused send keeps the words and says what to do', async () => {
     // working: it waits for the turn to end, and the sheet says so
     await writeToTerminal(page, SLOW, 'start a slow turn\r')
     await waitForBufferText(page, SLOW, 'ANSWER', 5_000).catch(() => undefined)
+    // on its way it cannot be taken back: Cancel says so by not being offered
+    await second.phone.route('**/send', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 700))
+        await route.continue()
+    })
     await tap(second.cdp, second.phone, second.phone.getByTestId('phone-doc-send'))
+    await expect(second.phone.getByTestId('phone-doc-cancel')).toBeDisabled({ timeout: 500 })
     await expect(second.phone.getByTestId('phone-doc-notice')).toContainText('gets this when the turn ends', { timeout: 10_000 })
+    await second.phone.unroute('**/send')
     await shot(second.phone, 'sent-queued')
     await expect.poll(() => fs.readFileSync(slowTranscript, 'utf8').includes('queued-comment-words'), { timeout: 30_000 }).toBe(true)
 
@@ -583,6 +590,8 @@ test('T102 links, missing pictures and fonts: the page stays where it is and say
     // a page next to it: replaces this one, with the bridge in it, without a stop on the way back
     await tapInFrame(cdp, phone, frame.locator('#rel'))
     await expect(frame.locator('h1')).toHaveText('second doc', { timeout: 5_000 })
+    // the ⬇ saves the document the chat named: not offered for a page it did not name
+    await expect(phone.getByTestId('phone-doc-save')).toHaveCount(0)
     // it keeps its own words, apart from the first page's
     await docFrame(phone).evaluate(() => (window as unknown as { __setNote(value: string): void }).__setNote('second-page-note'))
     await phone.waitForTimeout(150)
@@ -595,6 +604,8 @@ test('T102 links, missing pictures and fonts: the page stays where it is and say
     }, { timeout: 5_000 }).toBe('kept-across-pages')
     await tapInFrame(cdp, phone, frame.locator('#rel'))
     await expect.poll(() => docFrame(phone).evaluate(() => document.title), { timeout: 5_000 }).toBe('second-page-note')
+    await tapInFrame(cdp, phone, frame.locator('#back'))
+    await expect(phone.getByTestId('phone-doc-save')).toHaveCount(1, { timeout: 5_000 })
     await tap(cdp, phone, phone.getByTestId('phone-doc-close'))
     await expect(phone.getByTestId('phone-doc-panel')).toHaveCount(0, { timeout: 3_000 })
 

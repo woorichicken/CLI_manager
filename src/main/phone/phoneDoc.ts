@@ -316,7 +316,7 @@ export async function handlePhoneDocOpen(req: http.IncomingMessage, res: http.Se
             rel: path.basename(real).normalize('NFC'),
             size: file.size,
             modifiedAt: file.modifiedAt,
-            storeKey: createHash('sha256').update(real.normalize('NFC')).digest('hex').slice(0, 32),
+            storeKey: createHash('sha256').update(root.normalize('NFC')).digest('hex').slice(0, 32),
             target: session?.agent ? { id: session.id, name: session.name, agent: session.agent } : null,
             rawUrl: `${PHONE_API.fileRaw}?${query}`
         }

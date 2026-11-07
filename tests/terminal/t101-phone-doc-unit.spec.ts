@@ -207,6 +207,16 @@ test.describe('T101 opening a document: a token, through the same judgement as a
     })
 })
 
+test.describe('T101 where a document files its comments', () => {
+    test('two pages of a folder share the folder key, whichever was opened', async () => {
+        const first = await opened(h, namedFile(h, 'review/a.html', '<p>a'))
+        const second = await opened(h, namedFile(h, 'review/b.html', '<p>b'))
+        const elsewhere = await opened(h, namedFile(h, 'other/a.html', '<p>a'))
+        expect(first.storeKey).toBe(second.storeKey)
+        expect(elsewhere.storeKey).not.toBe(first.storeKey)
+    })
+})
+
 test.describe('T101 what a token serves', () => {
     test('the document: sandboxed, its folder only, the bridge in front, nothing cached', async () => {
         const doc = await opened(h, namedFile(h, 'review/report.html', '<!doctype html><html lang="ko"><title>한글</title><p>본문</p></html>'))
@@ -709,9 +719,9 @@ test.describe('T101 what this phone keeps', () => {
         }
     })
 
-    test('each page of a folder has its own place; the opened one keeps the plain key', () => {
-        expect(docStoreKey('KEY', 'report.html', 'report.html')).toBe('KEY')
-        expect(docStoreKey('KEY', 'report.html', 'other.html')).toBe('KEY:other.html')
+    test('a page keeps one place however it was reached: by its folder and name', () => {
+        expect(docStoreKey('FOLDER', 'report.html')).toBe('FOLDER:report.html')
+        expect(docStoreKey('FOLDER', 'other.html')).toBe('FOLDER:other.html')
     })
 
     test('the seed is in the fragment: it never reaches the server', () => {

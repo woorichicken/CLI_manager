@@ -113,8 +113,8 @@ export function phoneDocStorage(): Storage | null {
     }
 }
 
-/** Each page of the folder has its own place. The opened document's key stays plain: the Mac gave it, for that document. */
-export const docStoreKey = (storeKey: string, opened: string, rel: string): string => (rel === opened ? storeKey : `${storeKey}:${rel}`)
+/** A page's place: its folder and name, so it is the same page opened from the chat or reached by a link. */
+export const docStoreKey = (folderKey: string, rel: string): string => `${folderKey}:${rel}`
 
 export const storeBytes = (value: string): number => new TextEncoder().encode(value).length
 

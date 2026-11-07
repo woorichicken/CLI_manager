@@ -122,7 +122,8 @@ export function DocSendSheet({ text, target: initial, onCancel, onDone, onOpenCh
                             Open chat
                         </button>
                     )}
-                    <button type="button" className="phone-doc-button" data-testid="phone-doc-cancel" onClick={onCancel}>
+                    {/* a send on its way cannot be taken back: closing here would only hide its answer */}
+                    <button type="button" className="phone-doc-button" data-testid="phone-doc-cancel" disabled={sending} onClick={onCancel}>
                         Cancel
                     </button>
                     {!blocked && (

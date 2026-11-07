@@ -17,7 +17,7 @@ export function PhoneDocFrame({ url, rel, storeKey, title, inert, onMessage }: {
     handler.current = onMessage
     const reloading = useRef(false)
     // once: a new address would reload the page and lose what is being written
-    const address = useMemo(() => frameAddress(url, readDocStore(storeKey, phoneDocStorage())), [url, storeKey])
+    const address = useMemo(() => frameAddress(url, readDocStore(docStoreKey(storeKey, rel), phoneDocStorage())), [url, rel, storeKey])
     useEffect(() => {
         const folder = url.slice(0, url.lastIndexOf('/') + 1)
         const listen = (event: MessageEvent): void => {
@@ -26,7 +26,7 @@ export function PhoneDocFrame({ url, rel, storeKey, title, inert, onMessage }: {
             const message = parseDocMessage(event.data)
             if (!message) return
             if (message.type === 'doc-ready') {
-                const kept = message.seeded ? '' : readDocStore(docStoreKey(storeKey, rel, message.path), phoneDocStorage())
+                const kept = message.seeded ? '' : readDocStore(docStoreKey(storeKey, message.path.normalize('NFC')), phoneDocStorage())
                 if (kept) {
                     if (!reloading.current) {
                         reloading.current = true
@@ -44,6 +44,6 @@ export function PhoneDocFrame({ url, rel, storeKey, title, inert, onMessage }: {
         }
         window.addEventListener('message', listen)
         return () => window.removeEventListener('message', listen)
-    }, [url, rel, storeKey])
+    }, [url, storeKey])
     return <iframe ref={frame} className="phone-doc-frame" data-testid="phone-doc-frame" title={title} sandbox={PHONE_DOC_SANDBOX} src={address} referrerPolicy="no-referrer" inert={inert} />
 }

@@ -230,7 +230,7 @@ export interface PhoneDocOpened {
     size: number
     /** ISO 8601 */
     modifiedAt: string
-    /** what this phone files the document's comments under */
+    /** the folder: this phone files a page's comments under this and the page's name, however the page was reached */
     storeKey: string
     /** null: the session has no agent. The sheet asks which one */
     target: PhoneDocTarget | null
