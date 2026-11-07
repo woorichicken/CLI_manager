@@ -50,8 +50,8 @@ const FILE_TYPES: Record<string, string> = {
     otf: 'font/otf'
 }
 
-/** A font or a module is requested with CORS even from the same host, and the page's origin is `null`. A module can be a `.js`. */
-const CORS_EXTENSIONS = new Set(['woff', 'woff2', 'ttf', 'otf', 'mjs', 'js'])
+/** A font, a module (often a `.js`) or a `crossorigin` stylesheet (what Vite writes) is requested with CORS even from the same host, and the page's origin is `null`. */
+const CORS_EXTENSIONS = new Set(['woff', 'woff2', 'ttf', 'otf', 'mjs', 'js', 'css'])
 
 export interface PhoneDocToken {
     token: string
@@ -337,8 +337,11 @@ export interface PhoneDocServeDeps {
     trackDownload(access: Extract<PhoneAccess, { level: 'full' }>, stop: () => void): () => void
 }
 
-/** The relative path of a request, as named segments; null when one of them could leave the folder or is hidden. */
-export function docRelativePath(encoded: string): string | null {
+/**
+ * The relative path of a request, as named segments; null when one of them could leave the folder or is hidden. The
+ * document itself may have a hidden name: the chat named it, and it passed the judgement.
+ */
+export function docRelativePath(encoded: string, document?: string): string | null {
     let decoded: string
     try {
         decoded = decodeURIComponent(encoded)
@@ -346,9 +349,17 @@ export function docRelativePath(encoded: string): string | null {
         return null
     }
     if (!decoded || decoded.includes('\\') || decoded.startsWith('/')) return null
+    if (decoded === document) return decoded
     // `..` gone from the URL may come back from `%2F..%2F`; a dot folder holds what a page has no use for
-    if (decoded.split('/').some((segment) => segment === '' || segment.startsWith('.'))) return null
-    return decoded
+    return namesOnlyPlainSegments(decoded) ? decoded : null
+}
+
+const namesOnlyPlainSegments = (relative: string): boolean => relative.split('/').every((segment) => segment !== '' && !segment.startsWith('.'))
+
+/** What a page may load, by name. Asked of the path requested and of what a link there points at. */
+const mayLoad = (name: string): boolean => {
+    const extension = fileExtension(name)
+    return DOCUMENT_EXTENSIONS.has(extension) || FILE_TYPES[extension] !== undefined
 }
 
 const notFound = (res: http.ServerResponse): void => send(res, 404, { error: 'not_found' })
@@ -373,18 +384,20 @@ export async function handlePhoneDocFile(req: http.IncomingMessage, res: http.Se
     const match = /^\/doc\/([A-Za-z0-9_-]+)\/(.+)$/.exec(url.pathname)
     const token = match ? deps.tokens.use(match[1]) : null
     if (!match || !token || !deps.files || !deps.stillAllowed(token.access)) return notFound(res)
-    const relative = docRelativePath(match[2])
-    if (relative === null) return notFound(res)
+    const relative = docRelativePath(match[2], token.document)
+    if (relative === null || !mayLoad(relative)) return notFound(res)
     const extension = fileExtension(relative)
     const isDocument = DOCUMENT_EXTENSIONS.has(extension)
-    if (!isDocument && !FILE_TYPES[extension]) return notFound(res)
     // the document itself; anything else only when the folder is its own
     if (!token.sideFiles && relative !== token.document) return notFound(res)
 
     const target = path.join(token.root, relative)
     const inside = async (): Promise<boolean> => {
         const real = await realpath(target).catch(() => null)
-        return real !== null && real.startsWith(`${token.root}/`)
+        if (real === null || !real.startsWith(`${token.root}/`)) return false
+        // a link answers for what it points at: `data.js` → `data.json` and `public` → `.hidden` are not what they are called
+        const actual = real.slice(token.root.length + 1)
+        return actual === token.document || (namesOnlyPlainSegments(actual) && mayLoad(actual))
     }
     // fetchSite: a sandboxed page's own files are `cross-site` by design. The token is what grants them here
     const result = await openGrantedFile(

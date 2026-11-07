@@ -311,6 +311,24 @@ test.describe('T101 what a token serves', () => {
         expect((await fromFrame(h, beside(doc, 'in.png'))).status).toBe(200)
     })
 
+    test('a link inside the folder answers for what it points at, not for its own name', async () => {
+        const doc = await opened(h, namedFile(h, 'review/report.html', '<p>x'))
+        const review = path.join(h.project, 'review')
+        namedFile(h, 'review/data.json', '{"secret":1}')
+        fs.symlinkSync(path.join(review, 'data.json'), path.join(review, 'data.js'))
+        namedFile(h, 'review/.hidden/a.png', Buffer.from([1]))
+        fs.symlinkSync(path.join(review, '.hidden'), path.join(review, 'public'))
+        expect((await fromFrame(h, beside(doc, 'data.js'))).status, 'a .js that is a .json').toBe(404)
+        expect((await fromFrame(h, beside(doc, 'public/a.png'))).status, 'a folder that is a hidden one').toBe(404)
+    })
+
+    test('a document with a hidden name opens: the chat named it, and it passed the judgement', async () => {
+        const doc = await opened(h, namedFile(h, 'review/.report.html', '<p>x'))
+        expect((await fromFrame(h, doc.url)).status).toBe(200)
+        namedFile(h, 'review/.other.png', Buffer.from([1]))
+        expect((await fromFrame(h, beside(doc, '.other.png'))).status, 'only that one').toBe(404)
+    })
+
     test('a document in a shared folder brings nothing beside it', async () => {
         const doc = await opened(h, namedFile(h, 'home-report.html', '<p>x', h.home))
         namedFile(h, 'beside.png', Buffer.from([1]), h.home)
@@ -411,12 +429,15 @@ test.describe('T101 what a token serves', () => {
         expect(body).not.toContain('private words')
     })
 
-    test('a module beside the document is served for an opaque origin, whatever its extension', async () => {
+    test('a module or a crossorigin stylesheet beside the document is served for an opaque origin', async () => {
         const doc = await opened(h, namedFile(h, 'report.html', '<p>x'))
         namedFile(h, 'app.js', 'export {}')
         namedFile(h, 'app.mjs', 'export {}')
         expect((await fromFrame(h, beside(doc, 'app.js'))).headers.get('access-control-allow-origin')).toBe('null')
         expect((await fromFrame(h, beside(doc, 'app.mjs'))).headers.get('access-control-allow-origin')).toBe('null')
+        // Vite writes <link rel="stylesheet" crossorigin>
+        namedFile(h, 'style.css', 'p{}')
+        expect((await fromFrame(h, beside(doc, 'style.css'))).headers.get('access-control-allow-origin')).toBe('null')
     })
 
     test('switching the phone off ends every token', async () => {
@@ -532,6 +553,13 @@ test.describe('T101 where the bridge goes', () => {
         expect(docRelativePath('a.png')).toBe('a.png')
         expect(docRelativePath('shots/%ED%95%9C%EA%B8%80.png')).toBe('shots/한글.png')
         for (const bad of ['', '..%2Fa.png', 'a%2F..%2Fb.png', '.env', 'a/.git/config', '%2Fetc%2Fpasswd', 'a%5Cb.png', 'a//b.png', '%E0%A4%A']) expect(docRelativePath(bad), bad).toBeNull()
+    })
+
+    test('a hidden name passes only for the document itself', () => {
+        expect(docRelativePath('.report.html')).toBeNull()
+        expect(docRelativePath('.report.html', '.report.html')).toBe('.report.html')
+        expect(docRelativePath('.other.png', '.report.html')).toBeNull()
+        expect(docRelativePath('a/.report.html', '.report.html')).toBeNull()
     })
 
     test('the rule the frame leans on: an opaque origin is never this page’s', () => {
