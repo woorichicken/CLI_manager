@@ -477,6 +477,46 @@ test('T102 each kit: a comment becomes the sheet, and only Send puts it in the s
     await sendAndCheck(['pin-comment-words'])
 })
 
+test('T102 the keyboard does not take the field away: before-after redraws on resize, and the frame shrinks with the keyboard', async () => {
+    test.setTimeout(180_000)
+    const { app, base } = await launch()
+    const { phone, cdp } = await openPhone(app, base, 't102-keyboard')
+    const frame = await openDoc(cdp, phone, 'the before after')
+    const field = frame.locator('.cmt textarea')
+    await tapInFrame(cdp, phone, field)
+    await expect.poll(() => docFrame(phone).evaluate(() => document.activeElement?.tagName)).toBe('TEXTAREA')
+    await docFrame(phone).evaluate(() => {
+        ;(window as unknown as { __field: Element | null }).__field = document.querySelector('.cmt textarea')
+    })
+    const stillThere = (): Promise<boolean> =>
+        docFrame(phone).evaluate(() => {
+            const field = document.querySelector('.cmt textarea')
+            return field === (window as unknown as { __field: Element | null }).__field && document.activeElement === field
+        })
+    // what a keyboard does here (phone.html: interactive-widget=resizes-content), its height measured on a phone: 727 → 417
+    const height = (value: number): Promise<unknown> => cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: value, deviceScaleFactor: DPR, mobile: true, screenOrientation: { type: 'portraitPrimary', angle: 0 } })
+    await height(417)
+    await expect.poll(() => docFrame(phone).evaluate(() => innerHeight), { timeout: 5_000 }).toBeLessThan(420)
+    // the viewer waits 180 ms before it redraws
+    await phone.waitForTimeout(500)
+    expect(await stillThere(), 'the field being typed in is the same one, and still has the focus').toBe(true)
+    await height(844)
+    await expect.poll(() => docFrame(phone).evaluate(() => innerHeight), { timeout: 5_000 }).toBeGreaterThan(420)
+    await phone.waitForTimeout(500)
+    expect(await stillThere(), 'and when the keyboard goes').toBe(true)
+
+    // a real change of size still reaches the page: turning the phone sideways changes the width
+    await docFrame(phone).evaluate(() => {
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        ;(window as unknown as { __resized: number }).__resized = 0
+        window.addEventListener('resize', () => {
+            ;(window as unknown as { __resized: number }).__resized++
+        })
+    })
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: DPR, mobile: true, screenOrientation: { type: 'landscapePrimary', angle: 90 } })
+    await expect.poll(() => docFrame(phone).evaluate(() => (window as unknown as { __resized: number }).__resized), { timeout: 5_000 }).toBeGreaterThan(0)
+})
+
 test('T102 a refused send keeps the words and says what to do', async () => {
     test.setTimeout(240_000)
     const { app, page, base, slowTranscript } = await launch()

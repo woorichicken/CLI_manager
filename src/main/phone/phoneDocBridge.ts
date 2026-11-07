@@ -135,6 +135,20 @@ export const PHONE_DOC_BRIDGE = String.raw`(function () {
         }
     }, true)
 
+    // The keyboard. The phone page shrinks with it (interactive-widget=resizes-content), so this frame gets a resize a
+    // browser tab would not. before-after redraws on resize, which replaces the field being typed in: focus gone, keyboard
+    // down, nothing can be written. Height alone, while typing, is the keyboard: the page does not need to know.
+    var width = innerWidth
+    var typing = function () {
+        var field = document.activeElement
+        return !!field && (field.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(field.tagName))
+    }
+    window.addEventListener('resize', function (event) {
+        var sameWidth = innerWidth === width
+        width = innerWidth
+        if (sameWidth && typing()) event.stopImmediatePropagation()
+    }, true)
+
     // Each kit's own button says what it does here.
     var relabel = function () {
         ['eli5-fb-copy', 'btn-copy', 'hfk-copy', 'pf-copy'].forEach(function (id) {

@@ -43,7 +43,8 @@ the file.
   Only the file types a page loads leave the folder, and nothing beside a document kept directly in home, `~/Downloads` or a temp folder.
 - **A script put in front of the page (`phoneDocBridge.ts`), not a change to the kits.** It replaces `localStorage`,
   `navigator.clipboard`, `execCommand('copy')` and `a.download` with messages to the phone page, so reports already on disk work. It
-  adds no power: the page's code could post the same messages. Comments live in the phone page's `localStorage`, per page of the
+  adds no power: the page's code could post the same messages. It also keeps a height-only `resize` from the page while a field has
+  the focus: that is the keyboard, and before-after redraws on resize, replacing the field being typed in (found on a real phone). Comments live in the phone page's `localStorage`, per page of the
   folder, and come back through the address's fragment, which never reaches the server.
 - **Only Send sends.** Whatever the page posts becomes the text of a sheet in the phone page: all of it shown, the frame `inert`
   meanwhile, later messages ignored so the words cannot change while being read, Send disabled for 600 ms so a finger that pressed the
