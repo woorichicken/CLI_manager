@@ -54,7 +54,8 @@ home, 116 in the temp folder, none elsewhere. 2,037 (59%) no longer exist. 6 of 
 - Not covered: the typing device itself (it has a terminal), a link swapped between `realpath` and `open` (only a process on
   this Mac can, and it can read the file directly), hard links, a secret file whose name is not on the list.
 - A tool output read whole (`Show all`) holds links the turns do not: `ConversationService` remembers those paths per
-  session, in memory. After a restart, a page still showing such a link is refused until the output is read again.
+  output, in memory, and counts them only while that tool is in the chat (a `/resume` or a rewind takes it away). After a
+  restart, a page still showing such a link is refused until the output is read again.
 
 ## Reversal
 

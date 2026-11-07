@@ -56,7 +56,9 @@ function CodeBody({ content, language, line }: { content: string; language: stri
     const box = useRef<HTMLDivElement>(null)
     const grammar = useMemo(() => languageForFence(language ?? ''), [language])
     const allLines = useMemo(() => (countLines(content) > LINE_ELEMENT_LIMIT ? content.split('\n') : null), [content])
-    const [first, setFirst] = useState(() => (allLines && line ? Math.floor((line - 1) / LONG_FILE_STRETCH) * LONG_FILE_STRETCH : 0))
+    // a line from an old message can be past the end of the file as it is now: the last stretch, not an empty one
+    const stretchOf = (index: number): number => Math.floor(index / LONG_FILE_STRETCH) * LONG_FILE_STRETCH
+    const [first, setFirst] = useState(() => (allLines && line ? Math.min(stretchOf(line - 1), stretchOf(allLines.length - 1)) : 0))
     const shown = allLines ? allLines.slice(first, first + LONG_FILE_STRETCH).join('\n') : content
     useEffect(() => {
         const rows = box.current?.querySelectorAll('.hl-line')
@@ -191,7 +193,8 @@ export function PhoneFilePanel({ target, onClose }: { target: PhoneFileTarget; o
                 )}
                 {info?.kind === 'image' && (
                     <div className="phone-file-picture">
-                        <img src={info.rawUrl} alt={info.name} data-testid="phone-file-image" />
+                        {/* the bytes are a request of their own: the Mac can go away between it and the answer above */}
+                        <img src={info.rawUrl} alt={info.name} data-testid="phone-file-image" onError={() => setLoaded({ state: 'offline' })} />
                     </div>
                 )}
                 {/* HTML reads as code here; the document view takes this place (decision 0011) */}

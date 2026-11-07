@@ -640,14 +640,15 @@ test.describe('T97 what a chat names', () => {
         expect(many.size).toBe(0)
     })
 
-    test('a tool output read whole: its paths are links on the page, so they count; another session’s do not', async () => {
+    test('a tool output read whole: its paths count while that tool is in the chat, and no longer', async () => {
         const cut: ConversationTurn = { role: 'assistant', ts: null, parts: [{ kind: 'tool', name: 'Bash', summary: 'x', input: '{}', output: 'start', output_ref: 'r1', output_size: 9 }] }
+        const other: ConversationTurn = user('a new request')
+        let turns = [cut]
         const reader = new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' })
-        reader.read = () => ({ turns: [cut], truncated: false, changed: false, meta: null })
+        reader.read = () => ({ turns, truncated: false, changed: false, meta: null })
         reader.toolOutput = async () => 'start of it, then in/deep.md at the end'
-        let conversation = 'c1'
         const service = new ConversationService({
-            session: () => ({ cwd: CWD, cliSessionId: conversation, cliToolName: 'claude' }),
+            session: () => ({ cwd: CWD, cliSessionId: 'c1', cliToolName: 'claude' }),
             reader,
             mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }) },
             hasTerminal: () => true,
@@ -662,10 +663,13 @@ test.describe('T97 what a chat names', () => {
         expect([...named.paths]).toEqual(['/repo/in/deep.md'])
         expect(named.cwd).toBe(CWD)
         expect([...(await service.mentionedPaths('B')).paths]).toEqual([])
-        // `/resume` in the same terminal: another conversation, and what the last one showed is not its link
-        conversation = 'c2'
+        // a `/resume` or a rewind: that tool is no longer in the chat, so its links are not either
+        turns = [other]
         expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
-        conversation = 'c1'
+        // the output finishes reading after the chat has moved on: the same
+        expect(await service.getToolOutput('A', 'r1')).toContain('in/deep.md')
+        expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
+        turns = [cut]
         expect([...(await service.mentionedPaths('A')).paths]).toEqual(['/repo/in/deep.md'])
         service.forget('A')
         expect([...(await service.mentionedPaths('A')).paths]).toEqual([])

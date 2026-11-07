@@ -175,8 +175,11 @@ export class ConversationService {
      * not read the keys yet).
      */
     private readonly lastAnswer = new Map<string, { signature: string; outputAt: number }>()
-    /** paths in tool outputs read whole: links on the page that the turns do not hold. Of one conversation: `/resume` leaves them behind */
-    private readonly wholeOutputPaths = new Map<string, { conversation: string; paths: Set<string> }>()
+    /**
+     * Paths in tool outputs read whole, by session and output: links on the page that the turns do not hold. They
+     * count only while that tool is in the chat — a `/resume` or a rewind takes it away, and its links with it.
+     */
+    private readonly wholeOutputPaths = new Map<string, Map<string, Set<string>>>()
     private timer: NodeJS.Timeout | null = null
     private polling = false
 
@@ -492,19 +495,13 @@ export class ConversationService {
         const output = await this.withReader(sessionId, () => this.deps.reader.toolOutput(sessionId, ref))
         // shown whole, its paths are links too — the turns only hold the cut part
         if (output) {
-            const info = this.deps.session(sessionId)
-            const named = new Set<string>(this.wholePathsOf(sessionId))
-            addLinkedText(named, output, info?.cwd, this.deps.home)
-            this.wholeOutputPaths.set(sessionId, { conversation: `${agentOf(info)}:${info?.cliSessionId}`, paths: named })
+            const named = new Set<string>()
+            addLinkedText(named, output, this.deps.session(sessionId)?.cwd, this.deps.home)
+            const outputs = this.wholeOutputPaths.get(sessionId) ?? new Map<string, Set<string>>()
+            outputs.set(ref, named)
+            this.wholeOutputPaths.set(sessionId, outputs)
         }
         return output
-    }
-
-    /** The paths read whole in the conversation the session holds now. */
-    private wholePathsOf(sessionId: string): ReadonlySet<string> {
-        const info = this.deps.session(sessionId)
-        const held = this.wholeOutputPaths.get(sessionId)
-        return held && held.conversation === `${agentOf(info)}:${info?.cliSessionId}` ? held.paths : new Set<string>()
     }
 
     /**
@@ -514,15 +511,23 @@ export class ConversationService {
     async mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }> {
         const info = this.deps.session(sessionId)
         const agent = agentOf(info)
-        const whole = this.wholePathsOf(sessionId)
-        const none = { paths: whole, ...(info?.cwd ? { cwd: info.cwd } : {}) }
+        const none = { paths: new Set<string>(), ...(info?.cwd ? { cwd: info.cwd } : {}) }
         if (!info?.cliSessionId || !agent) return none
         const entry = this.entry(sessionId)
         try {
             const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
             if (!read) return none
             const paths = mentionedPaths(read.turns, info.cwd, this.deps.home)
-            for (const path of whole) paths.add(path)
+            const outputs = this.wholeOutputPaths.get(sessionId)
+            if (outputs) {
+                for (const turn of read.turns) {
+                    for (const part of turn.parts) {
+                        // the ref the chat's «Show all» asks with (WorkBlock.tsx)
+                        const ref = part.kind === 'tool' ? part.output_ref ?? part.call_id : undefined
+                        for (const path of (ref && outputs.get(ref)) || []) paths.add(path)
+                    }
+                }
+            }
             return { ...none, paths }
         } catch (error) {
             console.error('[conversation] mentions failed', sessionId, error)
