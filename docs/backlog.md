@@ -19,6 +19,39 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 보낸 기기에 맞춘 답변 형태(폰/컴퓨터)
+- Discovered: 2026-11-07 사람 아이디어: 「각 메세지 앞에, 컴퓨터에서 보내는지, 핸드폰에서 보내는지를 헤더처럼 달아서, 각 화면에서 보기 좋은 형태의 답변을 내게」.
+- Evidence: 폰 폭 390 에는 넓은 표가 맞지 않는다. 앱은 폰 입력을 이미 안다(`recordPhoneInput`, `src/main/phone/phoneApi.ts:64`).
+- Why deferred: 넣는 방식이 정해지지 않았고, 에이전트 훅 경로를 건드린다.
+- Trigger: 폰에서 받은 답이 표·긴 줄로 읽기 어렵다는 말이 다시 나올 때, 또는 사람이 시작하자고 할 때.
+- Fix direction(제안, 미정): 글에 머리말을 박으면 기록·말풍선에 남는다. 앱이 세션별 마지막 입력 출처를 파일에 적고 `UserPromptSubmit` 훅이 그 값을 보이지 않는 문맥으로 넣는 쪽을 먼저 본다. 스풀·훅 불변식(앱이 꺼져도 멈추지 않음)을 지킨다. Codex 는 훅 경로가 달라 따로 본다.
+- Owner: 없음
+
+### T1 `6 terminals flooding` — 대기 조건이 명령 줄의 `SEQ-DONE` 과 출력의 `SEQ-DONE` 을 구분 못 한다
+- Discovered: 2026-11-07 v1.27.0 `--build` 1회차, 전체 시험에서 이 1건만 실패(1 failed · 1011 passed).
+- Evidence: `tests/terminal/t1-data-loss.spec.ts:70` 이 입력하는 명령 줄에 `echo SEQ-DONE-…` 글이 들어 있고 `:75` 가 같은 글을 기다린다. 출력이 끝나기 전에 통과할 수 있다. 실패 때 `last` 275024 · 269697 · 265076(기대 300000), 나머지 3개는 300000, 6개 모두 gap 0 · discard 0. 10회 반복은 머지판 `a51ef6a` 트리·v1.26.1 모두 10/10 통과, 재빌드 전체 시험도 통과. v1.26.1 뒤 `src` 에 터미널 경로 변경 없음. v1.22.0 의 단일 터미널 시험도 같은 모양이었다(`last` 228478).
+- 한계: 원인은 유력하나 미증명이다. 위 근거는 데이터 유실이 없다는 증명이 아니다.
+- Why deferred: 릴리즈 중이었고 이번 범위가 아니다.
+- Trigger: 사전 점검에서 T1 이 다시 실패할 때, 또는 터미널 출력 경로를 만질 때.
+- Fix direction: 명령 줄에 없는 글을 기다린다(예: `echo SEQ-DONE-$((1+1))` 처럼 셸이 계산한 값). 그 뒤에도 `last` 가 모자라면 그때는 진짜 유실로 본다. 단일 터미널 시험(`:29`)도 같은 모양이라 함께 고친다.
+- Owner: 없음
+
+### Codex 세션 찾기 고침 + 세션을 에이전트 대화에 직접 연결
+- Discovered: 2026-11-07 기획 세션. 사람: 「등록 안되어 있을때, 특정 에이전트로 열수 있는 방법도 체크」.
+- Evidence: [`found-defects.md`](found-defects.md) 「Codex 세션을 열고 15분 안에 첫 말을 안 하면」. 지금은 연결 UI·Control API 가 없다 — `update-session-cli-info` 는 `TerminalView` 만 부른다(`src/renderer/src/components/TerminalView.tsx:756`).
+- Why deferred: 이번 회차 범위가 아니다(11-07 「제품 코드는 이번에 고치지 않는다」).
+- Trigger: 다음 Chat 회차.
+- Fix direction(제안, 미정): ① 감시를 15분에서 끊지 않고 프로세스가 사는 동안 느리게 본다. 짝은 「가장 이른 것」이 아니라 머리 시각이 시작 시각과 맞는 파일로 고른다(같은 폴더 Codex 둘이 뒤바뀌지 않게). ② 세션 메뉴 「Connect to agent conversation」: 그 폴더의 최근 대화(시각·첫 말)를 보여 주고 고르면 연결한다. 자동을 믿지 않고 사람이 고르는 길이다.
+- Owner: 없음
+
+### Muse Code Chat 지원
+- Discovered: 2026-11-07 사람 결정: 「muse 는 일단 백로그로 두자」.
+- Evidence: `agentOf`(`src/main/ConversationService.ts:871`)가 claude·codex 만 받아 전환 버튼·읽기·보내기·대화 id 추적이 없다. 재료(아직 형식 미확인): `~/.local/share/muse/sessions` · `muse export`(세션 JSON) · `muse serve`(MSP) · ovis 에 Muse 리더가 있었다(`src/main/transcript/metadata.ts:2` 주석).
+- Why deferred: 사람 결정.
+- Trigger: 사람이 Muse 를 Chat 으로 쓰자고 할 때.
+- Fix direction: 읽기·보내기 먼저, 질문 카드는 실제 화면 사본을 모은 뒤.
+- Owner: 없음
+
 ### 폰에서 Mac 인박스 보기·바로 답
 - Discovered: 2026-11-06 폰 기능 기획 세션. 사람 결정: 「인박스는 자주 사용하지는 않아서, 일단 백로그로」.
 - Evidence: 폰 코드에 인박스가 없다 — `src/renderer/src/phone/` · `src/main/phone/` · `src/shared/phone.ts` 에서 `inbox` 검색 0건(대조: Mac 쪽 `src/main/InboxStore.ts` · `components/Inbox/` · `hooks/useInbox.ts` 는 있다). 사람도 자주 쓰지 않는다(11-06).
