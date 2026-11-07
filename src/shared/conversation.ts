@@ -346,3 +346,59 @@ export interface ChatTransport {
 
 /** How many turns a Chat view asks for first. */
 export const CHAT_TURN_LIMIT = 200
+
+/** The program currently owning the terminal's input. pid/argv are internal command fallbacks. */
+export interface AgentConversationFront {
+    kind: 'shell' | 'claude' | 'codex' | 'other' | 'none'
+    runningId: string | null
+    startedAt: number | null
+    pid?: number
+    argv?: string
+}
+
+export interface AgentConversationLink {
+    sessionId: string
+    name: string
+}
+
+export interface AgentConversationItem {
+    agent: ConversationAgent
+    id: string
+    startedAt: number
+    updatedAt: number
+    firstMessage: string
+    bytes: number
+    startedHere: boolean
+    linkedTo: AgentConversationLink | null
+}
+
+export interface AgentConversationList {
+    cwd: string
+    front: Pick<AgentConversationFront, 'kind' | 'runningId' | 'startedAt'>
+    current: { agent: ConversationAgent; id: string } | null
+    items: AgentConversationItem[]
+    truncated: boolean
+}
+
+export interface AgentConversationConnectInput {
+    agent: ConversationAgent
+    id: string
+    resume?: boolean
+    force?: boolean
+}
+
+export interface AgentConversationConnectResult {
+    status: 'connected'
+    resumed: boolean
+    cliCommand: string
+}
+
+/** IPC cannot carry custom Error properties, so failures cross the bridge as data. */
+export interface AgentConversationFailure {
+    error: {
+        code: string
+        message: string
+        runningId?: string | null
+        linkedTo?: AgentConversationLink
+    }
+}

@@ -357,8 +357,8 @@ export class ConversationService {
 
     /**
      * Whether the session still shows the conversation `message` was written in. Known only once the
-     * stored id changed: ClaudeSessionSync / CodexSessionLocator update it within seconds of a
-     * `/resume`, so a message sent in that gap still goes (report: round2 F03).
+     * stored id changed: ClaudeSessionSync follows Claude’s `/resume`. CodexSessionLocator
+     * finds new starts, but TUI `/resume` and `/new` need an explicit connection from the session menu.
      */
     private sameConversation(sessionId: string, message: QueueItem): boolean {
         if (message.conversation === null) return true

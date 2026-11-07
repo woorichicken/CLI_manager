@@ -19,6 +19,8 @@ import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
 import { CLISessionTracker } from './CLISessionTracker'
 import { CodexSessionLocator } from './CodexSessionLocator'
+import { AgentConversations, AgentConversationError } from './agentConversations'
+import type { AgentConversationConnectInput } from '../shared/conversation'
 import { LoopManager } from './LoopManager'
 import { HookInstaller, hookIntegrationAllowed } from './HookInstaller'
 import { AgentHookBridge } from './AgentHookBridge'
@@ -160,7 +162,15 @@ const store = new Store<AppConfig>({
 }) as any
 
 const cliSessionTracker = new CLISessionTracker()
-const codexSessionLocator = new CodexSessionLocator()
+const codexSessionLocator = new CodexSessionLocator(undefined, {
+    isClaimed: (id) => ((store.get('workspaces') as Workspace[] | undefined) ?? []).some((w) => w.sessions.some((s) => s.cliSessionId === id))
+})
+const codexCaptureStops = new Map<string, () => void>()
+let forgetClaudeSession = (_id: string): void => {}
+function stopCodexCapture(id: string): void {
+    codexCaptureStops.get(id)?.()
+    codexCaptureStops.delete(id)
+}
 
 /**
  * Reads the user's shell aliases once, so an agent started through one (`cldy`)
@@ -187,6 +197,7 @@ const loadShellAliases = async (): Promise<void> => {
     }
 }
 const terminalManager = new TerminalManager(cliSessionTracker)
+terminalManager.events.on('exited', stopCodexCapture)
 const portManager = new PortManager(() => {
     const settings = store.get('settings') as UserSettings | undefined
     // Default on: turning it off is an explicit choice, not a silent regression
@@ -371,12 +382,15 @@ const controlApiService = new ControlApiService({
     sessionFolders,
     inbox,
     checklists,
+    conversations: () => agentConversations,
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)
         recentSessions.forget(sessionId)
         inbox.forget(sessionId)
         conversationService.forget(sessionId)
+        stopCodexCapture(sessionId)
+        forgetClaudeSession(sessionId)
         phone?.forgetSession(sessionId)
     }
 })
@@ -413,6 +427,38 @@ const conversationService = new ConversationService({
         phoneConversationListeners.emit(sessionId, revision)
     }
 })
+
+// The same connection checks serve desktop IPC and the authenticated Control API.
+const agentConversations = new AgentConversations({
+    sessions: () => ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) =>
+        w.sessions.map((s) => ({ ...s, cwd: s.cwd || w.path }))),
+    foreground: (id) => terminalManager.foregroundAgent(id),
+    update: (id, info) => {
+        stopCodexCapture(id)
+        persistDetectedSession({ terminalId: id, cliSessionId: info.cliSessionId, cliToolName: info.cliToolName, baseCommand: info.cliCommand })
+    },
+    write: (id, data) => terminalManager.writeInput(id, data),
+    forget: (id) => forgetClaudeSession(id),
+    codexHome,
+    claudeConfigDir
+})
+
+function persistDetectedSession(info: { terminalId: string; cliSessionId: string; cliToolName: string; baseCommand: string }): void {
+    const workspaces = store.get('workspaces') as Workspace[]
+    for (const ws of workspaces) {
+        const session = ws.sessions.find((s) => s.id === info.terminalId)
+        if (!session) continue
+        session.cliSessionId = info.cliSessionId
+        session.cliToolName = info.cliToolName
+        session.cliCommand = info.baseCommand
+        store.set('workspaces', workspaces)
+        broadcast('cli-session-detected', {
+            workspaceId: ws.id, sessionId: info.terminalId,
+            cliSessionId: info.cliSessionId, cliToolName: info.cliToolName, cliCommand: info.baseCommand
+        })
+        return
+    }
+}
 
 // Phone connection (Settings › Phone): a second server, off by default, set up once the app is ready.
 let phone: PhoneSetup | null = null
@@ -1012,15 +1058,12 @@ function validateCliSessionIds(): void {
     const claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
     const projectsDir = path.join(claudeDir, 'projects')
 
-    if (!existsSync(projectsDir)) {
-        console.log('[validateCliSessionIds] Claude projects dir not found:', projectsDir)
-        return
-    }
+    // Codex validation must still run when this machine has no Claude projects.
 
     // Collect all existing session IDs from Claude's storage
     const existingSessionIds = new Set<string>()
     try {
-        const projectDirs = readdirSync(projectsDir)
+        const projectDirs = existsSync(projectsDir) ? readdirSync(projectsDir) : []
         for (const dir of projectDirs) {
             const dirPath = path.join(projectsDir, dir)
             try {
@@ -1061,27 +1104,6 @@ function validateCliSessionIds(): void {
         }
     }
     if (modified) {
-        store.set('workspaces', workspaces)
-    }
-}
-
-// Clear all cliSessionIds on graceful quit (belt-and-suspenders with validateCliSessionIds).
-function clearAllCliSessionIds(): void {
-    const workspaces = store.get('workspaces') as Workspace[]
-    let modified = false
-    let count = 0
-    for (const ws of workspaces) {
-        for (const session of ws.sessions) {
-            if (session.cliSessionId || session.cliToolName) {
-                delete session.cliSessionId
-                delete session.cliToolName
-                modified = true
-                count++
-            }
-        }
-    }
-    if (modified) {
-        console.log(`[clearAllCliSessionIds] Cleared ${count} CLI session(s)`)
         store.set('workspaces', workspaces)
     }
 }
@@ -1296,14 +1318,27 @@ app.whenReady().then(async () => {
         const owner = workspaces.find((w) => w.sessions.some((s: TerminalSession) => s.id === terminalId))
         const session = owner?.sessions.find((s: TerminalSession) => s.id === terminalId)
         if (!owner || !session) return
-        codexSessionLocator.watch(session.cwd || owner.path, Date.now(), (cliSessionId) => {
+        stopCodexCapture(terminalId)
+        const shellPid = [...terminalManager.listPtyPids()].find(([, id]) => id === terminalId)?.[0]
+        const stop = codexSessionLocator.watch(session.cwd || owner.path, Date.now(), (cliSessionId) => {
+            codexCaptureStops.delete(terminalId)
             console.log(`[codex-session] ${terminalId} → ${cliSessionId}`)
             persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'codex', baseCommand })
-        })
+        }, { terminalId, shellPid })
+        codexCaptureStops.set(terminalId, stop)
     }
     cliSessionTracker.onCodexStarted = startCodexCapture
+    cliSessionTracker.onCodexResumed = (terminalId, cliSessionId, baseCommand) => {
+        stopCodexCapture(terminalId)
+        persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'codex', baseCommand })
+    }
 
     ipcMain.handle('watch-codex-session', (_, sessionId: string, command: string): boolean => {
+        const resumed = cliSessionTracker.codexResume(command)
+        if (resumed) {
+            cliSessionTracker.onCodexResumed?.(sessionId, resumed.id, resumed.baseCommand)
+            return true
+        }
         if (!cliSessionTracker.isCodexStart(command)) return false
         startCodexCapture(sessionId, command.trim())
         return true
@@ -1316,31 +1351,6 @@ app.whenReady().then(async () => {
         // matching LoopSession (enables --resume on restart).  No-op if the
         // terminalId does not belong to any LoopSession.
         loopManager.noteCliSession(info)
-    }
-
-    function persistDetectedSession(info: { terminalId: string; cliSessionId: string; cliToolName: string; baseCommand: string }): void {
-        // Find which workspace/session this terminal belongs to and persist
-        const workspaces = store.get('workspaces') as Workspace[]
-        for (const ws of workspaces) {
-            const session = ws.sessions.find((s: TerminalSession) => s.id === info.terminalId)
-            if (session) {
-                session.cliSessionId = info.cliSessionId
-                session.cliToolName = info.cliToolName
-                session.cliCommand = info.baseCommand
-                store.set('workspaces', workspaces)
-
-                // Notify renderer
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('cli-session-detected', {
-                        workspaceId: ws.id,
-                        sessionId: info.terminalId,
-                        cliSessionId: info.cliSessionId,
-                        cliToolName: info.cliToolName
-                    })
-                }
-                break
-            }
-        }
     }
 
     // Follow the conversation Claude is actually on (it changes on /resume),
@@ -1363,6 +1373,7 @@ app.whenReady().then(async () => {
             })
         }
     })
+    forgetClaudeSession = (id) => claudeSessionSync.forget(id)
     claudeSessionSync.start()
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)
@@ -3355,6 +3366,17 @@ app.whenReady().then(async () => {
     )
     // Chat view (ConversationService). A window's subscriptions end with it.
     const chatSubscriptions = new Map<number, Map<string, number>>()
+    const agentConversationReply = async (action: () => Promise<unknown>): Promise<unknown> => {
+        try { return await action() } catch (error) {
+            if (error instanceof AgentConversationError) return { error: { code: error.code, message: error.message, ...error.details } }
+            console.error('[agent-conversations] Request failed:', error)
+            return { error: { code: 'internal', message: 'Could not read or connect the conversation.' } }
+        }
+    }
+    ipcMain.handle('agent-conversations-list', (_e, id: string) => agentConversationReply(() => agentConversations.list(id)))
+    ipcMain.handle('agent-conversation-connect', (_e, id: string, body: AgentConversationConnectInput) =>
+        agentConversationReply(() => agentConversations.connect(id, body)))
+
     ipcMain.handle('conversation-get', (_e, sessionId: string, limit?: number) =>
         typeof sessionId === 'string' ? conversationService.getConversation(sessionId, typeof limit === 'number' ? limit : undefined) : null
     )

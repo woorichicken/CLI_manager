@@ -1,3 +1,5 @@
+import { AgentConversations, AgentConversationError } from './agentConversations'
+import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList } from '../shared/conversation'
 import { existsSync, realpathSync, statSync } from 'fs'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
@@ -133,7 +135,8 @@ export class ControlApiError extends Error {
     constructor(
         readonly status: number,
         readonly code: string,
-        message: string
+        message: string,
+        readonly details?: Record<string, unknown>
     ) {
         super(message)
     }
@@ -392,6 +395,8 @@ export interface ControlApiDeps {
     inbox: InboxStore
     /** Header checklists — not tied to any session. */
     checklists: ChecklistStore
+    /** Shared desktop/API conversation connection policy. */
+    conversations?: () => AgentConversations
     /** A session is gone for good (closed or deleted): drop what was kept for it elsewhere. */
     onSessionForgotten?: (sessionId: string) => void
 }
@@ -424,6 +429,23 @@ export class ControlApiService {
     private readonly masters = new Map<string, Omit<OrchestratorInfo, 'openedCount'>>()
     private readonly openedBy = new Map<string, string>()
     private sweepTimer: NodeJS.Timeout | null = null
+
+    async listAgentConversations(sessionId: string): Promise<AgentConversationList> {
+        return this.conversationAction((service) => service.list(sessionId))
+    }
+
+    async connectAgentConversation(sessionId: string, input: AgentConversationConnectInput): Promise<AgentConversationConnectResult> {
+        return this.conversationAction((service) => service.connect(sessionId, input))
+    }
+
+    private async conversationAction<T>(action: (service: AgentConversations) => Promise<T>): Promise<T> {
+        const service = this.deps.conversations?.()
+        if (!service) throw new ControlApiError(503, 'unavailable', 'Conversation connections are unavailable.')
+        try { return await action(service) } catch (error) {
+            if (error instanceof AgentConversationError) throw new ControlApiError(error.status, error.code, error.message, error.details)
+            throw error
+        }
+    }
 
     constructor(private readonly deps: ControlApiDeps) {
         // The orchestrator's shell exited: whatever drove it is gone.

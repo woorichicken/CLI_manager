@@ -1,6 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
-import type { AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
 
@@ -99,9 +99,11 @@ declare global {
             onTerminalData: (id: string, callback: (data: string) => void) => () => void
 
             // CLI Session Tracking
-            onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string }) => void) => () => void
+            onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string; cliCommand: string }) => void) => () => void
             updateSessionCliInfo: (workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string) => Promise<boolean>
             clearSessionCliInfo: (workspaceId: string, sessionId: string) => Promise<boolean>
+            listAgentConversations: (sessionId: string) => Promise<AgentConversationList | AgentConversationFailure>
+            connectAgentConversation: (sessionId: string, body: AgentConversationConnectInput) => Promise<AgentConversationConnectResult | AgentConversationFailure>
             watchCodexSession: (sessionId: string, command: string) => Promise<boolean>
             rewriteCliCommand: (command: string) => Promise<{ command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null>
 

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { isInteractiveCodex } from './CodexSessionLocator'
+import { isInteractiveCodex, parseCodexResume } from './CodexSessionLocator'
 
 export interface CLIToolConfig {
     name: string
@@ -67,6 +67,8 @@ export class CLISessionTracker {
      * from us, so the caller has to find the one Codex picked (CodexSessionLocator).
      */
     public onCodexStarted?: (terminalId: string, baseCommand: string) => void
+
+    public onCodexResumed?: (terminalId: string, id: string, baseCommand: string) => void
 
     constructor(cliTools?: CLIToolConfig[]) {
         this.cliTools = cliTools ?? DEFAULT_CLI_TOOLS
@@ -136,7 +138,9 @@ export class CLISessionTracker {
 
             const result = this.shouldIntercept(buffer)
             if (!result) {
-                if (this.isCodexStart(buffer)) this.onCodexStarted?.(terminalId, buffer)
+                const resume = this.codexResume(buffer)
+                if (resume) this.onCodexResumed?.(terminalId, resume.id, resume.baseCommand)
+                else if (this.isCodexStart(buffer)) this.onCodexStarted?.(terminalId, buffer)
                 return false
             }
 
@@ -200,6 +204,23 @@ export class CLISessionTracker {
         const expansion = this.aliases.get(name)
         const effective = expansion ? `${expansion} ${tokens.slice(1).join(' ')}`.trim().split(/\s+/) : tokens
         return isInteractiveCodex(effective)
+    }
+
+    /** Recognise explicit UUID resumes, retaining the alias and preceding setup commands. */
+    codexResume(commandLine: string): { id: string; baseCommand: string } | null {
+        const lastSegment = commandLine.split(/&&|;/).pop()?.trim() ?? commandLine
+        const tokens = lastSegment.split(/\s+/).filter(Boolean)
+        if (!tokens.length) return null
+        const name = tokens[0].split('/').pop() || tokens[0]
+        const expansion = this.aliases.get(name)
+        const effective = expansion ? `${expansion} ${tokens.slice(1).join(' ')}`.trim().split(/\s+/) : tokens
+        const result = parseCodexResume(effective)
+        if (!result) return null
+        const resumeIndex = tokens.indexOf('resume')
+        if (resumeIndex < 0) return null
+        const baseSegment = [...tokens.slice(0, resumeIndex), ...tokens.slice(resumeIndex + 2)].join(' ')
+        const prefix = commandLine.slice(0, commandLine.lastIndexOf(lastSegment))
+        return { id: result.id, baseCommand: prefix + baseSegment }
     }
 
     /**

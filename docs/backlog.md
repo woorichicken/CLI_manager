@@ -36,14 +36,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 명령 줄에 없는 글을 기다린다(예: `echo SEQ-DONE-$((1+1))` 처럼 셸이 계산한 값). 그 뒤에도 `last` 가 모자라면 그때는 진짜 유실로 본다. 단일 터미널 시험(`:29`)도 같은 모양이라 함께 고친다.
 - Owner: 없음
 
-### Codex 세션 찾기 고침 + 세션을 에이전트 대화에 직접 연결
-- Discovered: 2026-11-07 기획 세션. 사람: 「등록 안되어 있을때, 특정 에이전트로 열수 있는 방법도 체크」.
-- Evidence: [`found-defects.md`](found-defects.md) 「Codex 세션을 열고 15분 안에 첫 말을 안 하면」. 지금은 연결 UI·Control API 가 없다 — `update-session-cli-info` 는 `TerminalView` 만 부른다(`src/renderer/src/components/TerminalView.tsx:756`).
-- Why deferred: 이번 회차 범위가 아니다(11-07 「제품 코드는 이번에 고치지 않는다」).
-- Trigger: 다음 Chat 회차.
-- Fix direction(제안, 미정): ① 감시를 15분에서 끊지 않고 프로세스가 사는 동안 느리게 본다. 짝은 「가장 이른 것」이 아니라 머리 시각이 시작 시각과 맞는 파일로 고른다(같은 폴더 Codex 둘이 뒤바뀌지 않게). ② 세션 메뉴 「Connect to agent conversation」: 그 폴더의 최근 대화(시각·첫 말)를 보여 주고 고르면 연결한다. 자동을 믿지 않고 사람이 고르는 길이다.
-- Owner: 없음
-
 ### Muse Code Chat 지원
 - Discovered: 2026-11-07 사람 결정: 「muse 는 일단 백로그로 두자」.
 - Evidence: `agentOf`(`src/main/ConversationService.ts:871`)가 claude·codex 만 받아 전환 버튼·읽기·보내기·대화 id 추적이 없다. 재료(아직 형식 미확인): `~/.local/share/muse/sessions` · `muse export`(세션 JSON) · `muse serve`(MSP) · ovis 에 Muse 리더가 있었다(`src/main/transcript/metadata.ts:2` 주석).

@@ -153,6 +153,46 @@ finishes an item checks it. Code: `src/main/ChecklistStore.ts` (store, checks, o
 
 Not in this version (backlog): assigning an item to a session.
 
+## Agent conversations
+
+The desktop session menu and Control API share `AgentConversations` (`agentConversations.ts`).
+These endpoints do not add any phone routes or change phone permissions.
+
+| REST | MCP | Result |
+|---|---|---|
+| `GET /v1/sessions/:id/conversations` | `list_agent_conversations(session_id)` | `{cwd, front:{kind,runningId,startedAt}, current:{agent,id}|null, items, truncated}` |
+| `POST /v1/sessions/:id/conversation` | `connect_agent_conversation(session_id, agent, id, resume?, force?)` | `{status:"connected", resumed, cliCommand}` |
+
+An item is `{agent,id,startedAt,updatedAt,firstMessage,bytes,startedHere,linkedTo}`.
+`linkedTo` is `{sessionId,name}` or null. Times are epoch milliseconds. File paths and internal
+process arguments are omitted. First messages use the existing transcript parsers, are masked,
+folded to one line, and limited to 200 characters. Only top-level interactive Codex sources
+(cli, vscode, or absent; originator codex-tui or absent) and nonempty Claude conversations qualify.
+Sidecars are excluded. The list shows up to 30 items sorted by last modification; Codex discovery
+stops at 90 days, 2,000 heads or 30 matching items and yields between days. Head reads are bounded
+at 512 KiB for Codex and 64 KiB for Claude. `truncated` reports a discovery or display limit.
+
+Connections require a strict UUID, a real-path folder match, and no other terminal linked to the
+conversation. A foreground Claude blocks changes; a Codex holding a rollout accepts only that
+conversation. An unbound Codex requires the −2s/+30s start window, or explicit `force:true` with
+its warning. Force never bypasses duplicate links, folders, or a running agent. `resume:true`
+requires a shell both at discovery and immediately before input; refusal leaves saved values intact.
+The shell line is cleared with Ctrl+U and receives only the trusted base command and checked UUID.
+Saved options survive restarts; a renderer reload reattaches without resuming again.
+
+| HTTP | Code | Details |
+|---|---|---|
+| 400 | `invalid_id` | Invalid UUID or agent |
+| 400 | `invalid_request` | Nonboolean resume/force (REST field type errors use `bad_request`) |
+| 404 | `unknown_session`, `not_found` | Missing terminal or eligible conversation |
+| 409 | `cwd_mismatch`, `linked_elsewhere` | Wrong folder; the latter includes `linkedTo` |
+| 409 | `agent_running` | Foreground agent conflict; includes `runningId` |
+| 409 | `not_started_here` | Explicit confirmation required for unbound Codex |
+| 409 | `not_shell` | Resume would type into a program |
+
+MCP domain failures remain tool results with `isError:true` and the error code in their text.
+Coverage: T25 locator/tracker, T103 synthetic service tests, T104 app/store/REST/MCP tests.
+
 ## Session state
 
 | `state` | Meaning |

@@ -147,7 +147,7 @@ function App() {
                     ...ws,
                     sessions: ws.sessions.map(s => {
                         if (s.id !== data.sessionId) return s
-                        return { ...s, cliSessionId: data.cliSessionId, cliToolName: data.cliToolName }
+                        return { ...s, cliSessionId: data.cliSessionId, cliToolName: data.cliToolName, cliCommand: data.cliCommand }
                     })
                 }
             }))

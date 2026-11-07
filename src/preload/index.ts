@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
-import type { AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
 
@@ -132,7 +132,7 @@ const api = {
     },
 
     // CLI Session Tracking
-    onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string }) => void): () => void => {
+    onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string; cliCommand: string }) => void): () => void => {
         const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data)
         ipcRenderer.on('cli-session-detected', handler)
         return () => ipcRenderer.removeListener('cli-session-detected', handler)
@@ -141,6 +141,10 @@ const api = {
         ipcRenderer.invoke('update-session-cli-info', workspaceId, sessionId, cliSessionId, cliToolName, cliCommand),
     clearSessionCliInfo: (workspaceId: string, sessionId: string): Promise<boolean> =>
         ipcRenderer.invoke('clear-session-cli-info', workspaceId, sessionId),
+    listAgentConversations: (sessionId: string): Promise<AgentConversationList | AgentConversationFailure> =>
+        ipcRenderer.invoke('agent-conversations-list', sessionId),
+    connectAgentConversation: (sessionId: string, body: AgentConversationConnectInput): Promise<AgentConversationConnectResult | AgentConversationFailure> =>
+        ipcRenderer.invoke('agent-conversation-connect', sessionId, body),
     watchCodexSession: (sessionId: string, command: string): Promise<boolean> =>
         ipcRenderer.invoke('watch-codex-session', sessionId, command),
     rewriteCliCommand: (command: string): Promise<{ command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null> =>

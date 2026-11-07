@@ -204,6 +204,11 @@ rules stay in the root; this file is the inventory.
 - `glm-on && cldy`처럼 앞에 준비 명령이 붙어도 마지막 명령으로 판정한다
 - 시작 시 `validateCliSessionIds()`가 Claude 대화 파일이 없는 id를 지운다 — 그래서 대화 기록 저장이
   꺼진 세션은 재개되지 않는다. 회귀는 `t17-session-resume.spec.ts`
+- **Codex 자동 찾기**: `CodexSessionLocator` 공유 10초 타이머. 머리 시각 날짜 ±1일 파일만 캐시하고, 새 유효 후보가 생길 때만 비동기 ps/lsof로 PID·시작·소유 파일을 읽는다. PID 판별 뒤에는 kill(pid, 0)으로 생존 확인. 첫 후보 전에는 셸 생존 동안 기다리고, PID를 끝내 못 찾으면 첫 실패 탐색부터 15분 한도.
+  같은 실경로·source cli/vscode/없음·시작 −2초~+30초·미연결 id가 후보. 보유 프로세스 우선, 없으면 머리 이전 가장 늦은 시작. 같은 폴더 시작이 10초 이내면 자동 연결하지 않는다. 명시적 `codex resume <uuid>`는 바로 저장한다.
+- **수동 연결**: 사이드바 세션 우클릭 「Connect to agent conversation…」. `AgentConversations`가 목록과 연결을 IPC·REST·MCP에 공통 제공한다. Claude가 앞이면 종료 안내, 파일 보유 Codex는 그 대화만, 미보유 Codex는 Started here 또는 경고 뒤 Connect anyway. 다른 프로그램에서는 저장만. 셸은 입력줄을 비운 뒤 기본 명령+검증 UUID로 resume하며 입력 직전 셸을 재확인한다.
+  `cliCommand`는 같은 도구의 저장 명령 → 호환 initialCommand → 안전한 프로세스 옵션 → 도구 이름 순서다. 렌더러에도 새 명령을 보내 재시작 옵션을 유지한다.
+- **한계**: Codex TUI의 `/new`·`/resume`·이름/선택기 resume·붙여넣은 명령은 자동 감지하지 못하므로 연결 메뉴를 쓴다. 이 기능은 Mac과 인증 Control API 전용이며 폰에 새 경로는 없다.
 - **id 는 Claude 가 실제로 쓰는 대화를 따라간다** — Claude 안에서 `/resume` 하면 새 id 로 옮겨 가고 주입한 id 에는 대화 파일이
   생기지 않는다(2.1.296 실측). 그대로 두면 재시작 때 id 가 지워져 템플릿이 새 대화로 시작한다. `ClaudeSessionSync` 가 10초마다
   `<CLAUDE_CONFIG_DIR|~/.claude>/sessions/<pid>.json` 을 읽어, 셸에 가장 가까운 Claude 프로세스의 `sessionId` 로 저장값을 맞춘다
@@ -363,6 +368,7 @@ User Action (Renderer)
 - 코드: `src/main/ChecklistStore.ts` · `ControlApiService.*Checklist*` · `hooks/useChecklists.ts` · `components/Checklists/`(칩·패널·항목 줄·마감 편집) · `utils/dueDate.ts`(마감 표시). 계약은 [`control-api.md`](control-api.md) 「Checklists」
 
 #### Chat view
+- `agent-conversations-list(sessionId)` → `AgentConversationList` · `agent-conversation-connect(sessionId, {agent,id,resume?,force?})` → 연결 결과 또는 `{error:{code,message,...}}`. 대화 파일 경로와 프로세스 argv는 응답에 싣지 않는다. 상세 계약은 [`control-api.md`](control-api.md) 「Agent conversations」
 - `conversation-get(sessionId, limit?)` → `ConversationSnapshot`(마지막 `limit` 턴 · working · prompt · queued · revision) · `conversation-subscribe` /
   `conversation-unsubscribe(sessionId)`(창이 닫히면 그 창 구독은 풀린다) · `conversation-changed` (main → renderer, `{ sessionId, revision }`)
 - `chat-send(sessionId, text)` → `ChatSendResult`(`sent` · `queued` · `rejected` + 이유) · `chat-cancel-queued(sessionId)` ·

@@ -4,6 +4,10 @@ import os from 'os'
 import { execFile, execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { CLISessionTracker } from './CLISessionTracker'
+import { readAgentProcesses, heldCodexRollouts, readCodexRolloutMeta } from './CodexSessionLocator'
+import type { AgentConversationFront } from '../shared/conversation'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
 import { SESSION_ID_ENV, TerminalAttachResult } from '../shared/types'
 const pty = require('node-pty')
 
@@ -612,6 +616,47 @@ export class TerminalManager {
                 resolve(group === pid && SHELL_NAMES.test(command) ? null : String(group))
             })
         })
+    }
+
+    /** Read-only process inspection for the manual conversation picker. */
+    async foregroundAgent(id: string): Promise<AgentConversationFront> {
+        const ptyProcess = this.terminals.get(id)
+        const unknown: AgentConversationFront = { kind: 'none', runningId: null, startedAt: null }
+        if (!ptyProcess) return unknown
+        const processes = await readAgentProcesses()
+        const shell = processes.find((entry) => entry.pid === ptyProcess.pid)
+        if (!shell) return unknown
+        const commandName = (command: string): string => command.split('/').pop()!.replace(/^-/, '')
+        if (shell.tpgid === shell.pid && SHELL_NAMES.test(commandName(shell.command))) {
+            return { kind: 'shell', runningId: null, startedAt: shell.startedAt, pid: shell.pid, argv: shell.argv }
+        }
+        const group = processes.filter((entry) => entry.pgid === shell.tpgid)
+        // Prefer a native agent over its Node or shell wrapper in the same foreground group.
+        const agentKind = (argv: string): 'claude' | 'codex' | null => {
+            const match = /(?:^|\s)(?:[^\s]*\/)?(claude|codex)(?=\s|$)/.exec(argv)
+            return match ? match[1] as 'claude' | 'codex' : null
+        }
+        const current = group.find((entry) => agentKind(entry.argv) && !/^(node|nodejs)$/.test(commandName(entry.command)))
+            ?? group.find((entry) => agentKind(entry.argv))
+            ?? group.find((entry) => entry.pid === shell.tpgid)
+        if (!current) return { ...unknown, kind: 'other' }
+        const kind = agentKind(current.argv) ?? 'other'
+        let runningId: string | null = null
+        if (kind === 'codex') {
+            const metas = (await heldCodexRollouts(current.pid)).flatMap((file) => {
+                const meta = readCodexRolloutMeta(file)
+                return meta ? [meta] : []
+            })
+            const ids = [...new Set(metas.map((meta) => meta.id))]
+            if (ids.length === 1) runningId = ids[0]
+        } else if (kind === 'claude') {
+            try {
+                const configDir = process.env.CLAUDE_CONFIG_DIR || join(os.homedir(), '.claude')
+                const entry = JSON.parse(await readFile(join(configDir, 'sessions', `${current.pid}.json`), 'utf8'))
+                if (typeof entry.sessionId === 'string') runningId = entry.sessionId
+            } catch { /* Registry files can disappear as a process exits. */ }
+        }
+        return { kind, runningId, startedAt: current.startedAt, pid: current.pid, argv: current.argv }
     }
 
     /**

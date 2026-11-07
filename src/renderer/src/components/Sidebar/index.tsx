@@ -20,6 +20,7 @@ import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
+import { ConnectConversationDialog } from './ConnectConversationDialog'
 
 /**
  * ReorderableRow - 워크스페이스·폴더 드래그 앤 드롭을 위한 래퍼 컴포넌트
@@ -212,6 +213,7 @@ export function Sidebar({
     const [worktreeMenuOpen, setWorktreeMenuOpen] = useState<{ x: number, y: number, workspace: Workspace } | null>(null)
     const [branchMenuOpen, setBranchMenuOpen] = useState<{ x: number, y: number, workspaceId: string, workspacePath: string } | null>(null)
     const [sessionMenuOpen, setSessionMenuOpen] = useState<{ x: number, y: number, workspaceId: string, sessionId: string } | null>(null)
+    const [conversationSessionId, setConversationSessionId] = useState<string | null>(null)
     const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null)
     const [showPrompt, setShowPrompt] = useState<{ workspaceId: string } | null>(null)
     const [branchLoading, setBranchLoading] = useState(false)
@@ -977,6 +979,7 @@ export function Sidebar({
                             window.api.clearTerminal(sessionMenuOpen.sessionId)
                             setSessionMenuOpen(null)
                         }}
+                        onConnectConversation={() => setConversationSessionId(sessionMenuOpen.sessionId)}
                         onDisconnectAi={
                             menuSession?.aiControl
                                 ? () => { void window.api.releaseAiSession(sessionMenuOpen.sessionId) }
@@ -986,6 +989,12 @@ export function Sidebar({
                     />
                 )
             })()}
+
+            {conversationSessionId && <ConnectConversationDialog
+                sessionId={conversationSessionId}
+                sessionName={workspaces.flatMap(workspace => workspace.sessions).find(session => session.id === conversationSessionId)?.name ?? ''}
+                onClose={() => setConversationSessionId(null)}
+            />}
 
             {folderMenuOpen && (
                 <FolderContextMenu

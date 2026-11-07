@@ -41,15 +41,6 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 - Workaround: 띠가 사라지기를 기다리거나, ⚙ 의 「알림 표시」를 끈다.
 - Fix direction: 메뉴가 열려 있는 동안 띠를 미루거나 메뉴 아래로 내린다. 다른 시트(서랍·설정)와 같은 규칙으로 정한다.
 
-### 🐛 `src/main/CodexSessionLocator.ts` — Codex 세션을 열고 15분 안에 첫 말을 안 하면 Chat 전환이 끝내 안 뜬다
-- Date: 2026-11-07
-- Where: `src/main/CodexSessionLocator.ts:29` `WATCH_MS` 15분. Codex 는 rollout 파일을 첫 프롬프트 때 만들고, 머리에는 시작 시각을 적는다.
-- What: 15분이 지나면 감시가 끝나 rollout 을 찾지 못하고, 세션의 `cliToolName`·`cliSessionId` 가 빈 채로 남는다. `codex resume <id>` 로 연 세션은 `NON_INTERACTIVE` 라 애초에 잡히지 않는다.
-- Evidence: 기획 세션 실측(11-07) — 세션 `b324be3c` · `codex` 시작 11-06 14:15:29 · rollout `01a1af48` 머리 14:15:30 · 파일 생성 23:34:09(33,519초 뒤) · `cliToolName`·`cliSessionId` 비어 있음. 11-04~07 rollout 292개 중 15분 초과는 이 1개, 중앙값 0.99초.
-- Impact: Chat 전환이 없다. 재시작 때 `resume` 도 없어 같은 대화로 못 돌아온다(코드 근거, 재시작은 실측 안 함).
-- Workaround: 세션을 열고 15분 안에 첫 말을 한다.
-- Fix direction: [`backlog.md`](backlog.md) 「Codex 세션 찾기 고침 + 세션을 에이전트 대화에 직접 연결」.
-
 ### 🐛 Chat 보내기 버튼 — 글을 써도 파란 배경이 안 나온다
 - Date: 2026-11-06
 - Where: `src/renderer/src/components/ChatView/chat.css` `.chat-composer-send { background: #2563eb }`. Tailwind 리셋의 `[type="button"] { background-color: transparent }` 이 클래스 하나와 무게가 같고 더 뒤에 와서 이긴다.

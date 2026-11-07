@@ -74,6 +74,11 @@ export class ClaudeSessionSync {
         this.timer = null
     }
 
+    /** A manual link must not suppress the next registry correction. */
+    forget(terminalId: string): void {
+        this.reported.delete(terminalId)
+    }
+
     async tick(): Promise<void> {
         if (this.running) return
         this.running = true

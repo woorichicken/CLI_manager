@@ -346,7 +346,7 @@ export class ControlApiServer {
 
             return fail(404, 'no_route', `No route for ${method} ${url.pathname}`)
         } catch (error) {
-            if (error instanceof ControlApiError) return fail(error.status, error.code, error.message)
+            if (error instanceof ControlApiError) return send(error.status, { error: { code: error.code, message: error.message, ...error.details } })
             console.error('[control-api] request failed:', error)
             return fail(500, 'internal', String((error as Error)?.message ?? error))
         }
@@ -404,6 +404,13 @@ export class ControlApiServer {
                 })
             ),
             route('GET', '/v1/sessions/:id', ({ params }) => service.getSession(params.id)),
+            route('GET', '/v1/sessions/:id/conversations', ({ params }) => service.listAgentConversations(params.id)),
+            route('POST', '/v1/sessions/:id/conversation', ({ params, body }) => service.connectAgentConversation(params.id, {
+                agent: optionalString(body, 'agent') as 'claude' | 'codex',
+                id: optionalString(body, 'id') ?? '',
+                resume: optionalBoolean(body, 'resume'),
+                force: optionalBoolean(body, 'force')
+            })),
             route('GET', '/v1/sessions/:id/output', ({ params, query, client, caller }) => {
                 const mode = query.get('mode') ?? undefined
                 if (mode !== undefined && mode !== 'screen' && mode !== 'tail') {
