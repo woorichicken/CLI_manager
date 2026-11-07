@@ -500,10 +500,27 @@ test('T102 the keyboard does not take the field away: before-after redraws on re
     // the viewer waits 180 ms before it redraws
     await phone.waitForTimeout(500)
     expect(await stillThere(), 'the field being typed in is the same one, and still has the focus').toBe(true)
+    // and it can be seen: the viewer's sticky toolbar and the pin bar stay on screen in the short frame
+    const visible = (): Promise<string[]> =>
+        docFrame(phone).evaluate(() => {
+            const field = document.activeElement as HTMLElement
+            const box = field.getBoundingClientRect()
+            const points = [box.top + 4, (box.top + box.bottom) / 2, box.bottom - 4].map((y) => [box.left + box.width / 2, y])
+            return points.flatMap(([x, y]) => {
+                const top = document.elementFromPoint(x, y)
+                if (y < 0 || y > innerHeight) return [`off screen at ${Math.round(y)} of ${innerHeight}`]
+                return top === field ? [] : [`covered at ${Math.round(y)} by ${top?.tagName}#${top?.id}.${String(top?.className)}`]
+            })
+        })
+    expect(await visible()).toEqual([])
+    await shot(phone, 'keyboard-field')
     await height(844)
     await expect.poll(() => docFrame(phone).evaluate(() => innerHeight), { timeout: 5_000 }).toBeGreaterThan(420)
     await phone.waitForTimeout(500)
     expect(await stillThere(), 'and when the keyboard goes').toBe(true)
+    // what stepped aside for the field is back
+    await expect(frame.locator('#pf-tools')).toBeVisible()
+    await expect(frame.locator('#btn-copy')).toBeVisible()
 
     // a real change of size still reaches the page: turning the phone sideways changes the width
     await docFrame(phone).evaluate(() => {

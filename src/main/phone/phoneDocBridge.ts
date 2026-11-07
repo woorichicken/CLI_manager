@@ -138,16 +138,57 @@ export const PHONE_DOC_BRIDGE = String.raw`(function () {
     // The keyboard. The phone page shrinks with it (interactive-widget=resizes-content), so this frame gets a resize a
     // browser tab would not. before-after redraws on resize, which replaces the field being typed in: focus gone, keyboard
     // down, nothing can be written. Height alone, while typing, is the keyboard: the page does not need to know.
+    // The short frame also keeps a page's fixed and sticky bars on screen, a tab's would sit behind the keyboard, so they
+    // can cover the field. What covers it steps aside until the keyboard goes.
     var width = innerWidth
+    var height = innerHeight
+    var keyboard = false
+    var stepped = []
     var typing = function () {
         var field = document.activeElement
         return !!field && (field.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(field.tagName))
     }
+    var stepBack = function () {
+        stepped.forEach(function (entry) { entry.element.style.visibility = entry.was })
+        stepped = []
+    }
+    var uncover = function () {
+        stepBack()
+        var field = document.activeElement
+        field.scrollIntoView({ block: 'center' })
+        var box = field.getBoundingClientRect()
+        Array.prototype.forEach.call(document.querySelectorAll('body *'), function (element) {
+            if (element.contains(field) || field.contains(element)) return
+            var position = getComputedStyle(element).position
+            if (position !== 'fixed' && position !== 'sticky') return
+            var other = element.getBoundingClientRect()
+            if (other.bottom <= box.top || other.top >= box.bottom || other.right <= box.left || other.left >= box.right) return
+            stepped.push({ element: element, was: element.style.visibility })
+            element.style.visibility = 'hidden'
+        })
+    }
     window.addEventListener('resize', function (event) {
         var sameWidth = innerWidth === width
+        var shorter = innerHeight < height
         width = innerWidth
-        if (sameWidth && typing()) event.stopImmediatePropagation()
+        height = innerHeight
+        if (!sameWidth || !typing()) {
+            keyboard = false
+            stepBack()
+            return
+        }
+        event.stopImmediatePropagation()
+        keyboard = shorter
+        if (keyboard) uncover()
+        else stepBack()
     }, true)
+    document.addEventListener('focusin', function () {
+        if (keyboard && typing()) uncover()
+    })
+    document.addEventListener('focusout', function () {
+        // the next field's focusin comes straight after: only when nothing took over
+        setTimeout(function () { if (!typing()) stepBack() }, 0)
+    })
 
     // Each kit's own button says what it does here.
     var relabel = function () {
