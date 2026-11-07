@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FilePreview } from './FilePreview'
 import { setChatFileOpener } from '../utils/electronChatTransport'
+import { SYSTEM_TYPES } from '../../../shared/fileKinds'
 
 /**
  * Files the Chat view names (a path in an answer, a tool's file): pictures and text in the
@@ -8,11 +9,6 @@ import { setChatFileOpener } from '../utils/electronChatTransport'
  * an office file — in the Mac's own app, as ovis's file viewer shows them. With Settings ›
  * Terminal › Chat view's switch off (0a17912b), everything goes to the Mac's own app.
  */
-const SYSTEM_TYPES = new Set([
-    'pdf', 'mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg',
-    'zip', 'gz', 'tgz', 'dmg', 'pkg', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'key', 'pages', 'numbers', 'hwp', 'hwpx', 'psd', 'ai', 'sketch', 'fig'
-])
-
 export function ChatFilePreview({ openInApp = true }: { openInApp?: boolean }) {
     const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
     useEffect(() => {

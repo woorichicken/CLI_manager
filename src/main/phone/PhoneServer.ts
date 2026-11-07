@@ -63,7 +63,7 @@ const CSP = [
     "form-action 'self'"
 ].join('; ')
 
-export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' | 'devices' | 'push' | 'stillAllowed'>, PhoneSocketDeps {
+export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' | 'devices' | 'push' | 'stillAllowed' | 'trackDownload'>, PhoneSocketDeps {
     devices: PhoneDevices
     push: PhonePush
     tailscale: TailscaleStatus
@@ -104,6 +104,8 @@ export class PhoneServer {
     /** who fetched lately or has a socket open, for "n connected" and Settings' list */
     private readonly connections = new PhoneConnections(CONNECTED_WINDOW_MS)
     private readonly sockets = new Set<{ ws: WebSocket; who: string; deviceId?: string }>()
+    /** files on their way to a paired device (the owner cannot be revoked): a disconnect ends them too */
+    private readonly downloads = new Set<{ deviceId?: string; stop: () => void }>()
 
     constructor(private readonly deps: PhoneServerDeps) {
         deps.devices.onRevoke((deviceId) => {
@@ -111,6 +113,9 @@ export class PhoneServer {
             // The terminal socket asks `stillAllowed` before every input (ovis connections.ts:164,247).
             for (const socket of [...this.sockets]) {
                 if (deviceId === null ? socket.deviceId !== undefined : socket.deviceId === deviceId) socket.ws.close(4401, 'revoked')
+            }
+            for (const download of [...this.downloads]) {
+                if (deviceId === null ? download.deviceId !== undefined : download.deviceId === deviceId) download.stop()
             }
             deps.push.forgetOwner(deviceId === null ? null : `device:${deviceId}`)
             this.connections.forget((key) => (deviceId === null ? key.startsWith('device:') : key === `device:${deviceId}`))
@@ -154,6 +159,8 @@ export class PhoneServer {
         this.deps.statusPoller.stop()
         for (const socket of this.sockets) socket.ws.terminate()
         this.sockets.clear()
+        for (const download of [...this.downloads]) download.stop()
+        this.downloads.clear()
         this.connections.clear()
         this.wss?.close()
         this.wss = null
@@ -319,7 +326,17 @@ export class PhoneServer {
                 })
                 return
             }
-            await handlePhoneApi(req, res, url, { ...this.deps, access, owner: who.owner!, stillAllowed: () => this.stillAllowed(access) })
+            await handlePhoneApi(req, res, url, {
+                ...this.deps,
+                access,
+                owner: who.owner!,
+                stillAllowed: () => this.stillAllowed(access),
+                trackDownload: (stop) => {
+                    const entry = { ...(access.via === 'device' ? { deviceId: access.deviceId } : {}), stop }
+                    this.downloads.add(entry)
+                    return () => this.downloads.delete(entry)
+                }
+            })
             return
         }
 

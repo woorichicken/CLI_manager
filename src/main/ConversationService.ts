@@ -13,6 +13,8 @@ import type {
     QueuedMessage
 } from '../shared/conversation'
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
+// the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
+import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatView/chatMentions'
 import { isBusyRow, screenAgentMode } from './screenLines'
 import { answerSteps, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
@@ -173,6 +175,8 @@ export class ConversationService {
      * not read the keys yet).
      */
     private readonly lastAnswer = new Map<string, { signature: string; outputAt: number }>()
+    /** paths in tool outputs read whole: links on the page that the turns do not hold */
+    private readonly wholeOutputPaths = new Map<string, Set<string>>()
     private timer: NodeJS.Timeout | null = null
     private polling = false
 
@@ -209,6 +213,7 @@ export class ConversationService {
     forget(sessionId: string): void {
         this.watched.delete(sessionId)
         this.lastAnswer.delete(sessionId)
+        this.wholeOutputPaths.delete(sessionId)
         this.deps.reader.forget(sessionId)
     }
 
@@ -484,7 +489,40 @@ export class ConversationService {
 
     /** The whole output of a tool call the chat cut. */
     async getToolOutput(sessionId: string, ref: string): Promise<string | null> {
-        return this.withReader(sessionId, () => this.deps.reader.toolOutput(sessionId, ref))
+        const output = await this.withReader(sessionId, () => this.deps.reader.toolOutput(sessionId, ref))
+        // shown whole, its paths are links too — the turns only hold the cut part
+        if (output) {
+            const info = this.deps.session(sessionId)
+            const named = this.wholeOutputPaths.get(sessionId) ?? new Set<string>()
+            addLinkedText(named, output, info?.cwd, this.deps.home)
+            this.wholeOutputPaths.set(sessionId, named)
+        }
+        return output
+    }
+
+    /**
+     * The files this session's chat shows as links, and its folder: what a phone may ask for (phoneFiles.ts).
+     * Read anew for each request: a chat nobody has open has a record too, and the answer follows the conversation.
+     */
+    async mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }> {
+        const info = this.deps.session(sessionId)
+        const agent = agentOf(info)
+        const whole = this.wholeOutputPaths.get(sessionId)
+        const none = { paths: whole ?? new Set<string>(), ...(info?.cwd ? { cwd: info.cwd } : {}) }
+        if (!info?.cliSessionId || !agent) return none
+        const entry = this.entry(sessionId)
+        try {
+            const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
+            if (!read) return none
+            const paths = mentionedPaths(read.turns, info.cwd, this.deps.home)
+            for (const path of whole ?? []) paths.add(path)
+            return { ...none, paths }
+        } catch (error) {
+            console.error('[conversation] mentions failed', sessionId, error)
+            return none
+        } finally {
+            this.dropIfIdle(sessionId, entry)
+        }
     }
 
     /** The `/` commands the session's agent offers in its folder. */

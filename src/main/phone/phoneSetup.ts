@@ -180,6 +180,13 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         maskLine,
         recordPhoneInput: (sessionId, detail) => deps.eventLog.record(sessionId, 'phone-input', detail),
         terminals: deps.terminals,
+        files: {
+            home: os.homedir(),
+            // the paired devices and the app's settings live here, whatever the folder is called
+            protectedPlaces: [deps.userDataDir],
+            maskLines: (lines) => maskSecretLines(lines, { ...deps.mask, joinLines: false }),
+            record: (sessionId, detail) => deps.eventLog.record(sessionId, 'phone-file', detail)
+        },
         ...(deps.feedback ? { feedback: deps.feedback } : {}),
         quickReplies: () => {
             const chat = (deps.store.get('settings') as UserSettings | undefined)?.chat

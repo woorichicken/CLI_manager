@@ -88,7 +88,7 @@ function UserText({ text }: { text: string }) {
 
 /**
  * A file the person attached (G7): a chip with what it is, not the app's temporary path. It opens the
- * file where the chat can show files (the Mac's preview); elsewhere (the phone) it only says what it was.
+ * file where the chat can show files; elsewhere (a view-only phone) it only says what it was.
  */
 function AttachmentChip({ attachment }: { attachment: AppAttachmentMention }) {
     const actions = useChatActions()

@@ -431,7 +431,7 @@ test('T81 G8 a view-only phone shows no message box, attach, model chip or Type'
     await phone.close()
 })
 
-test('T81 G9 a path in the chat is plain text on the phone, where nothing can open it', async () => {
+test('T81 G9 a path in the chat is a link on a phone that may type: it opens over the chat (T98 has the rest)', async () => {
     test.setTimeout(120_000)
     const { app, page, base } = await launch()
     const { phone, cdp } = await openPhone(app, base, `session=${NEW}&view=chat`, 't81-g9')
@@ -442,7 +442,7 @@ test('T81 G9 a path in the chat is plain text on the phone, where nothing can op
     await waitForBufferText(page, NEW, 'ANSWER[1]: saved to docs/demo.mp4', 10_000)
     await expect(phone.getByTestId('chat-answer').last()).toContainText('docs/demo.mp4', { timeout: 10_000 })
     await expect(phone.getByTestId('chat-user-text').last()).toContainText('docs/demo.mp4')
-    await expect(phone.getByTestId('chat-file-link')).toHaveCount(0)
+    await expect(phone.getByTestId('chat-answer').last().getByTestId('chat-file-link')).toHaveText('docs/demo.mp4')
     await phone.close()
 })
 
@@ -468,8 +468,8 @@ test('T81 G7 an attached picture shows as a chip in the sent bubble, not the app
     await expect(bubble).toContainText('what is in it', { timeout: 10_000 })
     await expect(bubble).not.toContainText('climanager-chat')
     await expect(bubble.getByTestId('chat-attachment-chip')).toHaveText(/Attached image/)
-    // the phone shows no files: the chip says what it was and is not a button
-    expect(await bubble.getByTestId('chat-attachment-chip').evaluate((el) => el.tagName)).toBe('SPAN')
+    // it opens the file over the chat; only a view-only phone gets words instead of a button (T98)
+    expect(await bubble.getByTestId('chat-attachment-chip').evaluate((el) => el.tagName)).toBe('BUTTON')
     await phone.close()
 })
 
