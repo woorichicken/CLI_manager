@@ -132,7 +132,7 @@ const api = {
     },
 
     // CLI Session Tracking
-    onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string; cliCommand: string }) => void): () => void => {
+    onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string; cliCommand?: string }) => void): () => void => {
         const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data)
         ipcRenderer.on('cli-session-detected', handler)
         return () => ipcRenderer.removeListener('cli-session-detected', handler)
@@ -145,6 +145,8 @@ const api = {
         ipcRenderer.invoke('agent-conversations-list', sessionId),
     connectAgentConversation: (sessionId: string, body: AgentConversationConnectInput): Promise<AgentConversationConnectResult | AgentConversationFailure> =>
         ipcRenderer.invoke('agent-conversation-connect', sessionId, body),
+    writeRestoredTerminal: (sessionId: string, data: string): void => ipcRenderer.send('terminal-input', sessionId, data, true),
+    getSessionResumeCommand: (sessionId: string): Promise<string | undefined> => ipcRenderer.invoke('get-session-resume-command', sessionId),
     watchCodexSession: (sessionId: string, command: string): Promise<boolean> =>
         ipcRenderer.invoke('watch-codex-session', sessionId, command),
     rewriteCliCommand: (command: string): Promise<{ command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null> =>

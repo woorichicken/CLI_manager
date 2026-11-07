@@ -204,11 +204,11 @@ rules stay in the root; this file is the inventory.
 - `glm-on && cldy`처럼 앞에 준비 명령이 붙어도 마지막 명령으로 판정한다
 - 시작 시 `validateCliSessionIds()`가 Claude 대화 파일이 없는 id를 지운다 — 그래서 대화 기록 저장이
   꺼진 세션은 재개되지 않는다. 회귀는 `t17-session-resume.spec.ts`
-- **Codex 자동 찾기**: `CodexSessionLocator` 공유 10초 타이머. 파일이 없어도 감시마다 비동기 ps를 한 번 읽어 전경 Codex PID·시작 시각을 고정하고, 없으면 감시를 끝낸다. 생존은 kill(pid, 0). 머리 시각 날짜 ±1일 파일을 캐시하고 새 후보에만 비동기 lsof(-nP), 실패(null)는 자동 연결을 미루고 재시도한다.
-  같은 실경로·source cli/vscode/없음·시작 −2초~+30초·미연결 id가 후보. 파일 보유 프로세스 우선, 없으면 머리 이전 가장 늦은 시작. 같은 폴더 시작이 10초 이내로 모호했던 파일은 영구 자동 제외하며 종료한 시작 시각도 판정에 남긴다. 명시적 UUID resume(붙여넣기 포함)는 후보일 뿐이고, 실제 전경 argv의 UUID·파일·폴더·다른 세션의 연결 여부를 확인한 뒤 저장한다.
+- **Codex 자동 찾기**: `CodexSessionLocator` 공유 10초 타이머. 파일이 없어도 PID를 찾을 때까지 틱마다 비동기 ps를 재확인하고 확인 전에는 저장하지 않는다(최대 15분). 확인한 PID·시작 시각은 고정하고 생존은 kill(pid, 0). 머리 시각 날짜 ±1일 파일을 캐시하고 새 후보에만 비동기 lsof(-nP), 실패(null)는 자동 연결을 미루고 재시도한다.
+  같은 실경로·source cli/vscode/없음·시작 −2초~+30초·미연결 id가 후보. 파일 보유 프로세스 우선, 없으면 머리 이전 가장 늦은 시작. 같은 폴더 시작이 10초 이내로 모호했던 파일은 영구 자동 제외하며 필요한 종료 시작 시각도 판정에 남긴다. 같은 터미널 대체 때 옛 시작 시각을 빼고 오래된 무관 항목은 정리한다. 명시적 UUID resume(붙여넣기 포함)는 후보일 뿐이고, 실제 전경 argv의 UUID·파일·폴더·다른 세션의 연결 여부를 확인한 뒤 저장한다. node 실행기·네이티브 codex 이름은 같은 판정기를 쓰며 불일치는 시한까지 재시도한다.
 - **수동 연결**: 사이드바 세션 우클릭 「Connect to agent conversation…」. `AgentConversations`가 목록과 연결을 IPC·REST·MCP에 공통 제공한다. Claude가 앞이면 종료 안내, Codex 앞의 Claude 줄은 force와 무관하게 거절, 파일 보유 Codex는 그 대화만, 미보유 Codex의 같은 도구 대화는 Started here 또는 경고 뒤 Connect anyway. 전경 조회 실패는 unknown으로 거절. 다른 프로그램에서는 저장만.
-  셸 resume은 미러 flush 뒤 질문·작성 중인 글·계속 입력 프롬프트를 검사하고 409로 거절한다. 글을 지우는 경로는 없다. 입력 직전 셸을 다시 확인한다. `typed:true`는 명령 입력, `resumed:true`는 실제 전경 에이전트 시작 확인이며 둘을 구분한다. API 입력은 AI 표시·호출자 관계를 기록한다.
-  기본 명령은 저장값 → 호환 initialCommand → 전경 argv → 도구 이름 순으로 고르고, 별칭은 풀어 판정하되 안전하면 별칭을 유지한다. 모든 경로가 같은 따옴표 인식 정리기로 프롬프트·resume UUID·exec/print 모드를 제거한다. 자동 탐지와 인식 가능한 옛 저장 명령도 같은 정리기를 쓴다. Claude 저장소를 읽지 못하면 id는 보존하고 Codex 검사는 계속한다.
+  셸 resume은 미러 flush 뒤 질문을 거절하고, 입력 추적의 text/uncertain으로 작성 중인 글을 판정한다. 화면은 알려진 이어짐 프롬프트(dquote> 등)에만 쓰며 일반 프롬프트 기호는 추측하지 않는다. OSC/DCS·포커스·DSR 응답은 입력에서 걸러낸다. 글이 있거나 편집 상태가 불확실하면 409와 Enter 또는 Ctrl+C 안내를 보여준다. 글을 지우는 경로는 없다. 입력 직전 셸을 다시 확인한다. `typed:true`는 명령 입력, `resumed:true`는 실제 전경 에이전트 시작 확인이며 둘을 구분한다. API 입력은 AI 표시·호출자 관계를 기록한다.
+  기본 명령은 저장값 → 호환 initialCommand → 전경 argv → 도구 이름 순으로 고르고, 별칭은 풀어 판정하되 안전하면 별칭을 유지한다. 공용 `shared/agentCommand.ts` 판정은 storedCommand와 inputCommand를 구분한다. 확실한 프롬프트/옛 UUID는 입력에서 제거하고, 모르는 옵션이나 불완전한 값은 저장 원문을 유지하면서 입력만 도구 이름으로 바꾼다(값만 잘라 플래그를 남기지 않음). `$` 준비 구간은 원문을 유지하고 마지막 구간만 판정한다. 시작 때 cliCommand를 고쳐 쓰지 않는다. 첫 창은 별칭 읽기를 기다리지 않고, 별칭이 필요한 재시작은 입력 직전 `get-session-resume-command` IPC에서 별칭 준비를 기다린 뒤 읽기 전용으로 판정한다. 재시작 전용 입력은 이미 알려진 id를 새 수동 resume으로 다시 저장하지 않도록 CLI 입력 감시만 우회한다(새 PTY에서만, 재부착 때 입력 없음). Claude id를 처음 동기화할 때 저장 명령이 없으면 판정 가능한 initialCommand의 준비 구간도 보존한다. Claude projects 루트 자체를 읽지 못하면 id는 보존하고 Codex 검사는 계속한다. 루트 안의 일반 파일(.DS_Store 등)은 검사에서 제외한다.
 - **한계**: Codex TUI의 `/new`·`/resume`·이름/선택기 resume은 자동 감지하지 못하므로 연결 메뉴를 쓴다. 시작→머리 표본은 5개뿐이므로 10초 밖 겹침의 시간 기반 오연결 위험은 `[codex-session] delta` 로그로 관찰한다. 실제 Codex 16분 무입력 시험은 메타데이터 파일이 312초에 먼저 생겼으므로 첫 파일 자체의 15분 초과 지연은 시계 fixture로만 검증했다. Mac과 인증 Control API 전용이며 폰에 새 경로는 없다.
 - **id 는 Claude 가 실제로 쓰는 대화를 따라간다** — Claude 안에서 `/resume` 하면 새 id 로 옮겨 가고 주입한 id 에는 대화 파일이
   생기지 않는다(2.1.296 실측). 그대로 두면 재시작 때 id 가 지워져 템플릿이 새 대화로 시작한다. `ClaudeSessionSync` 가 10초마다
@@ -369,6 +369,8 @@ User Action (Renderer)
 - 코드: `src/main/ChecklistStore.ts` · `ControlApiService.*Checklist*` · `hooks/useChecklists.ts` · `components/Checklists/`(칩·패널·항목 줄·마감 편집) · `utils/dueDate.ts`(마감 표시). 계약은 [`control-api.md`](control-api.md) 「Checklists」
 
 #### Chat view
+- `writeRestoredTerminal(sessionId, data)` — 새 PTY의 재시작 입력만 CLI 재연결 관찰을 우회한다. 일반 입력·Control API·폰 경로에는 적용하지 않는다
+- `get-session-resume-command(sessionId)` → 별칭 준비 뒤 저장된 명령을 읽기 전용으로 판정한 재시작 입력 문자열. 저장값 수정 없음. TerminalView가 새 PTY의 실제 입력 직전에만 요청하며 재부착 때는 입력하지 않는다
 - `agent-conversations-list(sessionId)` → `AgentConversationList` · `agent-conversation-connect(sessionId, {agent,id,resume?,force?})` → 연결 결과 또는 `{error:{code,message,...}}`. 대화 파일 경로와 프로세스 argv는 응답에 싣지 않는다. 상세 계약은 [`control-api.md`](control-api.md) 「Agent conversations」
 - `conversation-get(sessionId, limit?)` → `ConversationSnapshot`(마지막 `limit` 턴 · working · prompt · queued · revision) · `conversation-subscribe` /
   `conversation-unsubscribe(sessionId)`(창이 닫히면 그 창 구독은 풀린다) · `conversation-changed` (main → renderer, `{ sessionId, revision }`)

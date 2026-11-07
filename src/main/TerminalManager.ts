@@ -341,8 +341,11 @@ export class TerminalManager {
             this.releaseHold(id, token)
         })
 
-        ipcMain.on('terminal-input', (_, id: string, data: string) => {
-            this.writeInput(id, data)
+        ipcMain.on('terminal-input', (_, id: string, data: string, restoring?: boolean) => {
+            // A restored conversation is already identified. Observing the projected input as
+            // a new manual resume would overwrite the original remembered options.
+            if (restoring === true) this.writeToTerminal(id, data)
+            else this.writeInput(id, data)
         })
 
         ipcMain.handle('terminal-resize', (_, id: string, requestedCols: number, requestedRows: number) => {

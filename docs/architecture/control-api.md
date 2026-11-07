@@ -180,9 +180,20 @@ its warning. Force cannot switch a foreground Codex to a Claude conversation, or
 links, folders, a held conversation, or an unknown foreground. `resume:true` requires a shell both
 at discovery and immediately before input. After a mirror flush, a question is `awaiting_input`,
 a draft/continuation prompt is `input_busy`; both leave terminal text and saved values intact.
-Nothing clears the shell line. Alias-aware, quote-aware normalization removes prompts, old resume
-targets and noninteractive modes from saved commands, initial commands and process fallbacks.
-Only the safe base and checked UUID are typed. API input records its client and caller relation.
+Nothing clears the shell line. Pending input text/uncertain state decides whether a draft exists;
+prompt symbols and themes do not. Screen inspection only adds known continuation-prompt refusals.
+OSC/DCS and focus/device replies are excluded from input tracking. Enter or Ctrl+C is the recovery
+instruction for uncertain edits.
+The shared read-only command policy distinguishes storedCommand from inputCommand. Known option
+values and raw preparation prefixes (including $ substitutions) survive. Unrecognized/incomplete
+options retain their exact stored text, but input falls back to the agent name; a dangling flag is
+never typed. Definite prompts, noninteractive modes and old resume targets are excluded from input.
+The cliCommand response is the remembered value and may contain unrecognized original options;
+it is not a promise that the same text was typed. Startup never repairs it in storage. Immediately
+before restart input, desktop IPC applies the same read-only policy after aliases are ready.
+That startup write bypasses manual CLI recapture, so observing the safe input cannot overwrite
+the remembered raw options. Normal typing, pasted commands and Control API input still use verification.
+Only the decided input base and checked UUID are typed. API input records its client and caller relation.
 `typed:true` says the command was entered; `resumed:true` is returned only after the matching
 foreground agent is observed. Failed/unobserved startup returns `resumed:false, typed:true`; the
 dialog keeps that distinction visible and prevents a repeated command from the same dialog.

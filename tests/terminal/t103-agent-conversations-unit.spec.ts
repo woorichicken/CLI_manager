@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { AgentConversations, normalizeAgentCommand, commandAgent } from '../../src/main/agentConversations'
+import { decideAgentCommand } from '../../src/shared/agentCommand'
 import { claudeProjectSlug } from '../../src/main/TranscriptReader'
 import type { AgentConversationFront } from '../../src/shared/conversation'
 import type { TerminalSession } from '../../src/shared/types'
@@ -61,11 +62,56 @@ test.beforeEach(() => {
 test.afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 test.describe('T103 agent conversations', () => {
+    for (const [agent, command] of [
+        ['codex', 'codex --remote ws://host:1'],
+        ['codex', 'codex --remote-auth-token-env TOKEN_NAME'],
+        ['codex', 'codex --oss --local-provider ollama'],
+        ['claude', 'claude --fallback-model sonnet --dangerously-skip-permissions'],
+        ['claude', 'claude --plugin-dir ./p'],
+        ['claude', 'claude -n work'],
+        ['claude', 'claude --name work'],
+        ['claude', 'claude --max-budget-usd 5'],
+        ['claude', 'claude --tools Bash Read'],
+        ['claude', 'claude --file file_1:a.txt file_2:b.txt'],
+        ['claude', 'claude --output-format json'],
+        ['claude', 'FOO=$(cat k) claude --model opus'],
+        ['claude', 'source "$HOME/.env" && claude --model opus']
+    ] as const) {
+        test(`N2 N7 known complete values and preparation survive: ${command}`, async () => {
+            expect(normalizeAgentCommand(command, agent)).toBe(command)
+            if (agent === 'codex') codex(1); else claude(1)
+            sessions[0].cliToolName = agent
+            sessions[0].cliCommand = command
+            await service.connect('terminal', { agent, id: uuid(1), resume: true })
+            expect(sessions[0].cliCommand).toBe(command)
+            expect(writes.join('')).toBe(`${command} ${agent === 'codex' ? 'resume' : '--resume'} ${uuid(1)}\r`)
+        })
+    }
+    for (const command of ['codex --future-option option-value user words', 'codex --future-boolean', 'codex --model']) {
+        test(`N2 uncertain commands preserve storage but cannot emit dangling flags: ${command}`, async () => {
+            codex(1)
+            sessions[0].cliToolName = 'codex'
+            sessions[0].cliCommand = command
+            await service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true })
+            expect(sessions[0].cliCommand).toBe(command)
+            expect(writes.join('')).toBe(`codex resume ${uuid(1)}\r`)
+        })
+    }
+    test('N2 shared policy preserves exact undecidable source without mutating it at replay time', () => {
+        for (const original of ['  codex --future-option "value with spaces" user prompt  ', 'codex --model --full-auto', 'codex --future-boolean', 'codex --future=value']) {
+            const decision = decideAgentCommand(original, 'codex')
+            expect(decision).toMatchObject({ storedCommand: original, inputCommand: 'codex', recognized: true, confident: false })
+            expect(original).toBe(decision.storedCommand)
+        }
+        const original = 'FOO=$(cat k)  claude --model "opus" first prompt'
+        expect(decideAgentCommand(original, 'claude')).toMatchObject({ storedCommand: 'FOO=$(cat k)  claude --model "opus"', inputCommand: 'FOO=$(cat k)  claude --model "opus"', confident: true, stripped: true })
+        expect(decideAgentCommand("claude --tools ''", 'claude').inputCommand).toBe("claude --tools ''")
+    })
     test('normalization recognizes commands without mistaking quoted control tokens for operators', () => {
         expect(normalizeAgentCommand('codex -m resume resume ' + uuid(1), 'codex')).toBe('codex -m resume')
-        expect(normalizeAgentCommand('codex -m "model with spaces" "opening prompt"', 'codex')).toBe("codex -m 'model with spaces'")
+        expect(normalizeAgentCommand('codex -m "model with spaces" "opening prompt"', 'codex')).toBe('codex -m "model with spaces"')
         expect(normalizeAgentCommand('codex "&&" codex "delete the build folder"', 'codex')).toBe('codex')
-        expect(normalizeAgentCommand('codex --config "$(touch /tmp/injected)"', 'codex')).toBe("codex --config '$(touch /tmp/injected)'")
+        expect(normalizeAgentCommand('codex --config "$(touch /tmp/injected)"', 'codex')).toBe('codex')
         expect(normalizeAgentCommand('cldy', 'claude', () => 'claude -p unsafe')).toBe('claude')
         expect(normalizeAgentCommand('claude -p"opening prompt"', 'claude')).toBe('claude')
         expect(commandAgent('codex "unterminated prompt')).toBe('codex')
@@ -118,7 +164,8 @@ test.describe('T103 agent conversations', () => {
                 sessions[0][source] = command
                 if (source === 'cliCommand') sessions[0].cliToolName = agent
                 const result = await service.connect('terminal', { agent, id: uuid(1), resume: true })
-                expect(result.cliCommand).toBe(expected)
+                const isNoninteractive = command.includes(' exec ') || command.includes(' -p ') || command.includes(' --print ')
+                expect(result.cliCommand).toBe(isNoninteractive ? command : expected)
                 expect(writes.join('')).toBe(`${expected} ${agent === 'codex' ? 'resume' : '--resume'} ${uuid(1)}\r`)
             })
         }
@@ -225,10 +272,11 @@ test.describe('T103 agent conversations', () => {
     test('process argv never replays a prompt or shell syntax as a resume command', async () => {
         codex(1, { at: now + 1000 })
         front = { kind: 'codex', runningId: null, startedAt: now, argv: 'codex --model gpt-6.1 hello $(touch /tmp/unsafe)' }
-        expect((await service.connect('terminal', { agent: 'codex', id: uuid(1) })).cliCommand).toBe('codex')
+        expect((await service.connect('terminal', { agent: 'codex', id: uuid(1) })).cliCommand).toBe('codex --model gpt-6.1')
         sessions[0].cliCommand = undefined
         front.argv = 'node /usr/local/bin/codex --model $(touch /tmp/unsafe)'
-        expect((await service.connect('terminal', { agent: 'codex', id: uuid(1) })).cliCommand).toBe('codex')
+        expect((await service.connect('terminal', { agent: 'codex', id: uuid(1) })).cliCommand).toBe(front.argv)
+        expect(decideAgentCommand(front.argv, 'codex').inputCommand).toBe('codex')
     })
     test('does not inspect heads after the 2000-file or 90-day discovery budget', async () => {
         codex(1, { at: now - 91 * 86_400_000 })

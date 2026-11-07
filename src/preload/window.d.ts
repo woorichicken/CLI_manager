@@ -99,11 +99,13 @@ declare global {
             onTerminalData: (id: string, callback: (data: string) => void) => () => void
 
             // CLI Session Tracking
-            onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string; cliCommand: string }) => void) => () => void
+            onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string; cliCommand?: string }) => void) => () => void
             updateSessionCliInfo: (workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string) => Promise<boolean>
             clearSessionCliInfo: (workspaceId: string, sessionId: string) => Promise<boolean>
             listAgentConversations: (sessionId: string) => Promise<AgentConversationList | AgentConversationFailure>
             connectAgentConversation: (sessionId: string, body: AgentConversationConnectInput) => Promise<AgentConversationConnectResult | AgentConversationFailure>
+            writeRestoredTerminal: (sessionId: string, data: string) => void
+            getSessionResumeCommand: (sessionId: string) => Promise<string | undefined>
             watchCodexSession: (sessionId: string, command: string) => Promise<boolean>
             rewriteCliCommand: (command: string) => Promise<{ command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null>
 

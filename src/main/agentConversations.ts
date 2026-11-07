@@ -10,6 +10,8 @@ import { parseClaudeTranscript } from './transcript/claudeTranscript'
 import { parseCodexTranscript } from './transcript/codexTranscript'
 import { maskSecretLines } from './maskSecrets'
 import { parseCodexRolloutHead } from './CodexSessionLocator'
+import { decideAgentCommand, type AgentCommandDecision, type AliasResolver } from '../shared/agentCommand'
+export { commandAgent, decideAgentCommand, normalizeAgentCommand } from '../shared/agentCommand'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LIST_LIMIT = 30
@@ -120,9 +122,10 @@ export class AgentConversations {
         if (front.kind === 'codex' && !front.runningId && !startsHere(front, item) && !input.force) {
             throw new AgentConversationError(409, 'not_started_here', 'The conversation may differ from the running Codex. Confirm Connect anyway.')
         }
-        const cliCommand = hooks.baseCommand !== undefined
-            ? normalizeAgentCommand(hooks.baseCommand, input.agent, this.deps.resolveAlias)
+        const command = hooks.baseCommand !== undefined
+            ? decideAgentCommand(hooks.baseCommand, input.agent, this.deps.resolveAlias)
             : commandFor(session, input.agent, front, this.deps.resolveAlias)
+        const cliCommand = command.storedCommand
         if (input.resume) {
             await this.deps.beforeResume(sessionId)
             const latest = await this.deps.foreground(sessionId)
@@ -138,7 +141,7 @@ export class AgentConversations {
         let resumed = false
         if (input.resume) {
             hooks.beforeWrite?.()
-            this.deps.write(sessionId, `${cliCommand} ${input.agent === 'codex' ? 'resume' : '--resume'} ${item.id}\r`)
+            this.deps.write(sessionId, `${command.inputCommand} ${input.agent === 'codex' ? 'resume' : '--resume'} ${item.id}\r`)
             try { resumed = await this.deps.waitForAgent?.(sessionId, input.agent, item.id) ?? false } catch { /* A command typed is not proof of startup. */ }
         }
         return { status: 'connected', resumed, typed: input.resume === true, cliCommand }
@@ -241,128 +244,13 @@ async function readCandidate(file: string, agent: ConversationAgent, targetCwd?:
     } catch { return null }
 }
 
-type AliasResolver = (name: string) => string | undefined
-const AND_TOKEN = '\0and'
-const SEMI_TOKEN = '\0semi'
-
-function commandFor(session: TerminalSession, agent: ConversationAgent, front: AgentConversationFront, resolveAlias?: AliasResolver): string {
-    const candidates = [session.cliToolName === agent ? session.cliCommand : undefined, session.initialCommand, front.kind === agent ? front.argv : undefined]
-    for (const command of candidates) {
-        const normalized = normalizeCommand(command, agent, resolveAlias)
-        if (normalized) return normalized.command
+/** Saved commands retain uncertain syntax; only the input field is used to start an agent. */
+function commandFor(session: TerminalSession, agent: ConversationAgent, front: AgentConversationFront, resolveAlias?: AliasResolver): AgentCommandDecision {
+    if (session.cliToolName === agent && session.cliCommand) return decideAgentCommand(session.cliCommand, agent, resolveAlias)
+    for (const candidate of [session.initialCommand, front.kind === agent ? front.argv : undefined]) {
+        if (!candidate) continue
+        const decision = decideAgentCommand(candidate, agent, resolveAlias)
+        if (decision.recognized) return decision
     }
-    return agent
-}
-
-/** Every persistence path drops opening prompts, resume targets and noninteractive modes. */
-export function normalizeAgentCommand(command: string | undefined, agent: ConversationAgent, resolveAlias?: AliasResolver): string {
-    return normalizeCommand(command, agent, resolveAlias)?.command ?? agent
-}
-
-/** Recognizes the executable after shell setup, including a known safe alias expansion. */
-export function commandAgent(command: string | undefined, resolveAlias?: AliasResolver, depth = 0): ConversationAgent | null {
-    if (!command || depth > 4) return null
-    const tokens = commandTokens(command)
-    if (!tokens?.length) {
-        // Classification only: malformed prompts still identify a command that needs sanitizing.
-        const first = /^\s*([^\s]+)/.exec(command)?.[1]
-        if (!first) return null
-        const name = basename(first)
-        return name === 'claude' || name === 'codex' ? name : commandAgent(resolveAlias?.(first), resolveAlias, depth + 1)
-    }
-    let start = Math.max(tokens.lastIndexOf(AND_TOKEN), tokens.lastIndexOf(SEMI_TOKEN)) + 1
-    if (tokens[start] === 'env') start++
-    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start] ?? '')) start++
-    if (/^(node|nodejs)$/.test(basename(tokens[start] ?? ''))) start++
-    const executable = tokens[start]
-    if (!executable) return null
-    const name = basename(executable)
-    return name === 'claude' || name === 'codex' ? name : commandAgent(resolveAlias?.(executable), resolveAlias, depth + 1)
-}
-
-const VALUE_FLAGS: Record<ConversationAgent, Set<string>> = {
-    codex: new Set(['-c', '--config', '-m', '--model', '-p', '--profile', '-C', '--cd', '-s', '--sandbox', '-a', '--ask-for-approval', '-i', '--image', '--enable', '--disable', '--add-dir']),
-    claude: new Set(['--model', '--permission-mode', '--effort', '--agent', '--agents', '--add-dir', '--mcp-config', '--settings', '--setting-sources', '--allowedTools', '--allowed-tools', '--disallowedTools', '--disallowed-tools', '--append-system-prompt', '--append-system-prompt-file', '--system-prompt', '--system-prompt-file', '--betas'])
-}
-const NONINTERACTIVE: Record<ConversationAgent, Set<string>> = {
-    codex: new Set(['exec', 'e', 'login', 'logout', 'mcp', 'mcp-server', 'app-server', 'completion', 'sandbox', 'debug', 'apply', 'a', 'cloud', 'features', 'fork', 'help']),
-    claude: new Set(['install', 'uninstall', 'update', 'config', 'mcp', 'doctor', 'api-key'])
-}
-const quoteToken = (token: string): string => /^[A-Za-z0-9_./:=,+@%~-]+$/.test(token) ? token : "'" + token.replace(/'/g, "'\\''") + "'"
-
-/** A small shell lexer: quotes are understood, but substitutions and control operators are refused. */
-function commandTokens(command: string): string[] | null {
-    if (/[\x00-\x08\x0a-\x1f]/.test(command)) return null
-    const tokens: string[] = []
-    let word = ''
-    let quoted = false
-    let quote = ''
-    let escaped = false
-    const flush = (): void => { if (word || quoted) tokens.push(word); word = ''; quoted = false }
-    for (let i = 0; i < command.length; i++) {
-        const character = command[i]
-        if (escaped) { word += character; escaped = false; continue }
-        if (character === '\\' && quote !== "'") { escaped = true; continue }
-        if (quote) { if (character === quote) quote = ''; else word += character; continue }
-        if (character === '"' || character === "'") { quote = character; quoted = true; continue }
-        if (/\s/.test(character)) { flush(); continue }
-        if (character === ';' || character === '&' && command[i + 1] === '&') {
-            flush(); tokens.push(character === ';' ? SEMI_TOKEN : AND_TOKEN); if (character === '&') i++; continue
-        }
-        if (/[|&<>`$\r\n]/.test(character)) return null
-        word += character
-    }
-    if (quote || escaped) return null
-    flush()
-    return tokens
-}
-
-function normalizeCommand(command: string | undefined, agent: ConversationAgent, resolveAlias?: AliasResolver, depth = 0): { command: string; stripped: boolean } | null {
-    if (!command || depth > 4) return null
-    const tokens = commandTokens(command)
-    if (!tokens?.length) return null
-    const segment = Math.max(tokens.lastIndexOf(AND_TOKEN), tokens.lastIndexOf(SEMI_TOKEN)) + 1
-    let start = segment
-    if (tokens[start] === 'env') start++
-    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start] ?? '')) start++
-    // Node wrappers are only a command fallback; the native executable can be resumed directly.
-    if (/^(node|nodejs)$/.test(basename(tokens[start] ?? ''))) start++
-    const executable = tokens[start]
-    if (!executable) return null
-    if (basename(executable) !== agent) {
-        const expansion = resolveAlias?.(executable)
-        const resolved = normalizeCommand(expansion, agent, resolveAlias, depth + 1)
-        if (!resolved) return null
-        // Keeping an alias that secretly carries a prompt would replay it despite stripping its text.
-        if (resolved.stripped) return { command: agent, stripped: true }
-    }
-    const result = tokens.slice(0, start + 1)
-    let stripped = false
-    for (let i = start + 1; i < tokens.length; i++) {
-        const token = tokens[i]
-        const flag = token.split('=', 1)[0]
-        if (agent === 'codex' && token === 'resume') {
-            if (!UUID.test(tokens[i + 1] ?? '')) return { command: agent, stripped: true }
-            i++; stripped = true; continue
-        }
-        if (['--resume', '-r', '--session-id'].includes(flag)) {
-            if (!token.includes('=')) i++
-            stripped = true; continue
-        }
-        if (['--help', '-h', '--version', '-V'].includes(flag) || agent === 'claude' && (/^-p/.test(flag) || ['--print', '--continue', '-c', '--fork-session'].includes(flag))) {
-            return { command: agent, stripped: true }
-        }
-        if (token === '--' || !token.startsWith('-')) {
-            if (NONINTERACTIVE[agent].has(token)) return { command: agent, stripped: true }
-            stripped = true; break
-        }
-        result.push(token)
-        if (VALUE_FLAGS[agent].has(flag) && !token.includes('=')) {
-            const value = tokens[++i]
-            if (value === undefined) return { command: agent, stripped: true }
-            result.push(value)
-        }
-    }
-    // Only command separators emitted by the lexer stay executable; all argument values are literals.
-    return { command: result.map((token) => token === AND_TOKEN ? '&&' : token === SEMI_TOKEN ? ';' : quoteToken(token)).join(' '), stripped }
+    return decideAgentCommand(agent, agent, resolveAlias)
 }

@@ -101,7 +101,8 @@ pnpm build && pnpm test:term
    - `UsageTracker.ts`: Claude(statusLine) · Codex(rollout jsonl) rate limit 추적 + 임계값 알림
    - `diffParser.ts`: `git diff` plumbing 출력 파서 (numstat/name-status/unified)
    - `ControlApiServer.ts` / `ControlApiService.ts` / `controlApiMcp.ts`: AI Control API — 로컬 HTTP(REST+MCP)로 AI가 세션을 열고 조작 ([`docs/architecture/control-api.md`](docs/architecture/control-api.md))
-   - `CodexSessionLocator.ts`: 공유 10초 감시 · 감시당 비동기 ps 1회, 새 후보/실패 재시도에만 lsof. PID 생존·실경로·시각·파일 보유로 판정, 모호했던 파일은 자동 제외. UUID resume은 전경 argv·파일·폴더·중복을 확인한 뒤 저장
+   - `CodexSessionLocator.ts`: 공유 10초 감시 · PID 확인 전에는 틱마다 비동기 ps 재확인(최대 15분), 확인 뒤에는 생존만 검사. 새 후보/실패 재시도에만 lsof. PID 생존·실경로·시각·파일 보유로 판정, 모호했던 파일은 자동 제외. UUID resume은 전경 argv·파일·폴더·중복을 확인한 뒤 저장
+   - `src/shared/agentCommand.ts`: 저장 원문과 실제 입력 명령을 구분하는 순수 판정. 알려진 옵션 값·준비 구간을 보존하고 불명확하면 원문은 유지·입력만 도구 이름으로. 수동 연결·자동 감지·재시작 직전이 같이 사용
    - `agentConversations.ts`: Mac 세션 메뉴와 Control API/MCP의 대화 목록·연결 공용 판정. 읽기 상한·비밀값 가림·폴더/중복/앞 프로그램 검사, 빈 셸에서만 Connect & resume(질문·작성 중인 글은 409, 지우지 않음)
    - `TerminalMirror.ts`: 모든 터미널 출력을 headless xterm으로 재생 — Control API 가 "사용자가 보는 화면"을 읽고, 새 창·재시작 때 히스토리를 다시 그리는 원본 ([`docs/decisions/0008`](docs/decisions/0008-terminal-history-lives-in-main.md))
    - `ScrollbackStore.ts`: 미러 스냅샷을 30초마다(출력이 있던 세션만) `userData/scrollback/<id>.ans` 에 저장 — 강제종료 뒤 복원용
@@ -518,7 +519,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T94 3회차 유닛(11-05 phone-fixes r3) — Electron 없이. 4359b4ee·cb052f3b: Claude Code 2.1.318 은 일하는 동안 「esc to interrupt」를 안 찍는다(실제 녹화 41.8초에 0회) — 스피너 줄 `✳ Galloping… (8s · ↓ 527 tokens)`·`✻ Deciphering… (running … hooks…)` 도 일하는 중(`screenLines.isBusyRow`), 끝난 줄 `✻ Cogitated for 11s` 는 아님 · 미러 `showsBusy`·`screenStatus`·Chat `working`·Stop(Esc)·질문 카드 판정 · c21d4b5a·574c78e4: 공백 뒤 `/` 도 스킬 메뉴(`inline` — 내장 명령 빼고, Codex 는 `$` 만), 경로(`src/a`·`~/x`)는 아님 · b2020233: `splitSessionLinks`·`codeIsSessionLink` · 1b92a570: 폰 `searchLines`(이름·워크스페이스·폴더, 낱말 모두, 대소문자 무시). 옛 코드에서 5건 실패
   - T95 3회차 앱(11-05) — A: 사이드바 「Phone on」 ✕ → 확인 모달(취소에 포커스, Enter·Esc·바깥 = 취소, 「Turn off」 만 끔, 0대/1대 문구) · chat-mock `--spinner 318` 세션에서 Chat 「Claude is working…」·Stop · 「1번 /cl」 → 스킬 메뉴(`/clear` 없음)·고르면 `1번 /climanager-session ` · chat-mock `LINK <id>` 답의 세션 링크 둘(코드·글) → 누르면 그 세션 터미널 · 폰 목록 🔍 검색(한 건·없음·닫으면 전체·Return = 첫 결과) · 폰 Chat 의 세션 링크 탭 → 그 세션 화면. `T95_SHOTS`·`T95_LABEL` 이면 검사 전에 캡처. 옛 코드에서 5건 모두 실패
   - T96 fb-1106 작은 설정·제보 — 유닛: `commandPieces`(스킬만 파랗게, `/` 메뉴와 같은 규칙: 메시지 맨 앞만 내장 명령·중간은 스킬·모르는 이름은 글)·`foldUserMessage`·`screenAgentMode`(입력 상자 아래 줄만)·기록의 모드(`foldMetadata`)·`checklistForAgent`. 앱: 입력칸 파란 글씨(맨 앞·가운데·둘째 줄, 글자 뒤 그림 칸과 높이·스크롤 일치) · 긴 말풍선 「… +N lines」 · 모드 칩 · 내 마지막 말 위 고정 · Chat 설정 스위치 · 파일 경로를 끄면 `shell.openPath`(main 에서 가로챔) · Related Below 먼저 · 체크리스트 Copy for agent(시스템 클립보드, 시험 뒤 복원) · 터치 폰(CDP 390): Terminal 아래 붙음(확대하면 위 잘림 없음) · 다른 세션 알림 끄기(점은 남음)·빠른 답 기본 켬·작업 중에도·내 마지막 말·새로 고침 뒤 유지. `T96_SHOTS`·`T96_LABEL` 이면 검사 전에 캡처, `T96_BEFORE=1` 이면 캡처만(옛 코드의 before)
-  - T103 대화 연결 유닛 — 합성 Claude/Codex 파일, source·sidecar 제외·첫 말 가림·30개/90일/2,000 머리 상한·실경로·오류 코드·명령 우선순위·위험한 argv 거절. T25는 공유 타이머·16분 지연·소유 프로세스·같은 폴더 모호성·명시적 resume 회귀
+  - T103 대화 연결 유닛 — 합성 Claude/Codex 파일, source·sidecar 제외·첫 말 가림·30개/90일/2,000 머리 상한·실경로·오류 코드·명령 우선순위·위험한 argv 거절. T25는 공유 타이머·16분 지연·늦게 뜨는 프로세스 재확인·소유 파일 우선·모호함·시작 기록 정리·npm/네이티브 이름·OSC/DCS 분할 응답·명시적 resume 회귀
   - T104 대화 연결 앱 — 메뉴 → 저장 cliSessionId/cliToolName/cliCommand → Chat → 실제 앱 재시작 resume 1회(렌더러 reload는 0회). Claude·파일 보유 Codex·미보유 Codex·다른 프로그램, REST/MCP 오류. D104_SHOTS=1·D104_SHOTS_DIR이면 상태별 캡처
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)

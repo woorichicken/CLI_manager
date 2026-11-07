@@ -22,14 +22,14 @@ const NON_INTERACTIVE = new Set([
     'apply', 'a', 'cloud', 'features', 'resume', 'fork', 'help', '-h', '--help', '-V', '--version'
 ])
 /** Codex flags that take the next token as their value. */
-const FLAGS_WITH_VALUE = new Set(['-c', '--config', '-m', '--model', '-p', '--profile', '-C', '--cd', '-s', '--sandbox', '-a', '--ask-for-approval', '-i', '--image', '--enable', '--disable', '--add-dir'])
+const FLAGS_WITH_VALUE = new Set(['-c', '--config', '-m', '--model', '-p', '--profile', '-C', '--cd', '-s', '--sandbox', '-a', '--ask-for-approval', '-i', '--image', '--enable', '--disable', '--add-dir', '--remote', '--remote-auth-token-env', '--local-provider'])
 
 /** Rollouts can be written a little before our clock reading of "started". */
 const START_SLACK_MS = 2_000
 const START_WINDOW_MS = 30_000
 const AMBIGUITY_MS = 10_000
 const POLL_MS = 10_000
-/** Only legacy calls without a shell PID keep a deadline; identified PIDs are watched until exit. */
+/** Unconfirmed launches have a bounded discovery window; confirmed PIDs are watched until exit. */
 const WATCH_MS = 15 * 60 * 1000
 /** session_meta is the first line; it is long (it carries instructions) but its fields come first. */
 const HEAD_BYTES = 8 * 1024
@@ -64,8 +64,9 @@ export function parseCodexResume(tokens: string[]): { id: string; baseCommand: s
 }
 
 export function parseCodexResumePosition(tokens: string[]): { id: string; baseCommand: string; resumeIndex: number } | null {
-    if ((tokens[0] ?? '').split('/').pop() !== 'codex') return null
-    for (let i = 1; i < tokens.length; i++) {
+    const executable = agentExecutable(tokens)
+    if (executable?.kind !== 'codex') return null
+    for (let i = executable.index + 1; i < tokens.length; i++) {
         const token = tokens[i]
         if (FLAGS_WITH_VALUE.has(token)) { if (tokens[i + 1] === undefined) return null; i++; continue }
         if (token.startsWith('-')) continue
@@ -127,16 +128,23 @@ export async function readAgentProcesses(run: AgentCommandRunner = runAgentComma
 
 /** Only the executable or a known Node launcher identifies an agent; arguments do not. */
 export function classifyAgentProcess(row: AgentProcess): 'codex' | 'claude' | null {
-    const executable = basename(row.command).replace(/^-/, '')
-    if (/^codex(?:-(?:aarch64|x86_64|arm64)[\w-]*)?$/.test(executable)) return 'codex'
-    if (executable === 'claude') return 'claude'
+    return agentExecutable(row.argv.trim().split(/\s+/), row.command)?.kind ?? null
+}
+
+/** Process classification and resume verification must accept the same executable spellings. */
+function agentExecutable(tokens: string[], command = tokens[0] ?? ''): { kind: 'codex' | 'claude'; index: number } | null {
+    const executable = basename(command).replace(/^-/, '')
+    if (/^codex(?:-(?:aarch64|x86_64|arm64)[\w-]*)?$/.test(executable)) return { kind: 'codex', index: 0 }
+    if (executable === 'claude') return { kind: 'claude', index: 0 }
     if (!/^(node|nodejs)$/.test(executable)) return null
-    const tokens = row.argv.trim().split(/\s+/)
-    if (tokens.some((token) => /^(?:-[epcr]|--(?:eval|print|check|require|import)(?:=|$))/.test(token))) return null
-    const script = tokens.slice(1).find((token) => !token.startsWith('-'))
-    if (!script) return null
-    if (/^(codex|codex\.js)$/.test(basename(script))) return 'codex'
-    if (/^(claude|claude\.js)$/.test(basename(script)) || /[/]@anthropic-ai[/]claude-code[/]cli\.js$/.test(script)) return 'claude'
+    for (let index = 1; index < tokens.length; index++) {
+        const script = tokens[index]
+        if (/^(?:-[epcr]|--(?:eval|print|check|require|import)(?:=|$))/.test(script)) return null
+        if (script.startsWith('-')) continue
+        if (/^(codex|codex\.js)$/.test(basename(script))) return { kind: 'codex', index }
+        if (/^(claude|claude\.js)$/.test(basename(script)) || /[/]@anthropic-ai[/]claude-code[/]cli\.js$/.test(script)) return { kind: 'claude', index }
+        return null
+    }
     return null
 }
 
@@ -212,6 +220,8 @@ function dayDir(sessionsDir: string, at: number): string {
     return join(sessionsDir, String(d.getFullYear()), pad(d.getMonth() + 1), pad(d.getDate()))
 }
 
+interface Start { key: string; cwd: string; startedAt: number; recordedAt: number }
+
 interface Watch {
     key: string
     cwd: string
@@ -220,15 +230,14 @@ interface Watch {
     shellPid?: number
     process?: CodexProcess
     onFound: (id: string) => void
-    checkedProcess: boolean
-    start: { cwd: string; startedAt: number }
+    start: Start
 }
 
 export class CodexSessionLocator {
     private readonly sessionsDir: string
     private readonly claimed = new Set<string>()
     private readonly excluded = new Set<string>()
-    private readonly starts: Array<{ cwd: string; startedAt: number }> = []
+    private readonly starts: Start[] = []
     private readonly watches = new Map<string, Watch>()
     private readonly cache = new Map<string, RolloutMeta | null>()
     private readonly inspected = new Map<string, Set<number>>()
@@ -254,9 +263,10 @@ export class CodexSessionLocator {
     /** Starts and replacements share one timer; identified PIDs have no time limit. */
     watch(cwd: string, startedAt: number, onFound: (id: string) => void, options: { terminalId?: string; shellPid?: number } = {}): () => void {
         const key = options.terminalId ?? `watch-${++this.sequence}`
-        const start = { cwd: canonical(cwd), startedAt }
+        this.pruneStarts(key)
+        const start = { key, cwd: canonical(cwd), startedAt, recordedAt: this.deps.now() }
         this.starts.push(start)
-        const watch: Watch = { key, cwd: start.cwd, startedAt, requestedAt: this.deps.now(), onFound, shellPid: options.shellPid, checkedProcess: false, start }
+        const watch: Watch = { key, cwd: start.cwd, startedAt, requestedAt: this.deps.now(), onFound, shellPid: options.shellPid, start }
         this.watches.set(key, watch)
         if (!this.interval) this.interval = setInterval(() => { void this.poll().catch((error) => console.warn('[codex-session] rollout probe failed', error)) }, this.deps.pollMs)
         return () => { if (this.watches.get(key) === watch) this.remove(key) }
@@ -264,12 +274,23 @@ export class CodexSessionLocator {
 
     private remove(key: string): void {
         this.watches.delete(key)
+        this.pruneStarts()
         if (this.watches.size === 0) {
             if (this.interval) clearInterval(this.interval)
             this.interval = undefined
             this.cache.clear()
             this.inspected.clear()
             this.held.clear()
+        }
+    }
+
+    private pruneStarts(replacedKey?: string): void {
+        const active = [...this.watches.values()].filter((watch) => watch.key !== replacedKey)
+        const cutoff = this.deps.now() - WATCH_MS
+        for (let index = this.starts.length - 1; index >= 0; index--) {
+            const start = this.starts[index]
+            const stillRelevant = active.some((watch) => watch.start === start || (watch.cwd === start.cwd && Math.abs(watch.startedAt - start.startedAt) <= AMBIGUITY_MS))
+            if (start.key === replacedKey || (start.recordedAt < cutoff && !stillRelevant)) this.starts.splice(index, 1)
         }
     }
 
@@ -311,6 +332,7 @@ export class CodexSessionLocator {
     }
 
     private matches(meta: RolloutMeta, watch: Watch): boolean {
+        if (watch.shellPid !== undefined && !watch.process) return false
         return meta.cwd === watch.cwd && meta.startedAt >= watch.startedAt - START_SLACK_MS && meta.startedAt <= watch.startedAt + START_WINDOW_MS
     }
 
@@ -318,13 +340,14 @@ export class CodexSessionLocator {
         if (this.polling) return
         this.polling = true
         try {
-            // One asynchronous lookup belongs to each watch, even before its first file is written.
+            this.pruneStarts()
+            // A delayed shell/setup command is not proof of absence. Retry only until a PID is confirmed.
             await Promise.all([...this.watches.values()].map(async (watch) => {
-                if (watch.shellPid === undefined || watch.checkedProcess) return
-                watch.checkedProcess = true
+                if (watch.shellPid === undefined || watch.process) return
+                if (this.deps.now() - watch.requestedAt >= WATCH_MS) { this.remove(watch.key); return }
                 const found = await this.deps.findProcess(watch.shellPid).catch(() => null)
                 if (this.watches.get(watch.key) !== watch) return
-                if (!found) { this.remove(watch.key); return }
+                if (!found) return
                 watch.process = found
                 watch.startedAt = found.startedAt
                 watch.start.startedAt = found.startedAt
@@ -354,6 +377,11 @@ export class CodexSessionLocator {
                 else if (holders.length === 0) {
                     const preceding = matching.filter((watch) => watch.startedAt <= candidate.startedAt).sort((a, b) => b.startedAt - a.startedAt)
                     owner = preceding[0] ?? (matching.length === 1 ? matching[0] : undefined)
+                    // Reserve a PID for the parent file it actually holds before applying a time fallback.
+                    if (owner?.process) {
+                        const held = this.held.get(owner.process.pid)
+                        if (candidates.some((other) => other.id !== candidate.id && this.matches(other, owner!) && held?.has(canonical(other.file)))) owner = undefined
+                    }
                     if (owner && this.starts.some((start) => start !== owner!.start && start.cwd === owner!.cwd && Math.abs(start.startedAt - owner!.startedAt) <= AMBIGUITY_MS)) {
                         this.excluded.add(candidate.id)
                         owner = undefined

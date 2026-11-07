@@ -2,6 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { execFileSync } from 'child_process'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, termText, waitForBufferText } from './helpers'
 
 const ID = '00000000-0000-4000-8000-00000000d104'
@@ -21,6 +22,129 @@ function reviewHome() {
     fs.writeFileSync(path.join(home, '.zshrc'), "PROMPT='READY> '\nunset HISTFILE\n")
     return { root, project, codex, claude, manager, env: { HOME: home, ZDOTDIR: home, SHELL: '/bin/zsh', CODEX_HOME: codex, CLAUDE_CONFIG_DIR: claude, CLIMANAGER_HOME: manager } }
 }
+
+function reviewRollout(x: ReturnType<typeof reviewHome>, id: string, cwd = x.project): void {
+    const at = new Date()
+    const dir = path.join(x.codex, 'sessions', String(at.getFullYear()), String(at.getMonth() + 1).padStart(2, '0'), String(at.getDate()).padStart(2, '0'))
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, `rollout-${id}.jsonl`), [
+        { type: 'session_meta', payload: { id, timestamp: at.toISOString(), cwd, source: 'vscode', originator: 'codex-tui' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: `Review2 ${id}` } }
+    ].map((r) => JSON.stringify(r)).join('\n') + '\n')
+}
+
+function reviewAgent(x: ReturnType<typeof reviewHome>, name = 'codex'): string {
+    const dir = path.join(x.root, 'agents'); fs.mkdirSync(dir, { recursive: true })
+    const bin = path.join(dir, name)
+    execFileSync('/usr/bin/cc', ['-O0', path.join(__dirname, 'fixtures/agent-process.c'), '-o', bin])
+    return bin
+}
+
+test('T104 fix2 N3: empty input accepts prompt themes and OSC precmd; uncertain edits explain recovery', async () => {
+    const x = reviewHome()
+    const bin = path.join(x.root, 'bin'); fs.mkdirSync(bin)
+    const executable = path.join(bin, 'codex')
+    fs.writeFileSync(executable, `#!${process.execPath}\nconsole.log('PROMPT-RESUME-READY');setTimeout(()=>{},30000)\n`, { mode: 0o755 })
+    const themes = ["PROMPT='➜  project git:(main) '", "PROMPT='λ '", "PROMPT='~/p on main [\\$!] ❯ '", "PROMPT='~/a#b %# '", "PROMPT='READY> '; precmd() { printf '\\e]11;?\\a' }"]
+    const names = themes.map((_, i) => `theme${i}`).concat('recover')
+    const ids = names.map((_, i) => `00000000-0000-4000-8000-${String(105000 + i).padStart(12, '0')}`)
+    ids.forEach((id) => reviewRollout(x, id))
+    result = await launchAppWithWorkspaces([{ id: 'themes', name: 'Prompt themes', path: x.project, sessions: names.map((id) => ({ id, name: id, cliToolName: 'codex', cliCommand: executable })) }], { env: x.env })
+    const { page } = result
+    for (const name of names) await waitForBufferText(page, name, 'READY>', 5000)
+    for (let i = 0; i < themes.length; i++) {
+        await page.evaluate(([id, data]) => window.api.writeTerminal(id, data), [names[i], themes[i] + '\r'])
+        const response = await page.evaluate(([id, conversation]) => window.api.connectAgentConversation(id, { agent: 'codex', id: conversation, resume: true }), [names[i], ids[i]])
+        expect(response, themes[i]).toMatchObject({ status: 'connected', typed: true })
+    }
+    await page.evaluate(() => window.api.writeTerminal('recover', '\x15'))
+    const blocked = await page.evaluate((id) => window.api.connectAgentConversation('recover', { agent: 'codex', id, resume: true }), ids.at(-1)!)
+    expect(blocked).toMatchObject({ error: { code: 'input_busy' } })
+    if ('error' in blocked) expect(blocked.error.message).toContain('Enter or Ctrl+C')
+    await page.evaluate(() => window.api.writeTerminal('recover', '\x03'))
+    expect(await page.evaluate((id) => window.api.connectAgentConversation('recover', { agent: 'codex', id, resume: true }), ids.at(-1)!)).toMatchObject({ status: 'connected' })
+})
+
+test('T104 fix2 N5: stray files do not disable stale Claude id validation', async () => {
+    const x = reviewHome()
+    fs.mkdirSync(path.join(x.claude, 'projects', 'p'), { recursive: true })
+    fs.writeFileSync(path.join(x.claude, 'projects', '.DS_Store'), 'fixture')
+    result = await launchAppWithWorkspaces([{ id: 'stray', name: 'Stray file', path: x.project, sessions: [{ id: 'stale', name: 'Stale', cliSessionId: ID, cliToolName: 'claude', cliCommand: '/usr/bin/true' }] }], { env: x.env })
+    const saved = JSON.parse(fs.readFileSync(path.join(result.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'stray').sessions[0]
+    expect(saved.cliSessionId).toBeUndefined()
+})
+
+test('T104 fix2 N2: restart preserves stored option values and applies read-only input decisions', async () => {
+    const x = reviewHome()
+    const native = reviewAgent(x, 'claude')
+    const log = path.join(x.root, 'args.jsonl')
+    const projects = path.join(x.claude, 'projects', 'p'); fs.mkdirSync(projects, { recursive: true })
+    fs.writeFileSync(path.join(projects, `${ID}.jsonl`), '{}\n')
+    const command = `${native} --fallback-model sonnet --dangerously-skip-permissions`
+    result = await launchAppWithWorkspaces([{ id: 'options', name: 'Saved options', path: x.project, sessions: [{ id: 'options', name: 'Options', cliSessionId: ID, cliToolName: 'claude', cliCommand: command }] }], { env: { ...x.env, D4_AGENT_ARGS_LOG: log, D4_AGENT_LIFETIME_SECONDS: '30' } })
+    await expect.poll(() => fs.existsSync(log), { timeout: 10000 }).toBe(true)
+    const argv = JSON.parse(fs.readFileSync(log, 'utf8').trim()).argv
+    expect(argv.slice(1)).toEqual(['--fallback-model', 'sonnet', '--dangerously-skip-permissions', '--resume', ID])
+    const saved = JSON.parse(fs.readFileSync(path.join(result.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'options').sessions[0]
+    expect(saved.cliCommand).toBe(command)
+    for (const [raw, input] of [
+        [`${native} --future-option human-value`, `claude --resume ${ID}`],
+        [`${native} "do not resend this prompt"`, `${native} --resume ${ID}`]
+    ]) {
+        await result.page.evaluate(([id, value]) => window.api.updateSessionCliInfo('options', 'options', id, 'claude', value), [ID, raw])
+        expect(await result.page.evaluate(() => window.api.getSessionResumeCommand('options'))).toBe(input)
+        const retained = JSON.parse(fs.readFileSync(path.join(result.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'options').sessions[0]
+        expect(retained.cliCommand).toBe(raw)
+    }
+})
+
+test('T104 fix2 N4: a slow alias profile does not delay the first window', async () => {
+    const x = reviewHome()
+    fs.appendFileSync(path.join(x.env.HOME, '.zshrc'), 'sleep 6\n')
+    const userDataDir = path.join(x.root, 'user-data'); fs.mkdirSync(userDataDir)
+    const started = Date.now()
+    const app = await electron.launch({ args: [path.join(REPO_ROOT, 'out/main/index.js')], env: { ...process.env, ...x.env, CLIMANGER_TEST_USERDATA: userDataDir, CLIMANGER_TEST_HEADLESS: '1' } as Record<string, string> })
+    const page = await app.firstWindow()
+    result = { app, page, userDataDir, pageErrors: [], consoleErrors: [] }
+    expect(Date.now() - started).toBeLessThan(5000)
+    // Let the owned profile process finish before closing the test app.
+    await page.waitForTimeout(6500)
+})
+
+test('T104 fix2 N1: Codex behind a thirteen-second setup is eventually linked', async () => {
+    const x = reviewHome()
+    const bin = path.join(x.root, 'bin'); fs.mkdirSync(bin)
+    const executable = path.join(bin, 'codex')
+    const log = path.join(x.root, 'started.txt')
+    fs.writeFileSync(executable, `#!${process.execPath}\nconst fs=require('fs'),path=require('path'),at=new Date(),id='${ID}',p=n=>String(n).padStart(2,'0'),dir=path.join(process.env.CODEX_HOME,'sessions',String(at.getFullYear()),p(at.getMonth()+1),p(at.getDate()));fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'rollout-'+id+'.jsonl'),JSON.stringify({type:'session_meta',payload:{id,timestamp:at.toISOString(),cwd:process.cwd(),source:'vscode',originator:'codex-tui'}})+'\\n');fs.writeFileSync(${JSON.stringify(log)},id);setTimeout(()=>{},60000)\n`, { mode: 0o755 })
+    result = await launchAppWithWorkspaces([{ id: 'slow', name: 'Slow Codex', path: x.project, sessions: [{ id: 'slow', name: 'Slow', initialCommand: `sleep 13; ${executable}` }] }], { env: x.env })
+    await expect.poll(() => fs.existsSync(log), { timeout: 20000 }).toBe(true)
+    const saved = () => JSON.parse(fs.readFileSync(path.join(result!.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'slow').sessions[0]
+    await expect.poll(saved, { timeout: 25000 }).toMatchObject({ cliToolName: 'codex', cliSessionId: ID })
+})
+
+test('T104 fix2 N6: typed, pasted and chunked npm launchers and native names link after process confirmation', async () => {
+    const x = reviewHome()
+    const bin = path.join(x.root, 'bin'); fs.mkdirSync(bin)
+    const launcher = path.join(bin, 'codex')
+    fs.writeFileSync(launcher, `#!${process.execPath}\nconsole.log('D4_NODE_READY');setTimeout(()=>{},60000)\n`, { mode: 0o755 })
+    const native = reviewAgent(x, 'codex-aarch64-apple-darwin')
+    const names = ['node-typed', 'node-pasted', 'node-chunk', 'native']
+    const ids = names.map((_, i) => `00000000-0000-4000-8000-${String(105100 + i).padStart(12, '0')}`)
+    ids.forEach((id) => reviewRollout(x, id))
+    result = await launchAppWithWorkspaces([{ id: 'npm', name: 'Launcher shapes', path: x.project, sessions: names.map((id) => ({ id, name: id })) }], { env: { ...x.env, D4_AGENT_LIFETIME_SECONDS: '60' } })
+    const { page } = result
+    const write = (id: string, data: string) => page.evaluate(([id, data]) => window.api.writeTerminal(id, data), [id, data])
+    const type = async (id: string, data: string) => { for (const character of data) await write(id, character) }
+    for (const name of names) await waitForBufferText(page, name, 'READY>', 5000)
+    const node = `${process.execPath} ${launcher}`
+    await type(names[0], `${node} resume ${ids[0]}\r`)
+    await type(names[1], `${node} resume `); await write(names[1], ids[1]); await write(names[1], '\r')
+    await write(names[2], `${node} resume ${ids[2]}\r`)
+    await write(names[3], `${native} resume ${ids[3]}\r`)
+    const saved = (id: string) => JSON.parse(fs.readFileSync(path.join(result!.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'npm').sessions.find((s: any) => s.id === id)
+    for (const [i, name] of names.entries()) await expect.poll(() => saved(name), { timeout: 6500 }).toMatchObject({ cliToolName: 'codex', cliSessionId: ids[i] })
+})
 
 test('T104 review shell right prompt is display text, not an entered draft', async () => {
     const x = reviewHome()
@@ -388,4 +512,60 @@ test('T104 review R7: pasted resume is process-confirmed and enforces file, cwd 
     // All stand-ins have reached their final argv; no further shell-to-agent transition is pending.
     await page.waitForTimeout(500)
     for (const id of ['missing', 'mismatch', 'duplicate']) expect(saved(id).cliSessionId).toBeUndefined()
+})
+test('T104 fix2 N7: initial preparation survives agent registry synchronization', async () => {
+    const x = reviewHome()
+    const bin = path.join(x.root, 'bin'); fs.mkdirSync(bin)
+    const executable = path.join(bin, 'claude')
+    fs.writeFileSync(executable, `#!${process.execPath}\nconst fs=require('fs'),path=require('path'),dir=path.join(process.env.CLAUDE_CONFIG_DIR,'sessions');fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,process.pid+'.json'),JSON.stringify({pid:process.pid,sessionId:'${ID}',startedAt:Date.now()}));console.log('N7_REGISTRY_READY');setTimeout(()=>{},30000)\n`, { mode: 0o755 })
+    const command = `FOO=$(printf warm) ${executable} --model opus`
+    result = await launchAppWithWorkspaces([{ id: 'n7', name: 'N7 preparation', path: x.project, sessions: [{ id: 'n7', name: 'N7', initialCommand: command }] }], { env: { ...x.env, CLIMANAGER_CLAUDE_SYNC_MS: '100' } })
+    await waitForBufferText(result.page, 'n7', 'N7_REGISTRY_READY', 5000)
+    const saved = () => JSON.parse(fs.readFileSync(path.join(result!.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'n7').sessions[0]
+    await expect.poll(saved, { timeout: 5000 }).toMatchObject({ cliToolName: 'claude', cliSessionId: ID, cliCommand: command })
+})
+
+test('T104 fix2 N9: Enter recovers after cat Ctrl+D and less q without erasing input', async () => {
+    const x = reviewHome()
+    const native = reviewAgent(x)
+    const names = ['cat-exit', 'less-exit']
+    const ids = names.map((_, i) => `00000000-0000-4000-8000-${String(105200 + i).padStart(12, '0')}`)
+    ids.forEach((id) => reviewRollout(x, id))
+    const note = path.join(x.root, 'page.txt'); fs.writeFileSync(note, Array.from({ length: 200 }, (_, i) => 'line ' + i).join('\n'))
+    result = await launchAppWithWorkspaces([{ id: 'recovery', name: 'Input recovery', path: x.project, sessions: names.map((id) => ({ id, name: id, cliToolName: 'codex', cliCommand: native })) }], { env: { ...x.env, D4_AGENT_LIFETIME_SECONDS: '30' } })
+    const { page } = result
+    const write = (id: string, data: string) => page.evaluate(([id, data]) => window.api.writeTerminal(id, data), [id, data])
+    const front = async (id: string) => { const value = await page.evaluate((id) => window.api.listAgentConversations(id), id); return 'error' in value ? 'unknown' : value.front.kind }
+    for (const [i, name] of names.entries()) {
+        await waitForBufferText(page, name, 'READY>', 5000)
+        await write(name, i ? `less ${note}\r` : 'cat\r')
+        await expect.poll(() => front(name)).toBe('other')
+        await write(name, i ? 'q' : '\x04')
+        await expect.poll(() => front(name)).toBe('shell')
+        const blocked = await page.evaluate(([id, conversation]) => window.api.connectAgentConversation(id, { agent: 'codex', id: conversation, resume: true }), [name, ids[i]])
+        expect(blocked).toMatchObject({ error: { code: 'input_busy' } })
+        if ('error' in blocked) expect(blocked.error.message).toContain('Enter or Ctrl+C')
+        await write(name, '\r')
+        expect(await page.evaluate(([id, conversation]) => window.api.connectAgentConversation(id, { agent: 'codex', id: conversation, resume: true }), [name, ids[i]])).toMatchObject({ status: 'connected', typed: true })
+    }
+})
+
+test('T104 fix2 N2: restored input never rewrites remembered options through manual observation', async () => {
+    const x = reviewHome()
+    const native = path.join(x.root, 'codex-bin')
+    fs.mkdirSync(native)
+    const executable = path.join(native, 'codex')
+    execFileSync('/usr/bin/cc', ['-O0', path.join(__dirname, 'fixtures/agent-process.c'), '-o', executable])
+    fs.appendFileSync(path.join(x.env.HOME, '.zshrc'), `export PATH='${native}':$PATH\n`)
+    const ids = ['00000000-0000-4000-8000-000000105301', '00000000-0000-4000-8000-000000105302']
+    ids.forEach((id) => reviewRollout(x, id))
+    const commands = [`${executable} --future-option human-value`, `${executable} "DO_NOT_REPLAY"`]
+    const log = path.join(x.root, 'args.jsonl')
+    result = await launchAppWithWorkspaces([{ id: 'readonly', name: 'Read-only restart', path: x.project, sessions: commands.map((command, i) => ({ id: 'restore'+i, name: 'Restore'+i, cliToolName: 'codex', cliSessionId: ids[i], cliCommand: command })) }], { env: { ...x.env, D4_AGENT_ARGS_LOG: log, D4_AGENT_LIFETIME_SECONDS: '30' } })
+    await expect.poll(() => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').length : 0, { timeout: 8000 }).toBe(2)
+    await result.page.waitForTimeout(4500)
+    const saved = JSON.parse(fs.readFileSync(path.join(result.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'readonly').sessions
+    for (const [i, session] of saved.entries()) expect(session.cliCommand).toBe(commands[i])
+    const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((row) => JSON.parse(row).argv.slice(1))
+    expect(calls).toEqual(expect.arrayContaining(ids.map((id) => ['resume', id])))
 })

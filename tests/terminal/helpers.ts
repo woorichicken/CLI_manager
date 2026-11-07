@@ -89,6 +89,24 @@ export interface LaunchOptions {
     config?: Record<string, unknown>
 }
 
+/** Production recognizes agent executables, so mocks use the same executable names. */
+function seededAgentCommand(session: SeedSession, userDataDir: string, index: number): string | undefined {
+    const command = session.cliCommand
+    const agent = session.cliToolName
+    if (!command || !session.cliSessionId || (agent !== 'claude' && agent !== 'codex')) return command
+    const scripts = ['chat-mock.cjs', 'claude-mock.cjs', 'agent-mock.cjs', 'loop-mock.cjs', 'replay.cjs']
+    const mock = scripts.some(script => {
+        const prefix = `node ${path.join(REPO_ROOT, 'scripts/mock-cli', script)}`
+        return command === prefix || command.startsWith(prefix + ' ')
+    })
+    if (!mock) return command
+    const bin = path.join(userDataDir, 'mock-agents', String(index))
+    fs.mkdirSync(bin, { recursive: true })
+    const executable = path.join(bin, agent)
+    fs.writeFileSync(executable, `#!/bin/sh\nexec ${command} "$@"\n`, { mode: 0o755 })
+    return `'${executable.replace(/'/g, `'\\''`)}'`
+}
+
 /**
  * Seed more than one workspace — needed whenever a test depends on the shape of
  * the workspace list itself (ordering, worktree children, add/remove).
@@ -96,6 +114,7 @@ export interface LaunchOptions {
 export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], options: LaunchOptions = {}): Promise<LaunchResult> {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-test-'))
     const sessions = workspaces.flatMap(w => w.sessions)
+    const agentCommands = new Map(sessions.map((session, index) => [session, seededAgentCommand(session, userDataDir, index)]))
 
     const config = {
         workspaces: workspaces.map((workspace, index) => ({
@@ -111,7 +130,7 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
                 ...(s.initialCommand ? { initialCommand: s.initialCommand } : {}),
                 ...(s.cliSessionId ? { cliSessionId: s.cliSessionId } : {}),
                 ...(s.cliToolName ? { cliToolName: s.cliToolName } : {}),
-                ...(s.cliCommand ? { cliCommand: s.cliCommand } : {}),
+                ...(agentCommands.get(s) ? { cliCommand: agentCommands.get(s) } : {}),
                 ...(s.memo ? { memo: s.memo } : {}),
                 ...(s.memoPages ? { memoPages: s.memoPages } : {}),
                 ...(s.isPinned ? { isPinned: true } : {})

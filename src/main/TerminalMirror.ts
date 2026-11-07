@@ -286,26 +286,13 @@ export class TerminalMirror {
         return trimTrailingBlank(lines)
     }
 
-    /** Read the shell prefix through its cursor; the input tracker protects edited text after it. */
-    shellInput(id: string): { empty: boolean; draft: string } {
+    /** Only known continuation prompts are read from the screen; ordinary prompt themes are arbitrary. */
+    hasContinuationPrompt(id: string): boolean {
         const mirror = this.mirrors.get(id)
-        if (!mirror) return { empty: false, draft: '' }
+        if (!mirror) return false
         const buffer = mirror.term.buffer.active
-        const cursorRow = buffer.baseY + buffer.cursorY
-        let first = cursorRow
-        while (first > 0 && buffer.getLine(first)?.isWrapped) first--
-        let line = ''
-        for (let row = first; row <= cursorRow; row++) {
-            // zsh RPROMPT draws status to the right of an empty cursor. It is not a draft.
-            line += buffer.getLine(row)?.translateToString(false, 0, row === cursorRow ? buffer.cursorX : undefined) ?? ''
-        }
-        line = line.trimEnd()
-        // A continuation prompt is still a partially entered command, even with no text after it.
-        if (/^\s*(?:>|dquote>|quote>|cmdsubst>|bquote>|heredoc>|pipe>|then>|else>|for>)\s*$/.test(line)) return { empty: false, draft: line }
-        // Unknown prompts fail closed. The first prompt marker prevents a typed redirection from
-        // being mistaken for an empty prompt at the end of the line.
-        const prompt = /^(.*?[$%#❯>])\s*(.*)$/.exec(line)
-        return { empty: !!prompt && !prompt[2].trim(), draft: prompt?.[2] ?? line }
+        const line = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, buffer.cursorX).trim() ?? ''
+        return /^(?:>|dquote>|quote>|cmdsubst>|bquote>|heredoc>|pipe>|then>|else>|for>|while>|function>|do>|case>)$/.test(line)
     }
 
     /** One line about the session: the agent's recap above its input box, else the last row worth reading. */

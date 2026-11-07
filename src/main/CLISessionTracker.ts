@@ -22,6 +22,13 @@ export interface CLISessionInfo {
     baseCommand: string
 }
 
+interface ProtocolInput {
+    mode: 'escape' | 'csi' | 'osc' | 'dcs'
+    sequence: string
+    count: number
+    escaping: boolean
+}
+
 const DEFAULT_CLI_TOOLS: CLIToolConfig[] = [
     {
         name: 'claude',
@@ -60,6 +67,7 @@ export class CLISessionTracker {
     private lineBuffers: Map<string, string> = new Map()
     private resumeBuffers = new Map<string, string>()
     private pendingInput = new Map<string, { text: string; uncertain: boolean }>()
+    private protocolInput = new Map<string, ProtocolInput>()
     private cliTools: CLIToolConfig[]
     /** Shell alias -> what it expands to, so `cldy` can be recognised as claude. */
     private aliases: Map<string, string> = new Map()
@@ -95,14 +103,63 @@ export class CLISessionTracker {
     }
 
     getPendingInput(terminalId: string): { text: string; uncertain: boolean } {
-        return { ...(this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }) }
+        const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
+        return { ...pending, uncertain: pending.uncertain || this.protocolInput.has(terminalId) }
+    }
+
+    /** Terminal replies can span onData chunks. Keep partial replies out of shell text tracking. */
+    private filterProtocolInput(terminalId: string, data: string): string {
+        let state = this.protocolInput.get(terminalId)
+        let clean = ''
+        const begin = (mode: ProtocolInput['mode']): void => { state = { mode, sequence: mode === 'csi' ? '\x1b[' : '', count: 0, escaping: false } }
+        for (const char of data) {
+            if (!state) {
+                if (char === '\x1b') begin('escape')
+                else if (char === '\x9d') begin('osc')
+                else if (char === '\x90') begin('dcs')
+                else if (char === '\x9b') begin('csi')
+                else clean += char
+                continue
+            }
+            if (char === '\x03' || char === '\r' || char === '\n') {
+                state = undefined
+                clean += char
+                continue
+            }
+            if (state.mode === 'escape') {
+                if (char === ']') begin('osc')
+                else if (char === 'P') begin('dcs')
+                else if (char === '[') begin('csi')
+                else { clean += '\x1b' + char; state = undefined }
+                continue
+            }
+            state.count++
+            if (state.mode === 'csi') {
+                state.sequence += char
+                if (char >= '@' && char <= '~') {
+                    if (!/^\x1b\[(?:[IO]|\??\d+;\d+R|[?>]?\d+(?:;\d+)*c|\??\d+n)$/.test(state.sequence)) clean += state.sequence
+                    state = undefined
+                } else if (state.count > 256) { clean += state.sequence; state = undefined }
+                continue
+            }
+            if ((state.escaping && char === '\\') || char === '\x9c' || (state.mode === 'osc' && char === '\x07')) {
+                state = undefined
+            } else if (state.count > 16_384) {
+                // An unterminated or excessive reply must block sending rather than hide a draft.
+                clean += '\x1b'
+                state = undefined
+            } else state.escaping = char === '\x1b'
+        }
+        if (state) this.protocolInput.set(terminalId, state)
+        else this.protocolInput.delete(terminalId)
+        return clean
     }
 
     /** Observe paste for resume candidates without enabling Claude command rewriting on paste. */
     private observeInput(terminalId: string, data: string): void {
         const clean = data.replace(/\x1b\[(?:200|201)~/g, '')
         if (clean.includes('\x1b')) {
-            const pending = this.getPendingInput(terminalId)
+            const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
             this.pendingInput.set(terminalId, { ...pending, uncertain: true })
             this.resumeBuffers.delete(terminalId)
             return
@@ -120,7 +177,7 @@ export class CLISessionTracker {
                 this.pendingInput.delete(terminalId)
                 continue
             }
-            const pending = this.getPendingInput(terminalId)
+            const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
             if (char === '\x15') {
                 // Ctrl+U need not erase text to the right of the cursor. Only submit/interrupt resets this.
                 this.pendingInput.set(terminalId, { text: '', uncertain: true })
@@ -150,9 +207,7 @@ export class CLISessionTracker {
         data: string,
         writeFn: (data: string) => void
     ): boolean {
-        // xterm sends focus, cursor position and device/status replies through onData too.
-        // They neither edit the shell line nor invalidate the text the user has typed.
-        data = data.replace(/\x1b\[(?:[IO]|\??\d+;\d+R|[?>]?\d+(?:;\d+)*c|\??\d+n)/g, '')
+        data = this.filterProtocolInput(terminalId, data)
         if (!data) return false
         this.observeInput(terminalId, data)
         // Only handle single-character or Enter key inputs from manual typing
@@ -295,6 +350,7 @@ export class CLISessionTracker {
         this.lineBuffers.delete(terminalId)
         this.resumeBuffers.delete(terminalId)
         this.pendingInput.delete(terminalId)
+        this.protocolInput.delete(terminalId)
     }
 
     /**
