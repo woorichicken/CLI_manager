@@ -344,7 +344,9 @@ export class PhoneServer {
             // a view-only device has no box to put them in
             ...(access.role === 'drive' && this.deps.quickReplies ? { quickReplies: this.deps.quickReplies() } : {}),
             ...(access.role === 'drive' && this.deps.quickRepliesSet?.() ? { quickRepliesSet: true } : {}),
-            ...(this.deps.pinLastMessage?.() ? { pinLastMessage: true } : {})
+            ...(this.deps.pinLastMessage?.() ? { pinLastMessage: true } : {}),
+            // no Dock on this Mac: the page has no line for it at all
+            ...(this.deps.dock?.installed() ? { dock: true as const } : {})
         }
     }
 

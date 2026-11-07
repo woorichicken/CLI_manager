@@ -157,10 +157,11 @@ rules stay in the root; this file is the inventory.
   `X-Forwarded-For` 가 tailnet 주소면 주인(치기). 그 밖은 짝지은 기기 쿠키(`climanager_phone`, HttpOnly·SameSite=Strict)만 —
   `PhoneDevices`: 6자리 · 10분 · 5회 틀리면 폐기 · 「can type / view only」 · 해시만 `userData/phone/devices.json`(0600). Host 는 loopback·`*.ts.net`·
   tailnet 주소만(421), 바꾸는 요청·소켓은 Origin 이 같은 곳만(403)
-- **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/sessions`(세션 한 줄 목록 + 세션 폴더 이름 +
+- **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/dock`(Artifact Dock 목록, 아래 **Dock**) · `GET /api/phone/sessions`(세션 한 줄 목록 + 세션 폴더 이름 +
   상태 점·질문 줄) · `/api/phone/chat/<id>/<conversation|send|answer|interrupt|cancel-queued|discard-queued|send-queued-now|attach|image|tool-output|commands>`
   · WS `/api/phone/chat/<id>/events`(revision) · WS `/api/phone/terminal?session=<id>` · `POST /api/phone/push/<subscribe|unsubscribe|test>`.
   만들기·지우기·이름 바꾸기·크기 바꾸기 경로는 없다. 치는 경로는 `drive` 만, 그리고 세션 사건 기록에 `phone-input`(무엇을 했는지만, 글은 안 남김)
+- **Dock**(`phoneDock.ts` · `PhoneDockPanel.tsx`): 목록 원본은 Chrome 확장이다. main 이 `dock.sock` 에 고정 바이트 `{"cmd":"list","v":1}\n` 만 보내 받은 행을 **받은 순서 그대로** 넘기고, 폰도 정렬 코드가 없다(확장의 `src/lib/dockList.js` 를 사이드패널과 `list` 가 같이 쓴다). 폰 입력은 소켓에 안 간다, `open` 은 절대 안 보낸다(새로고침·`at` 변경으로 순서가 바뀐다). `status`: `live` · `chrome_off`(ENOENT·ECONNREFUSED) · `outdated`(2.5초 무응답·`ok:false`·프로토콜 다름, 30초 다시 안 묻음 — 0.6.x 호스트는 8초 뒤에야 답한다) · `error`(깨진 응답·2MB 초과). 마지막 목록은 메모리에만 두고 시각(`asOf`)과 함께 보인다. 동시 요청은 한 번, 1초 재사용. 폰 `key` 는 확장 키의 해시다 — 확장 키에 절대 경로가 들어 있어 그대로 내보내지 않는다. 파일 경로는 `docFor(key)` 로 main 안에서만 푼다(`.html/.htm/.xhtml`, 지워진 문서 거절). 설치 판정은 호스트 등록 파일 5곳·소켓, 시험은 `ARTIFACT_DOCK_SOCKET` 없으면 실제 소켓을 안 열고 404. 보기 전용 기기도 읽는다. 패널은 `?panel=dock` + `history` 항목 하나, 아래 세션은 마운트된 채라 닫으면 스크롤·입력 글이 그대로다. 세션 이름은 확장 기록의 `sessionId`(`artifact-open` 이 `CLIMANAGER_SESSION_ID` 를 싣는다)로 그때그때 찾는다
 - **Chat**: 같은 프로세스에서 `ConversationService` 를 부른다(IPC 핸들러와 같은 함수). 질문 카드 글(화면에서 읽은 것)은 `maskSecretLines` 를 거친다.
   변경 알림은 `ConversationService.onChange` → `phoneConversationListeners`
 - **Terminal**: `TerminalManager.attachRemote` — 있는 pty 에만 붙고(만들지 않음) 불변식 6 순서(flush → hold → 스냅샷 → 그 뒤 출력)를 따르되 서버가

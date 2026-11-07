@@ -17,6 +17,7 @@ import type { PhoneSessionsResponse } from '../../shared/phone'
 import { PHONE_API } from '../../shared/phone'
 import type { PhoneAccess } from './phoneAccess'
 import type { PhoneDevices } from './PhoneDevices'
+import type { PhoneDock } from './phoneDock'
 import type { PhonePush } from './PhonePush'
 import { readBody, readJson, send } from './PhoneServer'
 import type { ChatSender } from '../ConversationService'
@@ -56,6 +57,8 @@ export interface PhoneApiDeps {
     push: PhonePush
     listSessions(): PhoneSessionsResponse
     sessionExists(id: string): boolean
+    /** the Artifact Dock list; absent, this Mac has none as far as the phone can tell */
+    dock?: Pick<PhoneDock, 'installed' | 'read' | 'docFor'>
     conversation: PhoneConversation
     saveAttachment(name: string, bytes: Uint8Array): AttachResult
     /** screen text leaving the Mac goes through maskSecrets */
@@ -84,6 +87,15 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
 
     if (path === PHONE_API.sessions && method === 'GET') {
         send(res, 200, deps.listSessions())
+        return
+    }
+
+    // A view-only device reads it too: it already sees terminals and chats. Nothing in the request reaches the socket.
+    if (path === PHONE_API.dock && method === 'GET') {
+        const list = (await deps.dock?.read()) ?? null
+        if (!deps.stillAllowed()) return refuseRevoked(res)
+        if (list) send(res, 200, list)
+        else send(res, 404, { error: 'dock_not_installed' })
         return
     }
 

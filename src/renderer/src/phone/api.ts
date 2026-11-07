@@ -1,4 +1,4 @@
-import type { PhoneMe, PhonePairResult, PhonePushSubscription, PhoneSessionsResponse, PhoneTestPushResult } from '../../../shared/phone'
+import type { PhoneDockResponse, PhoneMe, PhonePairResult, PhonePushSubscription, PhoneSessionsResponse, PhoneTestPushResult } from '../../../shared/phone'
 import { PHONE_API } from '../../../shared/phone'
 
 /**
@@ -38,6 +38,8 @@ export const getMe = (): Promise<PhoneMe> => getJson<PhoneMe>(PHONE_API.me)
 export const pair = (code: string, label: string): Promise<PhonePairResult> => postJson<PhonePairResult>(PHONE_API.pair, { code, label })
 
 export const getSessions = (): Promise<PhoneSessionsResponse> => getJson<PhoneSessionsResponse>(PHONE_API.sessions)
+
+export const getDock = (): Promise<PhoneDockResponse> => getJson<PhoneDockResponse>(PHONE_API.dock)
 
 export const subscribePush = (subscription: PhonePushSubscription): Promise<unknown> => postJson(PHONE_API.pushSubscribe, { subscription })
 
