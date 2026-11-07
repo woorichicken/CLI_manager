@@ -391,6 +391,7 @@ test('T104 menu connects, persists options, shows Chat and resumes once after re
     expect(await api('/v1/sessions/absent/conversations')).toMatchObject({ status: 404, body: { error: { code: 'unknown_session' } } })
     const rpc = await api('/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' })
     expect(rpc.body.result.tools.map((tool: any) => tool.name)).toEqual(expect.arrayContaining(['list_agent_conversations', 'connect_agent_conversation']))
+    expect(rpc.body.result.tools.find((tool: any) => tool.name === 'connect_agent_conversation').description).toContain('without Enter')
     const rpcInvalid = await api('/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'connect_agent_conversation', arguments: { session_id: SESSION, agent: 'codex', id: 'invalid' } } })
     expect(rpcInvalid.body.result).toMatchObject({ isError: true })
     expect(rpcInvalid.body.result.content[0].text).toContain('invalid_id')

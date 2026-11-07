@@ -194,7 +194,7 @@ const TOOLS: ToolDefinition[] = [
     },
     {
         name: 'connect_agent_conversation',
-        description: 'Connect a terminal to a conversation UUID. Set resume to start it from a shell; force only bypasses an ambiguous Codex start time. Running-agent and duplicate-link conflicts cannot be forced.',
+        description: 'Connect a terminal to a conversation UUID. resume:true prepares the command without Enter. Read the terminal with read_output, then explicitly send Enter with send_input to execute it. force only bypasses an ambiguous Codex start time; running-agent and duplicate-link conflicts cannot be forced.',
         inputSchema: {
             type: 'object',
             properties: { ...sessionIdProperty, agent: { type: 'string', enum: ['claude', 'codex'] }, id: { type: 'string' }, resume: { type: 'boolean' }, force: { type: 'boolean' } },
