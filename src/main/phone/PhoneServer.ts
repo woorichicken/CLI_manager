@@ -82,6 +82,10 @@ export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' |
     feedback?: PhoneFeedbackDeps
     /** the Mac's chat quick replies (Settings › Terminal › Chat view), for the phone's own switch (847da0aa) */
     quickReplies?(): string[]
+    /** the person wrote their own phrases on the Mac: a phone shows them unless it was told not to */
+    quickRepliesSet?(): boolean
+    /** Settings › Terminal › Chat view «Keep my last message on top»: a phone follows it until it chooses */
+    pinLastMessage?(): boolean
 }
 
 export interface PhoneRequestAccess {
@@ -338,7 +342,9 @@ export class PhoneServer {
             // the widget only for a device that may send — what a view-only device could report it cannot send
             ...(access.role === 'drive' && this.deps.feedback?.enabled() ? { feedback: { appVersion: this.deps.feedback.appVersion() } } : {}),
             // a view-only device has no box to put them in
-            ...(access.role === 'drive' && this.deps.quickReplies ? { quickReplies: this.deps.quickReplies() } : {})
+            ...(access.role === 'drive' && this.deps.quickReplies ? { quickReplies: this.deps.quickReplies() } : {}),
+            ...(access.role === 'drive' && this.deps.quickRepliesSet?.() ? { quickRepliesSet: true } : {}),
+            ...(this.deps.pinLastMessage?.() ? { pinLastMessage: true } : {})
         }
     }
 

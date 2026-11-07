@@ -370,6 +370,8 @@ User Action (Renderer)
 - 2회차: `chat-discard-queued(sessionId, id)` · `chat-send-queued-now(sessionId, id)` → `ChatSendResult` · `chat-interrupt(sessionId)` → `InterruptResult` ·
   `chat-image(sessionId, ref)` → data: URL | null · `chat-tool-output(sessionId, ref)` → string | null · `chat-commands(sessionId)` → `ChatCommand[]` ·
   `chat-save-attachment(name, bytes)` → `AttachResult`(32MB) · `chat-open-path(path)` → `shell.openPath`. `@` 파일 찾기는 기존 `search-files` 를 쓴다
+- 설정(`settings.chat`, Settings › Terminal › Chat view): `enterSends` · `showQuickReplies`·`quickReplies` · `pinLastMessage`(기본 끔 — 내 마지막 말이 화면 밖으로 나가면 위에 고정) · `openFilesInApp`(기본 켬, 끄면 `chat-open-path`). 입력칸의 명령 글자는 textarea 를 투명하게 두고 그 아래 같은 글을 그려 칠한다(`commandPieces`). 모드 칩(`ConversationMeta.mode`)은 화면의 입력 상자 아래 줄 → 없으면 마지막 프롬프트의 `permissionMode`(Codex: `turn_context` 의 collaboration·sandbox) 순이고, 기본 모드는 칩이 없다
+- 폰(☰ ⚙, 브라우저 저장 `phone-chat-settings`): Return 으로 보내기 · 빠른 답(Mac 에 직접 넣은 문구가 있으면 기본 켬 — `/me` 의 `quickRepliesSet`, 폰에서 끈 것은 유지) · 내 마지막 말(Mac 설정을 따르다 폰에서 고르면 그대로 — `/me` 의 `pinLastMessage`) · 다른 세션 알림(띠와 ☰ 숫자, 끄면 상태 점만)
 - 코드: `src/main/ConversationService.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · `chatCommands.ts` · `chatAttachments.ts` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
   `SessionViewToggle.tsx` · `ChatFilePreview.tsx` · `ChatViewSettings.tsx` · `hooks/useSessionViewMode.ts`(peek 포함) · `utils/electronChatTransport.ts`
 

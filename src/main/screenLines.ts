@@ -41,6 +41,30 @@ export function isInputBoxRule(trimmed: string): boolean {
     return INPUT_BOX_RULE.test(trimmed) || BOX_LABELED_RULE.test(trimmed)
 }
 
+/** Claude Code's mode row under its input box: `⏵⏵ bypass permissions on (shift+tab to cycle)`, `⏸ plan mode on`. */
+const MODE_ROW = /^\s*(?:⏵⏵|⏸)\s*(.+?)\s+on\b/u
+const MODE_WORDS: Record<string, string> = { 'bypass permissions': 'bypass', 'plan mode': 'plan', 'auto mode': 'auto' }
+
+/**
+ * The mode the screen shows, in the chat's short words, or null when it shows none. Only under the
+ * last input box rule: the same words in the conversation above are words, not the mode.
+ */
+export function screenAgentMode(rows: string[]): string | null {
+    let start = -1
+    for (let row = rows.length - 1; row >= 0; row--) {
+        if (isInputBoxRule(rows[row].trim())) {
+            start = row
+            break
+        }
+    }
+    if (start < 0) return null
+    for (const row of rows.slice(start + 1)) {
+        const words = MODE_ROW.exec(row)?.[1]?.toLowerCase()
+        if (words) return MODE_WORDS[words] ?? words
+    }
+    return null
+}
+
 /** Long enough for a sentence; the dialog truncates further to fit. */
 const MAX_LAST_LINE_LENGTH = 200
 

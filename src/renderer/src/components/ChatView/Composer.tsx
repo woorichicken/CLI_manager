@@ -1,9 +1,9 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { AlertTriangle, ArrowUp, FileText, Loader2, Plus, Square, X } from 'lucide-react'
 import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
 import { InputBusyNote } from './InputBusyNote'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH } from '../../../../shared/conversation'
-import { activeTrigger, fileMention, rankCommands } from './chatLib'
+import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands } from './chatLib'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 
 export { appendDraft } from './draftStore'
@@ -118,6 +118,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const [menuDismissed, setMenuDismissed] = useState(false)
     const [dragging, setDragging] = useState(false)
     const box = useRef<HTMLTextAreaElement>(null)
+    const backdrop = useRef<HTMLDivElement>(null)
     const picker = useRef<HTMLInputElement>(null)
     const attachmentsRef = useRef<Attachment[]>([])
     attachmentsRef.current = attachments
@@ -244,8 +245,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
     // ---- completion menu -------------------------------------------------------------------
     const trigger = menuDismissed ? null : activeTrigger(text, caret, codex)
+    // the menu needs the list, and so does telling which words in the draft are commands
+    const wantsCommands = trigger?.kind === 'slash' || mayNameCommand(text)
     useEffect(() => {
-        if (trigger?.kind !== 'slash' || commands !== null) return
+        if (!wantsCommands || commands !== null) return
         let live = true
         void transport
             .listCommands(sessionId)
@@ -254,7 +257,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         return () => {
             live = false
         }
-    }, [trigger?.kind, commands, sessionId, transport])
+    }, [wantsCommands, commands, sessionId, transport])
 
     const fileQuery = trigger?.kind === 'file' ? trigger.query : null
     useEffect(() => {
@@ -275,9 +278,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const usage = useMemo(readUsage, [trigger?.kind])
     const commandChoices = trigger?.kind === 'slash' && commands ? rankCommands(commands, trigger, usage) : []
     const choices: (ChatCommand | string)[] = trigger?.kind === 'slash' ? commandChoices : trigger?.kind === 'file' ? files : []
-    // a message that is a skill or command reads light blue in the box (4030a994) — a known one once the list is in
-    const commandTyped = /^\s*([/$])([\w:.-]+)/.exec(text)
-    const isCommand = commandTyped !== null && (commands === null || commands.some((command) => command.name === commandTyped[2] && (command.trigger ?? '/') === commandTyped[1]))
+    // Only the command reads light blue, wherever it stands (85259f8e · 1fcd9008 · e833d0b9). A textarea has one
+    // colour, so its words go transparent and a copy underneath paints them.
+    const pieces = useMemo(() => (commands && wantsCommands ? commandPieces(text, commands, codex) : []), [text, commands, wantsCommands, codex])
+    const painted = pieces.some((piece) => piece.command)
+    useLayoutEffect(() => {
+        if (backdrop.current && box.current) backdrop.current.scrollTop = box.current.scrollTop
+    })
     const menuOpen = trigger !== null && choices.length > 0
     const selected = Math.min(menuIndex, Math.max(0, choices.length - 1))
     useEffect(() => setMenuIndex(0), [trigger?.kind, trigger?.query])
@@ -438,7 +445,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
 
     const quickReplies = (preferences.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim())
-    const showQuick = preferences.showQuickReplies === true && !working && !promptOptions && text === '' && attachments.length === 0 && quickReplies.length > 0
+    // also while the agent works: a tap then waits for the turn to end, as a typed message does
+    const showQuick = preferences.showQuickReplies === true && !promptOptions && text === '' && attachments.length === 0 && quickReplies.length > 0
     const hint =
         attaching
             ? 'Attaching…'
@@ -553,14 +561,35 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     </div>
                 )}
                 <div className="chat-composer-row">
+                    <div className="chat-composer-input">
+                    {painted && (
+                        // translate="no": Chrome's page translation rewrites this copy but not the textarea's value — the
+                        // box then shows words that are not what gets sent (Galaxy M23, fb-1106)
+                        <div ref={backdrop} className="chat-composer-backdrop notranslate" translate="no" aria-hidden="true" data-testid="chat-composer-backdrop">
+                            {pieces.map((piece, index) =>
+                                piece.command ? (
+                                    <span key={index} className="chat-composer-token" data-testid="chat-composer-token">
+                                        {piece.text}
+                                    </span>
+                                ) : (
+                                    piece.text
+                                )
+                            )}
+                            {/* a last empty line takes up room in a textarea, not in a div */}
+                            {text.endsWith('\n') && '\u200b'}
+                        </div>
+                    )}
                     <textarea
                         ref={box}
                         rows={1}
                         value={text}
                         maxLength={MAX_CHAT_TEXT_LENGTH}
                         data-testid="chat-composer"
-                        className={isCommand ? 'is-command' : undefined}
-                        data-command={isCommand ? 'true' : undefined}
+                        className={painted ? 'is-painted' : undefined}
+                        data-command={painted ? 'true' : undefined}
+                        onScroll={(event) => {
+                            if (backdrop.current) backdrop.current.scrollTop = event.currentTarget.scrollTop
+                        }}
                         placeholder={placeholder}
                         title={touch ? (preferences.returnSendsOnTouch === true ? 'Return sends' : 'Return starts a new line · the arrow sends') : preferences.enterSends === false ? '⌘Enter sends · Enter starts a new line' : 'Enter sends · Shift+Enter starts a new line'}
                         onChange={(event) => {
@@ -572,6 +601,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         onKeyDown={onKeyDown}
                         onPaste={onPaste}
                     />
+                    </div>
                     {showStop ? (
                         <button
                             type="button"

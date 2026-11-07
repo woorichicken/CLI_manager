@@ -11,6 +11,7 @@
     --chat-line: var(--border-color, rgba(255, 255, 255, 0.1));
     --chat-soft: rgba(255, 255, 255, 0.04);
     --chat-bubble: rgba(59, 130, 246, 0.16);
+    --chat-pinned-bg: #232b3a;
     --chat-code-bg: rgba(0, 0, 0, 0.35);
     --hl-keyword: #c792ea;
     --hl-string: #c3e88d;
@@ -35,6 +36,7 @@
 :root.light .chat-view {
     --chat-soft: rgba(0, 0, 0, 0.04);
     --chat-bubble: rgba(59, 130, 246, 0.12);
+    --chat-pinned-bg: #e4edfb;
     --chat-code-bg: rgba(0, 0, 0, 0.05);
     --hl-keyword: #8b3fd9;
     --hl-string: #2f7d32;
@@ -135,10 +137,18 @@
 .chat-composer-card:focus-within { border-color: rgba(96, 165, 250, 0.6); }
 .chat-composer.is-dragging .chat-composer-card { border-color: #60a5fa; border-style: dashed; }
 .chat-composer-row { display: flex; gap: 8px; align-items: flex-end; }
+.chat-composer-input { position: relative; flex: 1; min-width: 0; display: flex; }
 .chat-composer textarea {
-    flex: 1; min-width: 0; resize: none; background: transparent; border: 0; padding: 6px 8px; color: var(--chat-fg); line-height: 1.45; outline: none;
+    position: relative; flex: 1; min-width: 0; width: 100%; resize: none; background: transparent; border: 0; padding: 6px 8px; color: var(--chat-fg); line-height: 1.45; outline: none;
 }
-.chat-composer textarea.is-command { color: #93c5fd; }
+/* the words are painted by the backdrop under it; the same box model keeps every line in place, so no scroll bar */
+.chat-composer textarea.is-painted { color: transparent; caret-color: var(--chat-fg); scrollbar-width: none; }
+.chat-composer textarea.is-painted::-webkit-scrollbar { display: none; }
+.chat-composer textarea.is-painted::selection { color: transparent; background: rgba(96, 165, 250, 0.35); }
+.chat-composer-backdrop {
+    position: absolute; inset: 0; padding: 6px 8px; color: var(--chat-fg); line-height: 1.45; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; pointer-events: none;
+}
+.chat-composer-token { color: #93c5fd; }
 .chat-composer-send { width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #2563eb; color: #fff; }
 .chat-composer-send:disabled { background: var(--chat-soft); color: var(--chat-faint); }
 .chat-composer-send.is-stop { background: rgba(248, 113, 113, 0.18); color: #fca5a5; border: 1px solid rgba(248, 113, 113, 0.45); }
@@ -160,6 +170,7 @@
 .chat-meta-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; padding: 2px 7px; border-radius: 999px; font-size: 0.75em; color: var(--chat-dim); border: 1px solid transparent; white-space: nowrap; }
 .chat-meta-chip:hover, .chat-meta-chip[aria-expanded="true"] { color: var(--chat-fg); border-color: var(--chat-line); background: var(--chat-soft); }
 .chat-meta-chip.is-icon { padding: 3px; }
+.chat-mode-chip, .chat-mode-chip:hover { border-color: transparent; background: none; cursor: default; }
 .chat-meta-chip.is-high { color: #fbbf24; }
 .chat-meta-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .chat-meta-effort { color: var(--chat-faint); }
@@ -220,10 +231,18 @@
 .chat-working-time { color: var(--chat-faint); font-variant-numeric: tabular-nums; }
 .chat-working-hint { color: var(--chat-faint); font-size: 0.85em; margin-left: auto; }
 .chat-stopped { display: inline-flex; align-items: center; gap: 4px; color: var(--chat-faint); font-size: 0.8em; border: 1px dashed var(--chat-line); border-radius: 999px; padding: 1px 8px; }
-.chat-user-bubble.is-folded { max-height: calc(1.55em * 12 + 40px); overflow: hidden; position: relative; }
-.chat-user-bubble.is-folded::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: linear-gradient(transparent, rgba(30, 30, 32, 0.9)); pointer-events: none; }
-.chat-user-fold { position: relative; z-index: 1; display: block; margin-top: 4px; color: #60a5fa; font-size: 0.82em; }
-.chat-user-bubble.is-folded .chat-user-fold { position: absolute; bottom: 6px; right: 12px; }
+.chat-user-fold { display: block; margin-top: 4px; color: #60a5fa; font-size: 0.82em; }
+.chat-user-fold:hover { text-decoration: underline; }
+/* `button.`: the reset's [type="button"] { background: transparent } weighs the same as one class and comes later */
+button.chat-pinned-last {
+    position: absolute; top: 8px; left: 16px; right: 16px; z-index: 5; max-width: 828px; margin: 0 auto; display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; text-align: left;
+    /* solid: --chat-bubble and --chat-bg are both see-through, and the answer would show through it */
+    background: var(--chat-pinned-bg); border: 1px solid var(--chat-line); border-radius: 10px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3); font-size: 0.9em;
+}
+/* the session memo button sits at the top right of a Mac chat */
+.chat-view:not([data-touch]) .chat-pinned-last { right: 56px; }
+.chat-pinned-last > svg { flex-shrink: 0; margin-top: 3px; color: var(--chat-faint); }
+.chat-pinned-last-text { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .chat-copy-answer { display: inline-flex; gap: 2px; margin-left: 8px; opacity: 0; transition: opacity 0.15s; }
 .chat-turn-assistant:hover .chat-copy-answer, .chat-copy-answer:focus-within { opacity: 1; }
 .chat-copy-answer button { color: var(--chat-faint); padding: 2px; border-radius: 4px; }
@@ -344,7 +363,6 @@ ol.chat-md-list { list-style: decimal; }
     .chat-meta-current { display: none; }
     .chat-working-hint { display: none; }
 }
-:root.light .chat-user-bubble.is-folded::after { background: linear-gradient(transparent, rgba(255, 255, 255, 0.9)); }
 .chat-attachment-chip { display: inline-flex; align-items: center; gap: 5px; margin: 0 4px 4px 0; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: inherit; font: inherit; font-size: 0.85em; vertical-align: middle; }
 button.chat-attachment-chip:hover { background: rgba(255, 255, 255, 0.16); }
 .chat-attachment-chip-ext { opacity: 0.65; text-transform: uppercase; font-size: 0.85em; }

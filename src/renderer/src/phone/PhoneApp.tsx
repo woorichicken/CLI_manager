@@ -86,6 +86,12 @@ export function PhoneApp() {
     const seen = useRef<Map<string, SeenState> | null>(null)
     const openIdRef = useRef<string | null>(route.sessionId)
     openIdRef.current = route.sessionId
+    const alertsRef = useRef(chatSettings.alerts)
+    alertsRef.current = chatSettings.alerts
+    // turned off with a banner up: it goes, and does not come back when turned on again
+    useEffect(() => {
+        if (!chatSettings.alerts) setDroplet(null)
+    }, [chatSettings.alerts])
 
     const loadMe = useCallback(() => {
         getMe()
@@ -143,7 +149,7 @@ export function PhoneApp() {
                         const now = Date.now()
                         const news = dropletFor(seen.current, next.sessions, openIdRef.current, now)
                         seen.current = nextSeen(seen.current, next.sessions, now)
-                        if (news) setDroplet(news)
+                        if (news && alertsRef.current) setDroplet(news)
                     }
                 })
                 .catch((error) => {
@@ -260,11 +266,15 @@ export function PhoneApp() {
     }
     const showList = wide || !session || drawer
     const feedback = phoneFeedbackAvailable(me, phoneFeedbackConfigured())
-    const badge = data ? waitingElsewhere(data.sessions, session?.id ?? null) : 0
+    const badge = data && chatSettings.alerts ? waitingElsewhere(data.sessions, session?.id ?? null) : 0
+    // the Mac's say until this phone chose
+    const quickRepliesOn = chatSettings.quickReplies ?? me.quickRepliesSet === true
+    const pinLastOn = chatSettings.pinLastMessage ?? me.pinLastMessage === true
     const chatPreferences: ChatPreferences = {
         returnSendsOnTouch: chatSettings.returnSends,
-        showQuickReplies: chatSettings.quickReplies,
-        quickReplies: me.quickReplies ?? []
+        showQuickReplies: quickRepliesOn,
+        quickReplies: me.quickReplies ?? [],
+        pinLastMessage: pinLastOn
     }
 
     return (
@@ -310,7 +320,7 @@ export function PhoneApp() {
                                 <MessageSquareWarning size={17} />
                             </button>
                         )}
-                        {me.role === 'drive' && <PhoneSettingsMenu quickReplies={me.quickReplies ?? []} />}
+                        {me.role === 'drive' && <PhoneSettingsMenu quickReplies={me.quickReplies ?? []} quickRepliesOn={quickRepliesOn} pinLastOn={pinLastOn} />}
                         {me.push && <AlertsMenu publicKey={me.push.publicKey} />}
                     </div>
                     {offline && <div className="phone-offline">Reconnecting to the Mac…</div>}

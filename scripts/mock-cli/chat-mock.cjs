@@ -12,6 +12,9 @@
  *   --name <text>         a session renamed with /rename: Claude Code writes the name into the input box's top rule
  *   --spinner 318         Claude Code 2.1.318's spinner row: no "esc to interrupt" — `✳ Galloping… (3s · ↓ 120 tokens)`
  *                         (recorded 2026-11-05, 4359b4ee)
+ *   --mode-row <text>     the row under the input box (default `⏵⏵ accept edits on`); `none` draws no row
+ *   --permission-mode <m> what a prompt records as `permissionMode` (Claude Code 2.1.3xx: default, plan, auto, …)
+ *   --continue            new records follow the transcript's last entry (a resumed session), so its history stays on the branch
  *
  * Prompts:
  *   ASK       a permission question. The layout is copied from a real Claude Code 2.1.312 screen
@@ -49,6 +52,8 @@ const WORK_MS = Number(arg('--work-ms', '1200'))
 const USER_DELAY_MS = Number(arg('--user-delay-ms', '0'))
 const NAME = arg('--name')
 const SPINNER_318 = arg('--spinner') === '318'
+const MODE_ROW = arg('--mode-row', '⏵⏵ accept edits on')
+const PERMISSION_MODE = arg('--permission-mode')
 let workStartedAt = 0
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
@@ -68,6 +73,10 @@ let spinner = 0
 /** the open menu: { kind, options: [{label, description?, custom?}], selected, customText } */
 let menu = null
 let lastUuid = null
+if (process.argv.includes('--continue') && TRANSCRIPT && fs.existsSync(TRANSCRIPT)) {
+    const lines = fs.readFileSync(TRANSCRIPT, 'utf8').trim().split('\n')
+    lastUuid = JSON.parse(lines[lines.length - 1]).uuid ?? null
+}
 /** a panel only the terminal shows (bare /model, /config), closed by Esc */
 let panel = null
 /** text submitted while a turn works, sent when it ends */
@@ -104,7 +113,7 @@ function writeUser(text) {
         record({ timestamp: now(), type: 'event_msg', payload: { type: 'user_message', message: text, kind: 'plain' } })
         record({ timestamp: now(), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } })
     } else {
-        claudeEntry('user', { role: 'user', content: text })
+        claudeEntry('user', { role: 'user', content: text }, PERMISSION_MODE ? { permissionMode: PERMISSION_MODE } : {})
     }
 }
 function recordAnswer(text) {
@@ -180,7 +189,7 @@ function boxLines() {
           ? [`${glyph === '∗' ? '✶' : glyph} Galloping… (${seconds}s · ↓ ${12 * (spinner + 1)} tokens)`]
           : [`${glyph} Working… (${AGENT === 'codex' ? 'Esc' : 'esc'} to interrupt)`]
     if (AGENT === 'codex') return [...status, `› ${input}`, '  ? for shortcuts']
-    return [...status, topRule(), `❯ ${input}`, rule(), '  ⏵⏵ accept edits on']
+    return [...status, topRule(), `❯ ${input}`, rule(), ...(MODE_ROW === 'none' ? [] : [`  ${MODE_ROW}`])]
 }
 
 function draw() {

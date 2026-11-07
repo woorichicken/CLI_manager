@@ -10,6 +10,8 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
     const chat = settings.chat ?? {}
     const enterSends = chat.enterSends !== false
     const showQuick = chat.showQuickReplies === true
+    const pinLast = chat.pinLastMessage === true
+    const openInApp = chat.openFilesInApp !== false
     const replies = chat.quickReplies ?? DEFAULT_QUICK_REPLIES
     const [repliesText, setRepliesText] = useState(replies.join('\n'))
     useEffect(() => setRepliesText((chat.quickReplies ?? DEFAULT_QUICK_REPLIES).join('\n')), [chat.quickReplies])
@@ -34,11 +36,25 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
                     </div>
                     {toggle(enterSends, () => update({ enterSends: !enterSends }), 'chat-setting-enter-sends')}
                 </div>
+                <div className="p-4 bg-black/20 border border-white/10 rounded-lg flex items-center justify-between gap-3">
+                    <div>
+                        <p className="text-sm text-white">Keep my last message on top</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Once it has scrolled out of view, your last message stays over the chat. Click it to go back there. A phone follows this until you set it on the phone.</p>
+                    </div>
+                    {toggle(pinLast, () => update({ pinLastMessage: !pinLast }), 'chat-setting-pin-last')}
+                </div>
+                <div className="p-4 bg-black/20 border border-white/10 rounded-lg flex items-center justify-between gap-3">
+                    <div>
+                        <p className="text-sm text-white">Open files in the app</p>
+                        <p className="text-xs text-gray-400 mt-0.5">On: a file path in the chat opens in the app&apos;s preview. Off: it opens in the Mac&apos;s default app for that file.</p>
+                    </div>
+                    {toggle(openInApp, () => update({ openFilesInApp: !openInApp }), 'chat-setting-open-in-app')}
+                </div>
                 <div className="p-4 bg-black/20 border border-white/10 rounded-lg space-y-3">
                     <div className="flex items-center justify-between gap-3">
                         <div>
                             <p className="text-sm text-white">Quick replies</p>
-                            <p className="text-xs text-gray-400 mt-0.5">One-tap replies over the empty message box while the agent waits. Each sends at once.</p>
+                            <p className="text-xs text-gray-400 mt-0.5">One-tap replies over the empty message box. Each sends at once; while the agent works, it waits for the turn to end.</p>
                         </div>
                         {toggle(showQuick, () => update({ showQuickReplies: !showQuick }), 'chat-setting-quick-replies')}
                     </div>

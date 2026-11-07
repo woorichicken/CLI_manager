@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Copy, Plus, Trash2, X } from 'lucide-react'
 import type { Workspace } from '../../../../shared/types'
 import type { CurrentChecklist } from '../../hooks/useChecklists'
 import { ChecklistItemRow } from './ChecklistItemRow'
 import { DueEditor } from './DueEditor'
+import { checklistForAgent } from '../../utils/checklistForAgent'
 
 interface ChecklistPanelProps {
     nav: CurrentChecklist
@@ -20,6 +21,8 @@ interface ChecklistPanelProps {
 const FOCUS_DELAY_MS = 50
 // The second click on Delete must come within this time, or the first one is forgotten.
 const DELETE_CONFIRM_MS = 3000
+// How long "Copied" stays on the button.
+const COPIED_MS = 1500
 
 /** A field where ← → and Esc mean something already (a checkbox is not one). */
 function isTextField(target: EventTarget | null): boolean {
@@ -44,6 +47,7 @@ export function ChecklistPanel({ nav, workspaces, activeWorkspaceId, todayKey, o
     const [editingTitle, setEditingTitle] = useState(false)
     const [titleDraft, setTitleDraft] = useState('')
     const [confirmDelete, setConfirmDelete] = useState(false)
+    const [copied, setCopied] = useState(false)
     const showNewForm = creating || checklists.length === 0
 
     const sessionNames = useMemo(() => {
@@ -118,6 +122,14 @@ export function ChecklistPanel({ nav, workspaces, activeWorkspaceId, todayKey, o
         setEditingTitle(false)
         const title = titleDraft.replace(/\s+/g, ' ').trim()
         if (current && title && title !== current.title) void window.api.updateChecklist(current.id, { title })
+    }
+
+    const copyForAgent = async (): Promise<void> => {
+        if (!current) return
+        const project = workspaces.find((w) => w.id === current.workspaceId)?.name
+        await navigator.clipboard.writeText(checklistForAgent(current, project))
+        setCopied(true)
+        setTimeout(() => setCopied(false), COPIED_MS)
     }
 
     const remove = (): void => {
@@ -266,6 +278,15 @@ export function ChecklistPanel({ nav, workspaces, activeWorkspaceId, todayKey, o
             ) : (
                 <div className="flex items-center justify-between px-3 py-2 text-[11px] text-gray-500">
                     <button data-testid="checklist-new" onClick={() => setCreating(true)} className="hover:text-gray-300">+ New checklist</button>
+                    <button
+                        data-testid="checklist-copy-agent"
+                        onClick={() => void copyForAgent()}
+                        className="flex items-center gap-1 hover:text-gray-300"
+                        title="Copy this checklist with how an agent checks items off — paste it to an agent"
+                    >
+                        {copied ? <Check size={11} /> : <Copy size={11} />}
+                        {copied ? 'Copied' : 'Copy for agent'}
+                    </button>
                     <button
                         data-testid="checklist-delete"
                         data-state={confirmDelete ? 'confirm' : 'idle'}

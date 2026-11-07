@@ -13,7 +13,7 @@ import type {
     QueuedMessage
 } from '../shared/conversation'
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
-import { isBusyRow } from './screenLines'
+import { isBusyRow, screenAgentMode } from './screenLines'
 import { answerSteps, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 
@@ -128,6 +128,8 @@ interface Watched {
     lastKey: string
     lastScreenAt: number
     working: boolean
+    /** the mode the screen shows under the input box; null: it shows none */
+    screenMode: string | null
     prompt: PromptMenu | null
     queue: QueueItem[]
     sending: boolean
@@ -235,7 +237,9 @@ export class ConversationService {
             this.dropIfIdle(sessionId, entry)
             if (read === null) return { ...base, agent, unavailable: 'not-found', turns: [], totalTurns: 0, truncated: false }
             const turns = read.turns.slice(-Math.max(1, Math.min(limit, 2000)))
-            return { ...base, agent, turns, totalTurns: read.turns.length, truncated: read.truncated, meta: read.meta }
+            // the screen follows shift+tab at once; the record only names the mode of the last prompt
+            const meta = agent === 'claude' && entry.screenMode ? { ...(read.meta ?? { model: null, effort: null }), mode: entry.screenMode } : read.meta
+            return { ...base, agent, turns, totalTurns: read.turns.length, truncated: read.truncated, meta }
         } catch (error) {
             console.error('[conversation] read failed', sessionId, error)
             this.dropIfIdle(sessionId, entry)
@@ -701,7 +705,7 @@ export class ConversationService {
     private entry(sessionId: string): Watched {
         let entry = this.watched.get(sessionId)
         if (!entry) {
-            entry = { subscribers: 0, revision: 1, lastKey: '', lastScreenAt: -1, working: false, prompt: null, queue: [], sending: false, terminalOpened: null }
+            entry = { subscribers: 0, revision: 1, lastKey: '', lastScreenAt: -1, working: false, screenMode: null, prompt: null, queue: [], sending: false, terminalOpened: null }
             this.watched.set(sessionId, entry)
         }
         return entry
@@ -732,6 +736,7 @@ export class ConversationService {
         entry.lastScreenAt = outputAt
         const screen = this.deps.mirror.screen(sessionId)
         entry.working = screen.some(isBusyRow)
+        entry.screenMode = screenAgentMode(screen)
         entry.prompt = entry.working ? null : readPrompt(screen, agentOf(this.deps.session(sessionId)) ?? 'claude')
     }
 
@@ -774,7 +779,7 @@ export class ConversationService {
                     console.error('[conversation] poll read failed', sessionId, error)
                 }
             }
-            const key = JSON.stringify([info?.cliSessionId ?? null, entry.working, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
+            const key = JSON.stringify([info?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
             if (transcriptChanged || key !== entry.lastKey) {
                 entry.lastKey = key
                 this.bump(sessionId, entry)

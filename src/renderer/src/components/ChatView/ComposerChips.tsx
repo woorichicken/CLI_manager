@@ -152,6 +152,18 @@ export function ModelChip({
     )
 }
 
+/** The agent's mode (5c35cff8). Words only: the terminal's shift+tab changes it, the chat cannot. */
+export function ModeChip({ agent, meta }: { agent: ConversationAgent | null; meta: ConversationMeta | null }) {
+    const mode = meta?.mode
+    if (!agent || !mode) return null
+    const title = agent === 'claude' ? `Mode: ${mode} — shift+tab in the terminal changes it` : `Mode: ${mode}`
+    return (
+        <span className={`chat-meta-chip chat-mode-chip${mode === 'bypass' || mode === 'full access' ? ' is-high' : ''}`} data-testid="chat-mode-chip" title={title}>
+            {mode}
+        </span>
+    )
+}
+
 /** How full the context is: a share when the window is known (Codex), the tokens otherwise (Claude). */
 export function ContextChip({ meta, canCompact, onCompact }: { meta: ConversationMeta | null; canCompact: boolean; onCompact: () => void }) {
     const [open, setOpen] = useState(false)
