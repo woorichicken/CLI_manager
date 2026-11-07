@@ -405,12 +405,12 @@ export class ControlApiServer {
             ),
             route('GET', '/v1/sessions/:id', ({ params }) => service.getSession(params.id)),
             route('GET', '/v1/sessions/:id/conversations', ({ params }) => service.listAgentConversations(params.id)),
-            route('POST', '/v1/sessions/:id/conversation', ({ params, body }) => service.connectAgentConversation(params.id, {
+            route('POST', '/v1/sessions/:id/conversation', ({ params, body, client, caller }) => service.connectAgentConversation(params.id, {
                 agent: optionalString(body, 'agent') as 'claude' | 'codex',
                 id: optionalString(body, 'id') ?? '',
                 resume: optionalBoolean(body, 'resume'),
                 force: optionalBoolean(body, 'force')
-            })),
+            }, client, caller)),
             route('GET', '/v1/sessions/:id/output', ({ params, query, client, caller }) => {
                 const mode = query.get('mode') ?? undefined
                 if (mode !== undefined && mode !== 'screen' && mode !== 'tail') {

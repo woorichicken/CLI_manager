@@ -19,7 +19,7 @@ import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
 import { CLISessionTracker } from './CLISessionTracker'
 import { CodexSessionLocator } from './CodexSessionLocator'
-import { AgentConversations, AgentConversationError } from './agentConversations'
+import { AgentConversations, AgentConversationError, normalizeAgentCommand, commandAgent } from './agentConversations'
 import type { AgentConversationConnectInput } from '../shared/conversation'
 import { LoopManager } from './LoopManager'
 import { HookInstaller, hookIntegrationAllowed } from './HookInstaller'
@@ -433,6 +433,24 @@ const agentConversations = new AgentConversations({
     sessions: () => ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) =>
         w.sessions.map((s) => ({ ...s, cwd: s.cwd || w.path }))),
     foreground: (id) => terminalManager.foregroundAgent(id),
+    resolveAlias: (name) => cliSessionTracker.resolveAlias(name),
+    beforeResume: async (id) => {
+        await terminalMirror.flush(id)
+        if (terminalMirror.showsAwaitingInput(id)) throw new AgentConversationError(409, 'awaiting_input', 'Answer the question in Terminal before resuming a conversation.')
+        const pending = cliSessionTracker.getPendingInput(id)
+        const shell = terminalMirror.shellInput(id)
+        if (pending.text || pending.uncertain || !shell.empty) throw new AgentConversationError(409, 'input_busy', 'Cannot verify an empty Terminal input. Finish or cancel any command, or resume from Terminal.')
+    },
+    waitForAgent: async (id, agent, conversationId) => {
+        const until = Date.now() + 3000
+        while (Date.now() < until) {
+            const front = await terminalManager.foregroundAgent(id)
+            if (front.kind === agent && (front.runningId?.toLowerCase() === conversationId.toLowerCase() || (front.argv ?? '').split(/\s+/).some((token) => token.toLowerCase() === conversationId.toLowerCase()))) return true
+            if (front.kind === 'none' || (front.kind === 'claude' || front.kind === 'codex') && front.kind !== agent) return false
+            await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        return false
+    },
     update: (id, info) => {
         stopCodexCapture(id)
         persistDetectedSession({ terminalId: id, cliSessionId: info.cliSessionId, cliToolName: info.cliToolName, baseCommand: info.cliCommand })
@@ -450,11 +468,12 @@ function persistDetectedSession(info: { terminalId: string; cliSessionId: string
         if (!session) continue
         session.cliSessionId = info.cliSessionId
         session.cliToolName = info.cliToolName
-        session.cliCommand = info.baseCommand
+        const agent = info.cliToolName === 'claude' ? 'claude' : 'codex'
+        session.cliCommand = normalizeAgentCommand(info.baseCommand, agent, (name) => cliSessionTracker.resolveAlias(name))
         store.set('workspaces', workspaces)
         broadcast('cli-session-detected', {
             workspaceId: ws.id, sessionId: info.terminalId,
-            cliSessionId: info.cliSessionId, cliToolName: info.cliToolName, cliCommand: info.baseCommand
+            cliSessionId: info.cliSessionId, cliToolName: info.cliToolName, cliCommand: session.cliCommand
         })
         return
     }
@@ -1062,8 +1081,10 @@ function validateCliSessionIds(): void {
 
     // Collect all existing session IDs from Claude's storage
     const existingSessionIds = new Set<string>()
+    let claudeStorageKnown = false
     try {
-        const projectDirs = existsSync(projectsDir) ? readdirSync(projectsDir) : []
+        const projectDirs = readdirSync(projectsDir)
+        claudeStorageKnown = true
         for (const dir of projectDirs) {
             const dirPath = path.join(projectsDir, dir)
             try {
@@ -1073,11 +1094,10 @@ function validateCliSessionIds(): void {
                         existingSessionIds.add(file.replace('.jsonl', ''))
                     }
                 }
-            } catch { /* skip unreadable dirs */ }
+            } catch { claudeStorageKnown = false }
         }
-    } catch (e) {
-        console.error('[validateCliSessionIds] Failed to scan projects dir:', e)
-        return
+    } catch {
+        console.warn('[validateCliSessionIds] Claude storage unavailable; preserving Claude ids')
     }
 
     console.log(`[validateCliSessionIds] Found ${existingSessionIds.size} session(s) in Claude storage`)
@@ -1087,6 +1107,14 @@ function validateCliSessionIds(): void {
     for (const ws of workspaces) {
         for (const session of ws.sessions) {
             if (session.cliSessionId) {
+                const agent = session.cliToolName === 'codex' ? 'codex' : 'claude'
+                // Repair older saved agent commands before the renderer can restore a prompt.
+                // Opaque user wrappers keep their existing restart contract.
+                if (session.cliCommand && commandAgent(session.cliCommand, (name) => cliSessionTracker.resolveAlias(name)) === agent) {
+                    const safe = normalizeAgentCommand(session.cliCommand, agent, (name) => cliSessionTracker.resolveAlias(name))
+                    if (safe !== session.cliCommand) { session.cliCommand = safe; modified = true }
+                }
+                if (agent === 'claude' && !claudeStorageKnown) continue
                 // Codex keeps its own conversations; only Claude's are in the set above.
                 const exists = session.cliToolName === 'codex'
                     ? codexSessionLocator.exists(session.cliSessionId)
@@ -1120,7 +1148,8 @@ app.whenReady().then(async () => {
         app.dock?.hide()
     }
 
-    // Validate persisted cliSessionIds against Claude's session storage
+    // Alias resolution is needed before restoring saved commands.
+    await loadShellAliases()
     validateCliSessionIds()
 
     // Histories of sessions deleted since the last run; then keep saving.
@@ -1328,9 +1357,26 @@ app.whenReady().then(async () => {
         codexCaptureStops.set(terminalId, stop)
     }
     cliSessionTracker.onCodexStarted = startCodexCapture
+    const resumeChecks = new Map<string, symbol>()
     cliSessionTracker.onCodexResumed = (terminalId, cliSessionId, baseCommand) => {
-        stopCodexCapture(terminalId)
-        persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'codex', baseCommand })
+        const token = Symbol()
+        resumeChecks.set(terminalId, token)
+        // Keystrokes and pasted commands are only hints. The running process must confirm them.
+        void (async () => {
+            const until = Date.now() + 4000
+            while (Date.now() < until && resumeChecks.get(terminalId) === token) {
+                const front = await terminalManager.foregroundAgent(terminalId)
+                if (front.kind === 'codex') {
+                    const actual = cliSessionTracker.codexResume(front.argv ?? '')
+                    if (actual?.id.toLowerCase() !== cliSessionId.toLowerCase()) return
+                    await agentConversations.connect(terminalId, { agent: 'codex', id: cliSessionId, force: true }, { baseCommand })
+                    return
+                }
+                if (front.kind === 'claude' || front.kind === 'none') return
+                await new Promise((resolve) => setTimeout(resolve, 100))
+            }
+        })().catch((error) => console.warn('[codex-session] resume was not linked:', error instanceof AgentConversationError ? error.code : error))
+            .finally(() => { if (resumeChecks.get(terminalId) === token) resumeChecks.delete(terminalId) })
     }
 
     ipcMain.handle('watch-codex-session', (_, sessionId: string, command: string): boolean => {
@@ -3499,7 +3545,6 @@ app.whenReady().then(async () => {
         console.error('[agent-hooks] Startup failed, continuing without integration:', error)
     }
 
-    void loadShellAliases()
 
     // Before the window loads, so the sidebar never shows a leftover scratch registration.
     controlApiService.pruneSpentEphemeral()

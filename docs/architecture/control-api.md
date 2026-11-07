@@ -161,7 +161,7 @@ These endpoints do not add any phone routes or change phone permissions.
 | REST | MCP | Result |
 |---|---|---|
 | `GET /v1/sessions/:id/conversations` | `list_agent_conversations(session_id)` | `{cwd, front:{kind,runningId,startedAt}, current:{agent,id}|null, items, truncated}` |
-| `POST /v1/sessions/:id/conversation` | `connect_agent_conversation(session_id, agent, id, resume?, force?)` | `{status:"connected", resumed, cliCommand}` |
+| `POST /v1/sessions/:id/conversation` | `connect_agent_conversation(session_id, agent, id, resume?, force?)` | `{status:"connected", resumed, typed, cliCommand}` |
 
 An item is `{agent,id,startedAt,updatedAt,firstMessage,bytes,startedHere,linkedTo}`.
 `linkedTo` is `{sessionId,name}` or null. Times are epoch milliseconds. File paths and internal
@@ -169,15 +169,23 @@ process arguments are omitted. First messages use the existing transcript parser
 folded to one line, and limited to 200 characters. Only top-level interactive Codex sources
 (cli, vscode, or absent; originator codex-tui or absent) and nonempty Claude conversations qualify.
 Sidecars are excluded. The list shows up to 30 items sorted by last modification; Codex discovery
-stops at 90 days, 2,000 heads or 30 matching items and yields between days. Head reads are bounded
-at 512 KiB for Codex and 64 KiB for Claude. `truncated` reports a discovery or display limit.
+stops at 90 days, 2,000 heads or 30 matching items and yields between days. Claude has its own
+2,000-head budget. Codex reads the first 8 KiB to reject unrelated folders/sources before parsing
+a matching bounded 512 KiB head; Claude heads are bounded at 64 KiB. `truncated` reports a discovery or display limit.
 
 Connections require a strict UUID, a real-path folder match, and no other terminal linked to the
 conversation. A foreground Claude blocks changes; a Codex holding a rollout accepts only that
 conversation. An unbound Codex requires the −2s/+30s start window, or explicit `force:true` with
-its warning. Force never bypasses duplicate links, folders, or a running agent. `resume:true`
-requires a shell both at discovery and immediately before input; refusal leaves saved values intact.
-The shell line is cleared with Ctrl+U and receives only the trusted base command and checked UUID.
+its warning. Force cannot switch a foreground Codex to a Claude conversation, or bypass duplicate
+links, folders, a held conversation, or an unknown foreground. `resume:true` requires a shell both
+at discovery and immediately before input. After a mirror flush, a question is `awaiting_input`,
+a draft/continuation prompt is `input_busy`; both leave terminal text and saved values intact.
+Nothing clears the shell line. Alias-aware, quote-aware normalization removes prompts, old resume
+targets and noninteractive modes from saved commands, initial commands and process fallbacks.
+Only the safe base and checked UUID are typed. API input records its client and caller relation.
+`typed:true` says the command was entered; `resumed:true` is returned only after the matching
+foreground agent is observed. Failed/unobserved startup returns `resumed:false, typed:true`; the
+dialog keeps that distinction visible and prevents a repeated command from the same dialog.
 Saved options survive restarts; a renderer reload reattaches without resuming again.
 
 | HTTP | Code | Details |
@@ -189,6 +197,8 @@ Saved options survive restarts; a renderer reload reattaches without resuming ag
 | 409 | `agent_running` | Foreground agent conflict; includes `runningId` |
 | 409 | `not_started_here` | Explicit confirmation required for unbound Codex |
 | 409 | `not_shell` | Resume would type into a program |
+| 409 | `awaiting_input`, `input_busy` | A question or existing shell input; nothing is erased or saved |
+| 409 | `foreground_unknown` | Process inspection failed; refresh and retry |
 
 MCP domain failures remain tool results with `isError:true` and the error code in their text.
 Coverage: T25 locator/tracker, T103 synthetic service tests, T104 app/store/REST/MCP tests.

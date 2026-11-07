@@ -519,7 +519,7 @@ async function callTool(
             return JSON.stringify(await service.connectAgentConversation(str(args, 'session_id', true)!, {
                 agent: str(args, 'agent', true) as 'claude' | 'codex', id: str(args, 'id', true)!,
                 resume: bool(args, 'resume'), force: bool(args, 'force')
-            }), null, 1)
+            }, client, caller), null, 1)
         case 'focus_session':
             return JSON.stringify(service.focusSession(str(args, 'session_id', true)!, client, caller), null, 1)
         case 'rename_session':

@@ -434,8 +434,8 @@ export class ControlApiService {
         return this.conversationAction((service) => service.list(sessionId))
     }
 
-    async connectAgentConversation(sessionId: string, input: AgentConversationConnectInput): Promise<AgentConversationConnectResult> {
-        return this.conversationAction((service) => service.connect(sessionId, input))
+    async connectAgentConversation(sessionId: string, input: AgentConversationConnectInput, client?: string, caller?: string): Promise<AgentConversationConnectResult> {
+        return this.conversationAction((service) => service.connect(sessionId, input, { beforeWrite: () => { this.connect(sessionId, client, caller) } }))
     }
 
     private async conversationAction<T>(action: (service: AgentConversations) => Promise<T>): Promise<T> {

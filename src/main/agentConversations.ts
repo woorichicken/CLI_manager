@@ -9,6 +9,7 @@ import { claudeProjectSlug } from './TranscriptReader'
 import { parseClaudeTranscript } from './transcript/claudeTranscript'
 import { parseCodexTranscript } from './transcript/codexTranscript'
 import { maskSecretLines } from './maskSecrets'
+import { parseCodexRolloutHead } from './CodexSessionLocator'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LIST_LIMIT = 30
@@ -30,6 +31,10 @@ export interface AgentConversationsDeps {
     foreground: (sessionId: string) => Promise<AgentConversationFront>
     update: (sessionId: string, values: { cliSessionId: string; cliToolName: ConversationAgent; cliCommand: string }) => void
     write: (sessionId: string, data: string) => void
+    /** Flushes and rejects questions or a nonempty input line before any mutation. */
+    beforeResume: (sessionId: string) => Promise<void>
+    waitForAgent?: (sessionId: string, agent: ConversationAgent, conversationId: string) => Promise<boolean>
+    resolveAlias?: (name: string) => string | undefined
     forget?: (sessionId: string) => void
     codexHome: () => string
     claudeConfigDir: () => string
@@ -61,7 +66,7 @@ export class AgentConversations {
             for (const name of (await names(dir)).sort().reverse()) {
                 if (!name.endsWith('.jsonl')) continue
                 if (++heads > HEAD_LIMIT) { truncated = true; break }
-                const item = await readCandidate(join(dir, name), 'codex')
+                const item = await readCandidate(join(dir, name), 'codex', cwd)
                 if (item && await canonical(item.cwd) === cwd) found.push(item)
             }
             await yieldTurn()
@@ -70,10 +75,11 @@ export class AgentConversations {
         const project = join(this.deps.claudeConfigDir(), 'projects', claudeProjectSlug(session.cwd))
         // A real-path alias may have its own project folder in Claude's tree.
         const projects = [...new Set([project, join(this.deps.claudeConfigDir(), 'projects', claudeProjectSlug(cwd))])]
+        let claudeHeads = 0
         for (const folder of projects) {
             for (const name of await names(folder)) {
                 if (!UUID.test(name.slice(0, -6)) || !name.endsWith('.jsonl')) continue
-                if (++heads > HEAD_LIMIT) { truncated = true; break }
+                if (++claudeHeads > HEAD_LIMIT) { truncated = true; break }
                 const item = await readCandidate(join(folder, name), 'claude')
                 if (item && await canonical(item.cwd) === cwd) found.push(item)
             }
@@ -93,7 +99,7 @@ export class AgentConversations {
         }
     }
 
-    async connect(sessionId: string, input: AgentConversationConnectInput): Promise<AgentConversationConnectResult> {
+    async connect(sessionId: string, input: AgentConversationConnectInput, hooks: { beforeWrite?: () => void; baseCommand?: string } = {}): Promise<AgentConversationConnectResult> {
         const session = this.session(sessionId)
         if (!input || (input.agent !== 'claude' && input.agent !== 'codex') || typeof input.id !== 'string' || !UUID.test(input.id)) {
             throw new AgentConversationError(400, 'invalid_id', 'Choose an agent conversation with a valid UUID.')
@@ -107,14 +113,18 @@ export class AgentConversations {
         const linkedTo = this.linkedTo(sessionId, input.agent, input.id)
         if (linkedTo) throw new AgentConversationError(409, 'linked_elsewhere', 'The conversation is linked to another terminal.', { linkedTo })
         const front = await this.deps.foreground(sessionId)
-        if (front.kind === 'claude' || (front.kind === 'codex' && front.runningId && (input.agent !== 'codex' || front.runningId.toLowerCase() !== input.id.toLowerCase()))) {
+        if (front.kind === 'unknown') throw new AgentConversationError(409, 'foreground_unknown', 'Cannot verify the foreground program. Try again before connecting.')
+        if (front.kind === 'claude' || (front.kind === 'codex' && (input.agent !== 'codex' || front.runningId && front.runningId.toLowerCase() !== input.id.toLowerCase()))) {
             throw new AgentConversationError(409, 'agent_running', 'Exit the running agent before linking another conversation.', { runningId: front.runningId })
         }
         if (front.kind === 'codex' && !front.runningId && !startsHere(front, item) && !input.force) {
             throw new AgentConversationError(409, 'not_started_here', 'The conversation may differ from the running Codex. Confirm Connect anyway.')
         }
-        const cliCommand = commandFor(session, input.agent, front)
+        const cliCommand = hooks.baseCommand !== undefined
+            ? normalizeAgentCommand(hooks.baseCommand, input.agent, this.deps.resolveAlias)
+            : commandFor(session, input.agent, front, this.deps.resolveAlias)
         if (input.resume) {
+            await this.deps.beforeResume(sessionId)
             const latest = await this.deps.foreground(sessionId)
             // The process may have changed while the disk and process checks were in flight.
             if (front.kind !== 'shell' || latest.kind !== 'shell') throw new AgentConversationError(409, 'not_shell', 'Resume requires an idle shell.')
@@ -125,8 +135,13 @@ export class AgentConversations {
         if (conflict) throw new AgentConversationError(409, 'linked_elsewhere', 'The conversation is linked to another terminal.', { linkedTo: conflict })
         this.deps.update(sessionId, { cliSessionId: item.id, cliToolName: input.agent, cliCommand })
         this.deps.forget?.(sessionId)
-        if (input.resume) this.deps.write(sessionId, `\x15${cliCommand} ${input.agent === 'codex' ? 'resume' : '--resume'} ${item.id}\r`)
-        return { status: 'connected', resumed: input.resume === true, cliCommand }
+        let resumed = false
+        if (input.resume) {
+            hooks.beforeWrite?.()
+            this.deps.write(sessionId, `${cliCommand} ${input.agent === 'codex' ? 'resume' : '--resume'} ${item.id}\r`)
+            try { resumed = await this.deps.waitForAgent?.(sessionId, input.agent, item.id) ?? false } catch { /* A command typed is not proof of startup. */ }
+        }
+        return { status: 'connected', resumed, typed: input.resume === true, cliCommand }
     }
 
     private session(id: string): TerminalSession {
@@ -183,33 +198,34 @@ function dayTimestamp(dir: string): number {
     return new Date(parts[0], parts[1] - 1, parts[2]).getTime()
 }
 
-/** Read a bounded head only. Index files, sidecars, symlinks and empty conversations are excluded. */
-async function readCandidate(file: string, agent: ConversationAgent): Promise<Candidate | null> {
+/** Inspect metadata before parsing bounded transcript text. Unrelated large heads stay unread. */
+async function readCandidate(file: string, agent: ConversationAgent, targetCwd?: string): Promise<Candidate | null> {
     try {
         const stat = await lstat(file)
         if (!stat.isFile()) return null
         const handle = await open(file, 'r')
         let text: string
+        let id = ''
+        let cwd = ''
+        let startedAt = NaN
         try {
-            const buffer = Buffer.alloc(agent === 'codex' ? CODEX_HEAD : CLAUDE_HEAD)
-            const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-            const head = buffer.subarray(0, bytesRead).toString('utf8')
+            let buffer = Buffer.alloc(agent === 'codex' ? 8192 : CLAUDE_HEAD)
+            let length = 0
+            if (agent === 'codex') {
+                length = (await handle.read(buffer, 0, 8192, 0)).bytesRead
+                const meta = parseCodexRolloutHead(buffer.subarray(0, length).toString('utf8'), file)
+                if (!meta || targetCwd !== undefined && await canonical(meta.cwd) !== targetCwd) return null
+                ;({ id, cwd, startedAt } = meta)
+                const transcript = Buffer.alloc(CODEX_HEAD)
+                buffer.copy(transcript, 0, 0, length)
+                buffer = transcript
+            }
+            const rest = await handle.read(buffer, length, buffer.length - length, length)
+            const head = buffer.subarray(0, length + rest.bytesRead).toString('utf8')
             text = head.slice(0, head.lastIndexOf('\n') + 1)
         } finally { await handle.close() }
-        const records = text.split('\n').flatMap((line) => { try { return [object(JSON.parse(line))] } catch { return [] } })
-        let id: string
-        let cwd: string
-        let startedAt: number
-        if (agent === 'codex') {
-            const header = records[0]
-            if (header?.type !== 'session_meta') return null
-            const meta = object(header.payload)
-            if (meta.source !== undefined && meta.source !== 'cli' && meta.source !== 'vscode') return null
-            if (meta.originator !== undefined && meta.originator !== 'codex-tui') return null
-            id = typeof meta.id === 'string' ? meta.id : ''
-            cwd = typeof meta.cwd === 'string' ? meta.cwd : ''
-            startedAt = Date.parse(String(meta.timestamp ?? header.timestamp))
-        } else {
+        if (agent === 'claude') {
+            const records = text.split('\n').flatMap((line) => { try { return [object(JSON.parse(line))] } catch { return [] } })
             const header = records.find((record) => typeof record.cwd === 'string')
             id = basename(file, '.jsonl')
             cwd = typeof header?.cwd === 'string' ? header.cwd : ''
@@ -225,60 +241,128 @@ async function readCandidate(file: string, agent: ConversationAgent): Promise<Ca
     } catch { return null }
 }
 
-/** Saved commands and process argv are trusted local input; transcript text never enters a command. */
-function commandFor(session: TerminalSession, agent: ConversationAgent, front: AgentConversationFront): string {
-    const command = session.cliToolName === agent && session.cliCommand ? session.cliCommand
-        : session.initialCommand && initialCommandAgent(session.initialCommand) === agent ? session.initialCommand
-            : front.kind === agent ? safeProcessCommand(front.argv, agent) : agent
-    return command.replace(/\s+(?:resume|--resume|-r|--session-id)\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\s|$)/gi, '').trim()
+type AliasResolver = (name: string) => string | undefined
+const AND_TOKEN = '\0and'
+const SEMI_TOKEN = '\0semi'
+
+function commandFor(session: TerminalSession, agent: ConversationAgent, front: AgentConversationFront, resolveAlias?: AliasResolver): string {
+    const candidates = [session.cliToolName === agent ? session.cliCommand : undefined, session.initialCommand, front.kind === agent ? front.argv : undefined]
+    for (const command of candidates) {
+        const normalized = normalizeCommand(command, agent, resolveAlias)
+        if (normalized) return normalized.command
+    }
+    return agent
 }
 
-/** Recognize the executable after setup commands, keeping quoted arguments out of that decision. */
-function initialCommandAgent(command: string): string | undefined {
-    let tokens: string[] = []
+/** Every persistence path drops opening prompts, resume targets and noninteractive modes. */
+export function normalizeAgentCommand(command: string | undefined, agent: ConversationAgent, resolveAlias?: AliasResolver): string {
+    return normalizeCommand(command, agent, resolveAlias)?.command ?? agent
+}
+
+/** Recognizes the executable after shell setup, including a known safe alias expansion. */
+export function commandAgent(command: string | undefined, resolveAlias?: AliasResolver, depth = 0): ConversationAgent | null {
+    if (!command || depth > 4) return null
+    const tokens = commandTokens(command)
+    if (!tokens?.length) {
+        // Classification only: malformed prompts still identify a command that needs sanitizing.
+        const first = /^\s*([^\s]+)/.exec(command)?.[1]
+        if (!first) return null
+        const name = basename(first)
+        return name === 'claude' || name === 'codex' ? name : commandAgent(resolveAlias?.(first), resolveAlias, depth + 1)
+    }
+    let start = Math.max(tokens.lastIndexOf(AND_TOKEN), tokens.lastIndexOf(SEMI_TOKEN)) + 1
+    if (tokens[start] === 'env') start++
+    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start] ?? '')) start++
+    if (/^(node|nodejs)$/.test(basename(tokens[start] ?? ''))) start++
+    const executable = tokens[start]
+    if (!executable) return null
+    const name = basename(executable)
+    return name === 'claude' || name === 'codex' ? name : commandAgent(resolveAlias?.(executable), resolveAlias, depth + 1)
+}
+
+const VALUE_FLAGS: Record<ConversationAgent, Set<string>> = {
+    codex: new Set(['-c', '--config', '-m', '--model', '-p', '--profile', '-C', '--cd', '-s', '--sandbox', '-a', '--ask-for-approval', '-i', '--image', '--enable', '--disable', '--add-dir']),
+    claude: new Set(['--model', '--permission-mode', '--effort', '--agent', '--agents', '--add-dir', '--mcp-config', '--settings', '--setting-sources', '--allowedTools', '--allowed-tools', '--disallowedTools', '--disallowed-tools', '--append-system-prompt', '--append-system-prompt-file', '--system-prompt', '--system-prompt-file', '--betas'])
+}
+const NONINTERACTIVE: Record<ConversationAgent, Set<string>> = {
+    codex: new Set(['exec', 'e', 'login', 'logout', 'mcp', 'mcp-server', 'app-server', 'completion', 'sandbox', 'debug', 'apply', 'a', 'cloud', 'features', 'fork', 'help']),
+    claude: new Set(['install', 'uninstall', 'update', 'config', 'mcp', 'doctor', 'api-key'])
+}
+const quoteToken = (token: string): string => /^[A-Za-z0-9_./:=,+@%~-]+$/.test(token) ? token : "'" + token.replace(/'/g, "'\\''") + "'"
+
+/** A small shell lexer: quotes are understood, but substitutions and control operators are refused. */
+function commandTokens(command: string): string[] | null {
+    if (/[\x00-\x08\x0a-\x1f]/.test(command)) return null
+    const tokens: string[] = []
     let word = ''
+    let quoted = false
     let quote = ''
     let escaped = false
-    const flush = (): void => { if (word) tokens.push(word); word = '' }
+    const flush = (): void => { if (word || quoted) tokens.push(word); word = ''; quoted = false }
     for (let i = 0; i < command.length; i++) {
         const character = command[i]
-        if (escaped) { word += character; escaped = false }
-        else if (character === '\\' && quote !== "'") escaped = true
-        else if (quote) { if (character === quote) quote = ''; else word += character }
-        else if (character === '"' || character === "'") quote = character
-        else if (character === ';' || character === '&' && command[i + 1] === '&') {
-            tokens = []; word = ''; if (character === '&') i++
-        } else if (/\s/.test(character)) flush()
-        else word += character
+        if (escaped) { word += character; escaped = false; continue }
+        if (character === '\\' && quote !== "'") { escaped = true; continue }
+        if (quote) { if (character === quote) quote = ''; else word += character; continue }
+        if (character === '"' || character === "'") { quote = character; quoted = true; continue }
+        if (/\s/.test(character)) { flush(); continue }
+        if (character === ';' || character === '&' && command[i + 1] === '&') {
+            flush(); tokens.push(character === ';' ? SEMI_TOKEN : AND_TOKEN); if (character === '&') i++; continue
+        }
+        if (/[|&<>`$\r\n]/.test(character)) return null
+        word += character
     }
-    if (quote || escaped) return undefined
+    if (quote || escaped) return null
     flush()
-    if (tokens[0] === 'env') tokens.shift()
-    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0] ?? '')) tokens.shift()
-    return tokens[0]?.split('/').pop()
+    return tokens
 }
 
-/** ps does not preserve shell quoting. Keep safe options only, never the agent's opening prompt. */
-function safeProcessCommand(argv: string | undefined, agent: ConversationAgent): string {
-    const tokens = (argv ?? '').split(/\s+/)
-    const start = tokens.findIndex((token) => token.split('/').pop() === agent)
-    if (start < 0) return agent
-    const safe = /^[A-Za-z0-9_./:=,+@%~-]+$/
-    if (!safe.test(tokens[start])) return agent
-    const result = [tokens[start]]
-    const withValue = new Set(['-c', '--config', '-m', '--model', '-p', '--profile', '-C', '--cd', '-s', '--sandbox', '-a', '--ask-for-approval', '-i', '--image', '--enable', '--disable', '--add-dir', '--permission-mode', '--effort'])
+function normalizeCommand(command: string | undefined, agent: ConversationAgent, resolveAlias?: AliasResolver, depth = 0): { command: string; stripped: boolean } | null {
+    if (!command || depth > 4) return null
+    const tokens = commandTokens(command)
+    if (!tokens?.length) return null
+    const segment = Math.max(tokens.lastIndexOf(AND_TOKEN), tokens.lastIndexOf(SEMI_TOKEN)) + 1
+    let start = segment
+    if (tokens[start] === 'env') start++
+    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start] ?? '')) start++
+    // Node wrappers are only a command fallback; the native executable can be resumed directly.
+    if (/^(node|nodejs)$/.test(basename(tokens[start] ?? ''))) start++
+    const executable = tokens[start]
+    if (!executable) return null
+    if (basename(executable) !== agent) {
+        const expansion = resolveAlias?.(executable)
+        const resolved = normalizeCommand(expansion, agent, resolveAlias, depth + 1)
+        if (!resolved) return null
+        // Keeping an alias that secretly carries a prompt would replay it despite stripping its text.
+        if (resolved.stripped) return { command: agent, stripped: true }
+    }
+    const result = tokens.slice(0, start + 1)
+    let stripped = false
     for (let i = start + 1; i < tokens.length; i++) {
         const token = tokens[i]
-        if (token === 'resume' && UUID.test(tokens[i + 1] ?? '')) { i++; continue }
-        if (['--resume', '-r', '--session-id'].includes(token) && UUID.test(tokens[i + 1] ?? '')) { i++; continue }
-        if (token === '--' || !token.startsWith('-')) break
-        if (!safe.test(token)) return agent
+        const flag = token.split('=', 1)[0]
+        if (agent === 'codex' && token === 'resume') {
+            if (!UUID.test(tokens[i + 1] ?? '')) return { command: agent, stripped: true }
+            i++; stripped = true; continue
+        }
+        if (['--resume', '-r', '--session-id'].includes(flag)) {
+            if (!token.includes('=')) i++
+            stripped = true; continue
+        }
+        if (['--help', '-h', '--version', '-V'].includes(flag) || agent === 'claude' && (/^-p/.test(flag) || ['--print', '--continue', '-c', '--fork-session'].includes(flag))) {
+            return { command: agent, stripped: true }
+        }
+        if (token === '--' || !token.startsWith('-')) {
+            if (NONINTERACTIVE[agent].has(token)) return { command: agent, stripped: true }
+            stripped = true; break
+        }
         result.push(token)
-        if (withValue.has(token)) {
+        if (VALUE_FLAGS[agent].has(flag) && !token.includes('=')) {
             const value = tokens[++i]
-            if (!value || !safe.test(value)) return agent
+            if (value === undefined) return { command: agent, stripped: true }
             result.push(value)
         }
     }
-    return result.join(' ')
+    // Only command separators emitted by the lexer stay executable; all argument values are literals.
+    return { command: result.map((token) => token === AND_TOKEN ? '&&' : token === SEMI_TOKEN ? ';' : quoteToken(token)).join(' '), stripped }
 }

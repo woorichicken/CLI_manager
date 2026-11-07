@@ -22,6 +22,7 @@ export function ConnectConversationDialog({ sessionId, sessionName, onClose }: C
     const [selectedKey, setSelectedKey] = useState('')
     const [loading, setLoading] = useState(true)
     const [connecting, setConnecting] = useState(false)
+    const [resumeTyped, setResumeTyped] = useState(false)
     const [error, setError] = useState('')
     const panelRef = useRef<HTMLDivElement>(null)
     const cancelRef = useRef<HTMLButtonElement>(null)
@@ -32,9 +33,9 @@ export function ConnectConversationDialog({ sessionId, sessionName, onClose }: C
     connectingRef.current = connecting
 
     const blocked = (item: AgentConversationItem, data = list): boolean => {
-        if (!data || item.linkedTo || data.front.kind === 'claude') return true
-        return data.front.kind === 'codex' && !!data.front.runningId &&
-            (item.agent !== 'codex' || item.id !== data.front.runningId)
+        if (!data || item.linkedTo || data.front.kind === 'claude' || data.front.kind === 'unknown') return true
+        return data.front.kind === 'codex' &&
+            (item.agent !== 'codex' || (!!data.front.runningId && item.id !== data.front.runningId))
     }
 
     const load = useCallback(async (keepError = false): Promise<void> => {
@@ -102,7 +103,7 @@ export function ConnectConversationDialog({ sessionId, sessionName, onClose }: C
     const selected = list?.items.find(item => itemKey(item) === selectedKey)
     const unverifiedCodex = list?.front.kind === 'codex' && !list.front.runningId
     const force = !!unverifiedCodex && !!selected && !selected.startedHere
-    const canConnect = !!selected && !blocked(selected) && !loading && !connecting
+    const canConnect = !!selected && !blocked(selected) && !loading && !connecting && !resumeTyped
     const buttonLabel = connecting ? 'Connecting…' : list?.front.kind === 'shell' ? 'Connect & resume' : force ? 'Connect anyway' : 'Connect'
 
     const connect = async (): Promise<void> => {
@@ -119,6 +120,10 @@ export function ConnectConversationDialog({ sessionId, sessionName, onClose }: C
             if (!mountedRef.current) return
             if ('error' in response) {
                 setError(response.error.message)
+                await load(true)
+            } else if (response.typed && !response.resumed) {
+                // A written command is not proof of startup. Never offer to type it again here.
+                setResumeTyped(true)
                 await load(true)
             } else closeRef.current()
         } catch {
@@ -154,9 +159,11 @@ export function ConnectConversationDialog({ sessionId, sessionName, onClose }: C
                 </div>
                 <div className="px-4 py-3 overflow-y-auto min-h-0" aria-busy={loading}>
                     {error && <p role="alert" data-testid="conversation-error" className="text-xs text-red-300 mb-3">{error}</p>}
+                    {resumeTyped && <p role="status" data-testid="conversation-resume-pending" className="text-xs text-amber-300 mb-3">Resume command was typed, but the agent has not started. Check Terminal.</p>}
                     {loading && <p role="status" className="text-xs text-gray-400">Loading conversations…</p>}
                     {!loading && list && <>
                         {list.front.kind === 'claude' && <p className="text-xs text-amber-300 mb-3">Exit Claude first. Its running conversation is kept in sync automatically.</p>}
+                        {list.front.kind === 'unknown' && <p className="text-xs text-amber-300 mb-3">Could not inspect the program in front. Refresh the list before connecting.</p>}
                         {unverifiedCodex && <p className="text-xs text-amber-300 mb-3">Codex is not holding a conversation file. This conversation may differ from the one on screen.</p>}
                         {(list.front.kind === 'other' || list.front.kind === 'none') && <p className="text-xs text-gray-400 mb-3">Connect saves the conversation for the next agent start.</p>}
                         {list.items.length === 0 && <p className="text-xs text-gray-400">No conversations with a first message were found in this folder.</p>}
@@ -202,8 +209,8 @@ export function ConnectConversationDialog({ sessionId, sessionName, onClose }: C
                     <button type="button" onClick={() => void load()} disabled={loading || connecting} className="mr-auto p-1.5 text-gray-400 hover:text-white disabled:opacity-40" title="Refresh conversations" aria-label="Refresh conversations">
                         <RefreshCw size={14} />
                     </button>
-                    <button ref={cancelRef} type="button" onClick={onClose} disabled={connecting} className="px-3 py-1.5 text-xs rounded text-gray-300 hover:bg-white/10 disabled:opacity-40">Cancel</button>
-                    {list?.front.kind !== 'claude' && <button type="button" data-testid="conversation-connect" onClick={() => void connect()} disabled={!canConnect} className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed">{buttonLabel}</button>}
+                    <button ref={cancelRef} type="button" onClick={onClose} disabled={connecting} className="px-3 py-1.5 text-xs rounded text-gray-300 hover:bg-white/10 disabled:opacity-40">{resumeTyped ? 'Close' : 'Cancel'}</button>
+                    {list?.front.kind !== 'claude' && !resumeTyped && <button type="button" data-testid="conversation-connect" onClick={() => void connect()} disabled={!canConnect} className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed">{buttonLabel}</button>}
                 </div>
             </div>
         </div>,

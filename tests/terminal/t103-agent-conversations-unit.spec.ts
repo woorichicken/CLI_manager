@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { AgentConversations } from '../../src/main/agentConversations'
+import { AgentConversations, normalizeAgentCommand, commandAgent } from '../../src/main/agentConversations'
 import { claudeProjectSlug } from '../../src/main/TranscriptReader'
 import type { AgentConversationFront } from '../../src/shared/conversation'
 import type { TerminalSession } from '../../src/shared/types'
@@ -15,6 +15,8 @@ let sessions: TerminalSession[]
 let front: AgentConversationFront
 let writes: string[]
 let service: AgentConversations
+let resumeError: Error | null
+let resumeReady: boolean
 function codex(n: number, options: { cwd?: string; source?: unknown; originator?: string; text?: string; at?: number; extension?: string; padding?: number } = {}): string {
     const at = options.at ?? now - n * 1000
     const day = new Date(at)
@@ -41,6 +43,8 @@ test.beforeEach(() => {
     sessions = [{ id: 'terminal', name: 'Terminal', cwd, type: 'regular' }]
     front = { kind: 'shell', runningId: null, startedAt: null }
     writes = []
+    resumeError = null
+    resumeReady = true
     service = new AgentConversations({
         sessions: () => sessions,
         foreground: async () => front,
@@ -48,12 +52,108 @@ test.beforeEach(() => {
         write: (_id, data) => writes.push(data),
         codexHome: () => path.join(root, 'codex'),
         claudeConfigDir: () => path.join(root, 'claude'),
-        now: () => now
+        now: () => now,
+        beforeResume: async () => { if (resumeError) throw resumeError },
+        waitForAgent: async () => resumeReady,
+        resolveAlias: (name) => name === 'cldy' ? 'claude --dangerously-skip-permissions' : undefined
     })
 })
 test.afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 test.describe('T103 agent conversations', () => {
+    test('normalization recognizes commands without mistaking quoted control tokens for operators', () => {
+        expect(normalizeAgentCommand('codex -m resume resume ' + uuid(1), 'codex')).toBe('codex -m resume')
+        expect(normalizeAgentCommand('codex -m "model with spaces" "opening prompt"', 'codex')).toBe("codex -m 'model with spaces'")
+        expect(normalizeAgentCommand('codex "&&" codex "delete the build folder"', 'codex')).toBe('codex')
+        expect(normalizeAgentCommand('codex --config "$(touch /tmp/injected)"', 'codex')).toBe("codex --config '$(touch /tmp/injected)'")
+        expect(normalizeAgentCommand('cldy', 'claude', () => 'claude -p unsafe')).toBe('claude')
+        expect(normalizeAgentCommand('claude -p"opening prompt"', 'claude')).toBe('claude')
+        expect(commandAgent('codex "unterminated prompt')).toBe('codex')
+        expect(commandAgent('vim codex')).toBeNull()
+        expect(commandAgent('echo "quoted; codex"')).toBeNull()
+    })
+    test('unknown foreground state is read-only even with force', async () => {
+        codex(1)
+        front = { kind: 'unknown', runningId: null, startedAt: null }
+        await expect(service.connect('terminal', { agent: 'codex', id: uuid(1), force: true })).rejects.toMatchObject({ code: 'foreground_unknown' })
+        expect(sessions[0].cliSessionId).toBeUndefined()
+    })
+    test('beforeWrite runs only after guards and explicit base command overrides are normalized', async () => {
+        codex(1)
+        sessions[0].cliToolName = 'codex'
+        sessions[0].cliCommand = 'codex --model stale'
+        let marked = false
+        const hooks = { beforeWrite: () => { marked = true }, baseCommand: 'codex --model fresh old prompt' }
+        resumeError = Object.assign(new Error('Input occupied.'), { code: 'input_busy', status: 409 })
+        await expect(service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true }, hooks)).rejects.toMatchObject({ code: 'input_busy' })
+        expect(marked).toBe(false)
+        resumeError = null
+        const result = await service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true }, hooks)
+        expect(marked).toBe(true)
+        expect(result.cliCommand).toBe('codex --model fresh')
+    })
+    test('R1 Claude has its own discovery budget after unrelated Codex files exhaust theirs', async () => {
+        for (let i = 1; i <= 2001; i++) codex(i, { cwd: root })
+        claude(5000)
+        const result = await service.list('terminal')
+        expect(result.items.map((item) => item.agent)).toEqual(['claude'])
+        expect(result.truncated).toBe(true)
+    })
+    test('R2 force cannot switch an unheld running Codex to a Claude conversation', async () => {
+        claude(1)
+        front = { kind: 'codex', runningId: null, startedAt: now }
+        await expect(service.connect('terminal', { agent: 'claude', id: uuid(1), force: true })).rejects.toMatchObject({ code: 'agent_running' })
+        expect(sessions[0].cliSessionId).toBeUndefined()
+    })
+    for (const [agent, command, expected] of [
+        ['codex', 'codex -m gpt-5 fix the tests', 'codex -m gpt-5'],
+        ['codex', 'codex "delete the build folder"', 'codex'],
+        ['codex', 'codex exec "delete the build folder"', 'codex'],
+        ['claude', 'claude -p "delete the build folder"', 'claude'],
+        ['claude', 'claude --print "delete the build folder"', 'claude']
+    ] as const) {
+        for (const source of ['initialCommand', 'cliCommand'] as const) {
+            test(`R3 ${source} strips prompts and noninteractive commands: ${command}`, async () => {
+                if (agent === 'codex') codex(1); else claude(1)
+                sessions[0][source] = command
+                if (source === 'cliCommand') sessions[0].cliToolName = agent
+                const result = await service.connect('terminal', { agent, id: uuid(1), resume: true })
+                expect(result.cliCommand).toBe(expected)
+                expect(writes.join('')).toBe(`${expected} ${agent === 'codex' ? 'resume' : '--resume'} ${uuid(1)}\r`)
+            })
+        }
+    }
+    test('R11 aliases are classified using the tracker and preserved when the expansion is safe', async () => {
+        claude(1)
+        sessions[0].initialCommand = 'cldy'
+        const result = await service.connect('terminal', { agent: 'claude', id: uuid(1), resume: true })
+        expect(result.cliCommand).toBe('cldy')
+        expect(writes.join('')).toBe(`cldy --resume ${uuid(1)}\r`)
+    })
+    for (const code of ['awaiting_input', 'input_busy']) {
+        test(`resume guard ${code} leaves human input and metadata untouched`, async () => {
+            codex(1)
+            resumeError = Object.assign(new Error('Input is occupied.'), { code, status: 409 })
+            await expect(service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true })).rejects.toMatchObject({ code })
+            expect(writes).toEqual([])
+            expect(sessions[0].cliSessionId).toBeUndefined()
+        })
+    }
+    test('a typed command is not a resumed agent until startup is observed', async () => {
+        codex(1)
+        resumeReady = false
+        const result = await service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true })
+        expect(result).toMatchObject({ resumed: false, typed: true })
+        expect(writes.join('')).not.toContain('\x15')
+    })
+    test('R8 unrelated long Codex heads are filtered before transcript JSON parsing', async () => {
+        for (let i = 1; i <= 200; i++) codex(i, { cwd: root, padding: 400_000 })
+        const parse = JSON.parse
+        let largeParses = 0
+        JSON.parse = ((text: string, ...args: unknown[]) => { if (text.length > 8192) largeParses++; return parse(text, ...args as []) }) as typeof JSON.parse
+        try { await service.list('terminal') } finally { JSON.parse = parse }
+        expect(largeParses).toBe(0)
+    })
     test('lists only same-folder interactive conversations with a masked first prompt and no transcript path', async () => {
         const token = ['sk-', 'x'.repeat(24)].join('')
         codex(1, { text: `Fix this token=${token}\nnext line` })
@@ -99,10 +199,10 @@ test.describe('T103 agent conversations', () => {
         sessions[0].cliToolName = 'codex'
         sessions[0].cliCommand = `codex --dangerously-bypass-approvals-and-sandbox resume ${uuid(8)}`
         const result = await service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true })
-        expect(result).toEqual({ status: 'connected', resumed: true, cliCommand: 'codex --dangerously-bypass-approvals-and-sandbox' })
+        expect(result).toEqual({ status: 'connected', resumed: true, typed: true, cliCommand: 'codex --dangerously-bypass-approvals-and-sandbox' })
         expect(sessions[0].cliSessionId).toBe(uuid(1))
         expect(sessions[0].cliToolName).toBe('codex')
-        expect(writes.join('')).toBe(`\x15codex --dangerously-bypass-approvals-and-sandbox resume ${uuid(1)}\r`)
+        expect(writes.join('')).toBe(`codex --dangerously-bypass-approvals-and-sandbox resume ${uuid(1)}\r`)
     })
     test('preserves compatible initial command and ignores a different agent command', async () => {
         claude(1)
@@ -125,7 +225,7 @@ test.describe('T103 agent conversations', () => {
     test('process argv never replays a prompt or shell syntax as a resume command', async () => {
         codex(1, { at: now + 1000 })
         front = { kind: 'codex', runningId: null, startedAt: now, argv: 'codex --model gpt-6.1 hello $(touch /tmp/unsafe)' }
-        expect((await service.connect('terminal', { agent: 'codex', id: uuid(1) })).cliCommand).toBe('codex --model gpt-6.1')
+        expect((await service.connect('terminal', { agent: 'codex', id: uuid(1) })).cliCommand).toBe('codex')
         sessions[0].cliCommand = undefined
         front.argv = 'node /usr/local/bin/codex --model $(touch /tmp/unsafe)'
         expect((await service.connect('terminal', { agent: 'codex', id: uuid(1) })).cliCommand).toBe('codex')
@@ -183,7 +283,7 @@ test.describe('T103 agent conversations', () => {
             sessions: () => sessions,
             foreground: async () => ++calls === 1 ? front : { kind: 'other', runningId: null, startedAt: now },
             update: (_id, values) => Object.assign(sessions[0], values), write: (_id, data) => writes.push(data),
-            codexHome: () => path.join(root, 'codex'), claudeConfigDir: () => path.join(root, 'claude'), now: () => now
+            codexHome: () => path.join(root, 'codex'), claudeConfigDir: () => path.join(root, 'claude'), now: () => now, beforeResume: async () => {}
         })
         await expect(service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true })).rejects.toMatchObject({ code: 'not_shell' })
         expect(sessions[0].cliSessionId).toBeUndefined()

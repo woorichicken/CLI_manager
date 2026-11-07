@@ -349,7 +349,7 @@ export const CHAT_TURN_LIMIT = 200
 
 /** The program currently owning the terminal's input. pid/argv are internal command fallbacks. */
 export interface AgentConversationFront {
-    kind: 'shell' | 'claude' | 'codex' | 'other' | 'none'
+    kind: 'shell' | 'claude' | 'codex' | 'other' | 'none' | 'unknown'
     runningId: string | null
     startedAt: number | null
     pid?: number
@@ -390,6 +390,8 @@ export interface AgentConversationConnectInput {
 export interface AgentConversationConnectResult {
     status: 'connected'
     resumed: boolean
+    /** The resume command was typed; startup may still be unconfirmed. */
+    typed: boolean
     cliCommand: string
 }
 

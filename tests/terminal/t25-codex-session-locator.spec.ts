@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { CodexSessionLocator, isInteractiveCodex, parseCodexResume } from '../../src/main/CodexSessionLocator'
+import { CodexSessionLocator, isInteractiveCodex, parseCodexResume, parseAgentProcesses, classifyAgentProcess, selectForegroundAgentProcess, findCodexProcess, readAgentProcesses, heldCodexRollouts } from '../../src/main/CodexSessionLocator'
 import { CLISessionTracker } from '../../src/main/CLISessionTracker'
 
 const IDS = Array.from({ length: 8 }, (_, n) => `00000000-0000-0000-0000-${String(n + 1).padStart(12, '0')}`)
@@ -142,7 +142,7 @@ test.describe('T25 Codex session locator', () => {
         } finally { stop(); f.cleanup() }
     })
 
-    test('idle ticks do not launch ps or lsof; new valid candidates alone trigger them', async () => {
+    test('R6 one process lookup is allowed before any file; idle ticks use only PID liveness', async () => {
         const f = fixture()
         let processReads = 0
         let fileReads = 0
@@ -152,7 +152,7 @@ test.describe('T25 Codex session locator', () => {
         try {
             writeRollout(f.home, IDS[0], f.folder, f.started + 1_000, 'exec')
             await new Promise((resolve) => setTimeout(resolve, 60))
-            expect([processReads, fileReads]).toEqual([0, 0])
+            expect([processReads, fileReads]).toEqual([1, 0])
             writeRollout(f.home, IDS[1], f.folder, f.started + 2_000)
             await expect.poll(() => found, { timeout: 800 }).toEqual([IDS[1]])
             expect([processReads, fileReads]).toEqual([1, 1])
@@ -188,4 +188,189 @@ test.describe('T25 Codex session locator', () => {
             expect(cleared).toBe(1)
         } finally { global.setInterval = realSet; global.clearInterval = realClear; f.cleanup() }
     })
+    test('R4 null process lookup stops the watch and never assigns an unrelated file', async () => {
+        const f = fixture()
+        let calls = 0
+        const found: string[] = []
+        const locator = new CodexSessionLocator(f.home, { pollMs: 10, findProcess: async () => { calls++; return null }, isAlive: () => true, heldRollouts: async () => [] })
+        const stop = locator.watch(f.folder, f.started, (id) => found.push(id), { terminalId: 'quit', shellPid: 100 })
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 55))
+            expect(calls).toBe(1)
+            writeRollout(f.home, IDS[0], f.folder, f.started + 5_000)
+            await new Promise((resolve) => setTimeout(resolve, 55))
+            expect(found).toEqual([])
+            expect(calls).toBe(1)
+        } finally { stop(); f.cleanup() }
+    })
+
+    test('R5 ambiguous files remain excluded after one process exits and another watch starts', async () => {
+        const f = fixture()
+        let aAlive = true
+        const found: string[] = []
+        const locator = new CodexSessionLocator(f.home, { pollMs: 10, findProcess: async (pid) => ({ pid, startedAt: f.started + (pid === 100 ? 0 : 3_000) }), isAlive: (pid) => pid !== 100 || aAlive, heldRollouts: async () => [] })
+        const a = locator.watch(f.folder, f.started, (id) => found.push(id), { terminalId: 'a', shellPid: 100 })
+        const b = locator.watch(f.folder, f.started + 3_000, (id) => found.push(id), { terminalId: 'b', shellPid: 101 })
+        let c = () => {}
+        try {
+            writeRollout(f.home, IDS[0], f.folder, f.started + 4_000)
+            writeRollout(f.home, IDS[1], f.folder, f.started + 5_000)
+            await new Promise((resolve) => setTimeout(resolve, 60))
+            expect(found).toEqual([])
+            aAlive = false
+            await new Promise((resolve) => setTimeout(resolve, 60))
+            expect(found).toEqual([])
+            a(); b()
+            c = locator.watch(f.folder, f.started + 3_000, (id) => found.push(id), { terminalId: 'c', shellPid: 101 })
+            await new Promise((resolve) => setTimeout(resolve, 60))
+            expect(found).toEqual([])
+        } finally { a(); b(); c(); f.cleanup() }
+    })
+
+    test('R10 lsof failure postpones every time fallback and retries without another ps', async () => {
+        const f = fixture()
+        const file = writeRollout(f.home, IDS[0], f.folder, f.started + 13_000)
+        const found: Record<string, string> = {}
+        let processReads = 0
+        let first = true
+        let fileReads = 0
+        const locator = new CodexSessionLocator(f.home, { pollMs: 10, findProcess: async (pid) => { processReads++; return { pid, startedAt: f.started + (pid === 100 ? 0 : 12_000) } }, isAlive: () => true,
+            heldRollouts: async (pid) => { fileReads++; if (pid === 100 && first) { first = false; return null } return pid === 100 ? [file] : [] }
+        })
+        const stops = [locator.watch(f.folder, f.started, (id) => { found.a = id }, { terminalId: 'a', shellPid: 100 }), locator.watch(f.folder, f.started + 12_000, (id) => { found.b = id }, { terminalId: 'b', shellPid: 101 })]
+        try {
+            await expect.poll(() => found, { timeout: 800 }).toEqual({ a: IDS[0] })
+            expect(processReads).toBe(2)
+            expect(fileReads).toBe(3)
+        } finally { stops.forEach((stop) => stop()); f.cleanup() }
+    })
+
+    test('a process that exits without any rollout stops without rerunning ps', async () => {
+        const f = fixture()
+        let alive = true
+        let reads = 0
+        const found: string[] = []
+        const locator = new CodexSessionLocator(f.home, { pollMs: 10, findProcess: async () => { reads++; return { pid: 123, startedAt: f.started } }, isAlive: () => alive, heldRollouts: async () => [] })
+        const stop = locator.watch(f.folder, f.started, (id) => found.push(id), { terminalId: 'gone', shellPid: 100 })
+        try {
+            await new Promise((resolve) => setTimeout(resolve, 40))
+            expect(reads).toBe(1)
+            alive = false
+            await new Promise((resolve) => setTimeout(resolve, 40))
+            alive = true
+            writeRollout(f.home, IDS[0], f.folder, f.started + 1_000)
+            await new Promise((resolve) => setTimeout(resolve, 40))
+            expect(found).toEqual([])
+            expect(reads).toBe(1)
+        } finally { stop(); f.cleanup() }
+    })
+
+    for (const [label, offset] of [['older than the lower window', -2_001], ['newer than the upper window', 30_001], ['other working directory', 1_000]] as const) {
+        test(`the locator rejects ${label}`, async () => {
+            const f = fixture()
+            try {
+                f.watch('a')
+                writeRollout(f.home, IDS[0], label === 'other working directory' ? f.folder + '-other' : f.folder, f.started + offset)
+                await new Promise((resolve) => setTimeout(resolve, 75))
+                expect(f.found).toEqual({})
+            } finally { f.cleanup() }
+        })
+    }
+
+    test('stored ids supplied by isClaimed are excluded before choosing a newer candidate', async () => {
+        const f = fixture()
+        let fileReads = 0
+        const locator = new CodexSessionLocator(f.home, { pollMs: 10, findProcess: async () => ({ pid: 123, startedAt: f.started }), isAlive: () => true, heldRollouts: async () => { fileReads++; return [] }, isClaimed: (id) => id === IDS[0] })
+        const found: string[] = []
+        const stop = locator.watch(f.folder, f.started, (id) => found.push(id), { terminalId: 'new', shellPid: 100 })
+        try {
+            writeRollout(f.home, IDS[0], f.folder, f.started + 1_000)
+            writeRollout(f.home, IDS[1], f.folder, f.started + 2_000)
+            await expect.poll(() => found, { timeout: 800 }).toEqual([IDS[1]])
+            expect(fileReads).toBe(1)
+        } finally { stop(); f.cleanup() }
+    })
+
+    test('an internally claimed id cannot be handed to a second watcher even when it holds the file', async () => {
+        const f = fixture()
+        const file = writeRollout(f.home, IDS[0], f.folder, f.started + 6_000)
+        const locator = new CodexSessionLocator(f.home, { pollMs: 10, findProcess: async (pid) => ({ pid, startedAt: f.started + (pid === 100 ? 0 : 5_000) }), isAlive: () => true, heldRollouts: async () => [file] })
+        const found: string[] = []
+        const first = locator.watch(f.folder, f.started, (id) => found.push(id), { terminalId: 'first', shellPid: 100 })
+        let second = () => {}
+        try {
+            await expect.poll(() => found.length, { timeout: 800 }).toBe(1)
+            second = locator.watch(f.folder, f.started + 5_000, (id) => found.push(id), { terminalId: 'second', shellPid: 101 })
+            await new Promise((resolve) => setTimeout(resolve, 60))
+            expect(found).toEqual([IDS[0]])
+        } finally { first(); second(); f.cleanup() }
+    })
+
+    test('R7 paste resumes are only candidates and never rewrite terminal input', () => {
+        for (const chunks of [[...'codex resume ', IDS[0], '\r'], [`codex resume ${IDS[0]}\r`], ['\x1b[200~', `codex resume ${IDS[0]}`, '\x1b[201~', '\r']]) {
+            const tracker = new CLISessionTracker()
+            const seen: unknown[] = []
+            const writes: string[] = []
+            tracker.onCodexResumed = (...args) => seen.push(args)
+            for (const chunk of chunks) expect(tracker.processInput('t', chunk, (value) => writes.push(value))).toBe(false)
+            expect(seen).toEqual([['t', IDS[0], 'codex']])
+            expect(writes).toEqual([])
+        }
+    })
+
+    test('R7c resume flag values preserve their position and aliases remain resolvable', () => {
+        const tracker = new CLISessionTracker()
+        tracker.setAliases({ cx: 'codex --dangerously-bypass-approvals-and-sandbox' })
+        expect(tracker.codexResume(`codex -m resume resume ${IDS[0]}`)).toEqual({ id: IDS[0], baseCommand: 'codex -m resume' })
+        expect(tracker.codexResume(`cx -m resume resume ${IDS[0]}`)).toEqual({ id: IDS[0], baseCommand: 'cx -m resume' })
+        expect(tracker.resolveAlias('cx')).toBe('codex --dangerously-bypass-approvals-and-sandbox')
+    })
+
+    test('pending input retains paste and marks cursor edits uncertain until submit or interrupt', () => {
+        const tracker = new CLISessionTracker()
+        tracker.processInput('t', 'half written', () => {})
+        expect(tracker.getPendingInput('t')).toEqual({ text: 'half written', uncertain: false })
+        tracker.processInput('t', '\x1b[D', () => {})
+        tracker.processInput('t', '\x15', () => {})
+        expect(tracker.getPendingInput('t').uncertain).toBe(true)
+        tracker.processInput('t', '\x03', () => {})
+        expect(tracker.getPendingInput('t')).toEqual({ text: '', uncertain: false })
+    })
+
+    test('terminal protocol replies leave empty pending input clean while real editing remains uncertain', () => {
+        const tracker = new CLISessionTracker()
+        for (const reply of ['\x1b[I', '\x1b[O', '\x1b[1;1R', '\x1b[?12;30R', '\x1b[?1;2c', '\x1b[>0;276;0c']) {
+            tracker.processInput('t', reply, () => {})
+            expect(tracker.getPendingInput('t')).toEqual({ text: '', uncertain: false })
+        }
+        tracker.processInput('t', 'draft', () => {})
+        tracker.processInput('t', '\x1b[I\x1b[1;1R', () => {})
+        expect(tracker.getPendingInput('t')).toEqual({ text: 'draft', uncertain: false })
+        for (const edit of ['\x1b[D', '\x1b[A']) {
+            tracker.processInput('t', edit, () => {})
+            expect(tracker.getPendingInput('t').uncertain).toBe(true)
+            tracker.processInput('t', '\x03', () => {})
+        }
+    })
+
+    test('actual ps and lsof parsers select the native foreground agent and distinguish failures', async () => {
+        const ps = `100 1 100 200 Fri Nov  7 12:00:00 2025 /bin/zsh -l\n200 100 200 200 Fri Nov  7 12:00:01 2025 node /opt/npm/bin/codex.js --model resume resume ${IDS[0]}\n201 200 200 200 Fri Nov  7 12:00:02 2025 /opt/vendor/codex/codex --model resume resume ${IDS[0]}\n300 100 300 200 Fri Nov  7 12:00:03 2025 vim codex\n301 100 301 200 Fri Nov  7 12:00:04 2025 less claude\n`
+        const rows = parseAgentProcesses(ps)
+        expect(rows).toHaveLength(5)
+        expect(classifyAgentProcess(rows![3])).toBeNull()
+        expect(classifyAgentProcess(rows![4])).toBeNull()
+        expect(classifyAgentProcess({ ...rows![1], argv: 'node -e codex' })).toBeNull()
+        expect(classifyAgentProcess({ ...rows![1], argv: 'node --require /tmp/codex.js /tmp/other.js' })).toBeNull()
+        expect(classifyAgentProcess(rows![1])).toBe('codex')
+        expect(selectForegroundAgentProcess(rows!, 100)?.pid).toBe(201)
+        const commands: Array<{ file: string; args: string[] }> = []
+        const run = async (file: string, args: string[]) => { commands.push({ file, args }); return { stdout: file.endsWith('/ps') ? ps : `p201\nn/tmp/rollout-${IDS[0]}.jsonl\nn/tmp/rollout-${IDS[0]}.jsonl.langfuse\n` } }
+        expect(await findCodexProcess(100, run)).toEqual({ pid: 201, startedAt: Date.parse('Fri Nov  7 12:00:02 2025') })
+        expect(await heldCodexRollouts(201, run)).toEqual([`/tmp/rollout-${IDS[0]}.jsonl`])
+        expect(commands[1].args).toContain('-nP')
+        const failing = async () => { throw new Error('probe timed out') }
+        expect(await readAgentProcesses(failing)).toBeNull()
+        expect(await heldCodexRollouts(201, failing)).toBeNull()
+    })
+
 })

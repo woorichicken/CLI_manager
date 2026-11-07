@@ -4,7 +4,7 @@ import os from 'os'
 import { execFile, execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { CLISessionTracker } from './CLISessionTracker'
-import { readAgentProcesses, heldCodexRollouts, readCodexRolloutMeta } from './CodexSessionLocator'
+import { readAgentProcesses, heldCodexRollouts, readCodexRolloutMeta, classifyAgentProcess, selectForegroundAgentProcess } from './CodexSessionLocator'
 import type { AgentConversationFront } from '../shared/conversation'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
@@ -621,29 +621,24 @@ export class TerminalManager {
     /** Read-only process inspection for the manual conversation picker. */
     async foregroundAgent(id: string): Promise<AgentConversationFront> {
         const ptyProcess = this.terminals.get(id)
-        const unknown: AgentConversationFront = { kind: 'none', runningId: null, startedAt: null }
-        if (!ptyProcess) return unknown
+        const unknown: AgentConversationFront = { kind: 'unknown', runningId: null, startedAt: null }
+        if (!ptyProcess) return { ...unknown, kind: 'none' }
         const processes = await readAgentProcesses()
+        if (!processes) return unknown
         const shell = processes.find((entry) => entry.pid === ptyProcess.pid)
         if (!shell) return unknown
         const commandName = (command: string): string => command.split('/').pop()!.replace(/^-/, '')
         if (shell.tpgid === shell.pid && SHELL_NAMES.test(commandName(shell.command))) {
             return { kind: 'shell', runningId: null, startedAt: shell.startedAt, pid: shell.pid, argv: shell.argv }
         }
-        const group = processes.filter((entry) => entry.pgid === shell.tpgid)
-        // Prefer a native agent over its Node or shell wrapper in the same foreground group.
-        const agentKind = (argv: string): 'claude' | 'codex' | null => {
-            const match = /(?:^|\s)(?:[^\s]*\/)?(claude|codex)(?=\s|$)/.exec(argv)
-            return match ? match[1] as 'claude' | 'codex' : null
-        }
-        const current = group.find((entry) => agentKind(entry.argv) && !/^(node|nodejs)$/.test(commandName(entry.command)))
-            ?? group.find((entry) => agentKind(entry.argv))
-            ?? group.find((entry) => entry.pid === shell.tpgid)
-        if (!current) return { ...unknown, kind: 'other' }
-        const kind = agentKind(current.argv) ?? 'other'
+        const current = selectForegroundAgentProcess(processes, ptyProcess.pid)
+        if (!current) return unknown
+        const kind = classifyAgentProcess(current) ?? 'other'
         let runningId: string | null = null
         if (kind === 'codex') {
-            const metas = (await heldCodexRollouts(current.pid)).flatMap((file) => {
+            const held = await heldCodexRollouts(current.pid)
+            if (held === null) return unknown
+            const metas = held.flatMap((file) => {
                 const meta = readCodexRolloutMeta(file)
                 return meta ? [meta] : []
             })

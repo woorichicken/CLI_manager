@@ -101,8 +101,8 @@ pnpm build && pnpm test:term
    - `UsageTracker.ts`: Claude(statusLine) · Codex(rollout jsonl) rate limit 추적 + 임계값 알림
    - `diffParser.ts`: `git diff` plumbing 출력 파서 (numstat/name-status/unified)
    - `ControlApiServer.ts` / `ControlApiService.ts` / `controlApiMcp.ts`: AI Control API — 로컬 HTTP(REST+MCP)로 AI가 세션을 열고 조작 ([`docs/architecture/control-api.md`](docs/architecture/control-api.md))
-   - `CodexSessionLocator.ts`: 공유 10초 감시 · 새 후보 때만 비동기 ps/lsof로 Codex 대화 소유자 판정(실경로·머리 시각·파일 보유, 모호하면 연결 메뉴). UUID resume은 즉시 저장
-   - `agentConversations.ts`: Mac 세션 메뉴와 Control API/MCP의 대화 목록·연결 공용 판정. 읽기 상한·비밀값 가림·폴더/중복/앞 프로그램 검사, 셸에서만 Connect & resume
+   - `CodexSessionLocator.ts`: 공유 10초 감시 · 감시당 비동기 ps 1회, 새 후보/실패 재시도에만 lsof. PID 생존·실경로·시각·파일 보유로 판정, 모호했던 파일은 자동 제외. UUID resume은 전경 argv·파일·폴더·중복을 확인한 뒤 저장
+   - `agentConversations.ts`: Mac 세션 메뉴와 Control API/MCP의 대화 목록·연결 공용 판정. 읽기 상한·비밀값 가림·폴더/중복/앞 프로그램 검사, 빈 셸에서만 Connect & resume(질문·작성 중인 글은 409, 지우지 않음)
    - `TerminalMirror.ts`: 모든 터미널 출력을 headless xterm으로 재생 — Control API 가 "사용자가 보는 화면"을 읽고, 새 창·재시작 때 히스토리를 다시 그리는 원본 ([`docs/decisions/0008`](docs/decisions/0008-terminal-history-lives-in-main.md))
    - `ScrollbackStore.ts`: 미러 스냅샷을 30초마다(출력이 있던 세션만) `userData/scrollback/<id>.ans` 에 저장 — 강제종료 뒤 복원용
    - `SessionRelations.ts`: 세션 헤더 「관련 세션」 저장(`sessionRelations`) — API 가 열거나 처음 읽은·입력한 세션, 손으로 추가한 세션. 한 쌍에 한 줄, 어느 쪽이든 닫히면 지운다 ([`docs/architecture/CLAUDE.md`](docs/architecture/CLAUDE.md) 14)
@@ -416,7 +416,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
     본떴지만 **키를 바로 받는다** — 실제 Claude 는 질문을 그린 직후의 키를 무시했다. 그래서 감시자는 화면이
     1.5초 조용해진 뒤 키를 하나씩 보낸다. 이 차이는 실제 Claude 복원으로만 확인된다(2026-10-01)
   - T25 Codex 대화 찾기 — Codex 는 `--session-id` 를 받지 않아, 시작 뒤 `$CODEX_HOME/sessions` 의 rollout
-    첫 줄(`session_meta`: id·cwd·시작 시각)로 그 터미널의 대화를 찾는다. 같은 폴더에 둘이면 각자 다른 id 를 받는지
+    첫 줄(`session_meta`: id·cwd·시작 시각)과 전경 프로세스로 대화를 찾는다. 같은 폴더 시작이 10초 이내면 비우며, 한 번 모호했던 파일은 한쪽이 끝나도 자동 연결하지 않는다. 다른 폴더·−2초/+30초 창 밖·이미 저장된 id 제외, ps/lsof 파서·실패 재시도·붙여넣은 UUID 후보·돌연변이 5종 검출도 확인
   - T26 탭 이동·닫기·삭제 — Cmd+[ ] 와 Cmd+W, 사이드바 삭제가 모두 **사이드바 순서**를 따르고(드래그 뒤 포함),
     삭제된 세션으로 가지 않는지, 활성 탭 삭제 시 이웃 탭이 보이는지, 분할 화면에서 Cmd+` 가 커서를 옮기고
     Cmd+W 가 활성 칸을 닫는지, Cmd+Shift+[ ] 가 고정·폴더 순서로 워크스페이스를 도는지, 이름 변경 입력·Cmd+T 직후의

@@ -29,7 +29,7 @@ const START_SLACK_MS = 2_000
 const START_WINDOW_MS = 30_000
 const AMBIGUITY_MS = 10_000
 const POLL_MS = 10_000
-/** Only unidentified processes keep the legacy deadline; known PIDs are watched until exit. */
+/** Only legacy calls without a shell PID keep a deadline; identified PIDs are watched until exit. */
 const WATCH_MS = 15 * 60 * 1000
 /** session_meta is the first line; it is long (it carries instructions) but its fields come first. */
 const HEAD_BYTES = 8 * 1024
@@ -57,8 +57,13 @@ export function isInteractiveCodex(tokens: string[]): boolean {
     return true
 }
 
-/** An explicit UUID resume is safe to persist without waiting for a new rollout. */
+/** An explicit UUID resume is a candidate; the caller must verify the actual foreground agent. */
 export function parseCodexResume(tokens: string[]): { id: string; baseCommand: string } | null {
+    const parsed = parseCodexResumePosition(tokens)
+    return parsed ? { id: parsed.id, baseCommand: parsed.baseCommand } : null
+}
+
+export function parseCodexResumePosition(tokens: string[]): { id: string; baseCommand: string; resumeIndex: number } | null {
     if ((tokens[0] ?? '').split('/').pop() !== 'codex') return null
     for (let i = 1; i < tokens.length; i++) {
         const token = tokens[i]
@@ -70,7 +75,7 @@ export function parseCodexResume(tokens: string[]): { id: string; baseCommand: s
             if (FLAGS_WITH_VALUE.has(tokens[j])) { if (tokens[j + 1] === undefined) return null; j++; continue }
             if (!tokens[j].startsWith('-')) return null
         }
-        return { id: tokens[i + 1], baseCommand: [...tokens.slice(0, i), ...tokens.slice(i + 2)].join(' ') }
+        return { id: tokens[i + 1], baseCommand: [...tokens.slice(0, i), ...tokens.slice(i + 2)].join(' '), resumeIndex: i }
     }
     return null
 }
@@ -78,7 +83,7 @@ export function parseCodexResume(tokens: string[]): { id: string; baseCommand: s
 export interface CodexProcess { pid: number; startedAt: number }
 export interface CodexLocatorDependencies {
     findProcess?: (shellPid: number) => Promise<CodexProcess | null>
-    heldRollouts?: (pid: number) => Promise<string[]>
+    heldRollouts?: (pid: number) => Promise<string[] | null>
     isClaimed?: (id: string) => boolean
     isAlive?: (pid: number) => boolean
     now?: () => number
@@ -86,6 +91,12 @@ export interface CodexLocatorDependencies {
 }
 
 const execFileAsync = promisify(execFile)
+
+export type AgentCommandRunner = (file: string, args: string[], options: { timeout: number; maxBuffer: number; env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>
+const runAgentCommand: AgentCommandRunner = async (file, args, options) => {
+    const result = await execFileAsync(file, args, { ...options, encoding: 'utf8' })
+    return { stdout: result.stdout }
+}
 
 export interface AgentProcess {
     pid: number
@@ -97,44 +108,86 @@ export interface AgentProcess {
     argv: string
 }
 
-/** Read once per probe; foreground detection and rollout ownership share this parser. */
-export async function readAgentProcesses(): Promise<AgentProcess[]> {
-    try {
-        const { stdout } = await execFileAsync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,tpgid=,lstart=,args='], { timeout: 2_000, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
-        return stdout.split('\n').flatMap((line) => {
-            const match = /^\s*(\d+)\s+(\d+)\s+(-?\d+)\s+(-?\d+)\s+(.{24})\s+(.+)$/.exec(line)
-            return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), tpgid: Number(match[4]), startedAt: Date.parse(match[5]), command: match[6].trim().split(/\s+/)[0], argv: match[6].trim() }] : []
-        })
-    } catch { return [] }
+/** Parse the C-locale ps columns; a failed or empty snapshot is unknown, never "no agent". */
+export function parseAgentProcesses(stdout: string): AgentProcess[] | null {
+    const rows = stdout.split('\n').flatMap((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(-?\d+)\s+(-?\d+)\s+(.{24})\s+(.+)$/.exec(line)
+        if (!match || !Number.isFinite(Date.parse(match[5]))) return []
+        return [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), tpgid: Number(match[4]), startedAt: Date.parse(match[5]), command: match[6].trim().split(/\s+/)[0], argv: match[6].trim() }]
+    })
+    return rows.length ? rows : null
 }
 
-/** ps and lsof must never block the Electron process that drains terminal output. */
-export async function findCodexProcess(shellPid: number): Promise<CodexProcess | null> {
-    const rows = await readAgentProcesses()
-    const descendants = new Set([shellPid])
-    for (let pass = 0; pass < 20; pass++) {
-        let added = false
-        for (const row of rows) if (descendants.has(row.ppid) && !descendants.has(row.pid)) { descendants.add(row.pid); added = true }
-        if (!added) break
-    }
-    // npm's JS launcher may be the parent of the native binary. Prefer the foreground TUI.
-    const candidates = rows.filter((row) => row.pid !== shellPid && descendants.has(row.pid) && (/^codex(?:$|[-_])/.test(basename(row.command)) || /(?:^|\s)\S*[/]codex(?:\.js)?(?:\s|$)/.test(row.argv)) && Number.isFinite(row.startedAt))
-    const foregroundGroup = rows.find((row) => row.pid === shellPid)?.tpgid
-    candidates.sort((a, b) => Number(b.pgid === foregroundGroup) - Number(a.pgid === foregroundGroup) || Number(/^codex(?:$|[-_])/.test(basename(b.command))) - Number(/^codex(?:$|[-_])/.test(basename(a.command))) || a.startedAt - b.startedAt || a.pid - b.pid)
-    return candidates[0] ? { pid: candidates[0].pid, startedAt: candidates[0].startedAt } : null
+export async function readAgentProcesses(run: AgentCommandRunner = runAgentCommand): Promise<AgentProcess[] | null> {
+    try {
+        const { stdout } = await run('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,tpgid=,lstart=,args='], { timeout: 2_000, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
+        return parseAgentProcesses(stdout)
+    } catch { return null }
 }
 
-export async function heldCodexRollouts(pid: number): Promise<string[]> {
+/** Only the executable or a known Node launcher identifies an agent; arguments do not. */
+export function classifyAgentProcess(row: AgentProcess): 'codex' | 'claude' | null {
+    const executable = basename(row.command).replace(/^-/, '')
+    if (/^codex(?:-(?:aarch64|x86_64|arm64)[\w-]*)?$/.test(executable)) return 'codex'
+    if (executable === 'claude') return 'claude'
+    if (!/^(node|nodejs)$/.test(executable)) return null
+    const tokens = row.argv.trim().split(/\s+/)
+    if (tokens.some((token) => /^(?:-[epcr]|--(?:eval|print|check|require|import)(?:=|$))/.test(token))) return null
+    const script = tokens.slice(1).find((token) => !token.startsWith('-'))
+    if (!script) return null
+    if (/^(codex|codex\.js)$/.test(basename(script))) return 'codex'
+    if (/^(claude|claude\.js)$/.test(basename(script)) || /[/]@anthropic-ai[/]claude-code[/]cli\.js$/.test(script)) return 'claude'
+    return null
+}
+
+/** The native agent child wins over its npm wrapper in the pty's foreground group. */
+export function selectForegroundAgentProcess(rows: AgentProcess[], shellPid: number): AgentProcess | null {
+    const shell = rows.find((row) => row.pid === shellPid)
+    if (!shell || shell.tpgid <= 0) return null
+    const group = rows.filter((row) => row.pgid === shell.tpgid)
+    return group.find((row) => classifyAgentProcess(row) && !/^(node|nodejs)$/.test(basename(row.command)))
+        ?? group.find((row) => classifyAgentProcess(row))
+        ?? group.find((row) => row.pid === shell.tpgid)
+        ?? null
+}
+
+export async function findCodexProcess(shellPid: number, run: AgentCommandRunner = runAgentCommand): Promise<CodexProcess | null> {
+    const rows = await readAgentProcesses(run)
+    const current = rows && selectForegroundAgentProcess(rows, shellPid)
+    return current && classifyAgentProcess(current) === 'codex' ? { pid: current.pid, startedAt: current.startedAt } : null
+}
+
+export function parseHeldCodexRollouts(stdout: string): string[] {
+    return stdout.split('\n').filter((line) => line.startsWith('n/') && line.endsWith('.jsonl')).map((line) => line.slice(1))
+}
+
+export async function heldCodexRollouts(pid: number, run: AgentCommandRunner = runAgentCommand): Promise<string[] | null> {
     try {
-        const { stdout } = await execFileAsync('/usr/sbin/lsof', ['-p', String(pid), '-Fn'], { timeout: 2_000, maxBuffer: 2 * 1024 * 1024 })
-        return stdout.split('\n').filter((line) => line.startsWith('n') && line.endsWith('.jsonl')).map((line) => line.slice(1))
-    } catch { return [] }
+        const { stdout } = await run('/usr/sbin/lsof', ['-nP', '-p', String(pid), '-Fn'], { timeout: 2_000, maxBuffer: 2 * 1024 * 1024 })
+        return parseHeldCodexRollouts(stdout)
+    } catch { return null }
 }
 
 export interface RolloutMeta { id: string; cwd: string; startedAt: number; file: string }
 
 export function readCodexRolloutMeta(file: string): RolloutMeta | null {
     return readMeta(file) ?? null
+}
+
+/** Metadata-only filtering can run before the bounded transcript parser reads the first message. */
+export function parseCodexRolloutHead(head: string, file = ''): RolloutMeta | null {
+    try {
+        if (!/"type"\s*:\s*"session_meta"/.test(head)) return null
+        const id = /"id"\s*:\s*"([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})"/i.exec(head)?.[1]
+        const cwd = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(head)?.[1]
+        const timestamp = /"payload"\s*:\s*\{[^}]*?"timestamp"\s*:\s*"([^"]+)"/.exec(head)?.[1]
+        const source = /"source"\s*:\s*("(?:[^"\\]|\\.)*"|[^,}]+)/.exec(head)?.[1]
+        const originator = /"originator"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(head)?.[1]
+        if (source !== undefined && source !== '"cli"' && source !== '"vscode"') return null
+        if (originator && originator !== 'codex-tui') return null
+        if (!id || !cwd || !timestamp || !Number.isFinite(Date.parse(timestamp))) return null
+        return { id, cwd: canonical(JSON.parse(`"${cwd}"`)), startedAt: Date.parse(timestamp), file }
+    } catch { return null }
 }
 
 function readMeta(file: string): RolloutMeta | null | undefined {
@@ -144,16 +197,8 @@ function readMeta(file: string): RolloutMeta | null | undefined {
         const buffer = Buffer.alloc(HEAD_BYTES)
         const read = readSync(fd, buffer, 0, HEAD_BYTES, 0)
         const head = buffer.toString('utf-8', 0, read)
-        if (!/"type"\s*:\s*"session_meta"/.test(head)) return head.includes('\n') || read === HEAD_BYTES ? null : undefined
-        const id = /"id"\s*:\s*"([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})"/i.exec(head)?.[1]
-        const cwd = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(head)?.[1]
-        const timestamp = /"payload"\s*:\s*\{[^}]*?"timestamp"\s*:\s*"([^"]+)"/.exec(head)?.[1]
-        const source = /"source"\s*:\s*("(?:[^"\\]|\\.)*"|[^,}]+)/.exec(head)?.[1]
-        const originator = /"originator"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(head)?.[1]
-        if (source !== undefined && source !== '"cli"' && source !== '"vscode"') return null
-        if (originator && originator !== 'codex-tui') return null
-        if (!id || !cwd || !timestamp || !Number.isFinite(Date.parse(timestamp))) return head.includes('\n') || read === HEAD_BYTES ? null : undefined
-        return { id, cwd: canonical(JSON.parse(`"${cwd}"`)), startedAt: Date.parse(timestamp), file }
+        const meta = parseCodexRolloutHead(head, file)
+        return meta ?? (head.includes('\n') || read === HEAD_BYTES ? null : undefined)
     } catch { return null } finally { if (fd !== undefined) closeSync(fd) }
 }
 
@@ -175,13 +220,15 @@ interface Watch {
     shellPid?: number
     process?: CodexProcess
     onFound: (id: string) => void
-    probedFiles: Set<string>
-    failedProbeAt?: number
+    checkedProcess: boolean
+    start: { cwd: string; startedAt: number }
 }
 
 export class CodexSessionLocator {
     private readonly sessionsDir: string
     private readonly claimed = new Set<string>()
+    private readonly excluded = new Set<string>()
+    private readonly starts: Array<{ cwd: string; startedAt: number }> = []
     private readonly watches = new Map<string, Watch>()
     private readonly cache = new Map<string, RolloutMeta | null>()
     private readonly inspected = new Map<string, Set<number>>()
@@ -207,7 +254,9 @@ export class CodexSessionLocator {
     /** Starts and replacements share one timer; identified PIDs have no time limit. */
     watch(cwd: string, startedAt: number, onFound: (id: string) => void, options: { terminalId?: string; shellPid?: number } = {}): () => void {
         const key = options.terminalId ?? `watch-${++this.sequence}`
-        const watch: Watch = { key, cwd: canonical(cwd), startedAt, requestedAt: this.deps.now(), onFound, shellPid: options.shellPid, probedFiles: new Set() }
+        const start = { cwd: canonical(cwd), startedAt }
+        this.starts.push(start)
+        const watch: Watch = { key, cwd: start.cwd, startedAt, requestedAt: this.deps.now(), onFound, shellPid: options.shellPid, checkedProcess: false, start }
         this.watches.set(key, watch)
         if (!this.interval) this.interval = setInterval(() => { void this.poll().catch((error) => console.warn('[codex-session] rollout probe failed', error)) }, this.deps.pollMs)
         return () => { if (this.watches.get(key) === watch) this.remove(key) }
@@ -258,7 +307,7 @@ export class CodexSessionLocator {
                 }
             }
         }
-        return result.filter((meta) => !this.claimed.has(meta.id) && !this.deps.isClaimed(meta.id) && [...this.watches.values()].some((watch) => this.matches(meta, watch)))
+        return result.filter((meta) => !this.claimed.has(meta.id) && !this.excluded.has(meta.id) && !this.deps.isClaimed(meta.id) && [...this.watches.values()].some((watch) => this.matches(meta, watch)))
     }
 
     private matches(meta: RolloutMeta, watch: Watch): boolean {
@@ -269,42 +318,46 @@ export class CodexSessionLocator {
         if (this.polling) return
         this.polling = true
         try {
+            // One asynchronous lookup belongs to each watch, even before its first file is written.
+            await Promise.all([...this.watches.values()].map(async (watch) => {
+                if (watch.shellPid === undefined || watch.checkedProcess) return
+                watch.checkedProcess = true
+                const found = await this.deps.findProcess(watch.shellPid).catch(() => null)
+                if (this.watches.get(watch.key) !== watch) return
+                if (!found) { this.remove(watch.key); return }
+                watch.process = found
+                watch.startedAt = found.startedAt
+                watch.start.startedAt = found.startedAt
+            }))
             for (const watch of this.watches.values()) {
-                const pid = watch.process?.pid ?? watch.shellPid
-                // With no rollout yet, the shell's lifetime keeps delayed first writes eligible.
-                const unknownSince = watch.failedProbeAt ?? (watch.shellPid === undefined ? watch.requestedAt : undefined)
-                if ((pid !== undefined && !this.deps.isAlive(pid)) || (!watch.process && unknownSince !== undefined && this.deps.now() - unknownSince >= WATCH_MS)) this.remove(watch.key)
+                if ((watch.process && !this.deps.isAlive(watch.process.pid)) || (!watch.process && this.deps.now() - watch.requestedAt >= WATCH_MS)) this.remove(watch.key)
             }
             if (!this.watches.size) return
             const candidates = this.candidates().sort((a, b) => a.startedAt - b.startedAt)
-            // Do not launch ps during idle polls. Each newly seen eligible file allows one probe.
-            await Promise.all([...this.watches.values()].map(async (watch) => {
-                if (watch.process || watch.shellPid === undefined) return
-                const fresh = candidates.filter((candidate) => this.matches(candidate, watch) && !watch.probedFiles.has(candidate.file))
-                if (!fresh.length) return
-                fresh.forEach((candidate) => watch.probedFiles.add(candidate.file))
-                const found = await this.deps.findProcess(watch.shellPid)
-                if (this.watches.get(watch.key) !== watch) return
-                if (found) { watch.process = found; watch.startedAt = found.startedAt }
-                else watch.failedProbeAt ??= this.deps.now()
-            }))
             // A PID is inspected again only when a new candidate file appears, never on every tick.
             for (const candidate of candidates) {
                 const inspected = this.inspected.get(candidate.file) ?? new Set<number>()
                 this.inspected.set(candidate.file, inspected)
                 await Promise.all([...this.watches.values()].filter((watch) => this.matches(candidate, watch) && watch.process && !inspected.has(watch.process.pid)).map(async (watch) => {
                     const pid = watch.process!.pid
+                    const paths = await this.deps.heldRollouts(pid).catch(() => null)
+                    if (paths === null) return
                     inspected.add(pid)
-                    this.held.set(pid, new Set((await this.deps.heldRollouts(pid)).map(canonical)))
+                    this.held.set(pid, new Set(paths.map(canonical)))
                 }))
                 const matching = [...this.watches.values()].filter((watch) => this.matches(candidate, watch))
+                // Unknown ownership is not evidence for the time rule. Retry only failed pairs.
+                if (matching.some((watch) => watch.process && !inspected.has(watch.process.pid))) continue
                 const holders = matching.filter((watch) => watch.process && this.held.get(watch.process.pid)?.has(canonical(candidate.file)))
                 let owner: Watch | undefined
                 if (holders.length === 1) owner = holders[0]
                 else if (holders.length === 0) {
                     const preceding = matching.filter((watch) => watch.startedAt <= candidate.startedAt).sort((a, b) => b.startedAt - a.startedAt)
                     owner = preceding[0] ?? (matching.length === 1 ? matching[0] : undefined)
-                    if (owner && [...this.watches.values()].some((watch) => watch !== owner && watch.cwd === owner!.cwd && Math.abs(watch.startedAt - owner!.startedAt) <= AMBIGUITY_MS)) owner = undefined
+                    if (owner && this.starts.some((start) => start !== owner!.start && start.cwd === owner!.cwd && Math.abs(start.startedAt - owner!.startedAt) <= AMBIGUITY_MS)) {
+                        this.excluded.add(candidate.id)
+                        owner = undefined
+                    }
                 }
                 if (!owner || this.watches.get(owner.key) !== owner || this.deps.isClaimed(candidate.id)) continue
                 this.claimed.add(candidate.id)
