@@ -146,6 +146,11 @@ const api = {
     connectAgentConversation: (sessionId: string, body: AgentConversationConnectInput): Promise<AgentConversationConnectResult | AgentConversationFailure> =>
         ipcRenderer.invoke('agent-conversation-connect', sessionId, body),
     writeRestoredTerminal: (sessionId: string, data: string): void => ipcRenderer.send('terminal-input', sessionId, data, true),
+    onSessionRestoreBlocked: (callback: (data: { sessionId: string; message: string }) => void): (() => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string; message: string }) => callback(data)
+        ipcRenderer.on('session-restore-blocked', listener)
+        return () => ipcRenderer.removeListener('session-restore-blocked', listener)
+    },
     getSessionResumeCommand: (sessionId: string): Promise<string | undefined> => ipcRenderer.invoke('get-session-resume-command', sessionId),
     watchCodexSession: (sessionId: string, command: string): Promise<boolean> =>
         ipcRenderer.invoke('watch-codex-session', sessionId, command),

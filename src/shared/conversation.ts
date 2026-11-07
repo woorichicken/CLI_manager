@@ -389,8 +389,9 @@ export interface AgentConversationConnectInput {
 
 export interface AgentConversationConnectResult {
     status: 'connected'
+    /** Manual connect prepares a line only; true requires a separately observed running process. */
     resumed: boolean
-    /** The resume command was typed; startup may still be unconfirmed. */
+    /** The resume command was typed without Enter. The terminal user or API caller submits it. */
     typed: boolean
     cliCommand: string
 }

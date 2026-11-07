@@ -131,6 +131,7 @@ interface SidebarProps {
     showSessionTree?: boolean
     /** Opens sessions by id — one as a sidebar click would, several side by side (App.showSessions). */
     onShowSessions?: (sessionIds: string[]) => void
+    onResumeConversationPrepared?: (sessionId: string) => void
     /** Session relations (who opened whom), for the Tree layout. */
     sessionRelations?: SessionRelation[]
     // Split view props
@@ -194,6 +195,7 @@ export function Sidebar({
     showPlayground = true,
     showSessionTree = true,
     onShowSessions,
+    onResumeConversationPrepared,
     sessionRelations = [],
     splitLayout,
     onDragStartSession,
@@ -994,6 +996,7 @@ export function Sidebar({
                 sessionId={conversationSessionId}
                 sessionName={workspaces.flatMap(workspace => workspace.sessions).find(session => session.id === conversationSessionId)?.name ?? ''}
                 onClose={() => setConversationSessionId(null)}
+                onResumePrepared={sessionId => { setConversationSessionId(null); onResumeConversationPrepared?.(sessionId) }}
             />}
 
             {folderMenuOpen && (

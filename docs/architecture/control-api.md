@@ -178,7 +178,7 @@ conversation. A foreground Claude blocks changes; a Codex holding a rollout acce
 conversation. An unbound Codex requires the −2s/+30s start window, or explicit `force:true` with
 its warning. Force cannot switch a foreground Codex to a Claude conversation, or bypass duplicate
 links, folders, a held conversation, or an unknown foreground. `resume:true` requires a shell both
-at discovery and immediately before input. After a mirror flush, a question is `awaiting_input`,
+at discovery and immediately before input. A pending startup restore is `input_busy` until its input attempt finishes. After a mirror flush, a question is `awaiting_input`,
 a draft/continuation prompt is `input_busy`; both leave terminal text and saved values intact.
 Nothing clears the shell line. Pending input text/uncertain state decides whether a draft exists;
 prompt symbols and themes do not. Screen inspection only adds known continuation-prompt refusals.
@@ -192,11 +192,17 @@ The cliCommand response is the remembered value and may contain unrecognized ori
 it is not a promise that the same text was typed. Startup never repairs it in storage. Immediately
 before restart input, desktop IPC applies the same read-only policy after aliases are ready.
 That startup write bypasses manual CLI recapture, so observing the safe input cannot overwrite
-the remembered raw options. Normal typing, pasted commands and Control API input still use verification.
-Only the decided input base and checked UUID are typed. API input records its client and caller relation.
-`typed:true` says the command was entered; `resumed:true` is returned only after the matching
-foreground agent is observed. Failed/unobserved startup returns `resumed:false, typed:true`; the
-dialog keeps that distinction visible and prevents a repeated command from the same dialog.
+the remembered raw options. Normal typing, pasted commands, Diff review send-text-to-terminal and Control API input still use input tracking.
+Startup restoration keeps its existing submitted Enter, but main checks pending user input just
+before writing; a draft skips that write and notifies the desktop without clearing the draft.
+Only the decided input base and checked UUID are typed, without CR/LF. API input records its client and caller relation.
+`resume:true` prepares a command without submitting it and immediately returns `typed:true,
+resumed:false`. The desktop selects/focuses Terminal and says "Press Enter in the terminal to resume."
+An API/MCP caller must first read the screen (`GET /v1/sessions/:id/output` or `read_output`) and
+then explicitly send Enter (`POST /v1/sessions/:id/input` with `keys:["enter"]` or `send_input`).
+Execution is verified afterwards through foreground/output and conversation tracking; a prepared
+command is not evidence that an agent started. Draft/question checks remain refusal grounds, but
+Connect itself never sends Enter even when those checks miss text on the line.
 Saved options survive restarts; a renderer reload reattaches without resuming again.
 
 | HTTP | Code | Details |

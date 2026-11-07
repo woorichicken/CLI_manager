@@ -105,6 +105,7 @@ declare global {
             listAgentConversations: (sessionId: string) => Promise<AgentConversationList | AgentConversationFailure>
             connectAgentConversation: (sessionId: string, body: AgentConversationConnectInput) => Promise<AgentConversationConnectResult | AgentConversationFailure>
             writeRestoredTerminal: (sessionId: string, data: string) => void
+            onSessionRestoreBlocked: (callback: (data: { sessionId: string; message: string }) => void) => () => void
             getSessionResumeCommand: (sessionId: string) => Promise<string | undefined>
             watchCodexSession: (sessionId: string, command: string) => Promise<boolean>
             rewriteCliCommand: (command: string) => Promise<{ command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null>

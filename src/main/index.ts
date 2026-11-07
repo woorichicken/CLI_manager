@@ -167,6 +167,7 @@ const codexSessionLocator = new CodexSessionLocator(undefined, {
     isClaimed: (id) => ((store.get('workspaces') as Workspace[] | undefined) ?? []).some((w) => w.sessions.some((s) => s.cliSessionId === id))
 })
 const codexCaptureStops = new Map<string, () => void>()
+const pendingSessionRestores = new Set<string>()
 let forgetClaudeSession = (_id: string): void => {}
 function stopCodexCapture(id: string): void {
     codexCaptureStops.get(id)?.()
@@ -201,7 +202,14 @@ let shellAliasesReady: Promise<void> | undefined
 const ensureShellAliases = (): Promise<void> => shellAliasesReady ??= loadShellAliases()
 
 const terminalManager = new TerminalManager(cliSessionTracker)
-terminalManager.events.on('exited', stopCodexCapture)
+terminalManager.events.on('exited', (id: string) => { stopCodexCapture(id); pendingSessionRestores.delete(id) })
+terminalManager.events.on('restoreInputFinished', (id: string) => pendingSessionRestores.delete(id))
+terminalManager.beforeRestoredInput = (id) => {
+    const pending = cliSessionTracker.getPendingInput(id)
+    if (!pending.text && !pending.uncertain) return true
+    broadcast('session-restore-blocked', { sessionId: id, message: 'Your text is still on the line — resume was not typed' })
+    return false
+}
 const portManager = new PortManager(() => {
     const settings = store.get('settings') as UserSettings | undefined
     // Default on: turning it off is an explicit choice, not a silent regression
@@ -438,6 +446,9 @@ const agentConversations = new AgentConversations({
         w.sessions.map((s) => ({ ...s, cwd: s.cwd || w.path }))),
     foreground: (id) => terminalManager.foregroundAgent(id),
     resolveAlias: (name) => cliSessionTracker.resolveAlias(name),
+    beforeConnect: (id) => {
+        if (pendingSessionRestores.has(id)) throw new AgentConversationError(409, 'input_busy', 'Session restoration is still preparing. Wait before connecting.')
+    },
     beforeResume: async (id) => {
         await terminalMirror.flush(id)
         if (terminalMirror.showsAwaitingInput(id)) throw new AgentConversationError(409, 'awaiting_input', 'Answer the question in Terminal before resuming a conversation.')
@@ -1151,6 +1162,9 @@ app.whenReady().then(async () => {
     // The first window never waits for an interactive profile. Resume-specific checks await this separately.
     void ensureShellAliases()
     validateCliSessionIds()
+    for (const ws of (store.get('workspaces') as Workspace[])) {
+        for (const session of ws.sessions) if (session.cliSessionId && (session.cliToolName === 'codex' || session.cliToolName === 'claude')) pendingSessionRestores.add(session.id)
+    }
 
     // Histories of sessions deleted since the last run; then keep saving.
     scrollbackStore.prune()
@@ -1383,8 +1397,8 @@ app.whenReady().then(async () => {
     ipcMain.handle('get-session-resume-command', async (_event, terminalId: string): Promise<string | undefined> => {
         await ensureShellAliases()
         const session = ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => w.sessions).find((s) => s.id === terminalId)
-        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude')) return undefined
-        if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(session.cliSessionId)) return undefined
+        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude')) { pendingSessionRestores.delete(terminalId); return undefined }
+        if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(session.cliSessionId)) { pendingSessionRestores.delete(terminalId); return undefined }
         const decision = decideAgentCommand(session.cliCommand, session.cliToolName, (name) => cliSessionTracker.resolveAlias(name))
         return `${decision.inputCommand} ${session.cliToolName === 'codex' ? 'resume' : '--resume'} ${session.cliSessionId}`
     })
@@ -3528,7 +3542,7 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('send-text-to-terminal', (_e, terminalId: string, text: string): IPCResult<null> => {
         try {
-            terminalManager.writeToTerminal(terminalId, text)
+            terminalManager.writeInput(terminalId, text)
             return { success: true, data: null }
         } catch (e: any) {
             return { success: false, error: e.message, errorType: 'UNKNOWN_ERROR' }

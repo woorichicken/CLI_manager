@@ -113,8 +113,11 @@ test.describe('T24 restore startup prompts', () => {
 
         await expect.poll(() => termText(ctx.page, 's-codex'), { timeout: 30_000 }).toContain('UPDATE-SKIPPED')
         const text = await termText(ctx.page, 's-codex')
-        // The command line wraps at the terminal width.
-        expect(text.replace(/\n/g, '')).toContain(`--codex-update resume ${conversation}`)
+        // The known mock's options live inside its agent-named wrapper; the visible
+        // command carries only that executable and the real resume subcommand.
+        const stored = JSON.parse(fs.readFileSync(path.join(ctx.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'ws').sessions.find((s: any) => s.id === 's-codex')
+        expect(stored.cliCommand).toMatch(/\/codex'$/)
+        expect(text.replace(/\n/g, '')).toContain(`${stored.cliCommand} resume ${conversation}`)
         expect(text).not.toContain('UPDATE-RUN')
         expect(ctx.pageErrors).toEqual([])
     })

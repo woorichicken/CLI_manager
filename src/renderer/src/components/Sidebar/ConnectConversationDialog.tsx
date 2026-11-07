@@ -8,6 +8,8 @@ interface ConnectConversationDialogProps {
     sessionId: string
     sessionName: string
     onClose: () => void
+    /** The sidebar keeps the Enter notice visible and focuses this terminal after closing the dialog. */
+    onResumePrepared?: (sessionId: string) => void
 }
 
 const itemKey = (item: AgentConversationItem): string => `${item.agent}:${item.id}`
@@ -17,7 +19,7 @@ const dateLabel = (at: number): string => new Date(at).toLocaleString([], {
 })
 
 /** An explicit link only changes the conversation; the transcript's words are never terminal input. */
-export function ConnectConversationDialog({ sessionId, sessionName, onClose }: ConnectConversationDialogProps) {
+export function ConnectConversationDialog({ sessionId, sessionName, onClose, onResumePrepared }: ConnectConversationDialogProps) {
     const [list, setList] = useState<AgentConversationList | null>(null)
     const [selectedKey, setSelectedKey] = useState('')
     const [loading, setLoading] = useState(true)
@@ -122,9 +124,10 @@ export function ConnectConversationDialog({ sessionId, sessionName, onClose }: C
                 setError(response.error.message)
                 await load(true)
             } else if (response.typed && !response.resumed) {
-                // A written command is not proof of startup. Never offer to type it again here.
+                // Preparing the command never presses Enter. The person resumes it in Terminal.
                 setResumeTyped(true)
-                await load(true)
+                if (onResumePrepared) onResumePrepared(sessionId)
+                else await load(true)
             } else closeRef.current()
         } catch {
             if (mountedRef.current) setError('Could not connect the conversation. Refresh the list and try again.')
@@ -159,7 +162,7 @@ export function ConnectConversationDialog({ sessionId, sessionName, onClose }: C
                 </div>
                 <div className="px-4 py-3 overflow-y-auto min-h-0" aria-busy={loading}>
                     {error && <p role="alert" data-testid="conversation-error" className="text-xs text-red-300 mb-3">{error}</p>}
-                    {resumeTyped && <p role="status" data-testid="conversation-resume-pending" className="text-xs text-amber-300 mb-3">Resume command was typed, but the agent has not started. Check Terminal.</p>}
+                    {resumeTyped && <p role="status" data-testid="conversation-resume-pending" className="text-xs text-amber-300 mb-3">Press Enter in the terminal to resume.</p>}
                     {loading && <p role="status" className="text-xs text-gray-400">Loading conversations…</p>}
                     {!loading && list && <>
                         {list.front.kind === 'claude' && <p className="text-xs text-amber-300 mb-3">Exit Claude first. Its running conversation is kept in sync automatically.</p>}

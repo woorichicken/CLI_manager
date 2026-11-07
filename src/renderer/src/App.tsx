@@ -18,9 +18,10 @@ import { SessionViewToggle } from './components/SessionViewToggle'
 import { SessionChatSlot } from './components/SessionChatSlot'
 import { ChatFilePreview } from './components/ChatFilePreview'
 import { isAgentSession } from './utils/agentSession'
-import { getSessionViewMode } from './hooks/useSessionViewMode'
+import { getSessionViewMode, setSessionViewMode } from './hooks/useSessionViewMode'
 import { sendChatCommand } from './components/ChatView/chatContext'
 import { HandoffNoticeToast } from './components/ChatView/HandoffNoticeToast'
+import { showHandoffNotice } from './components/ChatView/draftHandoff'
 import { switchSessionView } from './utils/sessionViewSwitch'
 import { buildSessionBreadcrumb } from './utils/sessionBreadcrumb'
 import { RelatedSessionsButton } from './components/RelatedSessions/RelatedSessionsButton'
@@ -154,6 +155,8 @@ function App() {
         })
         return cleanup
     }, [])
+
+    useEffect(() => window.api.onSessionRestoreBlocked(({ sessionId, message }) => showHandoffNotice(sessionId, message)), [])
 
     // Track previous isClaudeCode state to detect exit transitions (true → false)
     const prevClaudeCodeRef = useRef<Map<string, boolean>>(new Map())
@@ -568,6 +571,14 @@ function App() {
             setActiveSplitIndex(0)
             setActiveSession(null)
         }
+    }
+
+    const handleResumePrepared = (sessionId: string): void => {
+        showSessions([sessionId])
+        // This switch must not carry a Chat draft into the prepared shell command.
+        setSessionViewMode(sessionId, 'terminal')
+        showHandoffNotice(sessionId, 'Press Enter in the terminal to resume.')
+        requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-session-id="${CSS.escape(sessionId)}"] .xterm-helper-textarea`)?.focus())
     }
 
     // A `climanager://session/…` link clicked in a terminal.
@@ -1534,6 +1545,7 @@ function App() {
                     showPlayground={settings.showPlayground ?? true}
                     showSessionTree={settings.showSessionTree ?? true}
                     onShowSessions={showSessions}
+                    onResumeConversationPrepared={handleResumePrepared}
                     sessionRelations={sessionRelations}
                     splitLayout={splitLayout}
                     onDragStartSession={handleSidebarDragStart}

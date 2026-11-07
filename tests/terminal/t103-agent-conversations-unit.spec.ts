@@ -18,6 +18,7 @@ let writes: string[]
 let service: AgentConversations
 let resumeError: Error | null
 let resumeReady: boolean
+let startupChecks: number
 function codex(n: number, options: { cwd?: string; source?: unknown; originator?: string; text?: string; at?: number; extension?: string; padding?: number } = {}): string {
     const at = options.at ?? now - n * 1000
     const day = new Date(at)
@@ -46,6 +47,7 @@ test.beforeEach(() => {
     writes = []
     resumeError = null
     resumeReady = true
+    startupChecks = 0
     service = new AgentConversations({
         sessions: () => sessions,
         foreground: async () => front,
@@ -55,13 +57,68 @@ test.beforeEach(() => {
         claudeConfigDir: () => path.join(root, 'claude'),
         now: () => now,
         beforeResume: async () => { if (resumeError) throw resumeError },
-        waitForAgent: async () => resumeReady,
+        waitForAgent: async () => { startupChecks++; return resumeReady },
         resolveAlias: (name) => name === 'cldy' ? 'claude --dangerously-skip-permissions' : undefined
     })
 })
 test.afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 test.describe('T103 agent conversations', () => {
+    for (const resume of [false, true]) {
+        test(`startup restore excludes manual connect before file and foreground checks: resume=${resume}`, async () => {
+            codex(1)
+            let foregroundChecks = 0
+            const connection = new AgentConversations({
+                sessions: () => sessions,
+                foreground: async () => { foregroundChecks++; return front },
+                beforeConnect: () => { throw Object.assign(new Error('Startup restore is in progress.'), { status: 409, code: 'input_busy' }) },
+                beforeResume: async () => {},
+                update: (_id, values) => Object.assign(sessions[0], values),
+                write: (_id, text) => writes.push(text),
+                codexHome: () => path.join(root, 'codex'),
+                claudeConfigDir: () => path.join(root, 'claude')
+            })
+            await expect(connection.connect('terminal', { agent: 'codex', id: uuid(1), resume })).rejects.toMatchObject({ code: 'input_busy', status: 409 })
+            expect(foregroundChecks).toBe(0)
+            expect(sessions[0].cliSessionId).toBeUndefined()
+            expect(writes).toEqual([])
+        })
+    }
+    test('manual resume types no Enter and returns immediately without a startup poll', async () => {
+        codex(1)
+        const result = await service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true })
+        expect(writes.join('')).toBe(`codex resume ${uuid(1)}`)
+        expect(writes.join('')).not.toMatch(/[\r\n]/)
+        expect(result).toMatchObject({ typed: true, resumed: false })
+        expect(startupChecks).toBe(0)
+    })
+    test('N11 option arity agrees with the captured real Claude help declarations', () => {
+        const help = fs.readFileSync(path.join(__dirname, 'fixtures/claude-help-options.txt'), 'utf8')
+        expect(help).toContain('Version: 2.1.319 (Claude Code)')
+        const arity = new Map<string, boolean>()
+        for (const line of help.split('\n')) {
+            const declaration = /^  (.+?)\s+<([^>]+)>/.exec(line)
+            if (!declaration) continue
+            for (const name of declaration[1].split(/,\s*/)) arity.set(name, declaration[2].endsWith('...'))
+        }
+        for (const flag of ['--plugin-dir', '--tools', '--add-dir', '--file', '--allowedTools', '--disallowedTools', '--betas', '--mcp-config']) {
+            expect(arity.has(flag), `Missing real --help definition for ${flag}`).toBe(true)
+            const command = `claude ${flag} first second`
+            const expected = arity.get(flag) ? command : `claude ${flag} first`
+            expect(decideAgentCommand(command, 'claude').inputCommand, flag).toBe(expected)
+        }
+    })
+    test('N11 a plugin directory takes one value and the following first prompt is excluded', async () => {
+        claude(1)
+        const original = 'claude --plugin-dir ./p "REPLAY_plugin_prompt"'
+        const base = 'claude --plugin-dir ./p'
+        expect(decideAgentCommand(original, 'claude').inputCommand).toBe(base)
+        sessions[0].cliToolName = 'claude'
+        sessions[0].cliCommand = original
+        await service.connect('terminal', { agent: 'claude', id: uuid(1), resume: true })
+        expect(writes.join('')).toBe(`${base} --resume ${uuid(1)}`)
+        expect(writes.join('')).not.toContain('REPLAY_plugin_prompt')
+    })
     for (const [agent, command] of [
         ['codex', 'codex --remote ws://host:1'],
         ['codex', 'codex --remote-auth-token-env TOKEN_NAME'],
@@ -84,7 +141,7 @@ test.describe('T103 agent conversations', () => {
             sessions[0].cliCommand = command
             await service.connect('terminal', { agent, id: uuid(1), resume: true })
             expect(sessions[0].cliCommand).toBe(command)
-            expect(writes.join('')).toBe(`${command} ${agent === 'codex' ? 'resume' : '--resume'} ${uuid(1)}\r`)
+            expect(writes.join('')).toBe(`${command} ${agent === 'codex' ? 'resume' : '--resume'} ${uuid(1)}`)
         })
     }
     for (const command of ['codex --future-option option-value user words', 'codex --future-boolean', 'codex --model']) {
@@ -94,7 +151,7 @@ test.describe('T103 agent conversations', () => {
             sessions[0].cliCommand = command
             await service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true })
             expect(sessions[0].cliCommand).toBe(command)
-            expect(writes.join('')).toBe(`codex resume ${uuid(1)}\r`)
+            expect(writes.join('')).toBe(`codex resume ${uuid(1)}`)
         })
     }
     test('N2 shared policy preserves exact undecidable source without mutating it at replay time', () => {
@@ -166,7 +223,7 @@ test.describe('T103 agent conversations', () => {
                 const result = await service.connect('terminal', { agent, id: uuid(1), resume: true })
                 const isNoninteractive = command.includes(' exec ') || command.includes(' -p ') || command.includes(' --print ')
                 expect(result.cliCommand).toBe(isNoninteractive ? command : expected)
-                expect(writes.join('')).toBe(`${expected} ${agent === 'codex' ? 'resume' : '--resume'} ${uuid(1)}\r`)
+                expect(writes.join('')).toBe(`${expected} ${agent === 'codex' ? 'resume' : '--resume'} ${uuid(1)}`)
             })
         }
     }
@@ -175,7 +232,7 @@ test.describe('T103 agent conversations', () => {
         sessions[0].initialCommand = 'cldy'
         const result = await service.connect('terminal', { agent: 'claude', id: uuid(1), resume: true })
         expect(result.cliCommand).toBe('cldy')
-        expect(writes.join('')).toBe(`cldy --resume ${uuid(1)}\r`)
+        expect(writes.join('')).toBe(`cldy --resume ${uuid(1)}`)
     })
     for (const code of ['awaiting_input', 'input_busy']) {
         test(`resume guard ${code} leaves human input and metadata untouched`, async () => {
@@ -246,10 +303,10 @@ test.describe('T103 agent conversations', () => {
         sessions[0].cliToolName = 'codex'
         sessions[0].cliCommand = `codex --dangerously-bypass-approvals-and-sandbox resume ${uuid(8)}`
         const result = await service.connect('terminal', { agent: 'codex', id: uuid(1), resume: true })
-        expect(result).toEqual({ status: 'connected', resumed: true, typed: true, cliCommand: 'codex --dangerously-bypass-approvals-and-sandbox' })
+        expect(result).toEqual({ status: 'connected', resumed: false, typed: true, cliCommand: 'codex --dangerously-bypass-approvals-and-sandbox' })
         expect(sessions[0].cliSessionId).toBe(uuid(1))
         expect(sessions[0].cliToolName).toBe('codex')
-        expect(writes.join('')).toBe(`codex --dangerously-bypass-approvals-and-sandbox resume ${uuid(1)}\r`)
+        expect(writes.join('')).toBe(`codex --dangerously-bypass-approvals-and-sandbox resume ${uuid(1)}`)
     })
     test('preserves compatible initial command and ignores a different agent command', async () => {
         claude(1)

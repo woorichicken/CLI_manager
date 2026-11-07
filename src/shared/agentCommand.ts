@@ -14,11 +14,11 @@ export interface AgentCommandDecision {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const ONE_VALUE: Record<ConversationAgent, Set<string>> = {
     codex: new Set(['-c', '--config', '-m', '--model', '-p', '--profile', '-C', '--cd', '-s', '--sandbox', '-a', '--ask-for-approval', '-i', '--image', '--enable', '--disable', '--add-dir', '--remote', '--remote-auth-token-env', '--local-provider']),
-    claude: new Set(['--model', '--fallback-model', '-n', '--name', '--max-budget-usd', '--output-format', '--input-format', '--permission-mode', '--effort', '--agent', '--agents', '--settings', '--setting-sources', '--append-system-prompt', '--append-system-prompt-file', '--system-prompt', '--system-prompt-file'])
+    claude: new Set(['--plugin-dir', '--model', '--fallback-model', '-n', '--name', '--max-budget-usd', '--output-format', '--input-format', '--permission-mode', '--effort', '--agent', '--agents', '--settings', '--setting-sources', '--append-system-prompt', '--append-system-prompt-file', '--system-prompt', '--system-prompt-file'])
 }
 const MANY_VALUES: Record<ConversationAgent, Set<string>> = {
     codex: new Set(),
-    claude: new Set(['--plugin-dir', '--tools', '--file', '--add-dir', '--mcp-config', '--allowedTools', '--allowed-tools', '--disallowedTools', '--disallowed-tools', '--betas'])
+    claude: new Set(['--tools', '--file', '--add-dir', '--mcp-config', '--allowedTools', '--allowed-tools', '--disallowedTools', '--disallowed-tools', '--betas'])
 }
 const BOOLEAN: Record<ConversationAgent, Set<string>> = {
     codex: new Set(['--dangerously-bypass-approvals-and-sandbox', '--yolo', '--full-auto', '--oss', '--search', '--no-alt-screen']),

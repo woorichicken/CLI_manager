@@ -40,6 +40,93 @@ function reviewAgent(x: ReturnType<typeof reviewHome>, name = 'codex'): string {
     return bin
 }
 
+test('T104 fix3: Connect never submits a prepared command or executes unobserved shell text', async () => {
+    const x = reviewHome()
+    const native = reviewAgent(x)
+    fs.appendFileSync(path.join(x.env.HOME, '.zshrc'), 'HISTSIZE=100\n')
+    const names = ['paste-newline', 'paste-two', 'hist-verify', 'widget', 'menu-select', 'cmdand', 'custom-ps2']
+    const ids = names.map((_, i) => `00000000-0000-4000-8000-${String(106000 + i).padStart(12, '0')}`)
+    ids.forEach((id) => reviewRollout(x, id))
+    result = await launchAppWithWorkspaces([{ id: 'draft-only', name: 'Prepared only', path: x.project, sessions: names.map((id) => ({ id, name: id, cliToolName: 'codex', cliCommand: native })) }], { env: x.env })
+    const { page } = result
+    const write = (id: string, data: string) => page.evaluate(([id, data]) => window.api.writeTerminal(id, data), [id, data])
+    const type = async (id: string, data: string) => { for (const character of data) await write(id, character) }
+    for (const [i, name] of names.entries()) {
+        await waitForBufferText(page, name, 'READY>', 5000)
+        const marker = 'M_' + name
+        if (name.startsWith('paste')) {
+            await page.getByText(name, { exact: true }).first().click()
+            await page.locator(`[data-session-id="${name}"] .xterm-helper-textarea`).evaluate((element, text) => {
+                const data = new DataTransfer(); data.setData('text/plain', text)
+                element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+            }, name === 'paste-newline' ? `touch ${marker}\n` : `touch ${marker}\ntouch ${marker}.2\n`)
+        } else if (name === 'hist-verify') {
+            await write(name, 'setopt hist_verify\r')
+            await write(name, `touch ${marker}; true\r`)
+            await expect.poll(() => fs.existsSync(path.join(x.project, marker))).toBe(true)
+            fs.unlinkSync(path.join(x.project, marker))
+            await type(name, '!!\r')
+        } else if (name === 'menu-select') {
+            fs.writeFileSync(path.join(x.project, marker + '-a'), 'a'); fs.writeFileSync(path.join(x.project, marker + '-b'), 'b')
+            await write(name, "zmodload zsh/complist; autoload -U compinit; compinit -u -D; zstyle ':completion:*' menu select; zstyle ':completion:*' list-prompt ''\r")
+            await page.waitForTimeout(800)
+            await type(name, `rm ${marker}-`)
+            for (let n = 0; n < 3; n++) { await write(name, '\t'); await page.waitForTimeout(200) }
+            await write(name, '\r')
+            expect(fs.existsSync(path.join(x.project, marker + '-a'))).toBe(true)
+            expect(fs.existsSync(path.join(x.project, marker + '-b'))).toBe(true)
+        } else if (name === 'widget') {
+            await write(name, `fake-pick() { local k; read -k1 k </dev/tty; BUFFER='touch ${marker}; true'; CURSOR=$#BUFFER; zle reset-prompt }; zle -N fake-pick; bindkey '^R' fake-pick\r`)
+            await page.waitForTimeout(200)
+            await write(name, '\x12'); await page.waitForTimeout(100); await write(name, '\r')
+        } else {
+            if (name === 'custom-ps2') await write(name, "PROMPT2='∙ '\r")
+            await write(name, `touch ${marker} &&\r`)
+        }
+        await page.waitForTimeout(200)
+        expect(fs.existsSync(path.join(x.project, marker))).toBe(false)
+        const response = await page.evaluate(([id, conversation]) => window.api.connectAgentConversation(id, { agent: 'codex', id: conversation, resume: true }), [name, ids[i]])
+        if (!('error' in response)) expect(response).toMatchObject({ typed: true, resumed: false })
+        await page.waitForTimeout(200)
+        expect(fs.existsSync(path.join(x.project, marker)), name).toBe(false)
+        expect(fs.existsSync(path.join(x.project, marker + '.2')), name).toBe(false)
+        if (name === 'menu-select') {
+            expect(fs.existsSync(path.join(x.project, marker + '-a'))).toBe(true)
+            expect(fs.existsSync(path.join(x.project, marker + '-b'))).toBe(true)
+        }
+    }
+})
+
+test('T104 fix3 N13 N14: pending restore blocks Connect and leaves early user text unsubmitted', async () => {
+    const x = reviewHome()
+    const native = reviewAgent(x)
+    fs.appendFileSync(path.join(x.env.HOME, '.zshrc'), 'zmodload zsh/zselect\nzselect -t 500\n')
+    const ids = [0, 1, 2].map((i) => `00000000-0000-4000-8000-${String(106100 + i).padStart(12, '0')}`)
+    ids.forEach((id) => reviewRollout(x, id))
+    const log = path.join(x.root, 'args.jsonl')
+    result = await launchAppWithWorkspaces([{ id: 'restoring', name: 'Restore race', path: x.project, sessions: ['draft', 'pending'].map((id, i) => ({ id, name: id, cliToolName: 'codex', cliSessionId: ids[i], cliCommand: native })) }], { env: { ...x.env, D4_AGENT_ARGS_LOG: log, D4_AGENT_LIFETIME_SECONDS: '30' } })
+    for (const character of 'touch DRAFT') await result.page.evaluate((data) => window.api.writeTerminal('draft', data), character)
+    const blocked = await result.page.evaluate((id) => window.api.connectAgentConversation('pending', { agent: 'codex', id, resume: true }), ids[2])
+    expect(blocked).toMatchObject({ error: { code: 'input_busy' } })
+    await expect(result.page.getByText('Your text is still on the line — resume was not typed', { exact: true })).toBeVisible({ timeout: 10000 })
+    await expect.poll(() => fs.existsSync(log)).toBe(true)
+    const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((row) => JSON.parse(row).argv.slice(1))
+    expect(calls).toEqual([['resume', ids[1]]])
+    expect(fs.readdirSync(x.project)).toEqual([])
+    expect(await termText(result.page, 'draft')).toContain('touch DRAFT')
+})
+
+test('T104 fix3 N15: Diff text enters the same input tracker', async () => {
+    const x = reviewHome()
+    reviewRollout(x, ID)
+    result = await launchAppWithWorkspaces([{ id: 'diff-input', name: 'Diff input', path: x.project, sessions: [{ id: 'diff-input', name: 'Diff', cliToolName: 'codex', cliCommand: '/missing/codex' }] }], { env: x.env })
+    await waitForBufferText(result.page, 'diff-input', 'READY>', 5000)
+    expect(await result.page.evaluate(() => window.api.sendTextToTerminal('diff-input', 'touch M_diff; true '))).toMatchObject({ success: true })
+    const response = await result.page.evaluate((id) => window.api.connectAgentConversation('diff-input', { agent: 'codex', id, resume: true }), ID)
+    expect(response).toMatchObject({ error: { code: 'input_busy' } })
+    expect(fs.existsSync(path.join(x.project, 'M_diff'))).toBe(false)
+})
+
 test('T104 fix2 N3: empty input accepts prompt themes and OSC precmd; uncertain edits explain recovery', async () => {
     const x = reviewHome()
     const bin = path.join(x.root, 'bin'); fs.mkdirSync(bin)
@@ -162,18 +249,21 @@ test('T104 review shell right prompt is display text, not an entered draft', asy
     result = await launchAppWithWorkspaces([{ id: 'right', name: 'Right prompt', path: x.project, sessions: [{ id: 'right', name: 'Right', cliToolName: 'codex', cliCommand: bin }] }], { env: x.env })
     await waitForBufferText(result.page, 'right', 'D104 right status', 5000)
     const connected = await result.page.evaluate((id) => window.api.connectAgentConversation('right', { agent: 'codex', id, resume: true }), ID)
-    expect(connected).toMatchObject({ status: 'connected', typed: true })
+    expect(connected).toMatchObject({ status: 'connected', typed: true, resumed: false })
+    expect(await termText(result.page, 'right')).not.toContain('RIGHT-PROMPT-RESUME')
+    await result.page.evaluate(() => window.api.writeTerminal('right', '\r'))
     await waitForBufferText(result.page, 'right', 'RIGHT-PROMPT-RESUME', 5000)
 })
 
 test('T104 review A1: missing Claude storage is unknown while stale Codex ids are checked', async () => {
     const x = reviewHome()
+    const standin = reviewAgent(x, 'claude')
     result = await launchAppWithWorkspaces([{ id: 'review', name: 'Review project', path: x.project, sessions: [
-        { id: 'claude-missing', name: 'Claude missing', cliSessionId: ID, cliToolName: 'claude', cliCommand: '/usr/bin/true' },
+        { id: 'claude-missing', name: 'Claude missing', cliSessionId: ID, cliToolName: 'claude', cliCommand: standin },
         { id: 'codex-stale', name: 'Codex stale', cliSessionId: ID, cliToolName: 'codex', cliCommand: '/usr/bin/true' }
     ] }], { env: x.env })
     const sessions = JSON.parse(fs.readFileSync(path.join(result.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'review').sessions
-    expect(sessions.find((s: any) => s.id === 'claude-missing')).toMatchObject({ cliSessionId: ID, cliToolName: 'claude', cliCommand: '/usr/bin/true' })
+    expect(sessions.find((s: any) => s.id === 'claude-missing')).toMatchObject({ cliSessionId: ID, cliToolName: 'claude', cliCommand: standin })
     expect(sessions.find((s: any) => s.id === 'codex-stale').cliSessionId).toBeUndefined()
 })
 
@@ -225,7 +315,9 @@ test('T104 review A2-A6: resume preserves shell drafts/questions and records API
     expect(await termText(page, 'bash')).toContain('foo bar')
     expect(saved('bash').cliSessionId).toBeUndefined()
     expect(fs.existsSync(starts)).toBe(false)
-    expect(await connect('plain')).toMatchObject({ status: 200, body: { status: 'connected', typed: true } })
+    expect(await connect('plain')).toMatchObject({ status: 200, body: { status: 'connected', typed: true, resumed: false } })
+    expect(fs.existsSync(starts)).toBe(false)
+    await api('/v1/sessions/plain/input', { keys: ['enter'] })
     expect(saved('plain').aiControl).toMatchObject({ client: 'd104-review' })
     await waitForBufferText(page, 'plain', 'D104-COMMAND-EXITED', 5000)
     expect(fs.readFileSync(starts, 'utf8').trim()).toBe(`resume ${ids[4]}`)
@@ -254,12 +346,10 @@ test('T104 review A2-A6: resume preserves shell drafts/questions and records API
     await page.evaluate(([id, command]) => window.api.updateSessionCliInfo('review', 'plain', id, 'codex', command), [ids[4], `false && ${bin}`])
     const dialog = await openDialog('plain')
     await dialog.getByTestId('conversation-connect').click()
-    await expect(dialog.getByTestId('conversation-resume-pending')).toContainText('has not started')
-    await expect(dialog.getByTestId('conversation-connect')).toHaveCount(0)
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByTestId('draft-handoff-notice')).toContainText('Press Enter in the terminal to resume.')
+    await expect(page.locator('[data-session-id=plain] .xterm-helper-textarea')).toBeFocused()
     await shot('after-unconfirmed-resume.png')
-    await dialog.getByRole('button', { name: 'Refresh conversations' }).click()
-    await expect(dialog.getByTestId('conversation-connect')).toHaveCount(0)
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
 })
 
 test('T104 menu connects, persists options, shows Chat and resumes once after restart', async () => {
@@ -320,6 +410,10 @@ test('T104 menu connects, persists options, shows Chat and resumes once after re
     await expect(dialog.getByTestId('conversation-connect')).toHaveText('Connect & resume')
     await dialog.getByTestId('conversation-connect').click()
     await expect(dialog).toHaveCount(0)
+    await expect(page.getByTestId('draft-handoff-notice')).toContainText('Press Enter in the terminal to resume.')
+    await expect(page.locator(`[data-session-id="${SESSION}"] .xterm-helper-textarea`)).toBeFocused()
+    expect(fs.existsSync(starts)).toBe(false)
+    await page.keyboard.press('Enter')
     await waitForBufferText(page, SESSION, 'OpenAI Codex (mock)', 15_000)
     const saved = () => JSON.parse(fs.readFileSync(path.join(result!.userDataDir, 'config.json'), 'utf8')).workspaces.find((w: any) => w.id === 'd104').sessions[0]
     await expect.poll(saved).toMatchObject({ cliSessionId: ID, cliToolName: 'codex', cliCommand: command })

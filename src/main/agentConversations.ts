@@ -33,8 +33,11 @@ export interface AgentConversationsDeps {
     foreground: (sessionId: string) => Promise<AgentConversationFront>
     update: (sessionId: string, values: { cliSessionId: string; cliToolName: ConversationAgent; cliCommand: string }) => void
     write: (sessionId: string, data: string) => void
+    /** Rejects connects while a startup restore owns this terminal's next input. */
+    beforeConnect?: (sessionId: string) => void
     /** Flushes and rejects questions or a nonempty input line before any mutation. */
     beforeResume: (sessionId: string) => Promise<void>
+    /** Retained for source compatibility; manual connect never invokes startup polling. */
     waitForAgent?: (sessionId: string, agent: ConversationAgent, conversationId: string) => Promise<boolean>
     resolveAlias?: (name: string) => string | undefined
     forget?: (sessionId: string) => void
@@ -109,6 +112,7 @@ export class AgentConversations {
         if ((input.resume !== undefined && typeof input.resume !== 'boolean') || (input.force !== undefined && typeof input.force !== 'boolean')) {
             throw new AgentConversationError(400, 'invalid_request', 'resume and force must be booleans.')
         }
+        this.deps.beforeConnect?.(sessionId)
         const item = await this.find(input.agent, input.id, session.cwd)
         if (!item) throw new AgentConversationError(404, 'not_found', 'The conversation file is unavailable.')
         if (await canonical(item.cwd) !== await canonical(session.cwd)) throw new AgentConversationError(409, 'cwd_mismatch', 'The conversation belongs to another working folder.')
@@ -138,13 +142,11 @@ export class AgentConversations {
         if (conflict) throw new AgentConversationError(409, 'linked_elsewhere', 'The conversation is linked to another terminal.', { linkedTo: conflict })
         this.deps.update(sessionId, { cliSessionId: item.id, cliToolName: input.agent, cliCommand })
         this.deps.forget?.(sessionId)
-        let resumed = false
         if (input.resume) {
             hooks.beforeWrite?.()
-            this.deps.write(sessionId, `${command.inputCommand} ${input.agent === 'codex' ? 'resume' : '--resume'} ${item.id}\r`)
-            try { resumed = await this.deps.waitForAgent?.(sessionId, input.agent, item.id) ?? false } catch { /* A command typed is not proof of startup. */ }
+            this.deps.write(sessionId, `${command.inputCommand} ${input.agent === 'codex' ? 'resume' : '--resume'} ${item.id}`)
         }
-        return { status: 'connected', resumed, typed: input.resume === true, cliCommand }
+        return { status: 'connected', resumed: false, typed: input.resume === true, cliCommand }
     }
 
     private session(id: string): TerminalSession {

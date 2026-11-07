@@ -71,7 +71,18 @@ test.describe('T29 scrollback survival', () => {
         temps.push(dir)
         const claudeConfigDir = seedClaudeTranscript(RESUME_ID)
         temps.push(claudeConfigDir)
-        const env = { CLAUDE_CONFIG_DIR: claudeConfigDir, CLIMANAGER_SCROLLBACK_SAVE_MS: String(SAVE_INTERVAL_MS) }
+        const bin = path.join(dir, 'bin')
+        fs.mkdirSync(bin)
+        const agent = path.join(bin, 'claude')
+        // A recognized executable exercises the normal restart policy and never starts a real agent.
+        fs.writeFileSync(agent, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${dir}/resume-count'\nprintf 'T29-RESUMED %s\\n' "$*"\n`, { mode: 0o755 })
+        const env = {
+            CLAUDE_CONFIG_DIR: claudeConfigDir,
+            CODEX_HOME: path.join(dir, 'codex'),
+            CLIMANAGER_HOME: path.join(dir, 'manager'),
+            PATH: `${bin}:${process.env.PATH ?? ''}`,
+            CLIMANAGER_SCROLLBACK_SAVE_MS: String(SAVE_INTERVAL_MS)
+        }
         ctx = await launchAppWithWorkspaces([{
             id: 'ws', name: 'T29WS', path: dir,
             sessions: [
@@ -82,13 +93,14 @@ test.describe('T29 scrollback survival', () => {
                     initialCommand: `echo i >> ${dir}/init-count; echo T29-FRESH`,
                     cliSessionId: RESUME_ID,
                     cliToolName: 'claude',
-                    cliCommand: `echo r >> ${dir}/resume-count; echo T29-RESUMED`
+                    cliCommand: `'${agent}'`
                 }
             ]
         }], { env })
 
         await ctx.page.locator('[data-session-item="s-tpl"]').click()
         await expect.poll(() => countLines(`${dir}/resume-count`), { timeout: 20_000 }).toBe(1)
+        expect(fs.readFileSync(`${dir}/resume-count`, 'utf8').trim()).toBe(`--resume ${RESUME_ID}`)
 
         await ctx.page.locator('[data-session-item="s-shell"]').click()
         await ctx.page.waitForTimeout(1500)

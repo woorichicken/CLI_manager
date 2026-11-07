@@ -85,6 +85,7 @@ export interface TerminalHistoryProvider {
  */
 export interface TerminalEvents {
     created: (id: string, cols: number, rows: number) => void
+    restoreInputFinished: (id: string) => void
     output: (id: string, data: string) => void
     resized: (id: string, cols: number, rows: number) => void
     exited: (id: string, exit: TerminalExit) => void
@@ -144,6 +145,8 @@ export class TerminalManager {
      * altering existing terminal rendering behavior. No-op when undefined.
      */
     public onOutput?: (id: string, data: string) => void
+    /** Startup restore must not append to input typed while its command was being prepared. */
+    public beforeRestoredInput?: (id: string) => boolean
 
     constructor(cliTracker?: CLISessionTracker) {
         this.cliTracker = cliTracker ?? null
@@ -344,8 +347,11 @@ export class TerminalManager {
         ipcMain.on('terminal-input', (_, id: string, data: string, restoring?: boolean) => {
             // A restored conversation is already identified. Observing the projected input as
             // a new manual resume would overwrite the original remembered options.
-            if (restoring === true) this.writeToTerminal(id, data)
-            else this.writeInput(id, data)
+            if (restoring === true) {
+                try {
+                    if (this.beforeRestoredInput?.(id) !== false) this.writeToTerminal(id, data)
+                } finally { this.events.emit('restoreInputFinished', id) }
+            } else this.writeInput(id, data)
         })
 
         ipcMain.handle('terminal-resize', (_, id: string, requestedCols: number, requestedRows: number) => {
