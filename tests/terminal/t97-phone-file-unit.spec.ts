@@ -590,6 +590,16 @@ test.describe('T97 what a chat names', () => {
         )
     })
 
+    // found on a real phone (device-todo 8): [clip](docs/my%20clip.mp4) drew a link whose file was «Not on the Mac»
+    test('a link target is written as a URL: its escapes are the file name', () => {
+        expect(names([assistant('[clip](docs/my%20clip.mp4) and [report](docs/%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf#L3)')])).toEqual(['/repo/docs/my clip.mp4', '/repo/docs/보고서.pdf'].sort())
+        // a % that escapes nothing was written as a plain name
+        expect(names([assistant('[all](docs/100%.md)')])).toEqual(['/repo/docs/100%.md'])
+        // what an escape hides is judged as if it were written out
+        expect(names([assistant('[nul](docs/a%00b.md) [cr](docs/a%0Ab.md) [scheme](javascript%3Aalert.md)')])).toEqual([])
+        expect(names([assistant('[up](..%2F..%2Fetc%2Fpasswd)')])).toEqual(['/etc/passwd'])
+    })
+
     test('walks every block the screen draws', () => {
         const text = ['# in/heading.md', '- in/list.md', '  - in/nested.md', '> in/quote.md', '', '| in/head.md |', '| --- |', '| in/cell.md |', '', '**in/bold.md** _in/em.md_ ~~in/del.md~~'].join('\n')
         expect(names([assistant(text)])).toEqual(['heading', 'list', 'nested', 'quote', 'head', 'cell', 'bold', 'em', 'del'].map((n) => `/repo/in/${n}.md`).sort())
