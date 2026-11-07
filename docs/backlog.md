@@ -19,6 +19,20 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 폰에서 Mac 인박스 보기·바로 답
+- Discovered: 2026-11-06 폰 기능 기획 세션. 사람 결정: 「인박스는 자주 사용하지는 않아서, 일단 백로그로」.
+- Evidence: 폰 코드에 인박스가 없다 — `src/renderer/src/phone/` · `src/main/phone/` · `src/shared/phone.ts` 에서 `inbox` 검색 0건(대조: Mac 쪽 `src/main/InboxStore.ts` · `components/Inbox/` · `hooks/useInbox.ts` 는 있다). 사람도 자주 쓰지 않는다(11-06).
+- Why deferred: 쓰는 빈도가 낮고, 넣으려면 폰 서버에 인박스 경로가 새로 필요하다.
+- Trigger: 사람이 폰에서 인박스를 찾거나, 리뷰 요청을 Dock·알림으로 놓칠 때.
+- Fix direction: `InboxStore` 를 폰 서버 경로로 내보내 목록을 보이고, 요청을 누르면 그 세션 Chat 으로 가서 답한다. 읽음은 Mac 과 같이 줄의 ✓ 로만 바꾼다(세션을 봐도 안 읽은 채 — 제보 b165acc4).
+- Owner: 없음
+
+### `scripts/post-release.cjs` — 끝날 때 아직 안 닫은 제보를 알려 주기
+- Discovered: 2026-11-06 v1.26.1 회고. 릴리즈 스크립트가 모두 성공해도 제보 상태는 그대로라, 고친 제보 17건이 열린 채 끝 보고가 나갔다.
+- Evidence: `.claude/commands/release.md` 에 절차를 적었지만 문서라 건너뛸 수 있다. 같은 일이 2026-09-22 standup 에서도 있었다(제보 14건이 엿새 동안 열림).
+- Why deferred: 스크립트 수정이라 문서 변경과 따로 승인받아야 한다. 또 어떤 제보가 이번 릴리즈 몫인지 스크립트가 알 방법부터 정해야 한다.
+- Trigger: 다음 릴리즈에서 제보 닫기가 또 빠졌을 때.
+
 ### 데몬을 앱과 분리 — 앱을 꺼도 세션이 사는 구조(Paseo 방식)
 - Discovered: 2026-11-06 폰 기능 기획 세션에서 Paseo(`getpaseo/paseo`)와 비교하며. 사람 결정: 「파세오 - 데몬 관련해서는 일단 백로그로」.
 - Evidence: 지금은 앱 main 프로세스가 세션을 쥔다(`src/main/TerminalManager.ts` 의 node-pty, 폰 서버 `src/main/phone/PhoneServer.ts`). 그래서 앱을 끄면 세션과 폰 연결이 같이 끝난다. Paseo 는 데몬이 에이전트를 쥐고 데스크톱·모바일·웹이 클라이언트로 붙는다.
