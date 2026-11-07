@@ -206,8 +206,8 @@ terminalManager.events.on('exited', (id: string) => { stopCodexCapture(id); pend
 terminalManager.events.on('restoreInputFinished', (id: string) => pendingSessionRestores.delete(id))
 terminalManager.beforeRestoredInput = (id) => {
     const pending = cliSessionTracker.getPendingInput(id)
-    if (!pending.text && !pending.uncertain) return true
-    broadcast('session-restore-blocked', { sessionId: id, message: 'Your text is still on the line — resume was not typed' })
+    if (!cliSessionTracker.hasReceivedInput(id) && !pending.text && !pending.uncertain) return true
+    broadcast('session-restore-blocked', { sessionId: id, message: 'This terminal received input — resume was not typed. Use Connect in the session menu or type the resume command yourself.' })
     return false
 }
 const portManager = new PortManager(() => {
@@ -1383,6 +1383,9 @@ app.whenReady().then(async () => {
                 if (front.kind === 'codex') {
                     const actual = cliSessionTracker.codexResume(front.argv ?? '')
                     if (actual?.id.toLowerCase() === cliSessionId.toLowerCase()) {
+                        const session = (store.get('workspaces') as Workspace[]).flatMap((w) => w.sessions).find((s) => s.id === terminalId)
+                        // A prepared fallback command must not replace the original stored options.
+                        if (session?.cliToolName === 'codex' && session.cliSessionId?.toLowerCase() === cliSessionId.toLowerCase()) return
                         await agentConversations.connect(terminalId, { agent: 'codex', id: cliSessionId, force: true }, { baseCommand })
                         return
                     }

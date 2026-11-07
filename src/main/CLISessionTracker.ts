@@ -67,6 +67,7 @@ export class CLISessionTracker {
     private lineBuffers: Map<string, string> = new Map()
     private resumeBuffers = new Map<string, string>()
     private pendingInput = new Map<string, { text: string; uncertain: boolean }>()
+    private terminalsWithInput = new Set<string>()
     private protocolInput = new Map<string, ProtocolInput>()
     private cliTools: CLIToolConfig[]
     /** Shell alias -> what it expands to, so `cldy` can be recognised as claude. */
@@ -105,6 +106,10 @@ export class CLISessionTracker {
     getPendingInput(terminalId: string): { text: string; uncertain: boolean } {
         const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
         return { ...pending, uncertain: pending.uncertain || this.protocolInput.has(terminalId) }
+    }
+
+    hasReceivedInput(terminalId: string): boolean {
+        return this.terminalsWithInput.has(terminalId)
     }
 
     /** Terminal replies can span onData chunks. Keep partial replies out of shell text tracking. */
@@ -209,6 +214,8 @@ export class CLISessionTracker {
     ): boolean {
         data = this.filterProtocolInput(terminalId, data)
         if (!data) return false
+        // Enter can leave shell-owned text that our line buffer cannot observe.
+        this.terminalsWithInput.add(terminalId)
         this.observeInput(terminalId, data)
         // Only handle single-character or Enter key inputs from manual typing
         // Multi-byte data (paste, escape sequences) pass through
@@ -351,6 +358,7 @@ export class CLISessionTracker {
         this.resumeBuffers.delete(terminalId)
         this.pendingInput.delete(terminalId)
         this.protocolInput.delete(terminalId)
+        this.terminalsWithInput.delete(terminalId)
     }
 
     /**

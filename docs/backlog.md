@@ -20,6 +20,7 @@ Any session may append to `## Open
 - Trigger: D1~D4 통합·실기기 확인 뒤 후속 명령/복원 계약을 재설계할 때.
 - Fix direction: N17 뒤 옵션/원문 보존, N18 준비 구간과 마지막 도구 fallback 분리, N19 앞 구간 에이전트 재전송 차단, N20 main의 restoreSession(id)로 입력 조립 범위 축소, N16 이어짐/사용자 PROMPT2 한계 정리. 이번 커밋에서 해당 패턴과 판정은 바꾸지 않는다.
 - Owner: 기획 세션 후속.
+- 4회차 추가: 시작 명령 재입력 — initialCommand의 프롬프트가 id 없는 세션에서 다시 쳐진다(main도 같음). Enter 안내에 줄을 확인하라는 문구를 더한다. pendingSessionRestores가 안 풀리는 길(복원 전에 뷰가 닫히거나 렌더러가 재개 명령을 묻지 않음)을 정리한다.
 ` without running a curation skill — the session that found the
 problem is the one holding the evidence. Appending sessions do not reorder or remove other entries.
 
