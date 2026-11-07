@@ -705,6 +705,30 @@ test.describe('T97 what a chat names', () => {
         expect([...(await service.mentionedPaths('A')).paths]).toEqual([])
     })
 
+    test('a file request that takes new records from the transcript tells whoever watches the chat', async () => {
+        const reader = new TranscriptReader({ claudeConfigDir: () => '/nonexistent', codexHome: () => '/nonexistent' })
+        let changed = true
+        reader.read = () => ({ turns: [], truncated: false, changed, meta: null })
+        const told: number[] = []
+        const service = new ConversationService({
+            session: () => ({ cwd: CWD, cliSessionId: 'c1', cliToolName: 'claude' }),
+            reader,
+            mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }) },
+            hasTerminal: () => true,
+            writeInput: () => undefined,
+            type: async () => true,
+            onChange: (_id, revision) => told.push(revision)
+        })
+        service.subscribe('A')
+        const before = told.length
+        await service.mentionedPaths('A')
+        expect(told.length).toBe(before + 1)
+        changed = false
+        await service.mentionedPaths('A')
+        expect(told.length).toBe(before + 1)
+        service.unsubscribe('A')
+    })
+
     test('the synthetic Claude and Codex records', () => {
         const project = '/Users/someone/project'
         const claude = parseClaudeTranscript(fs.readFileSync(path.join(FIXTURES, 'claude/tools.jsonl'), 'utf8'))

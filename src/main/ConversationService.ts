@@ -517,6 +517,8 @@ export class ConversationService {
         try {
             const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
             if (!read) return none
+            // this read took the new records: the next poll will see nothing new, so whoever watches is told here
+            if (read.changed) this.bump(sessionId, entry)
             const paths = mentionedPaths(read.turns, info.cwd, this.deps.home)
             const outputs = this.wholeOutputPaths.get(sessionId)
             if (outputs) {
