@@ -1,4 +1,4 @@
-import { test, expect, type CDPSession, type ElectronApplication, type Page } from '@playwright/test'
+import { test, expect, type CDPSession, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -298,6 +298,120 @@ test('T96 Mac Chat: only the skill reads blue, at the start, in the middle, on a
         })
         await expect.poll(() => box.evaluate((el) => el.parentElement!.querySelector<HTMLElement>('[data-testid="chat-composer-backdrop"]')!.scrollTop)).toBe(120)
     })
+})
+
+/**
+ * Hangul being composed in a painted box. The words in the box are transparent and the copy underneath paints them, so a
+ * syllable still being composed must reach that copy too, in the same place. CDP's composition goes through Chromium's
+ * IME path (the input events say isComposing), but it is not a real keyboard: macOS's and Samsung's IMEs are not exercised.
+ */
+async function composeHangul(app: ElectronApplication, page: Page, cdp: CDPSession, root: Locator, name: string): Promise<void> {
+    const box = root.getByTestId('chat-composer')
+    const under = root.getByTestId('chat-composer-backdrop')
+    const tokens = root.getByTestId('chat-composer-token')
+    await box.evaluate((el) => {
+        const seen = { composing: 0 }
+        ;(window as unknown as { __t96Ime: typeof seen }).__t96Ime = seen
+        el.addEventListener('input', (event) => {
+            if ((event as InputEvent).isComposing) seen.composing++
+        })
+    })
+    const syllables = ['ㅎ', '하', '한', '한ㄱ', '한그', '한글']
+    const compose = async (start: string): Promise<void> => {
+        for (const text of syllables) {
+            await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length })
+            await expect.poll(() => box.inputValue()).toBe(start + text)
+            await expect.poll(() => under.evaluate((el) => el.textContent)).toBe(start + text)
+            await expect.poll(() => tokens.allTextContents()).toEqual(['/progress-report'])
+        }
+    }
+
+    // one line
+    await box.fill('/progress-report + ')
+    await box.press('Escape')
+    await compose('/progress-report + ')
+    expect(await box.evaluate(() => (window as unknown as { __t96Ime: { composing: number } }).__t96Ime.composing), 'really composing, not plain input').toBeGreaterThanOrEqual(syllables.length)
+    await cdp.send('Input.insertText', { text: '한글' })
+    await expect.poll(() => under.evaluate((el) => el.textContent)).toBe('/progress-report + 한글')
+
+    // several wrapped lines and a later line, the caret still at the end: same lines, same place
+    const long = `/progress-report ${'가나다라마바사아자차카타파하 '.repeat(8)}\n둘째 줄 `
+    await box.fill(long)
+    await box.press('Escape')
+    await compose(long)
+    const sizes = await box.evaluate((el) => {
+        const copy = el.parentElement!.querySelector<HTMLElement>('[data-testid="chat-composer-backdrop"]')!
+        const of = (node: HTMLElement) => {
+            const style = getComputedStyle(node)
+            return { font: style.font, spacing: style.letterSpacing, padding: style.padding, inner: node.clientWidth, height: node.scrollHeight, top: node.scrollTop }
+        }
+        return { box: of(el as HTMLElement), copy: of(copy) }
+    })
+    expect(sizes.copy, 'the copy wraps and scrolls with the box').toEqual(sizes.box)
+    expect(sizes.box.height, 'it did wrap').toBeGreaterThan(60)
+
+    // the pixels: what the copy paints against what the box itself would paint, with the same words in both
+    const clip = (await box.boundingBox())!
+    const painted = await page.screenshot({ clip })
+    await shot(page, `t96-ime-${name}`)
+    await box.evaluate((el) => {
+        const copy = el.parentElement!.querySelector<HTMLElement>('[data-testid="chat-composer-backdrop"]')!
+        copy.style.visibility = 'hidden'
+        el.style.color = getComputedStyle(copy).color
+    })
+    const own = await page.screenshot({ clip })
+    await box.evaluate((el) => {
+        el.parentElement!.querySelector<HTMLElement>('[data-testid="chat-composer-backdrop"]')!.style.visibility = ''
+        el.style.color = ''
+    })
+    const ink = await app.evaluate(({ nativeImage }, shots) => {
+        const decode = (b64: string) => {
+            const image = nativeImage.createFromBuffer(Buffer.from(b64, 'base64'))
+            const { width, height } = image.getSize()
+            const data = image.toBitmap()
+            const inked = (x: number, y: number): boolean => {
+                const at = (y * width + x) * 4
+                return Math.abs(data[at] - data[0]) + Math.abs(data[at + 1] - data[1]) + Math.abs(data[at + 2] - data[2]) > 180
+            }
+            return { width, height, inked }
+        }
+        const a = decode(shots.painted)
+        const b = decode(shots.own)
+        const differ = (shift: number): number => {
+            let count = 0
+            for (let y = 0; y < a.height; y++) for (let x = 0; x < a.width - shift; x++) if (a.inked(x, y) !== b.inked(x + shift, y)) count++
+            return count
+        }
+        let total = 0
+        for (let y = 0; y < a.height; y++) for (let x = 0; x < a.width; x++) if (b.inked(x, y)) total++
+        return { total, same: differ(0), shifted: differ(2) }
+    }, { painted: painted.toString('base64'), own: own.toString('base64') })
+    console.log(`[T96 ime ${name}]`, JSON.stringify(ink))
+    expect(ink.total, 'there are words in the shot').toBeGreaterThan(200)
+    expect(ink.same, 'painted where the box would paint: far less off than the same words moved 2px').toBeLessThan(ink.shifted / 3)
+
+    // cancelling takes the syllable out of both
+    await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 })
+    await expect.poll(() => box.inputValue()).toBe(long)
+    await expect.poll(() => under.evaluate((el) => el.textContent)).toBe(long)
+}
+
+test('T96 Mac Chat: Hangul being composed after a skill stays under the box, same words, same place (CDP composition, not a real IME)', async () => {
+    test.setTimeout(120_000)
+    const { app, page } = await launch()
+    await openMacChat(page)
+    await chat(page).getByTestId('chat-composer').click()
+    const cdp = await page.context().newCDPSession(page)
+    await composeHangul(app, page, cdp, chat(page), 'mac')
+})
+
+test('T96 phone: Hangul being composed after a skill stays under the box, at 390 (CDP composition, not a real IME)', async () => {
+    test.setTimeout(120_000)
+    const { app, base } = await launch()
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${CLAUDE}&view=chat`, 't96-phone-ime')
+    await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
+    await tap(cdp, phone, '[data-testid="chat-composer"]')
+    await composeHangul(app, phone, cdp, phone.locator('body'), 'phone')
 })
 
 test('T96 Mac Chat: a long message folds to «+N lines» and opens (bcbbbec5)', async () => {
