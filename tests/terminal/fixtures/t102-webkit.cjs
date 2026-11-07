@@ -1,21 +1,20 @@
 /*
  * T102's WebKit half, in its own process: another Playwright's page does not answer from inside this runner.
  * node t102-webkit.cjs <playwright-core> <phone page url> <owner login>
- * Prints one JSON line: what the frame's code got, and every request that left the browser.
+ * Prints one JSON line: what the frame's code got. Whether it reached the session is read from the session itself.
  */
 const [core, url, owner] = process.argv.slice(2)
 const { webkit } = require(core)
 
 ;(async () => {
     const browser = await webkit.launch()
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, extraHTTPHeaders: { 'Tailscale-User-Login': owner, 'X-Forwarded-For': '100.101.102.103' } })
+    // with the page's service worker registered, this driver's evaluate stops answering (measured: list page, 3 s × 4, 0 of 4)
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block', extraHTTPHeaders: { 'Tailscale-User-Login': owner, 'X-Forwarded-For': '100.101.102.103' } })
     const phone = await context.newPage()
     phone.setDefaultTimeout(20_000)
-    const seen = []
     const errors = []
     phone.on('pageerror', (error) => errors.push(error.message))
     phone.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
-    phone.on('request', (request) => seen.push(`${request.method()} ${request.url()}`))
     const link = (words) => phone.getByTestId('chat-file-link').filter({ hasText: words }).first()
     await phone.goto(url)
     await link('the probe page').waitFor().catch(async (error) => {
@@ -47,7 +46,7 @@ const { webkit } = require(core)
     await phone.getByTestId('phone-doc-notice').waitFor()
     const version = browser.version()
     await browser.close()
-    console.log(JSON.stringify({ version, probe, seen, armedAtOnce }))
+    console.log(JSON.stringify({ version, probe, armedAtOnce }))
 })().catch((error) => {
     console.error(error)
     process.exit(1)

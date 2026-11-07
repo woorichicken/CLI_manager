@@ -21,7 +21,8 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
 const FIXTURES = path.join(REPO_ROOT, 'tests/fixtures/phone-doc')
 const AGENT = 't102-claude'
-const OTHER = 't102-claude-other'
+/** a session link names ids by their hex: this one is opened from the sheet's notice */
+const OTHER = 'abcdef01-0000-4000-8000-000000000102'
 const SLOW = 't102-claude-slow'
 const CONVERSATION = '00000000-0000-4000-8000-00000000d102'
 const OTHER_CONVERSATION = '00000000-0000-4000-8000-00000000d103'
@@ -546,10 +547,17 @@ test('T102 a refused send keeps the words and says what to do', async () => {
     await expect(select).toBeVisible()
     await shot(second.phone, 'sheet-pick')
     await select.selectOption(OTHER)
+    await expect(select, 'the choice stays on screen').toHaveValue(OTHER)
     await waitArmed(second.phone)
     await tap(second.cdp, second.phone, second.phone.getByTestId('phone-doc-send'))
     await expect(second.phone.getByTestId('phone-doc-notice')).toContainText('T102 Other', { timeout: 15_000 })
     await waitForBufferText(page, OTHER, 'ANSWER', 15_000)
+    // its chat is another session's: moving there must survive the panel's own Back
+    await tap(second.cdp, second.phone, second.phone.getByTestId('phone-doc-notice-chat'))
+    await expect(second.phone.getByTestId('phone-doc-panel')).toHaveCount(0, { timeout: 3_000 })
+    await expect(second.phone.getByTestId('phone-session')).toHaveAttribute('data-session-id', OTHER, { timeout: 5_000 })
+    await second.phone.waitForTimeout(800)
+    await expect(second.phone.getByTestId('phone-session'), 'and stay there').toHaveAttribute('data-session-id', OTHER)
 })
 
 test('T102 links, missing pictures and fonts: the page stays where it is and says what is missing', async () => {
@@ -601,7 +609,7 @@ test('T102 in WebKit too (opt-in): cookies ride along there, and the frame still
     const output = await new Promise<string>((resolve, reject) => {
         execFile(process.execPath, [path.join(__dirname, 'fixtures/t102-webkit.cjs'), core!, `${base}/?session=${AGENT}&view=chat`, OWNER], { timeout: 150_000 }, (error, stdout, stderr) => (error ? reject(new Error(`${error.message}\n${stderr}`)) : resolve(stdout)))
     })
-    const { version, probe, seen, armedAtOnce } = JSON.parse(output) as { version: string; probe: Record<string, unknown>; seen: string[]; armedAtOnce: boolean }
+    const { version, probe, armedAtOnce } = JSON.parse(output) as { version: string; probe: Record<string, unknown>; armedAtOnce: boolean }
     console.log('T102 WebKit', version, JSON.stringify(probe))
     expect(probe.origin).toBe('null')
     expect(probe.fetchGet).toBe('THROW TypeError')
@@ -611,7 +619,6 @@ test('T102 in WebKit too (opt-in): cookies ride along there, and the frame still
     expect(probe.imgNextTo).toBe('loaded')
     expect(probe.canvasRead).toBe('THROW SecurityError')
     expect(armedAtOnce).toBe(false)
-    expect(seen.filter((line) => line.includes('probe=')).map((line) => line.replace(/^\S+ \S+?\?/, '')), 'what Playwright saw asked for: refused before it left').toEqual(expect.any(Array))
     // the probe's words never reached the session; the comment did, when Send was pressed
     const stored = fs.readFileSync(transcript, 'utf8')
     expect(stored.slice(before.length)).not.toContain('PROBE-')

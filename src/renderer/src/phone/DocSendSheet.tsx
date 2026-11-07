@@ -30,7 +30,11 @@ export function DocSendSheet({ text, target: initial, onCancel, onDone, onOpenCh
         return () => window.clearTimeout(timer)
     }, [])
 
-    const pick = initial === null || refusal?.pick === true
+    // once offered it stays: choosing clears the refusal, and the choice should still be on screen
+    const [pick, setPick] = useState(initial === null)
+    useEffect(() => {
+        if (refusal?.pick) setPick(true)
+    }, [refusal])
     useEffect(() => {
         if (!pick || choices) return
         let stale = false
