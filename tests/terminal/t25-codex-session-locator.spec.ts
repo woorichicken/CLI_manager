@@ -347,15 +347,21 @@ test.describe('T25 Codex session locator', () => {
         for (const reply of ['\x1b[I', '\x1b[O', '\x1b[1;1R', '\x1b[?12;30R', '\x1b[?1;2c', '\x1b[>0;276;0c']) {
             tracker.processInput('t', reply, () => {})
             expect(tracker.getPendingInput('t')).toEqual({ text: '', uncertain: false })
+            expect(tracker.hasReceivedInput('t')).toBe(false)
         }
         tracker.processInput('t', 'draft', () => {})
         tracker.processInput('t', '\x1b[I\x1b[1;1R', () => {})
         expect(tracker.getPendingInput('t')).toEqual({ text: 'draft', uncertain: false })
+        expect(tracker.hasReceivedInput('t')).toBe(true)
         for (const edit of ['\x1b[D', '\x1b[A']) {
             tracker.processInput('t', edit, () => {})
             expect(tracker.getPendingInput('t').uncertain).toBe(true)
             tracker.processInput('t', '\x03', () => {})
+            tracker.processInput('t', '\r', () => {})
+            expect(tracker.hasReceivedInput('t')).toBe(true)
         }
+        tracker.cleanup('t')
+        expect(tracker.hasReceivedInput('t')).toBe(false)
     })
 
     test('actual ps and lsof parsers select the native foreground agent and distinguish failures', async () => {

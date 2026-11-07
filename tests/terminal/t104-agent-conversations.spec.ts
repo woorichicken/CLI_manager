@@ -108,13 +108,85 @@ test('T104 fix3 N13 N14: pending restore blocks Connect and leaves early user te
     for (const character of 'touch DRAFT') await result.page.evaluate((data) => window.api.writeTerminal('draft', data), character)
     const blocked = await result.page.evaluate((id) => window.api.connectAgentConversation('pending', { agent: 'codex', id, resume: true }), ids[2])
     expect(blocked).toMatchObject({ error: { code: 'input_busy' } })
-    await expect(result.page.getByText('Your text is still on the line — resume was not typed', { exact: true })).toBeVisible({ timeout: 10000 })
+    await expect(result.page.getByText('This terminal received input — resume was not typed. Use Connect in the session menu or type the resume command yourself.', { exact: true })).toBeVisible({ timeout: 10000 })
     await expect.poll(() => fs.existsSync(log)).toBe(true)
     const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((row) => JSON.parse(row).argv.slice(1))
     expect(calls).toEqual([['resume', ids[1]]])
     expect(fs.readdirSync(x.project)).toEqual([])
     expect(await termText(result.page, 'draft')).toContain('touch DRAFT')
 })
+
+// Review4 C1: fallback input must not become the stored command after manual Enter.
+test('T104 fix4 C1: observer preserves an already connected Codex command', async () => {
+    const x = reviewHome()
+    try {
+        const native = reviewAgent(x)
+        fs.appendFileSync(path.join(x.env.HOME, '.zshrc'), `export PATH=${path.dirname(native)}:$PATH\n`)
+        const commands = ['codex --future x', 'FOO=$(printf warm) codex --future', 'codex -m gpt-5']
+        const names = commands.map((_, i) => `kept${i}`)
+        const ids = names.map((_, i) => `00000000-0000-4000-8000-${String(107000 + i).padStart(12, '0')}`)
+        ids.forEach((id) => reviewRollout(x, id))
+        result = await launchAppWithWorkspaces([{ id: 'kept', name: 'Keep stored options', path: x.project, sessions: names.map((id, i) => ({ id, name: id, cliToolName: 'codex', cliCommand: commands[i] })) }], { env: { ...x.env, D4_AGENT_LIFETIME_SECONDS: '40' } })
+        const saved = () => JSON.parse(fs.readFileSync(path.join(result!.userDataDir, 'config.json'), 'utf8')).workspaces.flatMap((w: any) => w.sessions)
+        for (const [i, name] of names.entries()) {
+            await waitForBufferText(result.page, name, 'READY>', 5000)
+            const response = await result.page.evaluate(([session, id]) => window.api.connectAgentConversation(session, { agent: 'codex', id, resume: true }), [name, ids[i]])
+            expect(response).toMatchObject({ typed: true, resumed: false })
+            expect(saved().find((s: any) => s.id === name).cliCommand).toBe(commands[i])
+            await result.page.evaluate((id) => window.api.writeTerminal(id, '\r'), name)
+            await waitForBufferText(result.page, name, 'D4_AGENT_READY', 5000)
+        }
+        // The observer retries process confirmation for up to four seconds.
+        await result.page.waitForTimeout(4500)
+        for (const [i, name] of names.entries()) {
+            expect.soft(saved().find((s: any) => s.id === name)).toMatchObject({ cliSessionId: ids[i], cliCommand: commands[i] })
+        }
+    } finally {
+        if (result) await closeApp(result)
+        result = null
+        fs.rmSync(x.root, { recursive: true, force: true })
+    }
+})
+
+for (const name of ['paste-newline', 'hist-verify', 'half-and']) {
+    test(`T104 fix4 S2 ${name}: prior human input blocks delayed restart input`, async () => {
+        const x = reviewHome()
+        try {
+            const native = reviewAgent(x)
+            fs.appendFileSync(path.join(x.env.HOME, '.zshrc'), "HISTSIZE=100\nzmodload zsh/zselect\n[[ -t 0 ]] || zselect -t 700\n" + (name === 'hist-verify' ? "setopt hist_verify\nprint -s 'touch M_hist-verify'\n" : ''))
+            reviewRollout(x, ID)
+            const log = path.join(x.root, 'args.jsonl')
+            result = await launchAppWithWorkspaces([{ id: 'delayed', name: 'Delayed restore', path: x.project, sessions: [{ id: SESSION, name: SESSION, cliToolName: 'codex', cliSessionId: ID, cliCommand: native }] }], { env: { ...x.env, D4_AGENT_ARGS_LOG: log } })
+            const { page } = result
+            await page.evaluate(() => {
+                ;(window as any).__restoreNotices = []
+                window.api.onSessionRestoreBlocked((event) => (window as any).__restoreNotices.push(event))
+            })
+            await waitForBufferText(page, SESSION, 'READY>', 6000)
+            const write = (data: string) => page.evaluate(([id, data]) => window.api.writeTerminal(id, data), [SESSION, data])
+            if (name === 'paste-newline') await write('\x1b[200~touch M_paste-newline\r\x1b[201~')
+            else if (name === 'hist-verify') { for (const char of '!!') await write(char); await write('\r') }
+            else await write('touch M_half-and &&\r')
+            await page.waitForTimeout(9000)
+            expect(fs.readdirSync(x.project)).toEqual([])
+            expect(fs.existsSync(log)).toBe(false)
+            const notices = await page.evaluate(() => (window as any).__restoreNotices)
+            expect(notices).toHaveLength(1)
+            expect(notices[0]).toMatchObject({ sessionId: SESSION })
+            expect(notices[0].message).toContain('resume was not typed')
+            expect(notices[0].message).toContain('Connect')
+            await expect(page.getByText(notices[0].message, { exact: true })).toBeVisible()
+            if (process.env.D104_SHOTS && name === 'half-and') {
+                fs.mkdirSync(REVIEW, { recursive: true })
+                await page.screenshot({ path: path.join(REVIEW, 'fix4-restore-blocked.png') })
+            }
+        } finally {
+            if (result) await closeApp(result)
+            result = null
+            fs.rmSync(x.root, { recursive: true, force: true })
+        }
+    })
+}
 
 test('T104 fix3 N15: Diff text enters the same input tracker', async () => {
     const x = reviewHome()
