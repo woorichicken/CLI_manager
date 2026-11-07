@@ -159,7 +159,8 @@ rules stay in the root; this file is the inventory.
   tailnet 주소만(421), 바꾸는 요청·소켓은 Origin 이 같은 곳만(403)
 - **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/sessions`(세션 한 줄 목록 + 세션 폴더 이름 +
   상태 점·질문 줄) · `/api/phone/chat/<id>/<conversation|send|answer|interrupt|cancel-queued|discard-queued|send-queued-now|attach|image|tool-output|commands>`
-  · WS `/api/phone/chat/<id>/events`(revision) · WS `/api/phone/terminal?session=<id>` · `POST /api/phone/push/<subscribe|unsubscribe|test>`.
+  · WS `/api/phone/chat/<id>/events`(revision) · WS `/api/phone/terminal?session=<id>` · `POST /api/phone/push/<subscribe|unsubscribe|test>`
+  · `GET /api/phone/file?session=<id>&path=<절대 경로>`(무엇을 어떻게 그릴지) · `GET /api/phone/file/raw?…[&download=1]`(바이트).
   만들기·지우기·이름 바꾸기·크기 바꾸기 경로는 없다. 치는 경로는 `drive` 만, 그리고 세션 사건 기록에 `phone-input`(무엇을 했는지만, 글은 안 남김)
 - **Chat**: 같은 프로세스에서 `ConversationService` 를 부른다(IPC 핸들러와 같은 함수). 질문 카드 글(화면에서 읽은 것)은 `maskSecretLines` 를 거친다.
   변경 알림은 `ConversationService.onChange` → `phoneConversationListeners`
@@ -189,10 +190,16 @@ rules stay in the root; this file is the inventory.
 - **터치 화면**(3회차): `(pointer: coarse)` 면 `ChatView touch` — 열 때 입력칸 포커스 안 줌(키보드), Return = 줄바꿈·보내기는 버튼(ovis Composer). 데스크톱 그대로.
   키 바: Esc Tab ⇧Tab(CSI Z — Claude Code 모드 바꾸기) Ctrl ↑↓←→ ^C ⏎ 열 키가 폭을 똑같이 나눔, 화살표는 길게 누르면 400ms 뒤 50ms 마다 반복(ovis keyRepeat)
 - **재연결**(3회차): 터미널·Chat 소켓 모두 250ms → 5s 로 늘리는 간격(10s 버틴 연결 뒤 처음부터), 화면·네트워크로 돌아오면(`visibilitychange`·`online`·`pageshow`) 바로
+- **파일**([`../decisions/0010-phone-reads-only-what-the-chat-names.md`](../decisions/0010-phone-reads-only-what-the-chat-names.md), `phoneFiles.ts`·`phoneFileAccess.ts`): 입력 가능 기기만. 그 세션 Chat 에
+  링크로 보이는 경로(`ChatView/chatMentions.ts` `mentionedPaths` — 화면과 같은 함수, 요청마다 계산)만 부탁할 수 있고, Mac 이 8단계로 판정한다: 역할 → `Sec-Fetch-Site` → 경로 모양(`..` 사라짐) →
+  허락 출처 → `realpath`(libuv native) → 홈·임시·세션 폴더 → 금지 목록(요청·진짜 경로 둘 다, 소문자·NFC) → `O_NONBLOCK` 열기 + 일반 파일. 전부 비동기. 다른 경로(문서·Dock)는 `openGrantedFile(source, access)` 를 그대로 쓰고 4단계의 `grants` 만 준다.
+  응답 `PhoneFileInfo`: `image`(10,000,000B 까지) · `text`·`html`(500,000B 까지, `maskSecretLines` `joinLines: false` — 줄 번호 그대로) · `download`(시스템 종류·앞 8KB 에 NUL·상한 초과). 받기 500MiB, 넘으면 413.
+  raw: `CSP: sandbox` · `CORP: same-origin` · `no-store`, 사진만 `inline`, HTML 은 `application/octet-stream` + `attachment`. 철회하면 진행 중 받기도 끊는다. 사건 기록 `phone-file`(종류·크기만, 경로 없음).
+  패널 `PhoneFilePanel.tsx`: `SessionScreen` 이 대화를 언마운트하지 않고 위에 얹는다(z 65 — 서랍 60 위, 알약 70 아래). 열 때 `pushState(같은 주소)`, 뒤로 가기로 닫힘, 왼쪽 끝 스와이프를 막는다
 - 회귀: `t75-phone-unit.spec.ts`(접근 표·짝짓기·알림 규칙·키 바·카드 가리기·목록 순서·droplet·길게 누르기·재연결 간격·감싸기 줄) · `t76-phone.spec.ts`(앱 + 폰 창 — 가짜 Tailscale 상태 파일
   `CLIMANAGER_PHONE_TAILSCALE_STATUS`, 알림은 `CLIMANAGER_PHONE_PUSH_LOG`, 둘 다 시험 userData 일 때만 읽는다) · `t77-phone-text-size.spec.ts`
   (글씨 크기 세 모드 측정·확대 기억·Mac PTY 크기 그대로) · `t78-phone-quality.spec.ts`(터치 폰 — CDP 터치 에뮬레이션·`Input.dispatchTouchEvent`:
-  앱 안 알림·Return 줄바꿈·키 반복·⇧Tab·감싸기, Mac PTY 크기·`resized` 그대로)
+  앱 안 알림·Return 줄바꿈·키 반복·⇧Tab·감싸기, Mac PTY 크기·`resized` 그대로) · `t97-phone-file-unit.spec.ts`(파일 판정·경로) · `t98-phone-file-panel.spec.ts`(패널)
 
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**

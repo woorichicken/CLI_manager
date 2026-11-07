@@ -135,6 +135,60 @@ export type PhoneTerminalClientMessage =
 /** The longest single input message the server takes (a pasted paragraph is fine). */
 export const PHONE_MAX_INPUT_LENGTH = 16_000
 
+// ---------------------------------------------------------------------------
+// Files — GET /api/phone/file?session=<id>&path=<absolute path> · /api/phone/file/raw (+ &download=1)
+//
+// A phone asks for a path its chat shows as a link, and the Mac judges it (decision 0010).
+// ---------------------------------------------------------------------------
+
+/** Larger text and pictures download instead of showing (the Mac's previews stop at the same sizes). */
+export const PHONE_TEXT_PREVIEW_BYTES = 500_000
+export const PHONE_IMAGE_PREVIEW_BYTES = 10_000_000
+/** Larger files are refused: a phone on mobile data should not start one by accident. */
+export const PHONE_MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024
+
+export type PhoneFileRefusal =
+    | 'bad_path'
+    /** the device was disconnected while this was being judged */
+    | 'revoked'
+    | 'view_only'
+    /** `Sec-Fetch-Site` says another site asked */
+    | 'cross_site'
+    /** this session's chat shows no link to it */
+    | 'not_mentioned'
+    | 'outside_roots'
+    | 'protected'
+    /** the system said no (permissions, macOS privacy) */
+    | 'unreadable'
+    | 'unknown_session'
+    | 'not_found'
+    /** a folder, a FIFO, a device */
+    | 'not_a_file'
+    | 'too_large'
+
+export type PhoneFileInfo = {
+    status: 'ok'
+    name: string
+    size: number
+    /** ISO 8601 */
+    modifiedAt: string
+    mime: string
+    /** the bytes: this route's query, judged again from the first step */
+    rawUrl: string
+} & (
+    | { kind: 'image' }
+    /** the words with secrets hidden; `language` is the extension, a code fence's word */
+    | { kind: 'text' | 'html'; content: string; maskedValues: number; language: string | null }
+    | { kind: 'download'; why: 'type' | 'binary' | 'too_large_to_preview' }
+)
+
+export interface PhoneFileRefused {
+    status: 'refused'
+    reason: PhoneFileRefusal
+    /** the one line the panel shows */
+    message: string
+}
+
 /** Phone server routes, so the page and the server spell them the same. */
 export const PHONE_API = {
     me: '/api/phone/me',
@@ -146,6 +200,10 @@ export const PHONE_API = {
     pushTest: '/api/phone/push/test',
     /** `/api/phone/chat/<sessionId>/<action>` */
     chat: '/api/phone/chat',
+    /** what a file is and how to draw it (`phoneFiles.ts`) */
+    file: '/api/phone/file',
+    /** a file's bytes */
+    fileRaw: '/api/phone/file/raw',
     /** POST: one HTTP request of the feedback widget, sent by main's FeedbackRelay */
     feedbackRelay: '/api/phone/feedback/relay',
     /** GET `?session=<id>`: the terminal a report is about, as the desktop widget gets it over IPC */

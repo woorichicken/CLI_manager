@@ -110,8 +110,19 @@ export function markdownFileTarget(href: string): string | null {
   if (value === "" || value.startsWith("#")) return null;
   const target = value.replace(/#(?!L\d+(?:-L?\d+)?$).*$/, "");
   const path = target.replace(/(?::\d+){1,2}$|#L\d+(?:-L?\d+)?$/, "");
-  if (path === "" || /^[a-z][a-z0-9+.-]*:/i.test(path) || (path !== target && !/[./]/.test(path))) return null;
-  return target;
+  // what an escape hides is judged as if it were written out
+  const named = unescapedTarget(target);
+  if (path === "" || /^[a-z][a-z0-9+.-]*:/i.test(unescapedTarget(path)) || (path !== target && !/[./]/.test(path)) || /[\x00-\x1f\x7f]/.test(named)) return null;
+  return named;
+}
+
+/** A link's target is written as a URL: `%20` is a space in the file's name. A `%` that escapes nothing was written as a plain name. */
+function unescapedTarget(target: string): string {
+  try {
+    return decodeURIComponent(target);
+  } catch {
+    return target;
+  }
 }
 
 /** A bare URL without the punctuation that closes the sentence around it (GFM's autolink rule). */

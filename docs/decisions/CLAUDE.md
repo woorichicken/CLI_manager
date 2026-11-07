@@ -31,6 +31,7 @@ know X".
 | [0007](0007-api-cleans-up-only-its-own-registrations.md) | The API cleans up only the workspaces it registered | active |
 | [0008](0008-terminal-history-lives-in-main.md) | Terminal history lives in the main process; views attach to it | active |
 | [0009](0009-phone-connection-second-server.md) | A phone reaches the app through a second, opt-in server — never the Control API | active |
+| [0010](0010-phone-reads-only-what-the-chat-names.md) | A phone reads only the files its chat names | active |
 
 ## Template
 

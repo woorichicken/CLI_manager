@@ -13,6 +13,8 @@ import type {
     QueuedMessage
 } from '../shared/conversation'
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
+// the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
+import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatView/chatMentions'
 import { isBusyRow, screenAgentMode } from './screenLines'
 import { answerSteps, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
@@ -173,6 +175,11 @@ export class ConversationService {
      * not read the keys yet).
      */
     private readonly lastAnswer = new Map<string, { signature: string; outputAt: number }>()
+    /**
+     * Paths in tool outputs read whole, by session and output: links on the page that the turns do not hold. They
+     * count only while that tool is in the chat — a `/resume` or a rewind takes it away, and its links with it.
+     */
+    private readonly wholeOutputPaths = new Map<string, Map<string, Set<string>>>()
     private timer: NodeJS.Timeout | null = null
     private polling = false
 
@@ -209,6 +216,7 @@ export class ConversationService {
     forget(sessionId: string): void {
         this.watched.delete(sessionId)
         this.lastAnswer.delete(sessionId)
+        this.wholeOutputPaths.delete(sessionId)
         this.deps.reader.forget(sessionId)
     }
 
@@ -484,7 +492,51 @@ export class ConversationService {
 
     /** The whole output of a tool call the chat cut. */
     async getToolOutput(sessionId: string, ref: string): Promise<string | null> {
-        return this.withReader(sessionId, () => this.deps.reader.toolOutput(sessionId, ref))
+        const output = await this.withReader(sessionId, () => this.deps.reader.toolOutput(sessionId, ref))
+        // shown whole, its paths are links too — the turns only hold the cut part
+        if (output) {
+            const named = new Set<string>()
+            addLinkedText(named, output, this.deps.session(sessionId)?.cwd, this.deps.home)
+            const outputs = this.wholeOutputPaths.get(sessionId) ?? new Map<string, Set<string>>()
+            outputs.set(ref, named)
+            this.wholeOutputPaths.set(sessionId, outputs)
+        }
+        return output
+    }
+
+    /**
+     * The files this session's chat shows as links, and its folder: what a phone may ask for (phoneFiles.ts).
+     * Read anew for each request: a chat nobody has open has a record too, and the answer follows the conversation.
+     */
+    async mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }> {
+        const info = this.deps.session(sessionId)
+        const agent = agentOf(info)
+        const none = { paths: new Set<string>(), ...(info?.cwd ? { cwd: info.cwd } : {}) }
+        if (!info?.cliSessionId || !agent) return none
+        const entry = this.entry(sessionId)
+        try {
+            const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
+            if (!read) return none
+            // this read took the new records: the next poll will see nothing new, so whoever watches is told here
+            if (read.changed) this.bump(sessionId, entry)
+            const paths = mentionedPaths(read.turns, info.cwd, this.deps.home)
+            const outputs = this.wholeOutputPaths.get(sessionId)
+            if (outputs) {
+                for (const turn of read.turns) {
+                    for (const part of turn.parts) {
+                        // the ref the chat's «Show all» asks with (WorkBlock.tsx)
+                        const ref = part.kind === 'tool' ? part.output_ref ?? part.call_id : undefined
+                        for (const path of (ref && outputs.get(ref)) || []) paths.add(path)
+                    }
+                }
+            }
+            return { ...none, paths }
+        } catch (error) {
+            console.error('[conversation] mentions failed', sessionId, error)
+            return none
+        } finally {
+            this.dropIfIdle(sessionId, entry)
+        }
     }
 
     /** The `/` commands the session's agent offers in its folder. */

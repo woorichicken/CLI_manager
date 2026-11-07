@@ -57,6 +57,11 @@ export interface MaskOptions {
     homeDir?: string
     /** Replaced where it reads as an account (`name@host`, the shell prompt). */
     username?: string
+    /**
+     * Rows touching mid-word are joined by default, for a terminal's cut lines. A file's lines were never cut, and
+     * its line numbers have to stay true: false keeps one line out for each line in.
+     */
+    joinLines?: boolean
 }
 
 export interface MaskResult {
@@ -68,7 +73,8 @@ export interface MaskResult {
 export function maskSecretLines(lines: string[], options: MaskOptions = {}): MaskResult {
     let masked = 0
     let inPrivateKey = false
-    const out = joinSplitSecrets(lines, options).map((line) => {
+    const rows = options.joinLines === false ? lines : joinSplitSecrets(lines, options)
+    const out = rows.map((line) => {
         if (inPrivateKey || PRIVATE_KEY_BEGIN.test(line)) {
             inPrivateKey = !PRIVATE_KEY_END.test(line)
             masked++

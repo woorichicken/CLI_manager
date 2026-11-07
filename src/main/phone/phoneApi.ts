@@ -18,6 +18,7 @@ import { PHONE_API } from '../../shared/phone'
 import type { PhoneAccess } from './phoneAccess'
 import type { PhoneDevices } from './PhoneDevices'
 import type { PhonePush } from './PhonePush'
+import { handlePhoneFile, isPhoneFilePath, type PhoneFilesDeps } from './phoneFiles'
 import { readBody, readJson, send } from './PhoneServer'
 import type { ChatSender } from '../ConversationService'
 
@@ -46,6 +47,7 @@ export interface PhoneConversation {
     getImage(sessionId: string, ref: string): Promise<string | null>
     getToolOutput(sessionId: string, ref: string): Promise<string | null>
     listCommands(sessionId: string): ChatCommand[]
+    mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }>
 }
 
 export interface PhoneApiDeps {
@@ -70,6 +72,10 @@ export interface PhoneApiDeps {
      * (ovis composer.ts:273,335,632 re-authorize between async steps).
      */
     stillAllowed(): boolean
+    /** absent: no file routes (phoneFiles.ts) */
+    files?: PhoneFilesDeps
+    /** a file on its way to a device: stopped if the device is disconnected */
+    trackDownload(stop: () => void): () => void
 }
 
 function refuseRevoked(res: http.ServerResponse): void {
@@ -81,6 +87,18 @@ const DRIVE_ONLY = new Set(['send', 'draft-to-terminal', 'draft-from-terminal', 
 export async function handlePhoneApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL, deps: PhoneApiDeps): Promise<void> {
     const path = url.pathname
     const method = req.method ?? 'GET'
+
+    if (isPhoneFilePath(path) && deps.files) {
+        await handlePhoneFile(req, res, url, {
+            files: deps.files,
+            role: deps.access.role,
+            sessionExists: deps.sessionExists,
+            mentionedPaths: (id) => deps.conversation.mentionedPaths(id),
+            stillAllowed: deps.stillAllowed,
+            trackDownload: deps.trackDownload
+        })
+        return
+    }
 
     if (path === PHONE_API.sessions && method === 'GET') {
         send(res, 200, deps.listSessions())

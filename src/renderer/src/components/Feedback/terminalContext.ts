@@ -28,7 +28,8 @@ const EVENT_LEVELS: Record<TerminalEventKind, DiagLogEntry['level']> = {
     cleared: 'log',
     resized: 'log',
     closed: 'log',
-    'phone-input': 'log'
+    'phone-input': 'log',
+    'phone-file': 'log'
 }
 
 /** `viewing`: the session open on the phone page when its report was sent */

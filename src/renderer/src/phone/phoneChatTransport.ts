@@ -8,14 +8,14 @@ import { reconnectDelay } from './usePhoneTerminal'
  * with IPC, filled with fetch and one WebSocket per open chat. The Chat view components are
  * the desktop ones, unchanged. The phone server calls the same ConversationService functions.
  *
- * What a phone cannot do the Mac's way: open a file on the Mac (the chat's file links do
- * nothing here) or search the session's folder for `@` (an empty list).
+ * What a phone does its own way: a file opens in the panel over the chat (`onOpenFile`, PhoneFilePanel.tsx).
+ * What it cannot do: search the session's folder for `@` (an empty list).
  */
 
 /** Away from the page this long, the chat socket is not trusted on return. */
 const STALE_AFTER_MS = 5_000
 
-export function createPhoneChatTransport(onViewOnly?: (message: string) => void): ChatTransport {
+export function createPhoneChatTransport(onViewOnly?: (message: string) => void, onOpenFile?: (sessionId: string, path: string, line?: number) => void): ChatTransport {
     const refuse = (error: unknown): ChatSendResult => {
         const message = error instanceof Error ? error.message : String(error)
         if (/view_only|only watch/i.test(message)) onViewOnly?.(message)
@@ -144,7 +144,7 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void)
         listCommands: async (sessionId) =>
             (await getJson<{ commands: ChatCommand[] }>(chatPath(sessionId, 'commands')).catch(() => ({ commands: [] }))).commands,
         searchFiles: async () => [],
-        openFile: () => undefined,
+        openFile: (sessionId, path, line) => onOpenFile?.(sessionId, path, line),
         openLink(url) {
             if (/^(https?:|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener,noreferrer')
         }

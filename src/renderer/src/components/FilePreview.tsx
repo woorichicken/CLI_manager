@@ -2,9 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { X, FileText, Loader2, AlertCircle, ExternalLink, Image } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-
-// Image file extensions
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp']
+import { IMAGE_EXTENSIONS } from '../../../shared/fileKinds'
 
 const isImageFile = (filePath: string): boolean => {
     const ext = filePath.split('.').pop()?.toLowerCase() || ''
