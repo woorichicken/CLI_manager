@@ -14,13 +14,21 @@ export const PHONE_DOC_BRIDGE = String.raw`(function () {
 
     // Storage. The seed comes in the address's fragment, which never reaches the server, and leaves it at once.
     var seed = {}
+    var seeded = false
+    var place = location.hash
     try {
-        var found = /^#seed=(.*)$/.exec(location.hash)
+        var found = /^#seed=([^&]*)(?:&hash=(.*))?$/.exec(location.hash)
         if (found) {
             seed = JSON.parse(decodeURIComponent(found[1])) || {}
-            history.replaceState(null, '', location.pathname + location.search)
+            seeded = true
+            place = found[2] ? decodeURIComponent(found[2]) : ''
+            history.replaceState(null, '', location.pathname + location.search + place)
         }
     } catch (e) {}
+    // The phone page gives a page without them its kept comments in the address. Only the fragment differs, so nothing loads.
+    window.addEventListener('hashchange', function () {
+        if (/^#seed=/.test(location.hash)) location.reload()
+    })
     var makeStore = function (data, changed) {
         var has = function (key) { return Object.prototype.hasOwnProperty.call(data, key) }
         return {
@@ -139,7 +147,12 @@ export const PHONE_DOC_BRIDGE = String.raw`(function () {
 
     var path = location.pathname.slice(base.length)
     try { path = decodeURIComponent(path) } catch (e) {}
-    post({ type: 'doc-ready', title: document.title, path: path })
-    document.addEventListener('DOMContentLoaded', function () { post({ type: 'doc-ready', title: document.title, path: path }) })
+    var ready = function () { post({ type: 'doc-ready', title: document.title, path: path, seeded: seeded, hash: place }) }
+    ready()
+    document.addEventListener('DOMContentLoaded', function () {
+        ready()
+        // the seed held the address's fragment, so the browser did not scroll to the page's own
+        if (seeded && place.length > 1) location.replace(place)
+    })
 })()
 `

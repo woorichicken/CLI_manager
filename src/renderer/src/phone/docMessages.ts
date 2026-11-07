@@ -22,7 +22,7 @@ export function parseDocMessage(data: unknown): PhoneDocMessage | null {
         case 'doc-ready': {
             const title = line(message.title)
             const path = line(message.path)
-            return title !== null && path !== null ? { type: 'doc-ready', title, path } : null
+            return title !== null && path !== null ? { type: 'doc-ready', title, path, seeded: message.seeded === true, hash: line(message.hash) ?? '' } : null
         }
         case 'doc-store':
             return typeof message.value === 'string' ? { type: 'doc-store', value: message.value } : null
@@ -104,20 +104,32 @@ const STORE_DOCUMENTS = 50
 
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>
 
+/** A browser that blocks site data throws on the object itself, before any call could be caught. */
+export function phoneDocStorage(): Storage | null {
+    try {
+        return window.localStorage
+    } catch {
+        return null
+    }
+}
+
+/** Each page of the folder has its own place. The opened document's key stays plain: the Mac gave it, for that document. */
+export const docStoreKey = (storeKey: string, opened: string, rel: string): string => (rel === opened ? storeKey : `${storeKey}:${rel}`)
+
 export const storeBytes = (value: string): number => new TextEncoder().encode(value).length
 
 /** What the frame starts with; empty when nothing was kept or the phone's storage is unavailable. */
-export function readDocStore(storeKey: string, storage: Storage): string {
+export function readDocStore(storeKey: string, storage: Storage | null): string {
     try {
-        return storage.getItem(STORE_PREFIX + storeKey) ?? ''
+        return storage?.getItem(STORE_PREFIX + storeKey) ?? ''
     } catch {
         return ''
     }
 }
 
 /** False when it could not be kept: too large for the frame's address, or no room on the phone. */
-export function keepDocStore(storeKey: string, value: string, storage: Storage): boolean {
-    if (storeBytes(value) > PHONE_MAX_DOC_STORE_BYTES) return false
+export function keepDocStore(storeKey: string, value: string, storage: Storage | null): boolean {
+    if (!storage || storeBytes(value) > PHONE_MAX_DOC_STORE_BYTES) return false
     try {
         storage.setItem(STORE_PREFIX + storeKey, value)
         const index = (JSON.parse(storage.getItem(STORE_INDEX) ?? '[]') as string[]).filter((key) => key !== storeKey)
@@ -131,4 +143,7 @@ export function keepDocStore(storeKey: string, value: string, storage: Storage):
 }
 
 /** The fragment is never sent to the server, and the bridge removes it from the frame's address at once. */
-export const frameAddress = (url: string, seed: string): string => (seed ? `${url}#seed=${encodeURIComponent(seed)}` : url)
+export function frameAddress(url: string, seed: string, hash = ''): string {
+    if (!seed) return `${url}${hash}`
+    return `${url}#seed=${encodeURIComponent(seed)}${hash ? `&hash=${encodeURIComponent(hash)}` : ''}`
+}

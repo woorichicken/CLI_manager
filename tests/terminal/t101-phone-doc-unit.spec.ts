@@ -8,7 +8,7 @@ import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhoneServer } from '../../src/main/phone/PhoneServer'
 import { bridgeOffset, docContentSecurityPolicy, docRelativePath, documentCharset, documentTitle, handlePhoneDocFile, PhoneDocTokens } from '../../src/main/phone/phoneDoc'
 import { PHONE_DOC_BRIDGE } from '../../src/main/phone/phoneDocBridge'
-import { commentTooLong, composeComment, frameAddress, fromDocFrame, keepDocStore, parseDocMessage, readDocStore, sendOutcome } from '../../src/renderer/src/phone/docMessages'
+import { commentTooLong, composeComment, docStoreKey, frameAddress, fromDocFrame, keepDocStore, parseDocMessage, phoneDocStorage, readDocStore, sendOutcome } from '../../src/renderer/src/phone/docMessages'
 import { PHONE_DOC_SANDBOX, PHONE_MAX_COMMENT_CHARS, PHONE_MAX_DOC_BYTES, PHONE_MAX_DOC_STORE_BYTES, type PhoneDocOpened, type PhoneDocRefused } from '../../src/shared/phone'
 import type { ChatSendResult } from '../../src/shared/conversation'
 
@@ -571,7 +571,8 @@ test.describe('T101 where the bridge goes', () => {
 test.describe('T101 what a frame may say', () => {
     test('only what is well formed', () => {
         expect(parseDocMessage({ type: 'doc-comment', text: 'hi', via: 'clipboard' })).toEqual({ type: 'doc-comment', text: 'hi', via: 'clipboard' })
-        expect(parseDocMessage({ type: 'doc-ready', title: 't', path: 'a.html', extra: 1 })).toEqual({ type: 'doc-ready', title: 't', path: 'a.html' })
+        expect(parseDocMessage({ type: 'doc-ready', title: 't', path: 'a.html', seeded: true, hash: '#x', extra: 1 })).toEqual({ type: 'doc-ready', title: 't', path: 'a.html', seeded: true, hash: '#x' })
+        expect(parseDocMessage({ type: 'doc-ready', title: 't', path: 'a.html' }), 'absent says not seeded').toEqual({ type: 'doc-ready', title: 't', path: 'a.html', seeded: false, hash: '' })
         expect(parseDocMessage({ type: 'doc-store', value: '{}' })).toEqual({ type: 'doc-store', value: '{}' })
         expect(parseDocMessage({ type: 'doc-link', url: 'https://a.example/x' })?.type).toBe('doc-link')
         expect(parseDocMessage({ type: 'doc-link', url: 'mailto:a@b.c' })?.type).toBe('doc-link')
@@ -686,6 +687,31 @@ test.describe('T101 what this phone keeps', () => {
         const broken = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') }, removeItem: () => undefined }
         expect(readDocStore('a', broken)).toBe('')
         expect(keepDocStore('a', 'x', broken)).toBe(false)
+        expect(readDocStore('a', null)).toBe('')
+        expect(keepDocStore('a', 'x', null)).toBe(false)
+    })
+
+    test('a browser that blocks site data throws on the object itself: that is no storage, not a crash', () => {
+        const original = Object.getOwnPropertyDescriptor(globalThis, 'window')
+        Object.defineProperty(globalThis, 'window', {
+            configurable: true,
+            value: {
+                get localStorage(): Storage {
+                    throw new Error('SecurityError')
+                }
+            }
+        })
+        try {
+            expect(phoneDocStorage()).toBeNull()
+        } finally {
+            if (original) Object.defineProperty(globalThis, 'window', original)
+            else delete (globalThis as { window?: unknown }).window
+        }
+    })
+
+    test('each page of a folder has its own place; the opened one keeps the plain key', () => {
+        expect(docStoreKey('KEY', 'report.html', 'report.html')).toBe('KEY')
+        expect(docStoreKey('KEY', 'report.html', 'other.html')).toBe('KEY:other.html')
     })
 
     test('the seed is in the fragment: it never reaches the server', () => {
@@ -694,5 +720,8 @@ test.describe('T101 what this phone keeps', () => {
         expect(address.startsWith('/doc/t/a.html#seed=')).toBe(true)
         expect(decodeURIComponent(address.split('#seed=')[1])).toBe('{"k":"한 글#&"}')
         expect(address.split('#').length).toBe(2)
+        // the page's own place on the way back goes with it
+        expect(frameAddress('/doc/t/a.html', '{}', '#sec')).toBe(`/doc/t/a.html#seed=${encodeURIComponent('{}')}&hash=${encodeURIComponent('#sec')}`)
+        expect(frameAddress('/doc/t/a.html', '', '#sec')).toBe('/doc/t/a.html#sec')
     })
 })

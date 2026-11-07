@@ -3,7 +3,7 @@ import { ArrowLeft, Download, FileQuestion, RotateCw, ShieldAlert } from 'lucide
 import type { PhoneDocMessage, PhoneDocOpened, PhoneDocRefused, PhoneDocTarget } from '../../../shared/phone'
 import { PHONE_API } from '../../../shared/phone'
 import { postJson } from './api'
-import { composeComment, keepDocStore } from './docMessages'
+import { composeComment, docStoreKey, keepDocStore, phoneDocStorage } from './docMessages'
 import { DocLinkSheet, DocSendSheet } from './DocSendSheet'
 import { PhoneDocFrame } from './PhoneDocFrame'
 import type { PhoneFileTarget } from './PhoneFilePanel'
@@ -54,14 +54,16 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
             if (!opened) return
             const current = rel.current ?? opened.rel
             switch (message.type) {
-                case 'doc-ready':
-                    rel.current = message.path.normalize('NFC')
+                case 'doc-ready': {
+                    const path = message.path.normalize('NFC')
+                    // a page says it twice (its head, its DOMContentLoaded): what it counted so far still stands
+                    if (path !== current) setMissing(0)
+                    rel.current = path
                     if (message.title) setTitle(message.title)
-                    setMissing(0)
                     return
+                }
                 case 'doc-store':
-                    // another page of the folder has no place of its own here: it must not overwrite this one's comments
-                    if (current === opened.rel) setNotKept(!keepDocStore(opened.storeKey, message.value, window.localStorage))
+                    setNotKept(!keepDocStore(docStoreKey(opened.storeKey, opened.rel, current), message.value, phoneDocStorage()))
                     return
                 case 'doc-missing':
                     setMissing(message.count)
@@ -133,7 +135,7 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
                         <p className="phone-file-path">{target.path}</p>
                     </div>
                 )}
-                {opened && <PhoneDocFrame url={opened.url} storeKey={opened.storeKey} title={name} inert={sheet !== null} onMessage={onMessage} />}
+                {opened && <PhoneDocFrame url={opened.url} rel={opened.rel} storeKey={opened.storeKey} title={name} inert={sheet !== null} onMessage={onMessage} />}
                 {opened && sheet?.kind === 'comment' && (
                     <DocSendSheet
                         text={sheet.text}

@@ -161,7 +161,8 @@ export function SessionScreen({
                     key={file.path}
                     target={file}
                     onClose={closeDocument}
-                    onOpenFile={openFile}
+                    // the panel it replaces cannot be gone back to: the entry already there stands for this one
+                    onOpenFile={(sessionId, path) => setFile({ sessionId, path })}
                     onOpenChat={(id) => {
                         // after Back has landed: moving first, Back would undo the move
                         afterHistoryBack(() => {

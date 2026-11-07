@@ -576,9 +576,34 @@ test('T102 links, missing pictures and fonts: the page stays where it is and say
     await shot(phone, 'link-sheet')
     await tap(cdp, phone, phone.getByTestId('phone-doc-cancel'))
     expect(new URL(docFrame(phone).url()).pathname).toMatch(/\/eli5\.html$/)
+    // words written here must be there on the way back from a page next to it
+    await tapInFrame(cdp, phone, frame.locator('.eli5-fb-btn').first())
+    await frame.locator('#eli5-fb-ta-0').fill('kept-across-pages')
+    await phone.waitForTimeout(150)
     // a page next to it: replaces this one, with the bridge in it, without a stop on the way back
     await tapInFrame(cdp, phone, frame.locator('#rel'))
     await expect(frame.locator('h1')).toHaveText('second doc', { timeout: 5_000 })
+    // it keeps its own words, apart from the first page's
+    await docFrame(phone).evaluate(() => (window as unknown as { __setNote(value: string): void }).__setNote('second-page-note'))
+    await phone.waitForTimeout(150)
+    await tapInFrame(cdp, phone, frame.locator('#back'))
+    await expect(frame.locator('.eli5-fb-btn').first()).toBeVisible({ timeout: 5_000 })
+    await expect.poll(async () => {
+        const button = frame.locator('.eli5-fb-btn').first()
+        if ((await button.getAttribute('aria-expanded')) !== 'true') await tapInFrame(cdp, phone, button)
+        return frame.locator('#eli5-fb-ta-0').inputValue()
+    }, { timeout: 5_000 }).toBe('kept-across-pages')
+    await tapInFrame(cdp, phone, frame.locator('#rel'))
+    await expect.poll(() => docFrame(phone).evaluate(() => document.title), { timeout: 5_000 }).toBe('second-page-note')
+    await tap(cdp, phone, phone.getByTestId('phone-doc-close'))
+    await expect(phone.getByTestId('phone-doc-panel')).toHaveCount(0, { timeout: 3_000 })
+
+    // a link to a file of the Mac replaces this panel: closing it is one Back, no empty stop left behind
+    const again = await openDoc(cdp, phone, 'the eli5 report')
+    const lengthOpen = await phone.evaluate(() => history.length)
+    await tapInFrame(cdp, phone, again.locator('#fl'))
+    await expect(phone.getByTestId('phone-doc-refused')).toBeVisible({ timeout: 5_000 })
+    expect(await phone.evaluate(() => history.length), 'the panel changed; the history did not').toBe(lengthOpen)
     await tap(cdp, phone, phone.getByTestId('phone-doc-close'))
     await expect(phone.getByTestId('phone-doc-panel')).toHaveCount(0, { timeout: 3_000 })
 
@@ -586,6 +611,10 @@ test('T102 links, missing pictures and fonts: the page stays where it is and say
     await openDoc(cdp, phone, 'the missing page')
     await expect(phone.getByTestId('phone-doc-missing')).toContainText('2 images', { timeout: 10_000 })
     await shot(phone, 'missing')
+    // the same page saying it is ready again (its DOMContentLoaded): the count stays
+    await docFrame(phone).evaluate(() => parent.postMessage({ type: 'doc-ready', title: 'Missing', path: 'missing.html', seeded: false, hash: '' }, '*'))
+    await phone.waitForTimeout(200)
+    await expect(phone.getByTestId('phone-doc-missing')).toContainText('2 images')
     expect(await docFrame(phone).evaluate(() => (document.getElementById('here') as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
     await tap(cdp, phone, phone.getByTestId('phone-doc-close'))
     await expect(phone.getByTestId('phone-doc-panel')).toHaveCount(0)

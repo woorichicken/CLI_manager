@@ -43,8 +43,8 @@ the file.
   Only the file types a page loads leave the folder, and nothing beside a document kept directly in home, `~/Downloads` or a temp folder.
 - **A script put in front of the page (`phoneDocBridge.ts`), not a change to the kits.** It replaces `localStorage`,
   `navigator.clipboard`, `execCommand('copy')` and `a.download` with messages to the phone page, so reports already on disk work. It
-  adds no power: the page's code could post the same messages. Comments live in the phone page's `localStorage` and come back through
-  the address's fragment, which never reaches the server.
+  adds no power: the page's code could post the same messages. Comments live in the phone page's `localStorage`, per page of the
+  folder, and come back through the address's fragment, which never reaches the server.
 - **Only Send sends.** Whatever the page posts becomes the text of a sheet in the phone page: all of it shown, the frame `inert`
   meanwhile, later messages ignored so the words cannot change while being read, Send disabled for 600 ms so a finger that pressed the
   page's button does not land on it. It posts to the chat's own route, so there is no new way to type into a session; a question on
@@ -56,7 +56,7 @@ the file.
 ## Consequences
 
 - A report's web fonts and web pictures do not load (person's decision). The panel counts what failed to load.
-- A second page of the folder, reached by a link, keeps no comments after the panel closes. Only the opened document has a place.
+- A page reached by a link or a script arrives without its kept comments, so it loads a second time with them. A flash, on the pages that have some.
 - Words stay in the document after Send: kits store them differently and the phone page cannot tell them apart. The kit's «clear» is
   the way to start a new round.
 - HTML is not masked: like a picture, it is shown as it is. Text reaching the session is recorded as `phone-input`, length only.

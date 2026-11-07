@@ -246,8 +246,11 @@ export interface PhoneDocRefused {
 
 /** What a document's frame tells the phone page, and all it can. The page sends nothing back. */
 export type PhoneDocMessage =
-    /** a page loaded in the frame; `path` is inside the document's folder */
-    | { type: 'doc-ready'; title: string; path: string }
+    /**
+     * A page loaded in the frame; `path` is inside the document's folder. `seeded`: it came with its kept comments. A page
+     * reached by a link or a script comes without, and is loaded again with them; `hash` is its place on the page.
+     */
+    | { type: 'doc-ready'; title: string; path: string; seeded: boolean; hash: string }
     /** the page's storage changed */
     | { type: 'doc-store'; value: string }
     /** the page copied or saved its comments */
