@@ -228,6 +228,8 @@ export function PhoneApp() {
 
     const openDockPanel = useCallback(() => {
         setDrawer(false)
+        // on a wide screen the list stays tappable under an open panel: a second entry would make ✕ take two presses
+        if (readRoute().dockPanel) return
         window.history.pushState(DOCK_PANEL_ENTRY, '', addressWithDockPanel(true))
         setRoute(readRoute())
     }, [])

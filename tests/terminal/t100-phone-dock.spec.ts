@@ -355,6 +355,32 @@ test('T100 on a wide screen the list stays beside the panel', async () => {
     expect(box.x).toBeGreaterThanOrEqual(sidebar.x + sidebar.width - 1)
     expect(box.x + box.width).toBeLessThanOrEqual(1024)
     await expect(phone.getByTestId('phone-session-list')).toBeVisible()
+
+    // the list stays tappable here: tapping Dock again must not stack entries, or ✕ would need two presses
+    await phone.getByTestId('phone-dock-entry').click()
+    await phone.getByTestId('phone-dock-entry').click()
+    await phone.getByTestId('phone-dock-close').click()
+    await expect(panel).toHaveCount(0)
+    expect(new URL(phone.url()).searchParams.get('panel')).toBeNull()
+})
+
+test('T100 a device disconnected mid-read: the panel does not take the page down', async () => {
+    test.setTimeout(180_000)
+    dock = fakeDock()
+    await dock.start()
+    const { app, base } = await launch({ socket: dock.file })
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${CLAUDE}&view=chat`, 't100-revoked')
+    await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
+    // what phoneApi answers when the access is gone by the time the socket replied: a 401 with a `status`
+    await phone.route('**/api/phone/dock', (route) =>
+        route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ status: 'rejected', reason: 'revoked', error: 'revoked', message: 'This device was disconnected from the Mac.' }) })
+    )
+    await tap(cdp, phone, '[data-testid="phone-menu-button"]')
+    await tap(cdp, phone, '[data-testid="phone-dock-entry"]')
+    const panel = phone.getByTestId('phone-dock-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText('Reconnecting to the Mac')
+    await expect(phone.getByTestId('phone-app')).toBeVisible()
 })
 
 test('T100 Chrome off, an old extension, a broken answer: the band says so and the last list stays', async () => {

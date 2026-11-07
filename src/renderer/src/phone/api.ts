@@ -39,7 +39,12 @@ export const pair = (code: string, label: string): Promise<PhonePairResult> => p
 
 export const getSessions = (): Promise<PhoneSessionsResponse> => getJson<PhoneSessionsResponse>(PHONE_API.sessions)
 
-export const getDock = (): Promise<PhoneDockResponse> => getJson<PhoneDockResponse>(PHONE_API.dock)
+/** `request` passes a refusal with a `status` through as a body (the pairing screen reads those): a list it is not. */
+export async function getDock(): Promise<PhoneDockResponse> {
+    const list = await getJson<PhoneDockResponse>(PHONE_API.dock)
+    if (!Array.isArray(list?.open) || !Array.isArray(list?.closed)) throw new PhoneApiError(401, 'not_a_list', 'The Mac did not send a Dock list.')
+    return list
+}
 
 export const subscribePush = (subscription: PhonePushSubscription): Promise<unknown> => postJson(PHONE_API.pushSubscribe, { subscription })
 
