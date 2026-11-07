@@ -19,6 +19,13 @@ export interface PhoneFileTarget {
     line?: number
 }
 
+/** A Dock row's document: the phone names its key, and only the Mac knows the path. `sessionId` is the row's, if any. */
+export interface PhoneDockDocTarget {
+    dock: string
+    title: string
+    sessionId: string | null
+}
+
 type Loaded = { state: 'loading' } | { state: 'offline' } | { state: 'refused'; refused: PhoneFileRefused } | { state: 'ok'; info: PhoneFileInfo }
 
 const MARKDOWN_NAME = /\.(?:md|mdx|markdown)$/i

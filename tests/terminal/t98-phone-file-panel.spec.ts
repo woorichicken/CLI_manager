@@ -326,9 +326,9 @@ test('T98 Markdown reads as a document with its source a tap away; a video downl
     await expect(panel.locator('.chat-md strong')).toHaveText('bold words')
     await phone.goBack()
 
-    // HTML is code until the document view (D3) fills its place
+    // an HTML page opens as itself (decision 0011)
     await tapLink(cdp, phone, 'the report')
-    await expect(panel.locator('.hl-code')).toContainText('<title>Report</title>', { timeout: 10_000 })
+    await expect(phone.getByTestId('phone-doc-frame')).toBeVisible({ timeout: 10_000 })
     await phone.goBack()
 
     await tapLink(cdp, phone, 'the demo')

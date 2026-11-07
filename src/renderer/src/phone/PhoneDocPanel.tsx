@@ -6,7 +6,7 @@ import { postJson } from './api'
 import { composeComment, docStoreKey, keepDocStore, phoneDocStorage } from './docMessages'
 import { DocLinkSheet, DocSendSheet } from './DocSendSheet'
 import { PhoneDocFrame } from './PhoneDocFrame'
-import type { PhoneFileTarget } from './PhoneFilePanel'
+import type { PhoneDockDocTarget, PhoneFileTarget } from './PhoneFilePanel'
 import './phone-file.css'
 import './phone-doc.css'
 
@@ -21,12 +21,13 @@ type Sheet = { kind: 'comment'; text: string } | { kind: 'link'; url: string }
 
 const NOTICE_MS = 8000
 
-export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { target: PhoneFileTarget; onClose: () => void; onOpenFile: (sessionId: string, path: string) => void; onOpenChat: (sessionId: string) => void }) {
+export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { target: PhoneFileTarget | PhoneDockDocTarget; onClose: () => void; onOpenFile: (sessionId: string, path: string) => void; onOpenChat: (sessionId: string) => void }) {
     const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' })
     const [title, setTitle] = useState<string | null>(null)
     const [sheet, setSheet] = useState<Sheet | null>(null)
     const [missing, setMissing] = useState(0)
     const [notKept, setNotKept] = useState(false)
+    const [noChat, setNoChat] = useState(false)
     const [notice, setNotice] = useState<{ text: string; target: PhoneDocTarget } | null>(null)
     /** the page now in the frame: a link inside the folder may have replaced the one opened */
     const rel = useRef<string | null>(null)
@@ -34,13 +35,19 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
     const sheetOpen = useRef(false)
     sheetOpen.current = sheet !== null
 
+    const dockKey = 'dock' in target ? target.dock : null
+    const filePath = 'path' in target ? target.path : null
+    const { sessionId } = target
+    /** what the person knows it by. A Dock row's path never reached this phone. */
+    const shownAs = 'dock' in target ? target.title : target.path
+
     const load = useCallback(() => {
         setLoaded({ state: 'loading' })
-        postJson<PhoneDocOpened | PhoneDocRefused>(PHONE_API.docOpen, { session: target.sessionId, path: target.path })
+        postJson<PhoneDocOpened | PhoneDocRefused>(PHONE_API.docOpen, dockKey !== null ? { dock: dockKey } : { session: sessionId, path: filePath })
             .then((body) => setLoaded(body.status === 'ok' ? { state: 'ok', opened: body } : { state: 'refused', refused: body }))
             // the server's own gates (the phone switched off, pairing) answer in their own shape: not a verdict on this file
             .catch(() => setLoaded({ state: 'offline' }))
-    }, [target.sessionId, target.path])
+    }, [dockKey, sessionId, filePath])
     useEffect(load, [load])
 
     useEffect(() => {
@@ -78,15 +85,18 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
                     setSheet((open) => open ?? { kind: 'link', url: message.url })
                     return
                 case 'doc-open':
-                    if (!sheetOpen.current) onOpenFile(target.sessionId, message.path)
+                    if (sheetOpen.current) return
+                    // a file is granted by a chat naming it, and a Dock row with no session has no chat to ask
+                    if (sessionId) onOpenFile(sessionId, message.path)
+                    else setNoChat(true)
                     return
             }
         },
-        [opened, onOpenFile, target.sessionId]
+        [opened, onOpenFile, sessionId]
     )
     const closeSheet = useCallback(() => setSheet(null), [])
 
-    const name = title ?? opened?.title ?? target.path.split('/').pop() ?? target.path
+    const name = title ?? opened?.title ?? ('dock' in target ? target.title : (target.path.split('/').pop() ?? target.path))
     return (
         <div
             className="phone-file-panel phone-doc-panel"
@@ -109,11 +119,13 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
                     </a>
                 )}
             </header>
-            {(missing > 0 || notKept) && (
+            {(missing > 0 || notKept || noChat) && (
                 <p className="phone-doc-note" data-testid="phone-doc-missing" role="status">
                     {missing > 0 && `${missing} ${missing === 1 ? 'image or file' : 'images or files'} did not load: outside this folder or on the web.`}
                     {missing > 0 && notKept && ' '}
                     {notKept && 'These comments are too long to keep on this phone: send them before closing.'}
+                    {(missing > 0 || notKept) && noChat && ' '}
+                    {noChat && 'That link opens from a chat, and this report has no session.'}
                 </p>
             )}
             <div className="phone-doc-body" data-testid="phone-doc-body">
@@ -125,7 +137,7 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
                 {loaded.state === 'offline' && (
                     <div className="phone-file-center" data-testid="phone-doc-offline">
                         <p className="phone-file-big">The Mac is not answering</p>
-                        <p className="phone-file-path">{target.path}</p>
+                        <p className="phone-file-path">{shownAs}</p>
                         <button type="button" className="phone-file-button" data-testid="phone-doc-retry" onClick={load}>
                             <RotateCw size={15} aria-hidden="true" /> Retry
                         </button>
@@ -135,7 +147,7 @@ export function PhoneDocPanel({ target, onClose, onOpenFile, onOpenChat }: { tar
                     <div className="phone-file-center" data-testid="phone-doc-refused" data-reason={loaded.refused.reason}>
                         {loaded.refused.reason === 'protected' ? <ShieldAlert size={24} aria-hidden="true" /> : <FileQuestion size={24} aria-hidden="true" />}
                         <p className="phone-file-big">{loaded.refused.message}</p>
-                        <p className="phone-file-path">{target.path}</p>
+                        <p className="phone-file-path">{shownAs}</p>
                     </div>
                 )}
                 {opened && <PhoneDocFrame url={opened.url} rel={opened.rel} storeKey={opened.storeKey} title={name} inert={sheet !== null} onMessage={onMessage} />}

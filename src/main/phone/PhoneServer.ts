@@ -352,6 +352,7 @@ export class PhoneServer {
                     sessionExists: (id) => this.deps.sessionExists(id),
                     listSessions: () => this.deps.listSessions(),
                     mentionedPaths: (id) => this.deps.conversation.mentionedPaths(id),
+                    ...(this.deps.dock ? { dock: this.deps.dock } : {}),
                     stillAllowed: () => this.stillAllowed(access)
                 })
                 return

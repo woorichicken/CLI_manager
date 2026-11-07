@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Laptop, Layers, MessageSquareWarning } from 'lucide-react'
-import type { PhoneMe, PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
+import type { PhoneDockItem, PhoneMe, PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { getMe, getSessions, PhoneApiError } from './api'
 import { AlertsMenu } from './AlertsMenu'
 import { DropletPill } from './DropletPill'
 import { dropletFor, nextSeen, waitingElsewhere, type Droplet, type SeenState } from './droplets'
 import { PairScreen } from './PairScreen'
 import { PhoneDockPanel } from './PhoneDockPanel'
+import { PhoneDocPanel } from './PhoneDocPanel'
+import { PhoneFilePanel, type PhoneDockDocTarget, type PhoneFileTarget } from './PhoneFilePanel'
 import { openPhoneFeedback, phoneFeedbackConfigured, PhoneFeedback } from './feedback/PhoneFeedback'
 import { PhoneSettingsMenu } from './PhoneSettingsMenu'
 import { HandoffNoticeToast } from '../components/ChatView/HandoffNoticeToast'
@@ -15,7 +17,7 @@ import { usePhoneChatSettings } from './phoneChatSettings'
 import type { ChatPreferences } from '../../../shared/conversation'
 import { phoneFeedbackAvailable } from './feedbackGate'
 import { SessionList } from './SessionList'
-import { SessionScreen, type SessionLens } from './SessionScreen'
+import { afterHistoryBack, opensAsDocument, SessionScreen, type SessionLens } from './SessionScreen'
 import { reconnectDelay } from './usePhoneTerminal'
 
 /**
@@ -33,6 +35,11 @@ const LENS_KEY = 'phone-session-lens'
 
 /** `history.state` of the entry opening the Dock panel pushed: ✕ can go back to where it was instead of adding one. */
 const DOCK_PANEL_ENTRY = 'phone-dock-panel'
+/**
+ * The entry a Dock row's document pushed: the same address, as a chat's file does, so no path enters the history. Not
+ * DOCK_PANEL_ENTRY: a page in the frame can keep Back from reaching the panel's own entry, and ✕ must not go "back" to it.
+ */
+const DOCK_DOC_ENTRY = 'phone-dock-doc'
 
 function readRoute(): { sessionId: string | null; view: SessionLens | null; dockPanel: boolean } {
     const params = new URLSearchParams(window.location.search)
@@ -87,6 +94,8 @@ export function PhoneApp() {
     const [data, setData] = useState<PhoneSessionsResponse | null>(null)
     const [route, setRoute] = useState(readRoute)
     const [drawer, setDrawer] = useState(false)
+    /** what a Dock row opened, over the panel: its document, or a file that document's link led to */
+    const [dockFile, setDockFile] = useState<PhoneDockDocTarget | PhoneFileTarget | null>(null)
     const [offline, setOffline] = useState(false)
     /** back on the page after a while away: the list and chat are being read again (e05bf978) */
     const [refreshing, setRefreshing] = useState(false)
@@ -245,6 +254,28 @@ export function PhoneApp() {
         setRoute(readRoute())
     }, [])
 
+    const openDockDoc = useCallback((item: PhoneDockItem) => {
+        window.history.pushState(DOCK_DOC_ENTRY, '', window.location.href)
+        setDockFile({ dock: item.key, title: item.title, sessionId: item.session?.id ?? null })
+    }, [])
+    // a page in the frame can add history of its own, and Back would walk through that first: this closes at once
+    const closeDockFile = useCallback(() => {
+        setDockFile(null)
+        window.history.back()
+    }, [])
+    const openDockFileLink = useCallback((sessionId: string, path: string) => setDockFile({ sessionId, path }), [])
+    const dockFileOpen = dockFile !== null
+    useEffect(() => {
+        if (!dockFileOpen) return
+        const pop = (): void => setDockFile(null)
+        window.addEventListener('popstate', pop)
+        return () => window.removeEventListener('popstate', pop)
+    }, [dockFileOpen])
+    // an alert moved the page on: the document does not come back with it
+    useEffect(() => {
+        if (!route.dockPanel) setDockFile(null)
+    }, [route.dockPanel])
+
     useEffect(() => {
         const pop = (): void => setRoute(readRoute())
         window.addEventListener('popstate', pop)
@@ -397,7 +428,23 @@ export function PhoneApp() {
                 </main>
             )}
             {wide && !session && <main className="phone-main phone-empty">Pick a session.</main>}
-            {dockPanelOpen && <PhoneDockPanel onClose={closeDockPanel} onOpenSession={openDockSession} />}
+            {/* a view-only device gets the list alone (decision 0010): a row only shows its whole folder name */}
+            {dockPanelOpen && <PhoneDockPanel onClose={closeDockPanel} onOpenSession={openDockSession} {...(me.role === 'drive' ? { onOpenDoc: openDockDoc } : {})} />}
+            {dockPanelOpen && dockFile && me.role === 'drive' && ('dock' in dockFile || opensAsDocument(dockFile) ? (
+                <PhoneDocPanel
+                    key={'dock' in dockFile ? dockFile.dock : dockFile.path}
+                    target={dockFile}
+                    onClose={closeDockFile}
+                    onOpenFile={openDockFileLink}
+                    onOpenChat={(id) => {
+                        // after Back has landed on the panel's entry, which the session then takes the place of
+                        afterHistoryBack(() => openDockSession(id))
+                        closeDockFile()
+                    }}
+                />
+            ) : (
+                <PhoneFilePanel key={`${dockFile.path}:${dockFile.line ?? ''}`} target={dockFile} onClose={closeDockFile} />
+            ))}
             <HandoffNoticeToast />
             <PhoneFeedback me={me} sessionId={session?.id ?? null} lens={session ? (session.agent ? lens : 'terminal') : null} />
             {droplet && (

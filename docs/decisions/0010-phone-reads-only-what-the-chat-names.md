@@ -25,6 +25,9 @@ home, 116 in the temp folder, none elsewhere. 2,037 (59%) no longer exist. 6 of 
   with the functions that draw them. A link the phone shows cannot be refused for not being named, and a path the
   person never saw as a link is not a way in. Worked out afresh for each request (median 0.14 ms a session): there is
   no list to keep in step.
+- **A Dock row grants its own file, and the phone names it by key.** `dock=<key>` (`dockFileSource`): the list gave the phone an
+  opaque key, main alone turns it into a path, and step 4 allows that one path. The other seven steps run on it as on any other.
+  A deleted row, a link row or a key that is not in the list opens nothing. A row's session lends its folder to step 6.
 - **Eight steps, the first refusal ends it** (`phone/phoneFiles.ts` `openGrantedFile`): role → `Sec-Fetch-Site` →
   well-formed absolute path, `..` gone → the source grants it → `realpath` → inside home, temp or the session's folder →
   not on the protected list (both the asked path and the real one) → opened non-blocking and a regular file.

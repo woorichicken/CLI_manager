@@ -44,7 +44,7 @@ const OPEN_ROWS = [
     fileRow('Oldest report', { at: 1, sessionId: 'closed-session' }),
     { ...fileRow('Artifact page', { at: 50 }), key: 'artifact:abc', url: 'https://claude.ai/code/artifact/abc', sub: 'Claude artifact' }
 ]
-const CLOSED_ROWS = [fileRow('Old report', { missing: true, at: 3 }), fileRow('Older page', { at: 2 })]
+const CLOSED_ROWS = [fileRow('Old report', { missing: true, at: 3, sub: '~/Downloads/_batches/plan-phone-design-1107/d2-dock/review/a-rather-long-folder' }), fileRow('Older page', { at: 2 })]
 const listReply = (open: unknown[] = OPEN_ROWS, closed: unknown[] = CLOSED_ROWS): string =>
     `${JSON.stringify({ id: 'x', ok: true, protocol: 1, extVersion: '0.7.0', missingSupported: true, open, closed })}\n`
 
@@ -246,9 +246,9 @@ test('T100 ☰ → Dock over the chat: the Mac\'s order, then back to the same p
     // nothing to change anything on the Mac: no pin, close, reload or «this window» controls
     await expect(panel.getByRole('button', { name: /^(pin|unpin|close tab|reload|this window|move here)$/i })).toHaveCount(0)
 
-    // a long folder name fits the row: tapping shows all of it, the panel does not scroll sideways
-    await tap(cdp, phone, '[data-testid="phone-dock-row"]:has-text("Newest report") [data-testid="phone-dock-row-body"]')
-    await expect(row('Newest report')).toHaveAttribute('data-expanded', 'true')
+    // a long folder name fits the row: tapping a row with nothing to open shows all of it (T105 opens the others), the panel does not scroll sideways
+    await tap(cdp, phone, '[data-testid="phone-dock-row"]:has-text("Old report") [data-testid="phone-dock-row-body"]')
+    await expect(row('Old report')).toHaveAttribute('data-expanded', 'true')
     await shot(phone, 't100-panel-expanded-390')
     expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth), 'no sideways scroll').toBe(true)
 

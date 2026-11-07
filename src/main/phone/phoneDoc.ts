@@ -10,8 +10,9 @@ import { PHONE_API, PHONE_DOC_PREFIX, PHONE_DOC_SANDBOX, PHONE_IMAGE_PREVIEW_BYT
 import { fileExtension } from '../../shared/fileKinds'
 import type { PhoneAccess } from './phoneAccess'
 import { isLoopbackAddress } from './phoneAccess'
+import type { PhoneDock } from './phoneDock'
 import { PHONE_DOC_BRIDGE } from './phoneDocBridge'
-import { openGrantedFile, type GrantedFile, type PhoneFilesDeps } from './phoneFiles'
+import { dockFileSource, openGrantedFile, pathNamed, PHONE_FILE_REFUSAL_MESSAGE, PHONE_FILE_REFUSAL_STATUS, type GrantedFile, type PhoneFilesDeps, type PhoneFileSource } from './phoneFiles'
 import { readJson, send } from './PhoneServer'
 
 /**
@@ -196,40 +197,13 @@ async function headOf(handle: FileHandle, length: number): Promise<Buffer> {
     return buffer.subarray(0, bytesRead)
 }
 
-/** A path a chat names, compared as the request is. phoneFiles.ts has the same: not exported there yet. */
-function pathNamed(paths: ReadonlySet<string>, normalized: string): boolean {
-    for (const named of paths) if (path.normalize(named).normalize('NFC') === normalized) return true
-    return false
-}
+const REFUSAL_STATUS: Record<PhoneDocRefusal, number> = { ...PHONE_FILE_REFUSAL_STATUS, not_html: 415 }
 
-const REFUSAL_STATUS: Record<PhoneDocRefusal, number> = {
-    bad_path: 400,
-    revoked: 401,
-    view_only: 403,
-    cross_site: 403,
-    not_mentioned: 403,
-    outside_roots: 403,
-    protected: 403,
-    unreadable: 403,
-    unknown_session: 404,
-    not_found: 404,
-    not_a_file: 404,
-    too_large: 413,
-    not_html: 415
-}
-
+/** The file route's words, except where they would say "files" or that route's own limit. */
 const REFUSAL_MESSAGE: Record<PhoneDocRefusal, string> = {
-    bad_path: 'This is not a path on the Mac.',
-    revoked: 'This device was disconnected from the Mac.',
+    ...PHONE_FILE_REFUSAL_MESSAGE,
     view_only: 'This device can only watch. Pair it again with "Can type" to open documents.',
     cross_site: 'Only the phone page can open documents.',
-    not_mentioned: 'Not named in this chat',
-    outside_roots: 'Outside the home folder and this session’s folder',
-    protected: 'Protected: keys and .env files stay on the Mac',
-    unreadable: 'The Mac would not let the app read this file',
-    unknown_session: 'That session is gone from the Mac.',
-    not_found: 'Not on the Mac',
-    not_a_file: 'Not a file',
     too_large: 'Larger than the 64 MB a phone opens. Open it on the Mac.',
     not_html: 'Not an HTML document'
 }
@@ -263,7 +237,25 @@ export interface PhoneDocOpenDeps {
     sessionExists(id: string): boolean
     listSessions(): PhoneSessionsResponse
     mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }>
+    dock?: Pick<PhoneDock, 'docFor'>
     stillAllowed(): boolean
+}
+
+/** What a body asks for: a Dock row by its key, or a path a session's chat names. A refusal when neither holds. */
+async function documentSource(body: Record<string, unknown> | null, deps: PhoneDocOpenDeps): Promise<{ source: PhoneFileSource; sessionId: string | null; rawQuery: URLSearchParams } | PhoneDocRefusal> {
+    if (typeof body?.dock === 'string') {
+        const row = await dockFileSource(body.dock, deps)
+        return row ? { ...row, rawQuery: new URLSearchParams({ dock: body.dock }) } : 'not_found'
+    }
+    const sessionId = typeof body?.session === 'string' ? body.session : ''
+    const asked = typeof body?.path === 'string' ? body.path : ''
+    if (!deps.sessionExists(sessionId)) return 'unknown_session'
+    const named = await deps.mentionedPaths(sessionId)
+    return {
+        sessionId,
+        source: { path: asked, ...(named.cwd ? { cwd: named.cwd } : {}), grants: (normalized) => pathNamed(named.paths, normalized) },
+        rawQuery: new URLSearchParams({ session: sessionId, path: asked })
+    }
 }
 
 export async function handlePhoneDocOpen(req: http.IncomingMessage, res: http.ServerResponse, deps: PhoneDocOpenDeps): Promise<void> {
@@ -274,22 +266,22 @@ export async function handlePhoneDocOpen(req: http.IncomingMessage, res: http.Se
     const body = await readJson(req)
     if (deps.role !== 'drive') return refuse(res, 'view_only')
     if (!deps.stillAllowed()) return refuse(res, 'revoked')
-    const sessionId = typeof body?.session === 'string' ? body.session : ''
-    const asked = typeof body?.path === 'string' ? body.path : ''
-    if (!deps.sessionExists(sessionId)) return refuse(res, 'unknown_session')
-    const named = await deps.mentionedPaths(sessionId)
-    const result = await openGrantedFile(
-        { path: asked, cwd: named.cwd, grants: (normalized) => pathNamed(named.paths, normalized) },
-        { role: deps.role, fetchSite: headerOf(req, 'sec-fetch-site'), home: deps.files.home, ...(deps.files.protectedPlaces ? { protectedPlaces: deps.files.protectedPlaces } : {}) }
-    )
+    const asked = await documentSource(body, deps)
+    if (typeof asked === 'string') return refuse(res, asked)
+    const { source, sessionId, rawQuery } = asked
+    const note = (detail: string): void => {
+        // a Dock row with no session has no event log to write in
+        if (sessionId) deps.files.record(sessionId, detail)
+    }
+    const result = await openGrantedFile(source, { role: deps.role, fetchSite: headerOf(req, 'sec-fetch-site'), home: deps.files.home, ...(deps.files.protectedPlaces ? { protectedPlaces: deps.files.protectedPlaces } : {}) })
     if (!result.ok) {
-        if (result.reason === 'protected' || result.reason === 'outside_roots' || result.reason === 'not_mentioned') deps.files.record(sessionId, `document refused (${result.reason})`)
+        if (result.reason === 'protected' || result.reason === 'outside_roots' || result.reason === 'not_mentioned') note(`document refused (${result.reason})`)
         return refuse(res, result.reason)
     }
     const { file } = result
     try {
         // the name on disk: a link called report.html that points at notes.txt is notes.txt
-        const real = await realpath(path.normalize(asked))
+        const real = await realpath(path.normalize(source.path))
         if (!DOCUMENT_EXTENSIONS.has(fileExtension(real))) return refuse(res, 'not_html')
         if (file.size > PHONE_MAX_DOC_BYTES) return refuse(res, 'too_large')
         if (!deps.stillAllowed()) return refuse(res, 'revoked')
@@ -304,10 +296,9 @@ export async function handlePhoneDocOpen(req: http.IncomingMessage, res: http.Se
             document: path.basename(real),
             access: deps.access,
             owner: deps.owner,
-            ...(named.cwd ? { cwd: named.cwd } : {})
+            ...(source.cwd ? { cwd: source.cwd } : {})
         })
         const session = deps.listSessions().sessions.find((candidate) => candidate.id === sessionId)
-        const query = new URLSearchParams({ session: sessionId, path: asked })
         const opened: PhoneDocOpened = {
             status: 'ok',
             url: `${PHONE_DOC_PREFIX}${token.token}/${encodeURIComponent(path.basename(real))}`,
@@ -318,9 +309,9 @@ export async function handlePhoneDocOpen(req: http.IncomingMessage, res: http.Se
             modifiedAt: file.modifiedAt,
             storeKey: createHash('sha256').update(root.normalize('NFC')).digest('hex').slice(0, 32),
             target: session?.agent ? { id: session.id, name: session.name, agent: session.agent } : null,
-            rawUrl: `${PHONE_API.fileRaw}?${query}`
+            rawUrl: `${PHONE_API.fileRaw}?${rawQuery}`
         }
-        deps.files.record(sessionId, `document opened (html, ${file.size < 1024 * 1024 ? `${Math.ceil(file.size / 1024)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`})`)
+        note(`document opened (html, ${file.size < 1024 * 1024 ? `${Math.ceil(file.size / 1024)} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`})`)
         send(res, 200, opened)
     } finally {
         await file.handle.close().catch(() => undefined)

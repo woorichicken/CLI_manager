@@ -7,6 +7,7 @@ import { pipeline } from 'stream'
 import type { PhoneFileInfo, PhoneFileRefusal, PhoneFileRefused, PhoneRole } from '../../shared/phone'
 import { PHONE_API, PHONE_IMAGE_PREVIEW_BYTES, PHONE_MAX_DOWNLOAD_BYTES, PHONE_TEXT_PREVIEW_BYTES } from '../../shared/phone'
 import { fileExtension, IMAGE_EXTENSIONS, SYSTEM_TYPES } from '../../shared/fileKinds'
+import type { PhoneDock } from './phoneDock'
 import { isProtectedPath, usablePath, withinRoots } from './phoneFileAccess'
 import { send } from './PhoneServer'
 
@@ -16,13 +17,13 @@ import { send } from './PhoneServer'
  *   1 the device may type (a view-only device sees no file)     5 the real path: symlinks resolved, the disk's own case
  *   2 the request came from the page, not from another site     6 inside home, the temp folder or the session's folder
  *   3 a well-formed absolute path; `..` is gone after this      7 not on the protected list — asked of both paths
- *   4 this source grants it (the session's chat named it)       8 opened without blocking, and a regular file
+ *   4 this source grants it (a chat named it, or a Dock row)    8 opened without blocking, and a regular file
  *
  * Step 4 comes before the disk is touched, so nothing tells a phone whether a file it was not given exists. All of
  * it is asynchronous: main is the process that draws every terminal's output, and a slow disk must not stop that.
  */
 
-const REFUSAL_STATUS: Record<PhoneFileRefusal, number> = {
+export const PHONE_FILE_REFUSAL_STATUS: Record<PhoneFileRefusal, number> = {
     bad_path: 400,
     revoked: 401,
     view_only: 403,
@@ -37,7 +38,7 @@ const REFUSAL_STATUS: Record<PhoneFileRefusal, number> = {
     too_large: 413
 }
 
-const REFUSAL_MESSAGE: Record<PhoneFileRefusal, string> = {
+export const PHONE_FILE_REFUSAL_MESSAGE: Record<PhoneFileRefusal, string> = {
     bad_path: 'This is not a path on the Mac.',
     revoked: 'This device was disconnected from the Mac.',
     view_only: 'This device can only watch. Pair it again with "Can type" to open files.',
@@ -154,8 +155,8 @@ async function bytesOf(handle: FileHandle, length: number): Promise<Buffer> {
 }
 
 /**
- * The eight steps. Everything that hands a phone a file of the Mac goes through here (the chat's links; Dock rows
- * and documents add a source of their own), so the list and the checks cannot differ from one door to the next.
+ * The eight steps. Everything that hands a phone a file of the Mac goes through here (the chat's links, Dock rows and
+ * documents each bring a source of their own), so the list and the checks cannot differ from one door to the next.
  */
 export async function openGrantedFile(source: PhoneFileSource, access: PhoneFileAccess): Promise<GrantedFileResult> {
     if (access.role !== 'drive') return refusal('view_only')
@@ -236,6 +237,7 @@ export interface PhoneFileRouteDeps {
     role: PhoneRole
     sessionExists(id: string): boolean
     mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }>
+    dock?: Pick<PhoneDock, 'docFor'>
     stillAllowed(): boolean
     /** a download a revoked device must not finish: the server calls `stop`. Returns the way to stop watching. */
     trackDownload(stop: () => void): () => void
@@ -244,8 +246,8 @@ export interface PhoneFileRouteDeps {
 export const isPhoneFilePath = (route: string): boolean => route === PHONE_API.file || route === PHONE_API.fileRaw
 
 function refuse(res: http.ServerResponse, reason: PhoneFileRefusal): void {
-    const body: PhoneFileRefused = { status: 'refused', reason, message: REFUSAL_MESSAGE[reason] }
-    send(res, REFUSAL_STATUS[reason], body)
+    const body: PhoneFileRefused = { status: 'refused', reason, message: PHONE_FILE_REFUSAL_MESSAGE[reason] }
+    send(res, PHONE_FILE_REFUSAL_STATUS[reason], body)
 }
 
 const headerOf = (req: http.IncomingMessage, name: string): string | null => {
@@ -253,11 +255,27 @@ const headerOf = (req: http.IncomingMessage, name: string): string | null => {
     return (Array.isArray(value) ? value[0] : value) ?? null
 }
 
-/** The source a request names. A Dock row (`dock=<key>`) joins here when it lands (decision 0010). */
-async function sourceOf(url: URL, deps: PhoneFileRouteDeps): Promise<{ source: PhoneFileSource; sessionId: string } | PhoneFileRefusal> {
+/**
+ * What a Dock row grants: its own file, by the key the list gave the phone. The phone never holds the path, so nothing it
+ * sends can name another file. The rest of the judgement runs on that path as on any other. Null: not a file row of the
+ * current list (a deleted document has none either).
+ */
+export async function dockFileSource(key: string, deps: Pick<PhoneFileRouteDeps, 'dock' | 'sessionExists' | 'mentionedPaths'>): Promise<{ source: PhoneFileSource; sessionId: string | null } | null> {
+    const doc = deps.dock?.docFor(key)
+    if (doc?.kind !== 'file') return null
+    const sessionId = doc.session && deps.sessionExists(doc.session.id) ? doc.session.id : null
+    const cwd = sessionId ? (await deps.mentionedPaths(sessionId)).cwd : undefined
+    const granted = new Set([doc.path])
+    return { sessionId, source: { path: doc.path, ...(cwd ? { cwd } : {}), grants: (normalized) => pathNamed(granted, normalized) } }
+}
+
+/** The source a request names: a Dock row's key, or a path of a session's chat. */
+async function sourceOf(url: URL, deps: PhoneFileRouteDeps): Promise<{ source: PhoneFileSource; sessionId: string | null } | PhoneFileRefusal> {
     const sessionId = url.searchParams.get('session') ?? ''
     const raw = url.searchParams.get('path') ?? ''
+    const dockKey = url.searchParams.get('dock')
     if (deps.role !== 'drive') return 'view_only'
+    if (dockKey !== null) return (await dockFileSource(dockKey, deps)) ?? 'not_found'
     if (!deps.sessionExists(sessionId)) return 'unknown_session'
     const named = await deps.mentionedPaths(sessionId)
     return {
@@ -271,7 +289,7 @@ async function sourceOf(url: URL, deps: PhoneFileRouteDeps): Promise<{ source: P
 }
 
 /** A path the chat names, compared as the request is: normalized and composed. */
-function pathNamed(paths: ReadonlySet<string>, normalized: string): boolean {
+export function pathNamed(paths: ReadonlySet<string>, normalized: string): boolean {
     for (const named of paths) if (path.normalize(named).normalize('NFC') === normalized) return true
     return false
 }
@@ -298,10 +316,14 @@ export async function handlePhoneFile(req: http.IncomingMessage, res: http.Serve
     if (deps.role === 'drive' && !fromThePage(fetchSite)) return refuse(res, 'cross_site')
     const asked = await sourceOf(url, deps)
     if (typeof asked === 'string') return refuse(res, asked)
+    const note = (detail: string): void => {
+        // a Dock row with no session has no event log to write in
+        if (asked.sessionId) deps.files.record(asked.sessionId, detail)
+    }
     const result = await openGrantedFile(asked.source, { role: deps.role, fetchSite, home: deps.files.home, ...(deps.files.protectedPlaces ? { protectedPlaces: deps.files.protectedPlaces } : {}) })
     if (!result.ok) {
         // what was refused is worth a line in the log; not the path
-        if (result.reason === 'protected' || result.reason === 'outside_roots' || result.reason === 'not_mentioned') deps.files.record(asked.sessionId, `file refused (${result.reason})`)
+        if (result.reason === 'protected' || result.reason === 'outside_roots' || result.reason === 'not_mentioned') note(`file refused (${result.reason})`)
         return refuse(res, result.reason)
     }
     const { file } = result
@@ -310,13 +332,13 @@ export async function handlePhoneFile(req: http.IncomingMessage, res: http.Serve
         await file.handle.close().catch(() => undefined)
         return refuse(res, 'revoked')
     }
-    if (url.pathname === PHONE_API.fileRaw) return serveRaw(res, url, file, asked.sessionId, deps)
+    if (url.pathname === PHONE_API.fileRaw) return serveRaw(res, url, file, note, deps)
     try {
         if (file.size > PHONE_MAX_DOWNLOAD_BYTES) return refuse(res, 'too_large')
         const info = await describe(file, url, deps.files)
         // reading took a while too: what was read does not go to a device disconnected meanwhile
         if (!deps.stillAllowed()) return refuse(res, 'revoked')
-        deps.files.record(asked.sessionId, `file opened (${info.kind}, ${formatSize(file.size)})`)
+        note(`file opened (${info.kind}, ${formatSize(file.size)})`)
         send(res, 200, info)
     } finally {
         await file.handle.close().catch(() => undefined)
@@ -336,7 +358,7 @@ async function describe(file: GrantedFile, url: URL, files: PhoneFilesDeps): Pro
     return { ...common, kind: file.kind, content: lines.join('\n'), maskedValues: masked, language: file.language }
 }
 
-function serveRaw(res: http.ServerResponse, url: URL, file: GrantedFile, sessionId: string, deps: PhoneFileRouteDeps): void {
+function serveRaw(res: http.ServerResponse, url: URL, file: GrantedFile, note: (detail: string) => void, deps: PhoneFileRouteDeps): void {
     if (file.size > PHONE_MAX_DOWNLOAD_BYTES) {
         void file.handle.close().catch(() => undefined)
         return refuse(res, 'too_large')
@@ -356,7 +378,7 @@ function serveRaw(res: http.ServerResponse, url: URL, file: GrantedFile, session
         res.end()
         return
     }
-    if (wanted) deps.files.record(sessionId, `file downloaded (${file.kind}, ${formatSize(file.size)})`)
+    if (wanted) note(`file downloaded (${file.kind}, ${formatSize(file.size)})`)
     const stream = file.handle.createReadStream({ start: 0, end: file.size - 1 })
     const untrack = deps.trackDownload(() => {
         stream.destroy()

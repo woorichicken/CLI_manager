@@ -97,6 +97,7 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
             role: deps.access.role,
             sessionExists: deps.sessionExists,
             mentionedPaths: (id) => deps.conversation.mentionedPaths(id),
+            ...(deps.dock ? { dock: deps.dock } : {}),
             stillAllowed: deps.stillAllowed,
             trackDownload: deps.trackDownload
         })
