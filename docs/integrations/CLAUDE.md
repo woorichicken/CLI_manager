@@ -99,6 +99,28 @@ Recorded with a real `claude` in a pty and replayed into `@xterm/headless` (repo
   more rows than the cursor had above it. The seams are what it writes, not something a terminal
   clamped.
 
+### Artifact Dock — the phone's document list (verified 2026-11-07, extension 0.7.0)
+
+Not an AI CLI, but the same kind of outside program: a Chrome extension, a Python native host and a unix
+socket at `~/Library/Application Support/ArtifactDock/dock.sock` (`ARTIFACT_DOCK_SOCKET` replaces it). The
+phone server reads one line from it (`src/main/phone/phoneDock.ts`):
+
+```jsonc
+{"cmd":"list","v":1}
+{"id":"…","ok":true,"protocol":1,"extVersion":"0.7.0","missingSupported":true,
+ "open":[{"key":"file:/…/a.html","url":"file:///…/a.html","title":"…","sub":"~/…","at":1793000000000,"pinned":true,"missing":false,"sessionId":"…"}],
+ "closed":[…]}
+```
+
+- The rows are in the side panel's order: both call `src/lib/dockList.js` in the extension. Do not sort them here.
+- Never send `open` from the phone path. It reloads the tab and updates `at`, which moves the row. The two reverted
+  extension releases (0.6.1, 0.6.2 — artifact-dock `e943f80`) came from reading "show it" as "move it".
+- An extension older than 0.7.0 ignores `list`; its host answers `ok:false` after 8,012 ms (measured), so main cuts at 2.5 s.
+- The top level of a reply must not have `cmd`: the host would take it for a command (`host:172`).
+- `artifact-open` adds `sessionId` from `CLIMANAGER_SESSION_ID` (`TerminalManager` sets it in every terminal). The last open that
+  carried one wins, and opening again without one keeps it.
+- Real round trip through Chromium, extension and host: median 0.9–2.7 ms for 6 rows (`tests/dock-list.e2e.mjs`).
+
 ## Research notes
 
 Background material gathered before the integration was built. Kept because it records what was

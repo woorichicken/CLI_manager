@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Laptop, MessageSquareWarning } from 'lucide-react'
+import { ChevronRight, Laptop, Layers, MessageSquareWarning } from 'lucide-react'
 import type { PhoneMe, PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { getMe, getSessions, PhoneApiError } from './api'
 import { AlertsMenu } from './AlertsMenu'
 import { DropletPill } from './DropletPill'
 import { dropletFor, nextSeen, waitingElsewhere, type Droplet, type SeenState } from './droplets'
 import { PairScreen } from './PairScreen'
+import { PhoneDockPanel } from './PhoneDockPanel'
 import { openPhoneFeedback, phoneFeedbackConfigured, PhoneFeedback } from './feedback/PhoneFeedback'
 import { PhoneSettingsMenu } from './PhoneSettingsMenu'
 import { HandoffNoticeToast } from '../components/ChatView/HandoffNoticeToast'
@@ -30,10 +31,20 @@ const EDGE_PX = 24
 const SWIPE_PX = 60
 const LENS_KEY = 'phone-session-lens'
 
-function readRoute(): { sessionId: string | null; view: SessionLens | null } {
+/** `history.state` of the entry opening the Dock panel pushed: ✕ can go back to where it was instead of adding one. */
+const DOCK_PANEL_ENTRY = 'phone-dock-panel'
+
+function readRoute(): { sessionId: string | null; view: SessionLens | null; dockPanel: boolean } {
     const params = new URLSearchParams(window.location.search)
     const view = params.get('view')
-    return { sessionId: params.get('session'), view: view === 'chat' || view === 'terminal' ? view : null }
+    return { sessionId: params.get('session'), view: view === 'chat' || view === 'terminal' ? view : null, dockPanel: params.get('panel') === 'dock' }
+}
+
+function addressWithDockPanel(open: boolean): string {
+    const params = new URLSearchParams(window.location.search)
+    if (open) params.set('panel', 'dock')
+    else params.delete('panel')
+    return params.toString() ? `/?${params}` : '/'
 }
 
 function rememberedLens(sessionId: string): SessionLens | null {
@@ -212,7 +223,26 @@ export function PhoneApp() {
         const url = params.toString() ? `/?${params}` : '/'
         if (replace) window.history.replaceState(null, '', url)
         else window.history.pushState(null, '', url)
-        setRoute({ sessionId, view })
+        setRoute({ sessionId, view, dockPanel: false })
+    }, [])
+
+    const openDockPanel = useCallback(() => {
+        setDrawer(false)
+        // on a wide screen the list stays tappable under an open panel: a second entry would make ✕ take two presses
+        if (readRoute().dockPanel) return
+        window.history.pushState(DOCK_PANEL_ENTRY, '', addressWithDockPanel(true))
+        setRoute(readRoute())
+    }, [])
+
+    const closeDockPanel = useCallback(() => {
+        if (window.history.state === DOCK_PANEL_ENTRY) {
+            // popstate reads the route again
+            window.history.back()
+            return
+        }
+        // reloaded at the panel's address: there is no entry of ours behind it
+        window.history.replaceState(null, '', addressWithDockPanel(false))
+        setRoute(readRoute())
     }, [])
 
     useEffect(() => {
@@ -264,6 +294,12 @@ export function PhoneApp() {
             if (target) return open(target)
         }
     }
+    const dockPanelOpen = route.dockPanel && me.dock === true
+    // A session name in the Dock: it takes the panel's place in history, so back returns to where the panel was opened.
+    const openDockSession = (sessionId: string): void => {
+        const target = data?.sessions.find((s) => s.id === sessionId)
+        if (target) navigate(target.id, target.agent ? rememberedLens(target.id) ?? 'chat' : 'terminal', true)
+    }
     const showList = wide || !session || drawer
     const feedback = phoneFeedbackAvailable(me, phoneFeedbackConfigured())
     const badge = data && chatSettings.alerts ? waitingElsewhere(data.sessions, session?.id ?? null) : 0
@@ -284,7 +320,7 @@ export function PhoneApp() {
             data-drawer={drawer ? 'open' : 'closed'}
             onTouchStart={(event) => {
                 const touch = event.touches[0]
-                edge.current = !wide && session && touch.clientX < EDGE_PX ? { x: touch.clientX, y: touch.clientY } : null
+                edge.current = !wide && session && !dockPanelOpen && touch.clientX < EDGE_PX ? { x: touch.clientX, y: touch.clientY } : null
             }}
             onTouchMove={(event) => {
                 const start = edge.current
@@ -329,6 +365,13 @@ export function PhoneApp() {
                             <span className="phone-spinner" aria-hidden="true" /> Refreshing…
                         </div>
                     )}
+                    {me.dock && (
+                        <button type="button" className="phone-dock-entry" data-testid="phone-dock-entry" onClick={openDockPanel}>
+                            <Layers size={15} className="phone-dock-entry-icon" aria-hidden="true" />
+                            <span className="phone-dock-entry-label">Dock</span>
+                            <ChevronRight size={15} className="phone-dock-entry-icon" aria-hidden="true" />
+                        </button>
+                    )}
                     <SessionList data={data} activeId={session?.id ?? null} onOpen={open} />
                 </aside>
             )}
@@ -354,6 +397,7 @@ export function PhoneApp() {
                 </main>
             )}
             {wide && !session && <main className="phone-main phone-empty">Pick a session.</main>}
+            {dockPanelOpen && <PhoneDockPanel onClose={closeDockPanel} onOpenSession={openDockSession} />}
             <HandoffNoticeToast />
             <PhoneFeedback me={me} sessionId={session?.id ?? null} lens={session ? (session.agent ? lens : 'terminal') : null} />
             {droplet && (

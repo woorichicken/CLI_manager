@@ -1,4 +1,4 @@
-import type { PhoneMe, PhonePairResult, PhonePushSubscription, PhoneSessionsResponse, PhoneTestPushResult } from '../../../shared/phone'
+import type { PhoneDockResponse, PhoneMe, PhonePairResult, PhonePushSubscription, PhoneSessionsResponse, PhoneTestPushResult } from '../../../shared/phone'
 import { PHONE_API } from '../../../shared/phone'
 
 /**
@@ -38,6 +38,13 @@ export const getMe = (): Promise<PhoneMe> => getJson<PhoneMe>(PHONE_API.me)
 export const pair = (code: string, label: string): Promise<PhonePairResult> => postJson<PhonePairResult>(PHONE_API.pair, { code, label })
 
 export const getSessions = (): Promise<PhoneSessionsResponse> => getJson<PhoneSessionsResponse>(PHONE_API.sessions)
+
+/** `request` passes a refusal with a `status` through as a body (the pairing screen reads those): a list it is not. */
+export async function getDock(): Promise<PhoneDockResponse> {
+    const list = await getJson<PhoneDockResponse>(PHONE_API.dock)
+    if (!Array.isArray(list?.open) || !Array.isArray(list?.closed)) throw new PhoneApiError(401, 'not_a_list', 'The Mac did not send a Dock list.')
+    return list
+}
 
 export const subscribePush = (subscription: PhonePushSubscription): Promise<unknown> => postJson(PHONE_API.pushSubscribe, { subscription })
 

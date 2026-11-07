@@ -27,7 +27,7 @@ export type PhoneRefusal =
 
 /** GET /api/phone/me — who this request is. */
 export type PhoneMe =
-    | { access: 'full'; role: PhoneRole; via: PhoneVia; login?: string; deviceLabel?: string; push?: PhonePushInfo; feedback?: PhoneFeedbackInfo; quickReplies?: string[]; quickRepliesSet?: boolean; pinLastMessage?: boolean }
+    | { access: 'full'; role: PhoneRole; via: PhoneVia; login?: string; deviceLabel?: string; push?: PhonePushInfo; feedback?: PhoneFeedbackInfo; quickReplies?: string[]; quickRepliesSet?: boolean; pinLastMessage?: boolean; dock?: true }
     | { access: 'none'; reason: PhoneRefusal }
 
 /** `push` is absent when the Mac's alert key file is malformed: the page shows no bell. */
@@ -75,6 +75,39 @@ export interface PhoneSessionsResponse {
     sessions: PhoneSession[]
     /** the All sessions folders, in order — the phone marks where each one's sessions start */
     sessionFolders: Array<{ id: string; name: string }>
+}
+
+/** One document in the Artifact Dock, as the extension's side panel lists it. */
+export interface PhoneDockItem {
+    /** opaque: the extension's own key holds the file's path, which stays on the Mac */
+    key: string
+    title: string
+    /** the folder, shortened to `~` by the extension (or «Claude artifact») */
+    sub: string
+    at: number
+    pinned: boolean
+    /** the file was deleted: shown, not opened */
+    missing: boolean
+    kind: 'file' | 'link'
+    /** links only, and only https on claude.ai / claude.site. A file's absolute path never reaches the phone. */
+    url?: string
+    /** the session that last opened it with `artifact-open` */
+    session: { id: string; name: string } | null
+    /** it names a session that has since closed */
+    sessionGone?: true
+}
+
+/**
+ * GET /api/phone/dock — the extension's list in its own order: the page draws it as it comes, with no sort of
+ * its own, so it cannot drift from the side panel. A 404 `dock_not_installed` means no Dock on this Mac.
+ */
+export interface PhoneDockResponse {
+    /** `chrome_off`: Chrome or the extension is not running · `outdated`: no answer, probably older than 0.7.0 · `error`: an unreadable answer */
+    status: 'live' | 'chrome_off' | 'outdated' | 'error'
+    /** when `open` and `closed` were read; the last list stays (in memory) when the status is not `live` */
+    asOf: number | null
+    open: PhoneDockItem[]
+    closed: PhoneDockItem[]
 }
 
 /** POST /api/phone/pair — a code the Mac shows in Settings › Phone. */
@@ -194,6 +227,7 @@ export const PHONE_API = {
     me: '/api/phone/me',
     pair: '/api/phone/pair',
     sessions: '/api/phone/sessions',
+    dock: '/api/phone/dock',
     terminal: '/api/phone/terminal',
     pushSubscribe: '/api/phone/push/subscribe',
     pushUnsubscribe: '/api/phone/push/unsubscribe',

@@ -17,6 +17,7 @@ import { DEFAULT_QUICK_REPLIES } from '../../shared/conversation'
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder, type SessionEntry } from '../../renderer/src/utils/sessionNavigation'
 import { workspacesInLoadOrder } from '../workspaceLoadOrder'
 import { PhoneDevices } from './PhoneDevices'
+import { dockHostFiles, dockLocation, PhoneDock } from './phoneDock'
 import { PhonePush } from './PhonePush'
 import { PhoneServer } from './PhoneServer'
 import { TailscaleStatus } from './tailscaleStatus'
@@ -165,6 +166,13 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
     // Tests count refused resize messages from main.
     const testCounters = process.env.CLIMANGER_TEST_USERDATA ? ((globalThis as { __phoneResizeRefused?: number }).__phoneResizeRefused = 0, true) : false
 
+    const dock = new PhoneDock({
+        ...dockLocation(process.env, process.platform, os.homedir()),
+        hostFiles: dockHostFiles(os.homedir()),
+        sessionName: (id) => findSession(id)?.name ?? null,
+        maskLine
+    })
+
     const queueHooks = phoneQueueHooks(deps.conversation)
     server = new PhoneServer({
         devices,
@@ -175,6 +183,7 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         statusPoller: poller,
         listSessions,
         sessionExists,
+        dock,
         conversation: deps.conversation,
         saveAttachment: (name, bytes) => saveChatAttachment(join(os.tmpdir(), 'climanager-chat'), name, bytes),
         maskLine,

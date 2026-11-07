@@ -1,0 +1,193 @@
+/* The Dock panel over the chat, and its line in the drawer. Same tokens and row rhythm as the session list. */
+
+.phone-dock-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 14px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+.phone-dock-entry:active {
+    background: var(--button-hover-bg);
+}
+.phone-dock-entry-icon {
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+}
+.phone-dock-entry-label {
+    flex: 1;
+    min-width: 0;
+}
+
+/* above the drawer (60) and the phone's banners, so nothing of the chat is tappable through it */
+.phone-dock-panel {
+    position: absolute;
+    top: env(safe-area-inset-top);
+    bottom: 0;
+    right: 0;
+    left: 0;
+    z-index: 65;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    background: #0f0f14;
+    color: var(--text-primary);
+}
+/* wide: the list stays beside it, as it stays beside a session */
+.phone-wide .phone-dock-panel {
+    left: 300px;
+}
+
+.phone-dock-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.phone-dock-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+.phone-dock-order {
+    flex: 1;
+    text-align: right;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.phone-dock-status {
+    padding: 8px 12px;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.08);
+}
+
+.phone-dock-list {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+    -webkit-overflow-scrolling: touch;
+}
+.phone-dock-section-title {
+    padding: 12px 12px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.phone-dock-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 48px;
+    padding-right: 8px;
+}
+.phone-dock-row-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 4px 9px 12px;
+    text-align: left;
+    color: inherit;
+    text-decoration: none;
+}
+.phone-dock-row-body:active {
+    background: var(--button-hover-bg);
+}
+.phone-dock-row-icon {
+    margin-top: 3px;
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+}
+.phone-dock-row-external {
+    margin-top: 4px;
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+}
+.phone-dock-row-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.phone-dock-row-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 14px;
+}
+.phone-dock-row-title > [data-testid='phone-dock-title'] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-dock-row-pin {
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+}
+.phone-dock-row-sub {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-dock-row-sub[data-expanded='true'] {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.phone-dock-row[data-missing='true'] .phone-dock-row-title > [data-testid='phone-dock-title'],
+.phone-dock-row[data-missing='true'] .phone-dock-row-sub {
+    opacity: 0.55;
+}
+.phone-dock-tag {
+    flex-shrink: 0;
+    padding: 0 5px;
+    border-radius: 4px;
+    font-size: 10px;
+    line-height: 16px;
+    color: #fca5a5;
+    background: rgba(248, 113, 113, 0.12);
+}
+
+/* the session's name: a thumb-sized target of its own beside the row */
+.phone-dock-session {
+    flex-shrink: 0;
+    max-width: 34%;
+    min-height: 36px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #93c5fd;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-dock-session:active {
+    background: var(--button-hover-bg);
+}
+.phone-dock-session-gone {
+    flex-shrink: 0;
+    max-width: 34%;
+    padding: 0 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
