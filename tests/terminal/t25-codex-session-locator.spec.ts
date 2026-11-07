@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { CodexSessionLocator, isInteractiveCodex, parseCodexResume, parseAgentProcesses, classifyAgentProcess, selectForegroundAgentProcess, findCodexProcess, readAgentProcesses, heldCodexRollouts } from '../../src/main/CodexSessionLocator'
+import { codexResumeFromArgv, CodexSessionLocator, isInteractiveCodex, parseCodexResume, parseAgentProcesses, classifyAgentProcess, selectForegroundAgentProcess, findCodexProcess, readAgentProcesses, heldCodexRollouts } from '../../src/main/CodexSessionLocator'
 import { CLISessionTracker } from '../../src/main/CLISessionTracker'
 
 const IDS = Array.from({ length: 8 }, (_, n) => `00000000-0000-0000-0000-${String(n + 1).padStart(12, '0')}`)
@@ -437,6 +437,51 @@ test.describe('T25 Codex session locator', () => {
             expect(tracker.codexResume(line)).toEqual({ id: IDS[0], baseCommand: `${prefix} -m resume` })
         }
         for (const prefix of ['node -e codex', 'node --require /x/bin/codex.js /x/other.js', 'vim codex', 'less /x/bin/codex']) expect(tracker.codexResume(`${prefix} resume ${IDS[0]}`)).toBeNull()
+    })
+
+    test('cross-review: a quoted option value stays one word, and is replayed as written', () => {
+        const tracker = new CLISessionTracker()
+        const line = `codex -c 'model = "gpt-5"' resume ${IDS[0]}`
+        expect(tracker.codexResume(line)).toEqual({ id: IDS[0], baseCommand: `codex -c 'model = "gpt-5"'` })
+        expect(tracker.codexResume(`cd /tmp && ${line}`)).toEqual({ id: IDS[0], baseCommand: `cd /tmp && codex -c 'model = "gpt-5"'` })
+        expect(tracker.codexResume(`echo 'a; b' && codex resume ${IDS[0]}`)).toEqual({ id: IDS[0], baseCommand: `echo 'a; b' && codex` })
+        expect(tracker.codexResume(`codex 'resume ${IDS[0]}'`), 'a prompt that names an id is not a resume').toBeNull()
+        expect(tracker.codexResume(`codex resume ${IDS[0]} | tee log`)).toBeNull()
+        expect(tracker.codexResume(`codex -c 'unfinished resume ${IDS[0]}`)).toBeNull()
+    })
+
+    test('cross-review: ps joins argv with spaces, and the running resume id is still read from its end', () => {
+        expect(codexResumeFromArgv(`/opt/homebrew/bin/codex -c model = "gpt-5" resume ${IDS[0]}`)).toBe(IDS[0])
+        expect(codexResumeFromArgv(`/opt/homebrew/bin/codex resume ${IDS[0]} --no-alt-screen`)).toBe(IDS[0])
+        expect(codexResumeFromArgv(`node /opt/lib/codex.js resume ${IDS[0]}`)).toBe(IDS[0])
+        expect(codexResumeFromArgv(`/usr/bin/vim resume ${IDS[0]}`), 'another program').toBeNull()
+        expect(codexResumeFromArgv(`/opt/homebrew/bin/codex resume ${IDS[0]} then more words`), 'words after it are a prompt').toBeNull()
+        expect(codexResumeFromArgv('/opt/homebrew/bin/codex --no-alt-screen')).toBeNull()
+    })
+
+    test('cross-review: a newline inside a paste is text on the line, across chunks, not a submit', () => {
+        const tracker = new CLISessionTracker()
+        tracker.processInput('t', '\x1b[200~touch DRAFT\r', () => {})
+        expect(tracker.getPendingInput('t').text).not.toBe('')
+        expect(tracker.getPendingInput('t').uncertain, 'a pasted line break cannot be followed exactly').toBe(true)
+        tracker.processInput('t', 'second line\r\x1b[201~', () => {})
+        expect(tracker.getPendingInput('t').text).toContain('second line')
+        // the person's own Enter after the paste ends is the submit
+        tracker.processInput('t', '\r', () => {})
+        expect(tracker.getPendingInput('t')).toEqual({ text: '', uncertain: false })
+        // a paste cut off by Ctrl+C does not hold the next line's Enter hostage
+        tracker.processInput('t', '\x1b[200~partial\r', () => {})
+        tracker.processInput('t', '\x03', () => {})
+        tracker.processInput('t', 'ls\r', () => {})
+        expect(tracker.getPendingInput('t')).toEqual({ text: '', uncertain: false })
+    })
+
+    test('cross-review: a resume named in a paste is not started by a newline inside that paste', () => {
+        const tracker = new CLISessionTracker()
+        const seen: string[] = []
+        tracker.onCodexResumed = (_terminal, id) => seen.push(id)
+        tracker.processInput('t', `\x1b[200~codex resume ${IDS[0]}\r\x1b[201~`, () => {})
+        expect(seen).toEqual([])
     })
 
     test('N6 known remote and local-provider option values survive resume parsing', () => {

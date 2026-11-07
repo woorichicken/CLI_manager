@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
+import { lastCommandWords } from '../shared/agentCommand'
 import { isInteractiveCodex, parseCodexResumePosition } from './CodexSessionLocator'
 
 export interface CLIToolConfig {
@@ -69,6 +70,8 @@ export class CLISessionTracker {
     private pendingInput = new Map<string, { text: string; uncertain: boolean }>()
     private terminalsWithInput = new Set<string>()
     private protocolInput = new Map<string, ProtocolInput>()
+    /** Terminals inside a bracketed paste. It can span onData chunks, and a line break inside it submits nothing. */
+    private pasting = new Set<string>()
     private cliTools: CLIToolConfig[]
     /** Shell alias -> what it expands to, so `cldy` can be recognised as claude. */
     private aliases: Map<string, string> = new Map()
@@ -162,14 +165,28 @@ export class CLISessionTracker {
 
     /** Observe paste for resume candidates without enabling Claude command rewriting on paste. */
     private observeInput(terminalId: string, data: string): void {
-        const clean = data.replace(/\x1b\[(?:200|201)~/g, '')
-        if (clean.includes('\x1b')) {
+        if (data.replace(/\x1b\[(?:200|201)~/g, '').includes('\x1b')) {
             const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
             this.pendingInput.set(terminalId, { ...pending, uncertain: true })
             this.resumeBuffers.delete(terminalId)
             return
         }
-        for (const char of clean) {
+        for (const part of data.split(/(\x1b\[20[01]~)/)) {
+            if (part === '\x1b[200~') this.pasting.add(terminalId)
+            else if (part === '\x1b[201~') this.pasting.delete(terminalId)
+            else this.observeTyped(terminalId, part)
+        }
+    }
+
+    private observeTyped(terminalId: string, typed: string): void {
+        for (const char of typed) {
+            if ((char === '\r' || char === '\n') && this.pasting.has(terminalId)) {
+                // Still on the line, waiting for Enter, in a shape the buffer cannot follow.
+                const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
+                this.pendingInput.set(terminalId, { text: `${pending.text}\n`.slice(-16_384), uncertain: true })
+                this.resumeBuffers.delete(terminalId)
+                continue
+            }
             if (char === '\r' || char === '\n') {
                 const resume = this.codexResume(this.resumeBuffers.get(terminalId) ?? '')
                 this.resumeBuffers.delete(terminalId)
@@ -178,6 +195,7 @@ export class CLISessionTracker {
                 continue
             }
             if (char === '\x03') {
+                this.pasting.delete(terminalId)
                 this.resumeBuffers.delete(terminalId)
                 this.pendingInput.delete(terminalId)
                 continue
@@ -325,20 +343,21 @@ export class CLISessionTracker {
 
     /** Recognise explicit UUID resumes, retaining the alias and preceding setup commands. */
     codexResume(commandLine: string): { id: string; baseCommand: string } | null {
-        const lastSegment = commandLine.split(/&&|;/).pop()?.trim() ?? commandLine
-        const tokens = lastSegment.split(/\s+/).filter(Boolean)
-        if (!tokens.length) return null
+        const last = lastCommandWords(commandLine)
+        if (!last) return null
+        const tokens = last.words.map((word) => word.text)
         const name = tokens[0].split('/').pop() || tokens[0]
         const expansion = this.aliases.get(name)
-        const effective = expansion ? `${expansion} ${tokens.slice(1).join(' ')}`.trim().split(/\s+/) : tokens
+        const effective = expansion ? [...expansion.trim().split(/\s+/), ...tokens.slice(1)] : tokens
         const result = parseCodexResumePosition(effective)
         if (!result) return null
         const expansionLength = expansion?.trim().split(/\s+/).length ?? 1
         const resumeIndex = result.resumeIndex - (expansionLength - 1)
         if (resumeIndex < 0) return null
-        const baseSegment = [...tokens.slice(0, resumeIndex), ...tokens.slice(resumeIndex + 2)].join(' ')
-        const prefix = commandLine.slice(0, commandLine.lastIndexOf(lastSegment))
-        return { id: result.id, baseCommand: prefix + baseSegment }
+        // as the person wrote them: a quoted option value is replayed quoted
+        const raw = last.words.map((word) => word.raw)
+        const baseSegment = [...raw.slice(0, resumeIndex), ...raw.slice(resumeIndex + 2)].join(' ')
+        return { id: result.id, baseCommand: commandLine.slice(0, last.start) + baseSegment }
     }
 
     /**
@@ -358,6 +377,7 @@ export class CLISessionTracker {
         this.resumeBuffers.delete(terminalId)
         this.pendingInput.delete(terminalId)
         this.protocolInput.delete(terminalId)
+        this.pasting.delete(terminalId)
         this.terminalsWithInput.delete(terminalId)
     }
 

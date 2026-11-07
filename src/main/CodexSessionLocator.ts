@@ -63,6 +63,8 @@ export function parseCodexResume(tokens: string[]): { id: string; baseCommand: s
     return parsed ? { id: parsed.id, baseCommand: parsed.baseCommand } : null
 }
 
+const RESUME_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+
 export function parseCodexResumePosition(tokens: string[]): { id: string; baseCommand: string; resumeIndex: number } | null {
     const executable = agentExecutable(tokens)
     if (executable?.kind !== 'codex') return null
@@ -70,13 +72,32 @@ export function parseCodexResumePosition(tokens: string[]): { id: string; baseCo
         const token = tokens[i]
         if (FLAGS_WITH_VALUE.has(token)) { if (tokens[i + 1] === undefined) return null; i++; continue }
         if (token.startsWith('-')) continue
-        if (token !== 'resume' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(tokens[i + 1] ?? '')) return null
+        if (token !== 'resume' || !RESUME_ID.test(tokens[i + 1] ?? '')) return null
         // A second positional word is a new prompt. Do not save it as part of the command to replay.
         for (let j = i + 2; j < tokens.length; j++) {
             if (FLAGS_WITH_VALUE.has(tokens[j])) { if (tokens[j + 1] === undefined) return null; j++; continue }
             if (!tokens[j].startsWith('-')) return null
         }
         return { id: tokens[i + 1], baseCommand: [...tokens.slice(0, i), ...tokens.slice(i + 2)].join(' '), resumeIndex: i }
+    }
+    return null
+}
+
+/**
+ * The id a running Codex resumed, read from `ps`. It prints argv joined by spaces, so an option value with spaces looks
+ * like several words and the front of the line cannot be walked: only the end can be read. For confirming a resume the
+ * person already typed, not for discovering one.
+ */
+export function codexResumeFromArgv(argv: string): string | null {
+    const tokens = argv.trim().split(/\s+/)
+    if (agentExecutable(tokens)?.kind !== 'codex') return null
+    for (let i = tokens.length - 2; i > 0; i--) {
+        if (tokens[i] !== 'resume' || !RESUME_ID.test(tokens[i + 1])) continue
+        for (let j = i + 2; j < tokens.length; j++) {
+            if (FLAGS_WITH_VALUE.has(tokens[j])) { if (tokens[j + 1] === undefined) return null; j++; continue }
+            if (!tokens[j].startsWith('-')) return null
+        }
+        return tokens[i + 1]
     }
     return null
 }

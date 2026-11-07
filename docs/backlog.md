@@ -16,6 +16,7 @@ Any session may append to `## Open
 ### D4 통합 뒤 명령 판정·이어짐 입력·복원 브리지 후속 (N16~N20)
 - Discovered: 2026-11-08 D4 재검수 3회차(`review-claude-3.md`).
 - Evidence: `shared/agentCommand.ts`는 프롬프트 뒤 옵션(N17)을 버리고, 불명확한 마지막 구간에서 준비/감싸는 명령도 입력에서 빠지며(N18), 앞 구간에 있는 에이전트 프롬프트는 남을 수 있다(N19). `preload.writeRestoredTerminal(id, data)`는 임의 글을 받는 형태다(N20, 권한 문제는 아님). `TerminalMirror.hasContinuationPrompt`는 cmdand/cmdor/if/subsh/cursh/array/복합·사용자 PROMPT2를 모두 알지 못한다(N16).
+- 걸러지지 않은 터미널 응답(예: DECRQM)이 셸 프로필 실행 중에 오면 사람 입력으로 세어(`CLISessionTracker.processInput` 의 `terminalsWithInput`) 재시작 때 resume 을 안 칠 수 있다. 코드 근거이고 재지 않았다(Claude 5회차 검수, 2026-11-08).
 - Why deferred: 기획 세션 fix-3 지시로 통합 이후 범위. 이번에는 판정/패턴을 늘리지 않고 수동 Connect의 Enter를 제거했다. 따라서 판정이 빗나가 글이 붙어 보이더라도 Connect가 Enter를 보내 실행하지는 않는다. 세션 재시작은 별도의 기존 Enter 동작을 유지한다.
 - Trigger: D1~D4 통합·실기기 확인 뒤 후속 명령/복원 계약을 재설계할 때.
 - Fix direction: N17 뒤 옵션/원문 보존, N18 준비 구간과 마지막 도구 fallback 분리, N19 앞 구간 에이전트 재전송 차단, N20 main의 restoreSession(id)로 입력 조립 범위 축소, N16 이어짐/사용자 PROMPT2 한계 정리. 이번 커밋에서 해당 패턴과 판정은 바꾸지 않는다.

@@ -122,6 +122,20 @@ function lex(command: string): Lexed {
     return { tokens, complete: true }
 }
 
+/**
+ * The last command of a shell line as words: `text` to judge, `raw` to replay as written. Null when the line is unfinished
+ * or that command pipes or redirects: what runs is then not just this command.
+ */
+export function lastCommandWords(line: string): { words: Pick<Token, 'text' | 'raw'>[]; start: number } | null {
+    const { tokens, complete } = lex(line)
+    if (!complete) return null
+    let first = 0
+    for (let i = 0; i < tokens.length; i++) if (tokens[i].kind === 'separator') first = i + 1
+    const words = tokens.slice(first)
+    if (words.length === 0 || words.some((token) => token.kind !== 'word')) return null
+    return { words: words.map(({ text, raw }) => ({ text, raw })), start: words[0].start }
+}
+
 function commandStart(tokens: Token[]): number {
     let start = 0
     for (let i = 0; i < tokens.length; i++) if (tokens[i].kind === 'separator') start = i + 1

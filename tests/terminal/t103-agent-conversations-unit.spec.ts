@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { AgentConversations, normalizeAgentCommand, commandAgent } from '../../src/main/agentConversations'
+import { AgentConversationError, AgentConversations, normalizeAgentCommand, commandAgent } from '../../src/main/agentConversations'
 import { decideAgentCommand } from '../../src/shared/agentCommand'
 import { claudeProjectSlug } from '../../src/main/TranscriptReader'
 import type { AgentConversationFront } from '../../src/shared/conversation'
@@ -381,6 +381,73 @@ test.describe('T103 agent conversations', () => {
         await service.connect('terminal', { agent: 'codex', id: uuid(1) })
         expect(writes).toEqual([])
     })
+    test('cross-review: two connects at once run one after the other, and the second finds the line taken', async () => {
+        codex(1)
+        codex(2)
+        const first = uuid(1)
+        const second = uuid(2)
+        const connection = new AgentConversations({
+            sessions: () => sessions,
+            foreground: async () => {
+                await new Promise((resolve) => setTimeout(resolve, 20))
+                return front
+            },
+            update: (id, values) => Object.assign(sessions.find((s) => s.id === id)!, values),
+            write: (_id, data) => writes.push(data),
+            codexHome: () => path.join(root, 'codex'),
+            claudeConfigDir: () => path.join(root, 'claude'),
+            now: () => now,
+            beforeResume: async () => {},
+            beforeInput: () => {
+                if (writes.length) throw new AgentConversationError(409, 'input_busy', 'Terminal input is not empty.')
+            }
+        })
+        const results = await Promise.allSettled([
+            connection.connect('terminal', { agent: 'codex', id: first, resume: true }),
+            connection.connect('terminal', { agent: 'codex', id: second, resume: true })
+        ])
+        expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected'])
+        expect(((results[1] as PromiseRejectedResult).reason as AgentConversationError).code).toBe('input_busy')
+        expect(writes, 'never two commands on one line').toEqual([`codex resume ${first}`])
+        expect(sessions[0].cliSessionId, 'the saved id is what was typed').toBe(first)
+    })
+
+    test('cross-review: text typed during the last foreground check stops the command before anything is saved', async () => {
+        codex(1)
+        const id = uuid(1)
+        let typed = false
+        let checks = 0
+        const connection = new AgentConversations({
+            sessions: () => sessions,
+            foreground: async () => {
+                // the second check is the last await before typing: the person types during it
+                if (++checks === 2) typed = true
+                return front
+            },
+            update: (session, values) => Object.assign(sessions.find((s) => s.id === session)!, values),
+            write: (_id, data) => writes.push(data),
+            codexHome: () => path.join(root, 'codex'),
+            claudeConfigDir: () => path.join(root, 'claude'),
+            now: () => now,
+            beforeResume: async () => {},
+            beforeInput: () => {
+                if (typed) throw new AgentConversationError(409, 'input_busy', 'Terminal input is not empty.')
+            }
+        })
+        await expect(connection.connect('terminal', { agent: 'codex', id, resume: true })).rejects.toMatchObject({ code: 'input_busy' })
+        expect(writes).toEqual([])
+        expect(sessions[0].cliSessionId).toBeUndefined()
+    })
+
+    test('cross-review: a failed connect does not stop the next one on that terminal', async () => {
+        codex(1)
+        const id = uuid(1)
+        resumeError = new AgentConversationError(409, 'input_busy', 'busy')
+        await expect(service.connect('terminal', { agent: 'codex', id, resume: true })).rejects.toMatchObject({ code: 'input_busy' })
+        resumeError = null
+        await expect(service.connect('terminal', { agent: 'codex', id, resume: true })).resolves.toMatchObject({ status: 'connected', typed: true })
+    })
+
     test('rechecks shell immediately before input and leaves the store untouched on failure', async () => {
         codex(1)
         let calls = 0

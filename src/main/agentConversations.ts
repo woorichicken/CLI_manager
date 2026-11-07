@@ -37,6 +37,8 @@ export interface AgentConversationsDeps {
     beforeConnect?: (sessionId: string) => void
     /** Flushes and rejects questions or a nonempty input line before any mutation. */
     beforeResume: (sessionId: string) => Promise<void>
+    /** The line is still empty, asked with nothing awaited before the command is typed. Throws when it is not. */
+    beforeInput?: (sessionId: string) => void
     /** Retained for source compatibility; manual connect never invokes startup polling. */
     waitForAgent?: (sessionId: string, agent: ConversationAgent, conversationId: string) => Promise<boolean>
     resolveAlias?: (name: string) => string | undefined
@@ -55,6 +57,8 @@ const matchesId = (name: string, id: string): boolean => name.toLowerCase().ends
 
 /** Lists local conversations and validates manual links, shared by IPC and the Control API. */
 export class AgentConversations {
+    private readonly connecting = new Map<string, Promise<unknown>>()
+
     constructor(private readonly deps: AgentConversationsDeps) {}
 
     async list(sessionId: string): Promise<AgentConversationList> {
@@ -104,7 +108,22 @@ export class AgentConversations {
         }
     }
 
-    async connect(sessionId: string, input: AgentConversationConnectInput, hooks: { beforeWrite?: () => void; baseCommand?: string } = {}): Promise<AgentConversationConnectResult> {
+    /**
+     * One at a time per terminal: each step below awaits disk and `ps`, and two running together would both pass the
+     * empty-line check and type onto the same line.
+     */
+    connect(sessionId: string, input: AgentConversationConnectInput, hooks: { beforeWrite?: () => void; baseCommand?: string } = {}): Promise<AgentConversationConnectResult> {
+        const previous = this.connecting.get(sessionId) ?? Promise.resolve()
+        const run = previous.catch(() => undefined).then(() => this.connectNow(sessionId, input, hooks))
+        this.connecting.set(sessionId, run)
+        const done = (): void => {
+            if (this.connecting.get(sessionId) === run) this.connecting.delete(sessionId)
+        }
+        run.then(done, done)
+        return run
+    }
+
+    private async connectNow(sessionId: string, input: AgentConversationConnectInput, hooks: { beforeWrite?: () => void; baseCommand?: string }): Promise<AgentConversationConnectResult> {
         const session = this.session(sessionId)
         if (!input || (input.agent !== 'claude' && input.agent !== 'codex') || typeof input.id !== 'string' || !UUID.test(input.id)) {
             throw new AgentConversationError(400, 'invalid_id', 'Choose an agent conversation with a valid UUID.')
@@ -138,6 +157,8 @@ export class AgentConversations {
         }
         // Recheck the mutable store after the final await, before persisting or typing.
         this.session(sessionId)
+        // The person can type during the checks above, and nothing awaits between here and the command.
+        if (input.resume) this.deps.beforeInput?.(sessionId)
         const conflict = this.linkedTo(sessionId, input.agent, input.id)
         if (conflict) throw new AgentConversationError(409, 'linked_elsewhere', 'The conversation is linked to another terminal.', { linkedTo: conflict })
         this.deps.update(sessionId, { cliSessionId: item.id, cliToolName: input.agent, cliCommand })

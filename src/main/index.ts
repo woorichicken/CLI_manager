@@ -18,7 +18,7 @@ import { TerminalManager } from './TerminalManager'
 import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
 import { CLISessionTracker } from './CLISessionTracker'
-import { CodexSessionLocator } from './CodexSessionLocator'
+import { codexResumeFromArgv, CodexSessionLocator } from './CodexSessionLocator'
 import { AgentConversations, AgentConversationError } from './agentConversations'
 import { decideAgentCommand } from '../shared/agentCommand'
 import type { AgentConversationConnectInput } from '../shared/conversation'
@@ -455,6 +455,10 @@ const agentConversations = new AgentConversations({
         const pending = cliSessionTracker.getPendingInput(id)
         const continued = terminalMirror.hasContinuationPrompt(id)
         if (pending.text || pending.uncertain || continued) throw new AgentConversationError(409, 'input_busy', 'Terminal input is not empty or was edited. Finish or cancel it with Enter or Ctrl+C before connecting.')
+    },
+    beforeInput: (id) => {
+        const pending = cliSessionTracker.getPendingInput(id)
+        if (pending.text || pending.uncertain) throw new AgentConversationError(409, 'input_busy', 'Terminal input is not empty or was edited. Finish or cancel it with Enter or Ctrl+C before connecting.')
     },
     waitForAgent: async (id, agent, conversationId) => {
         const until = Date.now() + 3000
@@ -1381,8 +1385,7 @@ app.whenReady().then(async () => {
             while (Date.now() < until && resumeChecks.get(terminalId) === token) {
                 const front = await terminalManager.foregroundAgent(terminalId)
                 if (front.kind === 'codex') {
-                    const actual = cliSessionTracker.codexResume(front.argv ?? '')
-                    if (actual?.id.toLowerCase() === cliSessionId.toLowerCase()) {
+                    if (codexResumeFromArgv(front.argv ?? '')?.toLowerCase() === cliSessionId.toLowerCase()) {
                         const session = (store.get('workspaces') as Workspace[]).flatMap((w) => w.sessions).find((s) => s.id === terminalId)
                         // A prepared fallback command must not replace the original stored options.
                         if (session?.cliToolName === 'codex' && session.cliSessionId?.toLowerCase() === cliSessionId.toLowerCase()) return
