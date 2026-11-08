@@ -389,6 +389,12 @@ test('T100 Chrome off, an old extension, a broken answer: the band says so and t
     await dock.start()
     const { app, base } = await launch({ socket: dock.file })
     const { phone, cdp } = await openPhone(app, `${base}/?session=${CLAUDE}&view=chat`, 't100-states')
+    // The time is in the phone's own format. A Korean phone writes 「오전 10:55」: the check must not assume digits come first
+    // (v1.28.0 release gate, 11-08). This page runs Korean whatever the Mac running the tests is set to.
+    await cdp.send('Emulation.setLocaleOverride', { locale: 'ko-KR' })
+    await phone.reload()
+    await phone.waitForLoadState('domcontentloaded')
+    expect(await phone.evaluate(() => new Date(Date.UTC(2026, 10, 8, 1, 55)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }))).toBe('오전 01:55')
     await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
     await tap(cdp, phone, '[data-testid="phone-menu-button"]')
     await tap(cdp, phone, '[data-testid="phone-dock-entry"]')
@@ -413,7 +419,7 @@ test('T100 Chrome off, an old extension, a broken answer: the band says so and t
     fs.rmSync(dock.file, { force: true })
     const status = panel.getByTestId('phone-dock-status')
     await expect(status).toHaveAttribute('data-status', 'chrome_off', { timeout: 15_000 })
-    await expect(status).toContainText(/Chrome is off · list from \d/)
+    await expect(status).toContainText(/Chrome is off · list from .*\d/)
     await expect.poll(() => rowTitles(panel, 'open')).toContain('Newest report')
     await shot(phone, 't100-chrome-off-390')
 
