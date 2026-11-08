@@ -157,10 +157,12 @@ rules stay in the root; this file is the inventory.
   `X-Forwarded-For` 가 tailnet 주소면 주인(치기). 그 밖은 짝지은 기기 쿠키(`climanager_phone`, HttpOnly·SameSite=Strict)만 —
   `PhoneDevices`: 6자리 · 10분 · 5회 틀리면 폐기 · 「can type / view only」 · 해시만 `userData/phone/devices.json`(0600). Host 는 loopback·`*.ts.net`·
   tailnet 주소만(421), 바꾸는 요청·소켓은 Origin 이 같은 곳만(403)
-- **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/sessions`(세션 한 줄 목록 + 세션 폴더 이름 +
+- **경로**(`shared/phone.ts` `PHONE_API`): `GET /api/phone/me` · `POST /api/phone/pair` · `GET /api/phone/dock`(Artifact Dock 목록, 아래 **Dock**) · `GET /api/phone/sessions`(세션 한 줄 목록 + 세션 폴더 이름 +
   상태 점·질문 줄) · `/api/phone/chat/<id>/<conversation|send|answer|interrupt|cancel-queued|discard-queued|send-queued-now|attach|image|tool-output|commands>`
-  · WS `/api/phone/chat/<id>/events`(revision) · WS `/api/phone/terminal?session=<id>` · `POST /api/phone/push/<subscribe|unsubscribe|test>`.
+  · WS `/api/phone/chat/<id>/events`(revision) · WS `/api/phone/terminal?session=<id>` · `POST /api/phone/push/<subscribe|unsubscribe|test>`
+  · `GET /api/phone/file?session=<id>&path=<절대 경로>`(무엇을 어떻게 그릴지) · `GET /api/phone/file/raw?…[&download=1]`(바이트).
   만들기·지우기·이름 바꾸기·크기 바꾸기 경로는 없다. 치는 경로는 `drive` 만, 그리고 세션 사건 기록에 `phone-input`(무엇을 했는지만, 글은 안 남김)
+- **Dock**(`phoneDock.ts` · `PhoneDockPanel.tsx`): 목록 원본은 Chrome 확장이다. main 이 `dock.sock` 에 고정 바이트 `{"cmd":"list","v":1}\n` 만 보내 받은 행을 **받은 순서 그대로** 넘기고, 폰도 정렬 코드가 없다(확장의 `src/lib/dockList.js` 를 사이드패널과 `list` 가 같이 쓴다). 폰 입력은 소켓에 안 간다, `open` 은 절대 안 보낸다(새로고침·`at` 변경으로 순서가 바뀐다). `status`: `live` · `chrome_off`(ENOENT·ECONNREFUSED) · `outdated`(2.5초 무응답·`ok:false`·프로토콜 다름, 30초 다시 안 묻음 — 0.6.x 호스트는 8초 뒤에야 답한다) · `error`(깨진 응답·2MB 초과). 마지막 목록은 메모리에만 두고 시각(`asOf`)과 함께 보인다. 동시 요청은 한 번, 1초 재사용. 폰 `key` 는 확장 키의 해시다 — 확장 키에 절대 경로가 들어 있어 그대로 내보내지 않는다. 파일 경로는 `docFor(key)` 로 main 안에서만 푼다(`.html/.htm/.xhtml`, 지워진 문서 거절). 설치 판정은 호스트 등록 파일 5곳·소켓, 시험은 `ARTIFACT_DOCK_SOCKET` 없으면 실제 소켓을 안 열고 404. 보기 전용 기기도 읽는다. 패널은 `?panel=dock` + `history` 항목 하나, 아래 세션은 마운트된 채라 닫으면 스크롤·입력 글이 그대로다. 세션 이름은 확장 기록의 `sessionId`(`artifact-open` 이 `CLIMANAGER_SESSION_ID` 를 싣는다)로 그때그때 찾는다
 - **Chat**: 같은 프로세스에서 `ConversationService` 를 부른다(IPC 핸들러와 같은 함수). 질문 카드 글(화면에서 읽은 것)은 `maskSecretLines` 를 거친다.
   변경 알림은 `ConversationService.onChange` → `phoneConversationListeners`
 - **Terminal**: `TerminalManager.attachRemote` — 있는 pty 에만 붙고(만들지 않음) 불변식 6 순서(flush → hold → 스냅샷 → 그 뒤 출력)를 따르되 서버가
@@ -172,6 +174,10 @@ rules stay in the root; this file is the inventory.
 - **폰 페이지**: 렌더러 두 번째 Vite 입구 `src/renderer/phone.html` → `src/renderer/src/phone/`(목록·서랍(768px 아래)·「Chat | Terminal」·키 바·입력줄·
   짝짓기·알림). Chat 은 데스크톱 `ChatView` 에 `phoneChatTransport`(fetch + WS)를 준다. 서버는 `out/renderer/.vite/manifest.json` 으로 phone.html 이
   싣는 청크만 낸다(데스크톱 입구·피드백 위젯 청크는 404). 매니페스트·서비스 워커·아이콘은 `src/renderer/public/phone/`
+- **문서 보기·코멘트**(결정 [`0011`](../decisions/0011-phone-documents-in-a-sandboxed-frame.md)): Chat 의 `.html` 링크(줄 번호 없음) → `PhoneDocPanel`(`SessionScreen` 이 고른다, `report.html:42` 는 코드 보기) → `POST /api/phone/doc/open`
+  (`phoneDoc.ts`, 판정은 `openGrantedFile`, 상한 64MiB, `drive` 만) → 토큰 주소 `GET /doc/<token>/<path>` 를 `sandbox="allow-scripts allow-forms allow-modals"` 칸(`PhoneDocFrame`)에서 연다. `/api/` 밖이다 — Chromium 은 칸의 사진 요청에 쿠키를 안 싣는다.
+  문서 앞에 `phoneDocBridge.ts` 를 끼워 `localStorage`·클립보드·`execCommand('copy')`·`a.download` 를 부모로 보내는 메시지로 바꾼다(키트 수정 없음, 옛 보고서도 동작). 받은 글은 `DocSendSheet` 에 전부 보이고 **Send 를 눌러야** 기존 `chat/<id>/send` 로 간다
+  (칸 `inert` · 열린 동안 새 메시지 무시 · 600ms 비활성). 코멘트 저장은 폰 `localStorage`(`phone-doc-store:<폴더 해시>:<문서>`, 문서당 256KB · 50문서)이고 주소 조각 `#seed=` 로 되돌린다(링크로 온 페이지는 저장값을 실어 다시 부른다). 순수 함수는 `docMessages.ts`. Dock 행도 같은 패널로 연다(`PhoneApp.tsx`, 입력 가능 기기만): 폰은 `POST doc/open {dock:key}` · `file?dock=key` 로 **키만** 보내고 main 이 `docFor` 로 경로를 푼 뒤 그 파일 하나만 4단계로 허락한다(`dockFileSource`, 나머지 단계는 그대로). 코멘트 받는 세션은 행의 세션(에이전트일 때), 없으면 시트에서 고른다. 지워진 행·링크 행은 안 열린다. 세션 없는 문서의 Mac 파일 링크는 열 대화가 없어 안내만 뜬다.
 - 끄기: 설정 스위치 · 사이드바 「Phone on · n connected」의 ✕ · 앱 종료 → 서버 닫힘 + 모든 소켓 끊김. 기기 끊기는 그 기기 소켓·알림까지
 - **세션 목록 순서 = Mac 사이드바 「All sessions」(List) 위→아래**(2회차). 따로 정렬하지 않는다 — main(`phoneSetup.listSessions`)이 사이드바의
   함수를 그대로 부른다: 사이드바가 세션을 그리는 순서(`sessionsInSidebarOrder` — 렌더러가 `sidebar-session-order` 로 알려 준 id 순서, 작업 공간
@@ -189,10 +195,16 @@ rules stay in the root; this file is the inventory.
 - **터치 화면**(3회차): `(pointer: coarse)` 면 `ChatView touch` — 열 때 입력칸 포커스 안 줌(키보드), Return = 줄바꿈·보내기는 버튼(ovis Composer). 데스크톱 그대로.
   키 바: Esc Tab ⇧Tab(CSI Z — Claude Code 모드 바꾸기) Ctrl ↑↓←→ ^C ⏎ 열 키가 폭을 똑같이 나눔, 화살표는 길게 누르면 400ms 뒤 50ms 마다 반복(ovis keyRepeat)
 - **재연결**(3회차): 터미널·Chat 소켓 모두 250ms → 5s 로 늘리는 간격(10s 버틴 연결 뒤 처음부터), 화면·네트워크로 돌아오면(`visibilitychange`·`online`·`pageshow`) 바로
+- **파일**([`../decisions/0010-phone-reads-only-what-the-chat-names.md`](../decisions/0010-phone-reads-only-what-the-chat-names.md), `phoneFiles.ts`·`phoneFileAccess.ts`): 입력 가능 기기만. 그 세션 Chat 에
+  링크로 보이는 경로(`ChatView/chatMentions.ts` `mentionedPaths` — 화면과 같은 함수, 요청마다 계산)만 부탁할 수 있고, Mac 이 8단계로 판정한다: 역할 → `Sec-Fetch-Site` → 경로 모양(`..` 사라짐) →
+  허락 출처 → `realpath`(libuv native) → 홈·임시·세션 폴더 → 금지 목록(요청·진짜 경로 둘 다, 소문자·NFC) → `O_NONBLOCK` 열기 + 일반 파일. 전부 비동기. 다른 경로(문서·Dock)는 `openGrantedFile(source, access)` 를 그대로 쓰고 4단계의 `grants` 만 준다.
+  응답 `PhoneFileInfo`: `image`(10,000,000B 까지) · `text`·`html`(500,000B 까지, `maskSecretLines` `joinLines: false` — 줄 번호 그대로) · `download`(시스템 종류·앞 8KB 에 NUL·상한 초과). 받기 500MiB, 넘으면 413.
+  raw: `CSP: sandbox` · `CORP: same-origin` · `no-store`, 사진만 `inline`, HTML 은 `application/octet-stream` + `attachment`. 철회하면 진행 중 받기도 끊는다. 사건 기록 `phone-file`(종류·크기만, 경로 없음).
+  패널 `PhoneFilePanel.tsx`: `SessionScreen` 이 대화를 언마운트하지 않고 위에 얹는다(z 65 — 서랍 60 위, 알약 70 아래). 열 때 `pushState(같은 주소)`, 뒤로 가기로 닫힘, 왼쪽 끝 스와이프를 막는다
 - 회귀: `t75-phone-unit.spec.ts`(접근 표·짝짓기·알림 규칙·키 바·카드 가리기·목록 순서·droplet·길게 누르기·재연결 간격·감싸기 줄) · `t76-phone.spec.ts`(앱 + 폰 창 — 가짜 Tailscale 상태 파일
   `CLIMANAGER_PHONE_TAILSCALE_STATUS`, 알림은 `CLIMANAGER_PHONE_PUSH_LOG`, 둘 다 시험 userData 일 때만 읽는다) · `t77-phone-text-size.spec.ts`
   (글씨 크기 세 모드 측정·확대 기억·Mac PTY 크기 그대로) · `t78-phone-quality.spec.ts`(터치 폰 — CDP 터치 에뮬레이션·`Input.dispatchTouchEvent`:
-  앱 안 알림·Return 줄바꿈·키 반복·⇧Tab·감싸기, Mac PTY 크기·`resized` 그대로)
+  앱 안 알림·Return 줄바꿈·키 반복·⇧Tab·감싸기, Mac PTY 크기·`resized` 그대로) · `t97-phone-file-unit.spec.ts`(파일 판정·경로) · `t98-phone-file-panel.spec.ts`(패널)
 
 #### 13. CLI 세션 재개 (resume)
 - 에이전트를 띄울 때 `--session-id`를 주입해 두고, 다음 실행에서 `--resume`로 **대화를 이어붙인다**
@@ -204,6 +216,12 @@ rules stay in the root; this file is the inventory.
 - `glm-on && cldy`처럼 앞에 준비 명령이 붙어도 마지막 명령으로 판정한다
 - 시작 시 `validateCliSessionIds()`가 Claude 대화 파일이 없는 id를 지운다 — 그래서 대화 기록 저장이
   꺼진 세션은 재개되지 않는다. 회귀는 `t17-session-resume.spec.ts`
+- **Codex 자동 찾기**: `CodexSessionLocator` 공유 10초 타이머. 파일이 없어도 PID를 찾을 때까지 틱마다 비동기 ps를 재확인하고 확인 전에는 저장하지 않는다(최대 15분). 확인한 PID·시작 시각은 고정하고 생존은 kill(pid, 0). 머리 시각 날짜 ±1일 파일을 캐시하고 새 후보에만 비동기 lsof(-nP), 실패(null)는 자동 연결을 미루고 재시도한다.
+  같은 실경로·source cli/vscode/없음·시작 −2초~+30초·미연결 id가 후보. 파일 보유 프로세스 우선, 없으면 머리 이전 가장 늦은 시작. 같은 폴더 시작이 10초 이내로 모호했던 파일은 영구 자동 제외하며 필요한 종료 시작 시각도 판정에 남긴다. 같은 터미널 대체 때 옛 시작 시각을 빼고 오래된 무관 항목은 정리한다. 명시적 UUID resume(붙여넣기 포함)는 후보일 뿐이고, 실제 전경 argv의 UUID·파일·폴더·다른 세션의 연결 여부를 확인한 뒤 저장한다. node 실행기·네이티브 codex 이름은 같은 판정기를 쓰며 불일치는 시한까지 재시도한다.
+- **수동 연결**: 사이드바 세션 우클릭 「Connect to agent conversation…」. `AgentConversations`가 목록과 연결을 IPC·REST·MCP에 공통 제공한다. Claude가 앞이면 종료 안내, Codex 앞의 Claude 줄은 force와 무관하게 거절, 파일 보유 Codex는 그 대화만, 미보유 Codex의 같은 도구 대화는 Started here 또는 경고 뒤 Connect anyway. 전경 조회 실패는 unknown으로 거절. 다른 프로그램에서는 저장만.
+  수동 Connect & resume은 저장하고 명령을 Enter 없이 입력한 뒤 터미널을 선택·포커스하며 「Press Enter in the terminal to resume.」를 알린다. 첫 응답은 typed:true/resumed:false이고 실행은 사람 또는 화면을 확인한 API 호출자가 Enter로 한다. 미러 flush 뒤 질문을 거절하고, 입력 추적의 text/uncertain으로 작성 중인 글을 판정한다. 화면은 알려진 이어짐 프롬프트(dquote> 등)에만 쓰며 일반 프롬프트 기호는 추측하지 않는다. OSC/DCS·포커스·DSR 응답은 입력에서 걸러낸다. 글이 있거나 편집 상태가 불확실하면 409와 Enter 또는 Ctrl+C 안내를 보여준다. 글을 지우는 경로는 없다. 입력 직전 셸을 다시 확인한다. `typed:true`는 Enter 없는 명령 입력이며 이번 요청이 실행했다는 뜻이 아니다. 실제 실행은 이후 전경/출력·대화 추적으로 확인한다. 입력 판정이 빗나가 글이 붙더라도 수동 Connect가 Enter를 보내지는 않는다. API 입력은 AI 표시·호출자 관계를 기록한다.
+  기본 명령은 저장값 → 호환 initialCommand → 전경 argv → 도구 이름 순으로 고르고, 별칭은 풀어 판정하되 안전하면 별칭을 유지한다. 공용 `shared/agentCommand.ts` 판정은 storedCommand와 inputCommand를 구분한다. 확실한 프롬프트/옛 UUID는 입력에서 제거하고, 모르는 옵션이나 불완전한 값은 저장 원문을 유지하면서 입력만 도구 이름으로 바꾼다(값만 잘라 플래그를 남기지 않음). `$` 준비 구간은 원문을 유지하고 마지막 구간만 판정한다. 시작 때 cliCommand를 고쳐 쓰지 않는다. 첫 창은 별칭 읽기를 기다리지 않고, 별칭이 필요한 재시작은 입력 직전 `get-session-resume-command` IPC에서 별칭 준비를 기다린 뒤 읽기 전용으로 판정한다. 세션 재시작은 기존처럼 Enter를 포함한다. 직전 main의 getPendingInput에 글/불확실성이 있으면 입력하지 않고 「Your text is still on the line — resume was not typed」를 알린다. 복원 준비부터 입력 시도 완료 전까지 Connect는 input_busy다. 재시작 전용 입력은 이미 알려진 id를 새 수동 resume으로 다시 저장하지 않도록 CLI 재연결 관찰을 우회한다(새 PTY에서만, 재부착 때 입력 없음). Claude id를 처음 동기화할 때 저장 명령이 없으면 판정 가능한 initialCommand의 준비 구간도 보존한다. Claude projects 루트 자체를 읽지 못하면 id는 보존하고 Codex 검사는 계속한다. 루트 안의 일반 파일(.DS_Store 등)은 검사에서 제외한다.
+- **한계**: Codex TUI의 `/new`·`/resume`·이름/선택기 resume은 자동 감지하지 못하므로 연결 메뉴를 쓴다. 시작→머리 표본은 5개뿐이므로 10초 밖 겹침의 시간 기반 오연결 위험은 `[codex-session] delta` 로그로 관찰한다. 실제 Codex 16분 무입력 시험은 메타데이터 파일이 312초에 먼저 생겼으므로 첫 파일 자체의 15분 초과 지연은 시계 fixture로만 검증했다. Mac과 인증 Control API 전용이며 폰에 새 경로는 없다.
 - **id 는 Claude 가 실제로 쓰는 대화를 따라간다** — Claude 안에서 `/resume` 하면 새 id 로 옮겨 가고 주입한 id 에는 대화 파일이
   생기지 않는다(2.1.296 실측). 그대로 두면 재시작 때 id 가 지워져 템플릿이 새 대화로 시작한다. `ClaudeSessionSync` 가 10초마다
   `<CLAUDE_CONFIG_DIR|~/.claude>/sessions/<pid>.json` 을 읽어, 셸에 가장 가까운 Claude 프로세스의 `sessionId` 로 저장값을 맞춘다
@@ -363,6 +381,10 @@ User Action (Renderer)
 - 코드: `src/main/ChecklistStore.ts` · `ControlApiService.*Checklist*` · `hooks/useChecklists.ts` · `components/Checklists/`(칩·패널·항목 줄·마감 편집) · `utils/dueDate.ts`(마감 표시). 계약은 [`control-api.md`](control-api.md) 「Checklists」
 
 #### Chat view
+- `writeRestoredTerminal(sessionId, data)` — 새 PTY의 재시작 입력 직전에 남은 글을 확인하고, 성공/거절 뒤 복원 대기를 해제한다. CLI 재연결 관찰을 우회한다. 일반 입력·Control API·폰 경로에는 적용하지 않는다
+- `session-restore-blocked` (main→renderer, `{sessionId,message}`) — 사람 글 때문에 재시작 명령을 입력하지 않았다는 알림
+- `get-session-resume-command(sessionId)` → 별칭 준비 뒤 저장된 명령을 읽기 전용으로 판정한 재시작 입력 문자열. 저장값 수정 없음. TerminalView가 새 PTY의 실제 입력 직전에만 요청하며 재부착 때는 입력하지 않는다
+- `agent-conversations-list(sessionId)` → `AgentConversationList` · `agent-conversation-connect(sessionId, {agent,id,resume?,force?})` → 연결 결과 또는 `{error:{code,message,...}}`. 대화 파일 경로와 프로세스 argv는 응답에 싣지 않는다. 상세 계약은 [`control-api.md`](control-api.md) 「Agent conversations」
 - `conversation-get(sessionId, limit?)` → `ConversationSnapshot`(마지막 `limit` 턴 · working · prompt · queued · revision) · `conversation-subscribe` /
   `conversation-unsubscribe(sessionId)`(창이 닫히면 그 창 구독은 풀린다) · `conversation-changed` (main → renderer, `{ sessionId, revision }`)
 - `chat-send(sessionId, text)` → `ChatSendResult`(`sent` · `queued` · `rejected` + 이유) · `chat-cancel-queued(sessionId)` ·

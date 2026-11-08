@@ -1,0 +1,214 @@
+<!doctype html><html lang=ko><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>eli5 fixture</title></head><body>
+<section data-eli5-panel="big"><h2>큰 그림</h2><p>본문</p><a id=hash href="#small">아래로</a> <a id=ext href="https://example.invalid/x">바깥</a> <a id=rel href="eli5b.html">옆 문서</a> <a id=fl href="file:///Users/x/y.html">file</a></section><section id=small data-eli5-panel="small"><h2>작은 그림</h2><img src="a.png" alt=a></section>
+<!-- eli5:feedback:start -->
+<style>
+  .eli5-fb-btn{
+    all:unset; cursor:pointer; font:600 11px/1 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
+    color:#2563eb; border:1px solid #2563eb; padding:4px 8px; margin-left:10px; vertical-align:middle;
+    background:#fff; white-space:nowrap;
+  }
+  .eli5-fb-btn:hover{background:#dbeafe}
+  .eli5-fb-btn[aria-expanded="true"]{background:#2563eb;color:#fff}
+  .eli5-fb-btn.has-note{background:#fef3c7;border-color:#a16207;color:#78350f}
+  .eli5-fb-sent{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;
+    font-size:11px;font-weight:700;vertical-align:middle;letter-spacing:0;
+    background:#ede9fe;border:1px solid #8b5cf6;color:#5b21b6;white-space:nowrap}
+  .eli5-fb-box{margin:10px 0 18px;border:1px solid #d1d5db;background:#f8fafc;padding:10px}
+  .eli5-fb-box[hidden]{display:none}
+  .eli5-fb-box label{display:block;font:600 11px/1.4 -apple-system,sans-serif;color:#4b5563;margin-bottom:6px;letter-spacing:.04em}
+  .eli5-fb-box textarea{
+    width:100%; min-height:72px; resize:vertical; box-sizing:border-box;
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
+    border:1px solid #d1d5db; padding:8px; background:#fff; color:#111827;
+  }
+  .eli5-fb-box textarea:focus{outline:2px solid #2563eb;outline-offset:-2px}
+  .eli5-fb-bar{
+    position:fixed; right:16px; bottom:16px; z-index:9999;
+    display:flex; gap:8px; align-items:center;
+    background:#111827; color:#fff; padding:10px 12px;
+    font:13px/1 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
+    box-shadow:0 4px 14px rgba(0,0,0,.25);
+  }
+  .eli5-fb-bar[hidden]{display:none}
+  .eli5-fb-bar button{
+    all:unset; cursor:pointer; font:600 12px/1 inherit; padding:6px 10px; border:1px solid #fff;
+  }
+  .eli5-fb-bar button:hover{background:#fff;color:#111827}
+  .eli5-fb-bar .count{font-variant-numeric:tabular-nums}
+  @media print{ .eli5-fb-btn,.eli5-fb-box,.eli5-fb-bar{display:none!important} }
+</style>
+<div class="eli5-fb-bar" id="eli5-fb-bar" hidden>
+  <span class="count" id="eli5-fb-count">의견 0개</span>
+  <button type="button" id="eli5-fb-copy">복사</button>
+  <button type="button" id="eli5-fb-save">파일로 저장</button>
+  <button type="button" id="eli5-fb-clear">비우기</button>
+</div>
+<script>
+(function(){
+  // 패널마다 의견 하나. 저장은 브라우저에만 한다 — 파일을 다시 만들어도 의견이 남는다.
+  var DOC = "eli5.html";
+  var KEY = 'eli5-feedback:' + DOC;
+  var store = {};
+  try { store = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { store = {}; }
+
+  // 보낸 이력은 의견 본문과 따로 둔다.
+  // 사용자가 다음 회차를 위해 의견을 '비우기' 해도 어디에 코멘트했는지는 남아야 한다.
+  var SENT_KEY = 'eli5-feedback-sent:' + DOC;
+  var sent = { round: 0, panels: {} };
+  try {
+    var raw = JSON.parse(localStorage.getItem(SENT_KEY) || 'null');
+    if (raw && raw.panels) sent = raw;
+  } catch (e) {}
+  function saveSent(){ try { localStorage.setItem(SENT_KEY, JSON.stringify(sent)); } catch (e) {} }
+
+  var panels = [].slice.call(document.querySelectorAll('[data-eli5-panel]'));
+  if (!panels.length) return;
+
+  var bar = document.getElementById('eli5-fb-bar');
+  var countEl = document.getElementById('eli5-fb-count');
+
+  function save(){
+    try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {}
+    render();
+  }
+  function filled(){
+    return panels.map(function(p,i){ return { i:i+1, id:key(p,i), title:titleOf(p,i) }; })
+      .filter(function(x){ return (store[x.id]||'').trim() !== ''; });
+  }
+  function render(){
+    var n = filled().length;
+    countEl.textContent = '의견 ' + n + '개';
+    bar.hidden = n === 0;
+    panels.forEach(function(p,i){
+      var b = p.querySelector('.eli5-fb-btn');
+      if (b) b.classList.toggle('has-note', (store[key(p,i)]||'').trim() !== '');
+      var rounds = sent.panels[key(p,i)];
+      var badge = p.querySelector('.eli5-fb-sent');
+      if (rounds && rounds.length) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'eli5-fb-sent';
+          if (b) b.parentNode.insertBefore(badge, b);
+        }
+        badge.textContent = rounds.map(function(r){ return r + '차'; }).join('·') + ' 의견함';
+        badge.title = '이 패널에 의견을 보낸 적이 있습니다';
+      } else if (badge) { badge.remove(); }
+    });
+  }
+  function titleOf(p,i){
+    // 버튼을 제목 안에 넣기 때문에 textContent 를 그냥 읽으면 '큰 그림의견' 이 된다(실측).
+    // 버튼을 붙이기 전에 원문을 따로 저장해 두고 그걸 쓴다.
+    var cached = p.getAttribute('data-eli5-title');
+    if (cached) return cached;
+    var h = p.querySelector('h2,h3');
+    var t = h ? (h.textContent||'').replace(/의견$/,'').trim() : '';
+    return t || p.getAttribute('data-eli5-panel') || ('패널 ' + (i+1));
+  }
+  function key(p,i){
+    return p.getAttribute('data-eli5-panel') || ('panel-' + (i+1));
+  }
+
+  panels.forEach(function(p,i){
+    var h = p.querySelector('h2,h3');
+    if (!h) return;
+    var id = key(p,i);
+    // 버튼을 붙이기 전에 제목 원문을 잡아둔다 — 붙인 뒤에는 버튼 글자가 섞인다
+    p.setAttribute('data-eli5-title', (h.textContent||'').trim());
+
+    var btn = document.createElement('button');
+    btn.type='button'; btn.className='eli5-fb-btn'; btn.textContent='의견';
+    btn.setAttribute('aria-expanded','false');
+    btn.setAttribute('aria-controls','eli5-fb-'+i);
+    h.appendChild(btn);
+
+    var box = document.createElement('div');
+    box.className='eli5-fb-box'; box.id='eli5-fb-'+i; box.hidden = true;
+    var lab = document.createElement('label');
+    lab.setAttribute('for','eli5-fb-ta-'+i);
+    lab.textContent = '이 부분에 대한 의견 — 적으면 자동으로 저장됩니다';
+    var ta = document.createElement('textarea');
+    ta.id='eli5-fb-ta-'+i;
+    ta.placeholder='예: 여기 순서가 헷갈립니다 / 이 표현을 이렇게 바꿔주세요';
+    ta.value = store[id] || '';
+    ta.addEventListener('input', function(){ store[id] = ta.value; save(); });
+    box.appendChild(lab); box.appendChild(ta);
+    h.parentNode.insertBefore(box, h.nextSibling);
+
+    btn.addEventListener('click', function(){
+      var open = box.hidden;
+      box.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+      if (open) ta.focus();
+    });
+  });
+
+  function buildText(){
+    var lines = ['# eli5 의견 — ' + (document.title || DOC), '문서: ' + DOC, ''];
+    filled().forEach(function(x){
+      lines.push('## [' + x.i + '] ' + x.title);
+      lines.push(store[x.id].trim());
+      lines.push('');
+    });
+    return lines.join('\n');
+  }
+
+  // 복사·저장 = 사용자에게 넘긴 시점. 이 회차에 어느 패널을 지적했는지 기록해 둔다.
+  function markSent(){
+    var items = filled();
+    if (!items.length) return;
+    sent.round = (sent.round || 0) + 1;
+    items.forEach(function(x){
+      var arr = sent.panels[x.id] || [];
+      if (arr.indexOf(sent.round) === -1) arr.push(sent.round);
+      sent.panels[x.id] = arr;
+    });
+    saveSent();
+  }
+
+  // 클립보드가 막힌 브라우저·원격 화면에서도 의견을 넘길 수 있게 파일로도 내보낸다.
+  document.getElementById('eli5-fb-save').addEventListener('click', function(){
+    var text = buildText();
+    markSent();
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+    a.download = DOC.replace(/\.html?$/i, '') + '-feedback.md';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  });
+
+  document.getElementById('eli5-fb-copy').addEventListener('click', function(){
+    var text = buildText();
+    markSent();
+    var done = function(){
+      var b = document.getElementById('eli5-fb-copy');
+      var old = b.textContent; b.textContent = '복사됨';
+      setTimeout(function(){ b.textContent = old; }, 1400);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else { fallback(); }
+    function fallback(){
+      // file:// 등 클립보드 API 가 막힌 곳에서도 복사가 되어야 한다
+      var t = document.createElement('textarea');
+      t.value = text; t.style.position='fixed'; t.style.opacity='0';
+      document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); done(); }
+      catch(e){ window.prompt('아래 내용을 복사하세요', text); }
+      document.body.removeChild(t);
+    }
+  });
+
+  document.getElementById('eli5-fb-clear').addEventListener('click', function(){
+    if (!window.confirm('적어둔 의견을 모두 지웁니다. (어디에 의견했는지 표시는 남습니다)')) return;
+    store = {}; save();   // sent 는 일부러 그대로 둔다
+    panels.forEach(function(p,i){
+      var ta = document.getElementById('eli5-fb-ta-'+i);
+      if (ta) ta.value = '';
+    });
+  });
+
+  render();
+})();
+</script>
+<!-- eli5:feedback:end -->
+</body></html>

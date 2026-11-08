@@ -38,6 +38,18 @@ function writeRegistry(configDir: string, pid: number, sessionId: string): void 
     fs.writeFileSync(path.join(dir, `${pid}.json`), JSON.stringify({ pid, sessionId, startedAt: Date.now(), kind: 'interactive' }))
 }
 
+/** A real shell alias to a local stand-in keeps the alias contract without running Claude. */
+function shellEnvironment(dir: string): Record<string, string> {
+    const home = path.join(dir, 'home')
+    const bin = path.join(dir, 'bin')
+    fs.mkdirSync(home)
+    fs.mkdirSync(bin)
+    const executable = path.join(bin, 'claude')
+    fs.writeFileSync(executable, '#!/bin/sh\nprintf "T30-CLDY %s\\n" "$*"\n', { mode: 0o755 })
+    fs.writeFileSync(path.join(home, '.zshrc'), `alias cldy='${executable}'\nPROMPT='T30> '\nunset HISTFILE\n`)
+    return { HOME: home, ZDOTDIR: home, CODEX_HOME: path.join(dir, 'codex'), CLIMANAGER_HOME: path.join(dir, 'manager') }
+}
+
 test.describe('T30 Claude conversation sync', () => {
     let ctx: LaunchResult | null = null
     const temps: string[] = []
@@ -68,9 +80,9 @@ test.describe('T30 Claude conversation sync', () => {
                 cliSessionId: STORED_ID,
                 cliToolName: 'claude',
                 // Resuming a stand-in must not start anything real.
-                cliCommand: 'echo T30-CLDY'
+                cliCommand: 'cldy'
             }]
-        }], { env: { CLAUDE_CONFIG_DIR: configDir, CLIMANAGER_CLAUDE_SYNC_MS: '300' } })
+        }], { env: { ...shellEnvironment(dir), CLAUDE_CONFIG_DIR: configDir, CLIMANAGER_CLAUDE_SYNC_MS: '300' } })
 
         await ctx.page.locator('[data-session-item="s-claude"]').click()
         await expect.poll(() => termText(ctx!.page, 's-claude'), { timeout: 20_000 }).toContain('T30-CLDY --resume')
@@ -99,7 +111,7 @@ test.describe('T30 Claude conversation sync', () => {
 
         const session = storedSession(ctx.userDataDir)
         expect(session.cliToolName).toBe('claude')
-        expect(session.cliCommand, 'the start command (an alias like cldy) is kept for the resume').toBe('echo T30-CLDY')
+        expect(session.cliCommand, 'the original shell alias is kept for the resume').toBe('cldy')
     })
 
     test('a registry entry from a process outside every terminal changes nothing', async () => {
@@ -111,8 +123,8 @@ test.describe('T30 Claude conversation sync', () => {
 
         ctx = await launchAppWithWorkspaces([{
             id: 'ws', name: 'T30WS2', path: dir,
-            sessions: [{ id: 's-claude', name: 'T30OTHER', cliSessionId: STORED_ID, cliToolName: 'claude', cliCommand: 'echo T30-CLDY' }]
-        }], { env: { CLAUDE_CONFIG_DIR: configDir, CLIMANAGER_CLAUDE_SYNC_MS: '300' } })
+            sessions: [{ id: 's-claude', name: 'T30OTHER', cliSessionId: STORED_ID, cliToolName: 'claude', cliCommand: 'cldy' }]
+        }], { env: { ...shellEnvironment(dir), CLAUDE_CONFIG_DIR: configDir, CLIMANAGER_CLAUDE_SYNC_MS: '300' } })
 
         // This test process is not under any terminal of the app.
         writeRegistry(configDir, process.pid, ACTUAL_ID)

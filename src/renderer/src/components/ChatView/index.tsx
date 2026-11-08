@@ -43,8 +43,8 @@ export interface ChatViewProps {
      */
     readOnly?: boolean
     /**
-     * Whether `transport.openFile` shows anything. The phone page has no file preview: there a path
-     * the chat names is plain text instead of a button that does nothing (G9).
+     * Whether `transport.openFile` shows anything. A view-only phone is not given files (decision 0010): there a
+     * path the chat names is plain text instead of a button that does nothing (G9).
      */
     canOpenFiles?: boolean
     /**

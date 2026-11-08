@@ -940,6 +940,8 @@ export type TerminalEventKind =
     | 'closed'
     /** Typed or sent from the phone page (Settings › Phone) — the detail says what, never the text. */
     | 'phone-input'
+    /** A file opened from the phone page, or refused to it — its kind and size, never its path. */
+    | 'phone-file'
     /** The renderer process died. Window-wide, not per terminal. */
     | 'renderer-gone'
     /** The renderer was reloaded after dying. */

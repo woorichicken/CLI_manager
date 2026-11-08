@@ -153,6 +153,73 @@ finishes an item checks it. Code: `src/main/ChecklistStore.ts` (store, checks, o
 
 Not in this version (backlog): assigning an item to a session.
 
+## Agent conversations
+
+The desktop session menu and Control API share `AgentConversations` (`agentConversations.ts`).
+These endpoints do not add any phone routes or change phone permissions.
+
+| REST | MCP | Result |
+|---|---|---|
+| `GET /v1/sessions/:id/conversations` | `list_agent_conversations(session_id)` | `{cwd, front:{kind,runningId,startedAt}, current:{agent,id}|null, items, truncated}` |
+| `POST /v1/sessions/:id/conversation` | `connect_agent_conversation(session_id, agent, id, resume?, force?)` | `{status:"connected", resumed, typed, cliCommand}` |
+
+An item is `{agent,id,startedAt,updatedAt,firstMessage,bytes,startedHere,linkedTo}`.
+`linkedTo` is `{sessionId,name}` or null. Times are epoch milliseconds. File paths and internal
+process arguments are omitted. First messages use the existing transcript parsers, are masked,
+folded to one line, and limited to 200 characters. Only top-level interactive Codex sources
+(cli, vscode, or absent; originator codex-tui or absent) and nonempty Claude conversations qualify.
+Sidecars are excluded. The list shows up to 30 items sorted by last modification; Codex discovery
+stops at 90 days, 2,000 heads or 30 matching items and yields between days. Claude has its own
+2,000-head budget. Codex reads the first 8 KiB to reject unrelated folders/sources before parsing
+a matching bounded 512 KiB head; Claude heads are bounded at 64 KiB. `truncated` reports a discovery or display limit.
+
+Connections require a strict UUID, a real-path folder match, and no other terminal linked to the
+conversation. A foreground Claude blocks changes; a Codex holding a rollout accepts only that
+conversation. An unbound Codex requires the −2s/+30s start window, or explicit `force:true` with
+its warning. Force cannot switch a foreground Codex to a Claude conversation, or bypass duplicate
+links, folders, a held conversation, or an unknown foreground. `resume:true` requires a shell both
+at discovery and immediately before input. A pending startup restore is `input_busy` until its input attempt finishes. After a mirror flush, a question is `awaiting_input`,
+a draft/continuation prompt is `input_busy`; both leave terminal text and saved values intact.
+Nothing clears the shell line. Pending input text/uncertain state decides whether a draft exists;
+prompt symbols and themes do not. Screen inspection only adds known continuation-prompt refusals.
+OSC/DCS and focus/device replies are excluded from input tracking. Enter or Ctrl+C is the recovery
+instruction for uncertain edits.
+The shared read-only command policy distinguishes storedCommand from inputCommand. Known option
+values and raw preparation prefixes (including $ substitutions) survive. Unrecognized/incomplete
+options retain their exact stored text, but input falls back to the agent name; a dangling flag is
+never typed. Definite prompts, noninteractive modes and old resume targets are excluded from input.
+The cliCommand response is the remembered value and may contain unrecognized original options;
+it is not a promise that the same text was typed. Startup never repairs it in storage. Immediately
+before restart input, desktop IPC applies the same read-only policy after aliases are ready.
+That startup write bypasses manual CLI recapture, so observing the safe input cannot overwrite
+the remembered raw options. Normal typing, pasted commands, Diff review send-text-to-terminal and Control API input still use input tracking.
+Startup restoration keeps its existing submitted Enter, but main checks pending user input just
+before writing; a draft skips that write and notifies the desktop without clearing the draft.
+Only the decided input base and checked UUID are typed, without CR/LF. API input records its client and caller relation.
+`resume:true` prepares a command without submitting it and immediately returns `typed:true,
+resumed:false`. The desktop selects/focuses Terminal and says "Press Enter in the terminal to resume."
+An API/MCP caller must first read the screen (`GET /v1/sessions/:id/output` or `read_output`) and
+then explicitly send Enter (`POST /v1/sessions/:id/input` with `keys:["enter"]` or `send_input`).
+Execution is verified afterwards through foreground/output and conversation tracking; a prepared
+command is not evidence that an agent started. Draft/question checks remain refusal grounds, but
+Connect itself never sends Enter even when those checks miss text on the line.
+Saved options survive restarts; a renderer reload reattaches without resuming again.
+
+| HTTP | Code | Details |
+|---|---|---|
+| 400 | `invalid_id` | Invalid UUID or agent |
+| 400 | `invalid_request` | Nonboolean resume/force (REST field type errors use `bad_request`) |
+| 404 | `unknown_session`, `not_found` | Missing terminal or eligible conversation |
+| 409 | `cwd_mismatch`, `linked_elsewhere` | Wrong folder; the latter includes `linkedTo` |
+| 409 | `agent_running` | Foreground agent conflict; includes `runningId` |
+| 409 | `not_started_here` | Explicit confirmation required for unbound Codex |
+| 409 | `not_shell` | Resume would type into a program |
+| 409 | `awaiting_input`, `input_busy` | A question or existing shell input; nothing is erased or saved |
+| 409 | `foreground_unknown` | Process inspection failed; refresh and retry |
+
+MCP domain failures remain tool results with `isError:true` and the error code in their text.
+Coverage: T25 locator/tracker, T103 synthetic service tests, T104 app/store/REST/MCP tests.
+
 ## Session state
 
 | `state` | Meaning |

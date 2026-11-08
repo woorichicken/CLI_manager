@@ -23,6 +23,24 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 저장된 명령이 에이전트 이름이 아니면 재시작 때 맨 `claude`·`codex` 로 친다
+- Date: 2026-11-08
+- Where: `src/shared/agentCommand.ts` `decideAgentCommand` 의 `fallback` 이 `inputCommand: agent` 를 준다. 저장값은 `storedCommand` 로 남는다. 재시작 입력은 `src/main/index.ts` · `src/renderer/src/utils/resumeCommand.ts`.
+- What: `node /x/mock.cjs` 로 저장된 세션을 재시작하자 `claude --resume <id>` 가 입력됐다. `origin/main` 은 저장값을 그대로 쳤다. `ccr code`·`npx …` 처럼 감싼 명령도 같은 길을 탈 것이다(코드 근거, 그 명령들로 재지는 않았다).
+- Surfaced by: 합친 판 실기기 시험(`feat/phone-1107`). `tests/terminal/helpers.ts` 가 모의를 `claude` 이름으로 감싸서 스위트에는 안 잡힌다.
+- Impact: 감싼 명령을 쓰는 사람은 재시작에서 그 명령을 잃고 맨 CLI 가 뜬다.
+- Workaround: 터미널에서 감싼 명령으로 직접 resume 한다.
+- Fix direction: D4 N2 의 계약(모르는 명령을 다시 치지 않음)과 맞물려 사람이 정한다. 맨 CLI 로 칠지, 저장값을 칠지, 치지 않고 안내할지.
+
+### 🐛 Claude 로그인 메뉴가 떠 있어도 Chat 전송이 「Sent」로 끝난다
+- Date: 2026-11-08
+- Where: `AWAITING_INPUT_PATTERNS`(`src/main/TerminalMirror.ts` 쪽 판정) · `ConversationService` 보내기 확인. 격리 Claude 2.1.319 의 `Select login method` 메뉴.
+- What: 그 메뉴에 문서 코멘트 120자를 보냈는데 시트는 `Sent to …` 를 보이고 대화 기록은 0건이었다. `phone-input` 은 1건 남았고 메뉴는 그대로였다.
+- Surfaced by: 합친 판 실기기 시험(위 결함으로 실제 CLI 가 뜬 세션).
+- Impact: 로그인 전 세션에서만 생긴다. 보낸 글이 사라지는데 성공으로 보인다.
+- Workaround: 터미널에서 로그인한 뒤 다시 보낸다.
+- Fix direction: 이 메뉴를 질문 대기로 읽거나, 보낸 뒤 기록에 글이 들어왔는지로 판정한다.
+
 ### 🐛 모드 칩 — shift+tab 으로 기본 모드로 돌려도 다음 프롬프트까지 옛 칩이 남는다
 - Date: 2026-11-07
 - Where: `src/main/ConversationService.ts:241` · `src/main/screenLines.ts` `screenAgentMode`. 화면의 모드 줄을 먼저 보고, 없으면(`null`) 기록의 `permissionMode` 로 돌아간다. 기본 모드는 화면에 모드 줄이 없어 `null` 이다.
@@ -40,15 +58,6 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 - Impact: 알림 띠가 사라질 때까지 메뉴 첫 줄을 못 누른다.
 - Workaround: 띠가 사라지기를 기다리거나, ⚙ 의 「알림 표시」를 끈다.
 - Fix direction: 메뉴가 열려 있는 동안 띠를 미루거나 메뉴 아래로 내린다. 다른 시트(서랍·설정)와 같은 규칙으로 정한다.
-
-### 🐛 `src/main/CodexSessionLocator.ts` — Codex 세션을 열고 15분 안에 첫 말을 안 하면 Chat 전환이 끝내 안 뜬다
-- Date: 2026-11-07
-- Where: `src/main/CodexSessionLocator.ts:29` `WATCH_MS` 15분. Codex 는 rollout 파일을 첫 프롬프트 때 만들고, 머리에는 시작 시각을 적는다.
-- What: 15분이 지나면 감시가 끝나 rollout 을 찾지 못하고, 세션의 `cliToolName`·`cliSessionId` 가 빈 채로 남는다. `codex resume <id>` 로 연 세션은 `NON_INTERACTIVE` 라 애초에 잡히지 않는다.
-- Evidence: 기획 세션 실측(11-07) — 세션 `b324be3c` · `codex` 시작 11-06 14:15:29 · rollout `01a1af48` 머리 14:15:30 · 파일 생성 23:34:09(33,519초 뒤) · `cliToolName`·`cliSessionId` 비어 있음. 11-04~07 rollout 292개 중 15분 초과는 이 1개, 중앙값 0.99초.
-- Impact: Chat 전환이 없다. 재시작 때 `resume` 도 없어 같은 대화로 못 돌아온다(코드 근거, 재시작은 실측 안 함).
-- Workaround: 세션을 열고 15분 안에 첫 말을 한다.
-- Fix direction: [`backlog.md`](backlog.md) 「Codex 세션 찾기 고침 + 세션을 에이전트 대화에 직접 연결」.
 
 ### 🐛 Chat 보내기 버튼 — 글을 써도 파란 배경이 안 나온다
 - Date: 2026-11-06

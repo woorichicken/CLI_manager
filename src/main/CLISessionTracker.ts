@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
-import { isInteractiveCodex } from './CodexSessionLocator'
+import { lastCommandWords } from '../shared/agentCommand'
+import { isInteractiveCodex, parseCodexResumePosition } from './CodexSessionLocator'
 
 export interface CLIToolConfig {
     name: string
@@ -20,6 +21,13 @@ export interface CLISessionInfo {
      * whatever the alias carried (bypass mode, a model choice, an env switch).
      */
     baseCommand: string
+}
+
+interface ProtocolInput {
+    mode: 'escape' | 'csi' | 'osc' | 'dcs'
+    sequence: string
+    count: number
+    escaping: boolean
 }
 
 const DEFAULT_CLI_TOOLS: CLIToolConfig[] = [
@@ -58,6 +66,12 @@ const DEFAULT_CLI_TOOLS: CLIToolConfig[] = [
 
 export class CLISessionTracker {
     private lineBuffers: Map<string, string> = new Map()
+    private resumeBuffers = new Map<string, string>()
+    private pendingInput = new Map<string, { text: string; uncertain: boolean }>()
+    private terminalsWithInput = new Set<string>()
+    private protocolInput = new Map<string, ProtocolInput>()
+    /** Terminals inside a bracketed paste. It can span onData chunks, and a line break inside it submits nothing. */
+    private pasting = new Set<string>()
     private cliTools: CLIToolConfig[]
     /** Shell alias -> what it expands to, so `cldy` can be recognised as claude. */
     private aliases: Map<string, string> = new Map()
@@ -67,6 +81,9 @@ export class CLISessionTracker {
      * from us, so the caller has to find the one Codex picked (CodexSessionLocator).
      */
     public onCodexStarted?: (terminalId: string, baseCommand: string) => void
+
+    /** A typed or pasted candidate only; main must verify the actual process, file and ownership. */
+    public onCodexResumed?: (terminalId: string, id: string, baseCommand: string) => void
 
     constructor(cliTools?: CLIToolConfig[]) {
         this.cliTools = cliTools ?? DEFAULT_CLI_TOOLS
@@ -85,6 +102,123 @@ export class CLISessionTracker {
         this.aliases = new Map(Object.entries(aliases))
     }
 
+    resolveAlias(name: string): string | undefined {
+        return this.aliases.get(name)
+    }
+
+    getPendingInput(terminalId: string): { text: string; uncertain: boolean } {
+        const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
+        return { ...pending, uncertain: pending.uncertain || this.protocolInput.has(terminalId) }
+    }
+
+    hasReceivedInput(terminalId: string): boolean {
+        return this.terminalsWithInput.has(terminalId)
+    }
+
+    /** Terminal replies can span onData chunks. Keep partial replies out of shell text tracking. */
+    private filterProtocolInput(terminalId: string, data: string): string {
+        let state = this.protocolInput.get(terminalId)
+        let clean = ''
+        const begin = (mode: ProtocolInput['mode']): void => { state = { mode, sequence: mode === 'csi' ? '\x1b[' : '', count: 0, escaping: false } }
+        for (const char of data) {
+            if (!state) {
+                if (char === '\x1b') begin('escape')
+                else if (char === '\x9d') begin('osc')
+                else if (char === '\x90') begin('dcs')
+                else if (char === '\x9b') begin('csi')
+                else clean += char
+                continue
+            }
+            if (char === '\x03' || char === '\r' || char === '\n') {
+                state = undefined
+                clean += char
+                continue
+            }
+            if (state.mode === 'escape') {
+                if (char === ']') begin('osc')
+                else if (char === 'P') begin('dcs')
+                else if (char === '[') begin('csi')
+                else { clean += '\x1b' + char; state = undefined }
+                continue
+            }
+            state.count++
+            if (state.mode === 'csi') {
+                state.sequence += char
+                if (char >= '@' && char <= '~') {
+                    if (!/^\x1b\[(?:[IO]|\??\d+;\d+R|[?>]?\d+(?:;\d+)*c|\??\d+n)$/.test(state.sequence)) clean += state.sequence
+                    state = undefined
+                } else if (state.count > 256) { clean += state.sequence; state = undefined }
+                continue
+            }
+            if ((state.escaping && char === '\\') || char === '\x9c' || (state.mode === 'osc' && char === '\x07')) {
+                state = undefined
+            } else if (state.count > 16_384) {
+                // An unterminated or excessive reply must block sending rather than hide a draft.
+                clean += '\x1b'
+                state = undefined
+            } else state.escaping = char === '\x1b'
+        }
+        if (state) this.protocolInput.set(terminalId, state)
+        else this.protocolInput.delete(terminalId)
+        return clean
+    }
+
+    /** Observe paste for resume candidates without enabling Claude command rewriting on paste. */
+    private observeInput(terminalId: string, data: string): void {
+        if (data.replace(/\x1b\[(?:200|201)~/g, '').includes('\x1b')) {
+            const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
+            this.pendingInput.set(terminalId, { ...pending, uncertain: true })
+            this.resumeBuffers.delete(terminalId)
+            return
+        }
+        for (const part of data.split(/(\x1b\[20[01]~)/)) {
+            if (part === '\x1b[200~') this.pasting.add(terminalId)
+            else if (part === '\x1b[201~') this.pasting.delete(terminalId)
+            else this.observeTyped(terminalId, part)
+        }
+    }
+
+    private observeTyped(terminalId: string, typed: string): void {
+        for (const char of typed) {
+            if ((char === '\r' || char === '\n') && this.pasting.has(terminalId)) {
+                // Still on the line, waiting for Enter, in a shape the buffer cannot follow.
+                const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
+                this.pendingInput.set(terminalId, { text: `${pending.text}\n`.slice(-16_384), uncertain: true })
+                this.resumeBuffers.delete(terminalId)
+                continue
+            }
+            if (char === '\r' || char === '\n') {
+                const resume = this.codexResume(this.resumeBuffers.get(terminalId) ?? '')
+                this.resumeBuffers.delete(terminalId)
+                this.pendingInput.delete(terminalId)
+                if (resume) this.onCodexResumed?.(terminalId, resume.id, resume.baseCommand)
+                continue
+            }
+            if (char === '\x03') {
+                this.pasting.delete(terminalId)
+                this.resumeBuffers.delete(terminalId)
+                this.pendingInput.delete(terminalId)
+                continue
+            }
+            const pending = this.pendingInput.get(terminalId) ?? { text: '', uncertain: false }
+            if (char === '\x15') {
+                // Ctrl+U need not erase text to the right of the cursor. Only submit/interrupt resets this.
+                this.pendingInput.set(terminalId, { text: '', uncertain: true })
+                this.resumeBuffers.delete(terminalId)
+            } else if (char === '\x7f') {
+                this.pendingInput.set(terminalId, { ...pending, text: pending.text.slice(0, -1) })
+                this.resumeBuffers.set(terminalId, (this.resumeBuffers.get(terminalId) ?? '').slice(0, -1))
+            } else if (char >= ' ') {
+                const text = pending.text + char
+                this.pendingInput.set(terminalId, { text: text.slice(-16_384), uncertain: pending.uncertain || text.length > 16_384 })
+                if (!pending.uncertain && text.length <= 16_384) this.resumeBuffers.set(terminalId, (this.resumeBuffers.get(terminalId) ?? '') + char)
+            } else {
+                this.pendingInput.set(terminalId, { ...pending, uncertain: true })
+                this.resumeBuffers.delete(terminalId)
+            }
+        }
+    }
+
     /**
      * Process terminal input data. Buffers printable characters and intercepts
      * CLI tool commands on Enter, injecting --session-id.
@@ -96,6 +230,11 @@ export class CLISessionTracker {
         data: string,
         writeFn: (data: string) => void
     ): boolean {
+        data = this.filterProtocolInput(terminalId, data)
+        if (!data) return false
+        // Enter can leave shell-owned text that our line buffer cannot observe.
+        this.terminalsWithInput.add(terminalId)
+        this.observeInput(terminalId, data)
         // Only handle single-character or Enter key inputs from manual typing
         // Multi-byte data (paste, escape sequences) pass through
         if (data.length > 1 && data !== '\r' && data !== '\n') {
@@ -202,6 +341,25 @@ export class CLISessionTracker {
         return isInteractiveCodex(effective)
     }
 
+    /** Recognise explicit UUID resumes, retaining the alias and preceding setup commands. */
+    codexResume(commandLine: string): { id: string; baseCommand: string } | null {
+        const last = lastCommandWords(commandLine)
+        if (!last) return null
+        const tokens = last.words.map((word) => word.text)
+        const name = tokens[0].split('/').pop() || tokens[0]
+        const expansion = this.aliases.get(name)
+        const effective = expansion ? [...expansion.trim().split(/\s+/), ...tokens.slice(1)] : tokens
+        const result = parseCodexResumePosition(effective)
+        if (!result) return null
+        const expansionLength = expansion?.trim().split(/\s+/).length ?? 1
+        const resumeIndex = result.resumeIndex - (expansionLength - 1)
+        if (resumeIndex < 0) return null
+        // as the person wrote them: a quoted option value is replayed quoted
+        const raw = last.words.map((word) => word.raw)
+        const baseSegment = [...raw.slice(0, resumeIndex), ...raw.slice(resumeIndex + 2)].join(' ')
+        return { id: result.id, baseCommand: commandLine.slice(0, last.start) + baseSegment }
+    }
+
     /**
      * Generate a resume command for a previously tracked CLI session.
      */
@@ -216,6 +374,11 @@ export class CLISessionTracker {
      */
     cleanup(terminalId: string): void {
         this.lineBuffers.delete(terminalId)
+        this.resumeBuffers.delete(terminalId)
+        this.pendingInput.delete(terminalId)
+        this.protocolInput.delete(terminalId)
+        this.pasting.delete(terminalId)
+        this.terminalsWithInput.delete(terminalId)
     }
 
     /**

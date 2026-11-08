@@ -6,7 +6,7 @@ import { LinkedText, Markdown } from './markdown/Markdown'
 import { TaskResultCard } from './TurnParts'
 import { ChatImageStrip } from './ChatImages'
 import { useChatActions } from './chatContext'
-import { formatElapsed, isTodoTool, lineDiff, todoProgress, todoSnapshot, type DiffLine, type TodoItem } from './chatLib'
+import { formatElapsed, isTodoTool, lineDiff, todoProgress, todoSnapshot, toolFile, type DiffLine, type TodoItem } from './chatLib'
 
 /**
  * One run of an assistant turn's work — tool calls, reasoning, progress words —
@@ -115,12 +115,6 @@ function parseInput(tool: ToolPart): Record<string, unknown> {
     } catch {
         return {}
     }
-}
-
-/** The file a tool call read or wrote, when it names one. */
-function toolFile(tool: ToolPart, input: Record<string, unknown>): string | null {
-    const path = input.file_path ?? input.notebook_path ?? (tool.name === 'view_image' ? input.path : undefined)
-    return typeof path === 'string' && path.trim() ? path : null
 }
 
 /** What an edit tool changed, as +/− lines (Edit · MultiEdit · Write), or a patch's own lines (Codex apply_patch). */

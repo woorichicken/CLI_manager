@@ -20,7 +20,7 @@ let current: HandoffNotice | null = null
 let sequence = 0
 const listeners = new Set<() => void>()
 
-function notify(sessionId: string, text: string): void {
+export function showHandoffNotice(sessionId: string, text: string): void {
     current = { id: ++sequence, sessionId, text }
     for (const listener of listeners) listener()
 }
@@ -58,9 +58,9 @@ export async function draftToTerminal(transport: ChatTransport, sessionId: strin
     if (result.status === 'placed') {
         // typed into in the meantime: that is newer, keep it
         if (readDraft(sessionId) === text) replaceDraft(sessionId, '')
-    } else if (result.status === 'busy') notify(sessionId, HANDOFF_TEXT.busy)
-    else if (result.status === 'unsupported') notify(sessionId, HANDOFF_TEXT.codex)
-    else if (result.reason === 'awaiting_input') notify(sessionId, HANDOFF_TEXT.question)
+    } else if (result.status === 'busy') showHandoffNotice(sessionId, HANDOFF_TEXT.busy)
+    else if (result.status === 'unsupported') showHandoffNotice(sessionId, HANDOFF_TEXT.codex)
+    else if (result.reason === 'awaiting_input') showHandoffNotice(sessionId, HANDOFF_TEXT.question)
 }
 
 /** Leaving the terminal for Chat. */
@@ -71,7 +71,7 @@ export async function draftFromTerminal(transport: ChatTransport, sessionId: str
     if (result.status === 'moved') {
         const before = readDraft(sessionId)
         replaceDraft(sessionId, before.trim() ? `${before}\n${result.text}` : result.text)
-    } else if (result.status === 'left') notify(sessionId, result.reason === 'several_lines' ? HANDOFF_TEXT.severalLines : HANDOFF_TEXT.kept)
+    } else if (result.status === 'left') showHandoffNotice(sessionId, result.reason === 'several_lines' ? HANDOFF_TEXT.severalLines : HANDOFF_TEXT.kept)
 }
 
 /** Runs the carry for a switch between the two views; nothing for a switch to the same one. */

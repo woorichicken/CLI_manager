@@ -1,0 +1,159 @@
+/*
+ * A report in its frame, and the sheet that sends its comments (PhoneDocPanel.tsx). The panel itself is phone-file.css's.
+ * The sheet is this page's, drawn over the frame: nothing inside the frame can cover it.
+ */
+.phone-doc-note {
+    margin: 0;
+    padding: 6px 12px;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+}
+.phone-doc-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.phone-doc-frame {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    border: 0;
+    /* most reports are written for a light page, and this frame has none of the app's colours */
+    background: #fff;
+}
+.phone-doc-frame[inert] {
+    pointer-events: none;
+}
+.phone-doc-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+}
+.phone-doc-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 72%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    background: var(--background-color);
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px 14px 0 0;
+}
+.phone-doc-sheet-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 13px;
+    min-width: 0;
+}
+.phone-doc-sheet-head > span {
+    opacity: 0.65;
+    flex-shrink: 0;
+}
+.phone-doc-sheet-head > strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-doc-select {
+    flex: 1;
+    min-width: 0;
+    min-height: 36px;
+    padding: 4px 8px;
+    color: inherit;
+    font-size: 16px; /* under 16 iOS zooms the page in on focus */
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+}
+.phone-doc-text {
+    flex: 1;
+    min-height: 64px;
+    margin: 0;
+    padding: 10px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+}
+.phone-doc-sheet-note {
+    margin: 0;
+    font-size: 12px;
+}
+.phone-doc-sheet-note.is-error {
+    color: #fca5a5;
+}
+.phone-doc-sheet-note svg {
+    display: inline;
+    vertical-align: -2px;
+}
+.phone-doc-url {
+    margin: 0;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+.phone-doc-sheet-foot {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.phone-doc-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 14px;
+    color: inherit;
+    font-size: 14px;
+    text-decoration: none;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+}
+.phone-doc-button.is-primary {
+    color: #fff;
+    background: #2563eb;
+    border-color: #2563eb;
+}
+.phone-doc-button:disabled {
+    opacity: 0.45;
+}
+.phone-doc-notice {
+    position: absolute;
+    /* at the top: the kits keep their own buttons along the bottom of the page */
+    left: 12px;
+    right: 12px;
+    top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 8px 8px 12px;
+    font-size: 13px;
+    color: #f4f4f5;
+    background: rgba(24, 24, 27, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 10px;
+    /* a few seconds over the page: a finger on the words still reaches what is under them */
+    pointer-events: none;
+}
+.phone-doc-notice .phone-doc-button {
+    flex-shrink: 0;
+    min-height: 34px;
+    pointer-events: auto;
+}

@@ -17,7 +17,9 @@ import type { PhoneSessionsResponse } from '../../shared/phone'
 import { PHONE_API } from '../../shared/phone'
 import type { PhoneAccess } from './phoneAccess'
 import type { PhoneDevices } from './PhoneDevices'
+import type { PhoneDock } from './phoneDock'
 import type { PhonePush } from './PhonePush'
+import { handlePhoneFile, isPhoneFilePath, type PhoneFilesDeps } from './phoneFiles'
 import { readBody, readJson, send } from './PhoneServer'
 import type { ChatSender } from '../ConversationService'
 
@@ -46,6 +48,7 @@ export interface PhoneConversation {
     getImage(sessionId: string, ref: string): Promise<string | null>
     getToolOutput(sessionId: string, ref: string): Promise<string | null>
     listCommands(sessionId: string): ChatCommand[]
+    mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }>
 }
 
 export interface PhoneApiDeps {
@@ -56,6 +59,8 @@ export interface PhoneApiDeps {
     push: PhonePush
     listSessions(): PhoneSessionsResponse
     sessionExists(id: string): boolean
+    /** the Artifact Dock list; absent, this Mac has none as far as the phone can tell */
+    dock?: Pick<PhoneDock, 'installed' | 'read' | 'docFor'>
     conversation: PhoneConversation
     saveAttachment(name: string, bytes: Uint8Array): AttachResult
     /** screen text leaving the Mac goes through maskSecrets */
@@ -70,6 +75,10 @@ export interface PhoneApiDeps {
      * (ovis composer.ts:273,335,632 re-authorize between async steps).
      */
     stillAllowed(): boolean
+    /** absent: no file routes (phoneFiles.ts) */
+    files?: PhoneFilesDeps
+    /** a file on its way to a device: stopped if the device is disconnected */
+    trackDownload(stop: () => void): () => void
 }
 
 function refuseRevoked(res: http.ServerResponse): void {
@@ -82,8 +91,30 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
     const path = url.pathname
     const method = req.method ?? 'GET'
 
+    if (isPhoneFilePath(path) && deps.files) {
+        await handlePhoneFile(req, res, url, {
+            files: deps.files,
+            role: deps.access.role,
+            sessionExists: deps.sessionExists,
+            mentionedPaths: (id) => deps.conversation.mentionedPaths(id),
+            ...(deps.dock ? { dock: deps.dock } : {}),
+            stillAllowed: deps.stillAllowed,
+            trackDownload: deps.trackDownload
+        })
+        return
+    }
+
     if (path === PHONE_API.sessions && method === 'GET') {
         send(res, 200, deps.listSessions())
+        return
+    }
+
+    // A view-only device reads it too: it already sees terminals and chats. Nothing in the request reaches the socket.
+    if (path === PHONE_API.dock && method === 'GET') {
+        const list = (await deps.dock?.read()) ?? null
+        if (!deps.stillAllowed()) return refuseRevoked(res)
+        if (list) send(res, 200, list)
+        else send(res, 404, { error: 'dock_not_installed' })
         return
     }
 

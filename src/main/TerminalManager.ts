@@ -4,6 +4,10 @@ import os from 'os'
 import { execFile, execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { CLISessionTracker } from './CLISessionTracker'
+import { readAgentProcesses, heldCodexRollouts, readCodexRolloutMeta, classifyAgentProcess, selectForegroundAgentProcess } from './CodexSessionLocator'
+import type { AgentConversationFront } from '../shared/conversation'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
 import { SESSION_ID_ENV, TerminalAttachResult } from '../shared/types'
 const pty = require('node-pty')
 
@@ -81,6 +85,7 @@ export interface TerminalHistoryProvider {
  */
 export interface TerminalEvents {
     created: (id: string, cols: number, rows: number) => void
+    restoreInputFinished: (id: string) => void
     output: (id: string, data: string) => void
     resized: (id: string, cols: number, rows: number) => void
     exited: (id: string, exit: TerminalExit) => void
@@ -140,6 +145,8 @@ export class TerminalManager {
      * altering existing terminal rendering behavior. No-op when undefined.
      */
     public onOutput?: (id: string, data: string) => void
+    /** Startup restore must not append to input typed while its command was being prepared. */
+    public beforeRestoredInput?: (id: string) => boolean
 
     constructor(cliTracker?: CLISessionTracker) {
         this.cliTracker = cliTracker ?? null
@@ -337,8 +344,14 @@ export class TerminalManager {
             this.releaseHold(id, token)
         })
 
-        ipcMain.on('terminal-input', (_, id: string, data: string) => {
-            this.writeInput(id, data)
+        ipcMain.on('terminal-input', (_, id: string, data: string, restoring?: boolean) => {
+            // A restored conversation is already identified. Observing the projected input as
+            // a new manual resume would overwrite the original remembered options.
+            if (restoring === true) {
+                try {
+                    if (this.beforeRestoredInput?.(id) !== false) this.writeToTerminal(id, data)
+                } finally { this.events.emit('restoreInputFinished', id) }
+            } else this.writeInput(id, data)
         })
 
         ipcMain.handle('terminal-resize', (_, id: string, requestedCols: number, requestedRows: number) => {
@@ -612,6 +625,42 @@ export class TerminalManager {
                 resolve(group === pid && SHELL_NAMES.test(command) ? null : String(group))
             })
         })
+    }
+
+    /** Read-only process inspection for the manual conversation picker. */
+    async foregroundAgent(id: string): Promise<AgentConversationFront> {
+        const ptyProcess = this.terminals.get(id)
+        const unknown: AgentConversationFront = { kind: 'unknown', runningId: null, startedAt: null }
+        if (!ptyProcess) return { ...unknown, kind: 'none' }
+        const processes = await readAgentProcesses()
+        if (!processes) return unknown
+        const shell = processes.find((entry) => entry.pid === ptyProcess.pid)
+        if (!shell) return unknown
+        const commandName = (command: string): string => command.split('/').pop()!.replace(/^-/, '')
+        if (shell.tpgid === shell.pid && SHELL_NAMES.test(commandName(shell.command))) {
+            return { kind: 'shell', runningId: null, startedAt: shell.startedAt, pid: shell.pid, argv: shell.argv }
+        }
+        const current = selectForegroundAgentProcess(processes, ptyProcess.pid)
+        if (!current) return unknown
+        const kind = classifyAgentProcess(current) ?? 'other'
+        let runningId: string | null = null
+        if (kind === 'codex') {
+            const held = await heldCodexRollouts(current.pid)
+            if (held === null) return unknown
+            const metas = held.flatMap((file) => {
+                const meta = readCodexRolloutMeta(file)
+                return meta ? [meta] : []
+            })
+            const ids = [...new Set(metas.map((meta) => meta.id))]
+            if (ids.length === 1) runningId = ids[0]
+        } else if (kind === 'claude') {
+            try {
+                const configDir = process.env.CLAUDE_CONFIG_DIR || join(os.homedir(), '.claude')
+                const entry = JSON.parse(await readFile(join(configDir, 'sessions', `${current.pid}.json`), 'utf8'))
+                if (typeof entry.sessionId === 'string') runningId = entry.sessionId
+            } catch { /* Registry files can disappear as a process exits. */ }
+        }
+        return { kind, runningId, startedAt: current.startedAt, pid: current.pid, argv: current.argv }
     }
 
     /**

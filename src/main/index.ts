@@ -18,7 +18,10 @@ import { TerminalManager } from './TerminalManager'
 import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
 import { CLISessionTracker } from './CLISessionTracker'
-import { CodexSessionLocator } from './CodexSessionLocator'
+import { codexResumeFromArgv, CodexSessionLocator } from './CodexSessionLocator'
+import { AgentConversations, AgentConversationError } from './agentConversations'
+import { decideAgentCommand } from '../shared/agentCommand'
+import type { AgentConversationConnectInput } from '../shared/conversation'
 import { LoopManager } from './LoopManager'
 import { HookInstaller, hookIntegrationAllowed } from './HookInstaller'
 import { AgentHookBridge } from './AgentHookBridge'
@@ -160,7 +163,16 @@ const store = new Store<AppConfig>({
 }) as any
 
 const cliSessionTracker = new CLISessionTracker()
-const codexSessionLocator = new CodexSessionLocator()
+const codexSessionLocator = new CodexSessionLocator(undefined, {
+    isClaimed: (id) => ((store.get('workspaces') as Workspace[] | undefined) ?? []).some((w) => w.sessions.some((s) => s.cliSessionId === id))
+})
+const codexCaptureStops = new Map<string, () => void>()
+const pendingSessionRestores = new Set<string>()
+let forgetClaudeSession = (_id: string): void => {}
+function stopCodexCapture(id: string): void {
+    codexCaptureStops.get(id)?.()
+    codexCaptureStops.delete(id)
+}
 
 /**
  * Reads the user's shell aliases once, so an agent started through one (`cldy`)
@@ -186,7 +198,18 @@ const loadShellAliases = async (): Promise<void> => {
         console.warn('[cli-session] could not read shell aliases:', error)
     }
 }
+let shellAliasesReady: Promise<void> | undefined
+const ensureShellAliases = (): Promise<void> => shellAliasesReady ??= loadShellAliases()
+
 const terminalManager = new TerminalManager(cliSessionTracker)
+terminalManager.events.on('exited', (id: string) => { stopCodexCapture(id); pendingSessionRestores.delete(id) })
+terminalManager.events.on('restoreInputFinished', (id: string) => pendingSessionRestores.delete(id))
+terminalManager.beforeRestoredInput = (id) => {
+    const pending = cliSessionTracker.getPendingInput(id)
+    if (!cliSessionTracker.hasReceivedInput(id) && !pending.text && !pending.uncertain) return true
+    broadcast('session-restore-blocked', { sessionId: id, message: 'This terminal received input — resume was not typed. Use Connect in the session menu or type the resume command yourself.' })
+    return false
+}
 const portManager = new PortManager(() => {
     const settings = store.get('settings') as UserSettings | undefined
     // Default on: turning it off is an explicit choice, not a silent regression
@@ -371,12 +394,15 @@ const controlApiService = new ControlApiService({
     sessionFolders,
     inbox,
     checklists,
+    conversations: () => agentConversations,
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)
         recentSessions.forget(sessionId)
         inbox.forget(sessionId)
         conversationService.forget(sessionId)
+        stopCodexCapture(sessionId)
+        forgetClaudeSession(sessionId)
         phone?.forgetSession(sessionId)
     }
 })
@@ -413,6 +439,65 @@ const conversationService = new ConversationService({
         phoneConversationListeners.emit(sessionId, revision)
     }
 })
+
+// The same connection checks serve desktop IPC and the authenticated Control API.
+const agentConversations = new AgentConversations({
+    sessions: () => ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) =>
+        w.sessions.map((s) => ({ ...s, cwd: s.cwd || w.path }))),
+    foreground: (id) => terminalManager.foregroundAgent(id),
+    resolveAlias: (name) => cliSessionTracker.resolveAlias(name),
+    beforeConnect: (id) => {
+        if (pendingSessionRestores.has(id)) throw new AgentConversationError(409, 'input_busy', 'Session restoration is still preparing. Wait before connecting.')
+    },
+    beforeResume: async (id) => {
+        await terminalMirror.flush(id)
+        if (terminalMirror.showsAwaitingInput(id)) throw new AgentConversationError(409, 'awaiting_input', 'Answer the question in Terminal before resuming a conversation.')
+        const pending = cliSessionTracker.getPendingInput(id)
+        const continued = terminalMirror.hasContinuationPrompt(id)
+        if (pending.text || pending.uncertain || continued) throw new AgentConversationError(409, 'input_busy', 'Terminal input is not empty or was edited. Finish or cancel it with Enter or Ctrl+C before connecting.')
+    },
+    beforeInput: (id) => {
+        const pending = cliSessionTracker.getPendingInput(id)
+        if (pending.text || pending.uncertain) throw new AgentConversationError(409, 'input_busy', 'Terminal input is not empty or was edited. Finish or cancel it with Enter or Ctrl+C before connecting.')
+    },
+    waitForAgent: async (id, agent, conversationId) => {
+        const until = Date.now() + 3000
+        while (Date.now() < until) {
+            const front = await terminalManager.foregroundAgent(id)
+            if (front.kind === agent && (front.runningId?.toLowerCase() === conversationId.toLowerCase() || (front.argv ?? '').split(/\s+/).some((token) => token.toLowerCase() === conversationId.toLowerCase()))) return true
+            if (front.kind === 'none' || (front.kind === 'claude' || front.kind === 'codex') && front.kind !== agent) return false
+            await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        return false
+    },
+    update: (id, info) => {
+        stopCodexCapture(id)
+        persistDetectedSession({ terminalId: id, cliSessionId: info.cliSessionId, cliToolName: info.cliToolName, baseCommand: info.cliCommand })
+    },
+    write: (id, data) => terminalManager.writeInput(id, data),
+    forget: (id) => forgetClaudeSession(id),
+    codexHome,
+    claudeConfigDir
+})
+
+function persistDetectedSession(info: { terminalId: string; cliSessionId: string; cliToolName: string; baseCommand: string }): void {
+    const workspaces = store.get('workspaces') as Workspace[]
+    for (const ws of workspaces) {
+        const session = ws.sessions.find((s) => s.id === info.terminalId)
+        if (!session) continue
+        session.cliSessionId = info.cliSessionId
+        session.cliToolName = info.cliToolName
+        const agent = info.cliToolName === 'claude' ? 'claude' : 'codex'
+        const decision = decideAgentCommand(info.baseCommand, agent, (name) => cliSessionTracker.resolveAlias(name))
+        if (decision.recognized) session.cliCommand = decision.storedCommand
+        store.set('workspaces', workspaces)
+        broadcast('cli-session-detected', {
+            workspaceId: ws.id, sessionId: info.terminalId,
+            cliSessionId: info.cliSessionId, cliToolName: info.cliToolName, cliCommand: session.cliCommand
+        })
+        return
+    }
+}
 
 // Phone connection (Settings › Phone): a second server, off by default, set up once the app is ready.
 let phone: PhoneSetup | null = null
@@ -1012,17 +1097,17 @@ function validateCliSessionIds(): void {
     const claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
     const projectsDir = path.join(claudeDir, 'projects')
 
-    if (!existsSync(projectsDir)) {
-        console.log('[validateCliSessionIds] Claude projects dir not found:', projectsDir)
-        return
-    }
+    // Codex validation must still run when this machine has no Claude projects.
 
     // Collect all existing session IDs from Claude's storage
     const existingSessionIds = new Set<string>()
+    let claudeStorageKnown = false
     try {
-        const projectDirs = readdirSync(projectsDir)
+        const projectDirs = readdirSync(projectsDir, { withFileTypes: true })
+        claudeStorageKnown = true
         for (const dir of projectDirs) {
-            const dirPath = path.join(projectsDir, dir)
+            if (!dir.isDirectory()) continue
+            const dirPath = path.join(projectsDir, dir.name)
             try {
                 const files = readdirSync(dirPath)
                 for (const file of files) {
@@ -1030,11 +1115,10 @@ function validateCliSessionIds(): void {
                         existingSessionIds.add(file.replace('.jsonl', ''))
                     }
                 }
-            } catch { /* skip unreadable dirs */ }
+            } catch { /* A disappearing/unreadable child does not make the projects root unknown. */ }
         }
-    } catch (e) {
-        console.error('[validateCliSessionIds] Failed to scan projects dir:', e)
-        return
+    } catch {
+        console.warn('[validateCliSessionIds] Claude storage unavailable; preserving Claude ids')
     }
 
     console.log(`[validateCliSessionIds] Found ${existingSessionIds.size} session(s) in Claude storage`)
@@ -1044,6 +1128,8 @@ function validateCliSessionIds(): void {
     for (const ws of workspaces) {
         for (const session of ws.sessions) {
             if (session.cliSessionId) {
+                const agent = session.cliToolName === 'codex' ? 'codex' : 'claude'
+                if (agent === 'claude' && !claudeStorageKnown) continue
                 // Codex keeps its own conversations; only Claude's are in the set above.
                 const exists = session.cliToolName === 'codex'
                     ? codexSessionLocator.exists(session.cliSessionId)
@@ -1065,27 +1151,6 @@ function validateCliSessionIds(): void {
     }
 }
 
-// Clear all cliSessionIds on graceful quit (belt-and-suspenders with validateCliSessionIds).
-function clearAllCliSessionIds(): void {
-    const workspaces = store.get('workspaces') as Workspace[]
-    let modified = false
-    let count = 0
-    for (const ws of workspaces) {
-        for (const session of ws.sessions) {
-            if (session.cliSessionId || session.cliToolName) {
-                delete session.cliSessionId
-                delete session.cliToolName
-                modified = true
-                count++
-            }
-        }
-    }
-    if (modified) {
-        console.log(`[clearAllCliSessionIds] Cleared ${count} CLI session(s)`)
-        store.set('workspaces', workspaces)
-    }
-}
-
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -1098,8 +1163,12 @@ app.whenReady().then(async () => {
         app.dock?.hide()
     }
 
-    // Validate persisted cliSessionIds against Claude's session storage
+    // The first window never waits for an interactive profile. Resume-specific checks await this separately.
+    void ensureShellAliases()
     validateCliSessionIds()
+    for (const ws of (store.get('workspaces') as Workspace[])) {
+        for (const session of ws.sessions) if (session.cliSessionId && (session.cliToolName === 'codex' || session.cliToolName === 'claude')) pendingSessionRestores.add(session.id)
+    }
 
     // Histories of sessions deleted since the last run; then keep saving.
     scrollbackStore.prune()
@@ -1296,14 +1365,56 @@ app.whenReady().then(async () => {
         const owner = workspaces.find((w) => w.sessions.some((s: TerminalSession) => s.id === terminalId))
         const session = owner?.sessions.find((s: TerminalSession) => s.id === terminalId)
         if (!owner || !session) return
-        codexSessionLocator.watch(session.cwd || owner.path, Date.now(), (cliSessionId) => {
+        stopCodexCapture(terminalId)
+        const shellPid = [...terminalManager.listPtyPids()].find(([, id]) => id === terminalId)?.[0]
+        const stop = codexSessionLocator.watch(session.cwd || owner.path, Date.now(), (cliSessionId) => {
+            codexCaptureStops.delete(terminalId)
             console.log(`[codex-session] ${terminalId} → ${cliSessionId}`)
             persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'codex', baseCommand })
-        })
+        }, { terminalId, shellPid })
+        codexCaptureStops.set(terminalId, stop)
     }
     cliSessionTracker.onCodexStarted = startCodexCapture
+    const resumeChecks = new Map<string, symbol>()
+    cliSessionTracker.onCodexResumed = (terminalId, cliSessionId, baseCommand) => {
+        const token = Symbol()
+        resumeChecks.set(terminalId, token)
+        // Keystrokes and pasted commands are only hints. The running process must confirm them.
+        void (async () => {
+            const until = Date.now() + 4000
+            while (Date.now() < until && resumeChecks.get(terminalId) === token) {
+                const front = await terminalManager.foregroundAgent(terminalId)
+                if (front.kind === 'codex') {
+                    if (codexResumeFromArgv(front.argv ?? '')?.toLowerCase() === cliSessionId.toLowerCase()) {
+                        const session = (store.get('workspaces') as Workspace[]).flatMap((w) => w.sessions).find((s) => s.id === terminalId)
+                        // A prepared fallback command must not replace the original stored options.
+                        if (session?.cliToolName === 'codex' && session.cliSessionId?.toLowerCase() === cliSessionId.toLowerCase()) return
+                        await agentConversations.connect(terminalId, { agent: 'codex', id: cliSessionId, force: true }, { baseCommand })
+                        return
+                    }
+                }
+                if (front.kind === 'claude' || front.kind === 'none') return
+                await new Promise((resolve) => setTimeout(resolve, 100))
+            }
+        })().catch((error) => console.warn('[codex-session] resume was not linked:', error instanceof AgentConversationError ? error.code : error))
+            .finally(() => { if (resumeChecks.get(terminalId) === token) resumeChecks.delete(terminalId) })
+    }
+
+    ipcMain.handle('get-session-resume-command', async (_event, terminalId: string): Promise<string | undefined> => {
+        await ensureShellAliases()
+        const session = ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => w.sessions).find((s) => s.id === terminalId)
+        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude')) { pendingSessionRestores.delete(terminalId); return undefined }
+        if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(session.cliSessionId)) { pendingSessionRestores.delete(terminalId); return undefined }
+        const decision = decideAgentCommand(session.cliCommand, session.cliToolName, (name) => cliSessionTracker.resolveAlias(name))
+        return `${decision.inputCommand} ${session.cliToolName === 'codex' ? 'resume' : '--resume'} ${session.cliSessionId}`
+    })
 
     ipcMain.handle('watch-codex-session', (_, sessionId: string, command: string): boolean => {
+        const resumed = cliSessionTracker.codexResume(command)
+        if (resumed) {
+            cliSessionTracker.onCodexResumed?.(sessionId, resumed.id, resumed.baseCommand)
+            return true
+        }
         if (!cliSessionTracker.isCodexStart(command)) return false
         startCodexCapture(sessionId, command.trim())
         return true
@@ -1318,31 +1429,6 @@ app.whenReady().then(async () => {
         loopManager.noteCliSession(info)
     }
 
-    function persistDetectedSession(info: { terminalId: string; cliSessionId: string; cliToolName: string; baseCommand: string }): void {
-        // Find which workspace/session this terminal belongs to and persist
-        const workspaces = store.get('workspaces') as Workspace[]
-        for (const ws of workspaces) {
-            const session = ws.sessions.find((s: TerminalSession) => s.id === info.terminalId)
-            if (session) {
-                session.cliSessionId = info.cliSessionId
-                session.cliToolName = info.cliToolName
-                session.cliCommand = info.baseCommand
-                store.set('workspaces', workspaces)
-
-                // Notify renderer
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('cli-session-detected', {
-                        workspaceId: ws.id,
-                        sessionId: info.terminalId,
-                        cliSessionId: info.cliSessionId,
-                        cliToolName: info.cliToolName
-                    })
-                }
-                break
-            }
-        }
-    }
-
     // Follow the conversation Claude is actually on (it changes on /resume),
     // so a restart resumes that one rather than the id injected at start.
     const claudeSessionSync = new ClaudeSessionSync({
@@ -1354,15 +1440,19 @@ app.whenReady().then(async () => {
             const session = workspaces.flatMap((w) => w.sessions ?? []).find((s) => s.id === terminalId)
             if (!session || session.cliSessionId === cliSessionId) return
             console.log(`[claude-session] ${terminalId} → ${cliSessionId} (was ${session.cliSessionId ?? 'none'})`)
+            const initial = session.initialCommand ? decideAgentCommand(session.initialCommand, 'claude', (name) => cliSessionTracker.resolveAlias(name)) : undefined
+            const baseCommand = session.cliToolName === 'claude' && session.cliCommand
+                ? session.cliCommand : initial?.recognized ? session.initialCommand! : 'claude'
             persistDetectedSession({
                 terminalId,
                 cliSessionId,
                 cliToolName: 'claude',
-                // Keep the alias that started it (`cldy`); a terminal that ran something else falls back to plain claude.
-                baseCommand: session.cliToolName === 'claude' && session.cliCommand ? session.cliCommand : 'claude'
+                // Keep the recorded command, or the original preparation when no command was captured.
+                baseCommand
             })
         }
     })
+    forgetClaudeSession = (id) => claudeSessionSync.forget(id)
     claudeSessionSync.start()
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)
@@ -1395,7 +1485,8 @@ app.whenReady().then(async () => {
     })
 
     // Rewrite a command through CLISessionTracker (for template/initialCommand)
-    ipcMain.handle('rewrite-cli-command', (_, command: string): { command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null => {
+    ipcMain.handle('rewrite-cli-command', async (_, command: string): Promise< { command: string; cliSessionId: string; cliToolName: string; baseCommand: string } | null> => {
+        await ensureShellAliases()
         const result = cliSessionTracker.rewriteCommand(command)
         console.log(`[rewrite-cli-command] "${command}" → ${result ? `"${result.command}" (id=${result.cliSessionId})` : 'null (not a CLI tool)'}`)
         return result
@@ -3355,6 +3446,17 @@ app.whenReady().then(async () => {
     )
     // Chat view (ConversationService). A window's subscriptions end with it.
     const chatSubscriptions = new Map<number, Map<string, number>>()
+    const agentConversationReply = async (action: () => Promise<unknown>): Promise<unknown> => {
+        try { return await action() } catch (error) {
+            if (error instanceof AgentConversationError) return { error: { code: error.code, message: error.message, ...error.details } }
+            console.error('[agent-conversations] Request failed:', error)
+            return { error: { code: 'internal', message: 'Could not read or connect the conversation.' } }
+        }
+    }
+    ipcMain.handle('agent-conversations-list', (_e, id: string) => agentConversationReply(() => agentConversations.list(id)))
+    ipcMain.handle('agent-conversation-connect', (_e, id: string, body: AgentConversationConnectInput) =>
+        agentConversationReply(() => agentConversations.connect(id, body)))
+
     ipcMain.handle('conversation-get', (_e, sessionId: string, limit?: number) =>
         typeof sessionId === 'string' ? conversationService.getConversation(sessionId, typeof limit === 'number' ? limit : undefined) : null
     )
@@ -3446,7 +3548,7 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('send-text-to-terminal', (_e, terminalId: string, text: string): IPCResult<null> => {
         try {
-            terminalManager.writeToTerminal(terminalId, text)
+            terminalManager.writeInput(terminalId, text)
             return { success: true, data: null }
         } catch (e: any) {
             return { success: false, error: e.message, errorType: 'UNKNOWN_ERROR' }
@@ -3477,7 +3579,6 @@ app.whenReady().then(async () => {
         console.error('[agent-hooks] Startup failed, continuing without integration:', error)
     }
 
-    void loadShellAliases()
 
     // Before the window loads, so the sidebar never shows a leftover scratch registration.
     controlApiService.pruneSpentEphemeral()

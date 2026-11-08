@@ -72,6 +72,12 @@ export function fileLineTarget(target: string): { path: string; line: number | n
     return { path: target.slice(0, suffix.index), line: Number.isSafeInteger(line) && line >= 1 ? line : null }
 }
 
+/** The file a tool call read or wrote, when it names one. */
+export function toolFile(tool: ToolPart, input: Record<string, unknown>): string | null {
+    const path = input.file_path ?? input.notebook_path ?? (tool.name === 'view_image' ? input.path : undefined)
+    return typeof path === 'string' && path.trim() ? path : null
+}
+
 /** Text past this many characters links no paths (a whole tool output); nor does one with more paths than FILE_LINK_COUNT. */
 export const FILE_LINK_LIMIT = 256 * 1024
 export const FILE_LINK_COUNT = 500

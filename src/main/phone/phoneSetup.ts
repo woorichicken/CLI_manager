@@ -17,6 +17,7 @@ import { DEFAULT_QUICK_REPLIES } from '../../shared/conversation'
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder, type SessionEntry } from '../../renderer/src/utils/sessionNavigation'
 import { workspacesInLoadOrder } from '../workspaceLoadOrder'
 import { PhoneDevices } from './PhoneDevices'
+import { dockHostFiles, dockLocation, PhoneDock } from './phoneDock'
 import { PhonePush } from './PhonePush'
 import { PhoneServer } from './PhoneServer'
 import { TailscaleStatus } from './tailscaleStatus'
@@ -165,6 +166,13 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
     // Tests count refused resize messages from main.
     const testCounters = process.env.CLIMANGER_TEST_USERDATA ? ((globalThis as { __phoneResizeRefused?: number }).__phoneResizeRefused = 0, true) : false
 
+    const dock = new PhoneDock({
+        ...dockLocation(process.env, process.platform, os.homedir()),
+        hostFiles: dockHostFiles(os.homedir()),
+        sessionName: (id) => findSession(id)?.name ?? null,
+        maskLine
+    })
+
     const queueHooks = phoneQueueHooks(deps.conversation)
     server = new PhoneServer({
         devices,
@@ -175,11 +183,19 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         statusPoller: poller,
         listSessions,
         sessionExists,
+        dock,
         conversation: deps.conversation,
         saveAttachment: (name, bytes) => saveChatAttachment(join(os.tmpdir(), 'climanager-chat'), name, bytes),
         maskLine,
         recordPhoneInput: (sessionId, detail) => deps.eventLog.record(sessionId, 'phone-input', detail),
         terminals: deps.terminals,
+        files: {
+            home: os.homedir(),
+            // the paired devices and the app's settings live here, whatever the folder is called
+            protectedPlaces: [deps.userDataDir],
+            maskLines: (lines) => maskSecretLines(lines, { ...deps.mask, joinLines: false }),
+            record: (sessionId, detail) => deps.eventLog.record(sessionId, 'phone-file', detail)
+        },
         ...(deps.feedback ? { feedback: deps.feedback } : {}),
         quickReplies: () => {
             const chat = (deps.store.get('settings') as UserSettings | undefined)?.chat
