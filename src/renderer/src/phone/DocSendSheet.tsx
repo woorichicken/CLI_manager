@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ExternalLink } from 'lucide-react'
 import type { ChatSendResult } from '../../../shared/conversation'
 import type { PhoneDocTarget } from '../../../shared/phone'
@@ -18,6 +18,36 @@ const ARM_MS = 600
 
 type Refusal = Extract<SendOutcome, { kind: 'refused' }>
 
+/** How long the button says «Copied» before it is a Copy button again. */
+const COPIED_MS = 1500
+
+/**
+ * The phone page is http over USB (localhost) and https over Tailscale. Where the async clipboard is missing or refuses,
+ * the older copy command still works from a press. False: neither did.
+ */
+async function copyWords(text: string): Promise<boolean> {
+    try {
+        await navigator.clipboard.writeText(text)
+        return true
+    } catch {
+        // below
+    }
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    // on screen for the browser, out of sight for the person; readonly keeps the keyboard down
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none'
+    document.body.appendChild(area)
+    area.select()
+    try {
+        return document.execCommand('copy')
+    } catch {
+        return false
+    } finally {
+        area.remove()
+    }
+}
+
 export function DocSendSheet({ text, target: initial, onCancel, onDone, onOpenChat }: { text: string; target: PhoneDocTarget | null; onCancel: () => void; onDone: (notice: string, target: PhoneDocTarget) => void; onOpenChat: (sessionId: string) => void }) {
     const [target, setTarget] = useState(initial)
     const [choices, setChoices] = useState<PhoneDocTarget[] | null>(null)
@@ -25,10 +55,25 @@ export function DocSendSheet({ text, target: initial, onCancel, onDone, onOpenCh
     const [sending, setSending] = useState(false)
     const [refusal, setRefusal] = useState<Refusal | null>(null)
     const [busyDraft, setBusyDraft] = useState<string | null>(null)
+    const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle')
+    const words = useRef<HTMLPreElement>(null)
     useEffect(() => {
         const timer = window.setTimeout(() => setArmed(true), ARM_MS)
         return () => window.clearTimeout(timer)
     }, [])
+    useEffect(() => {
+        if (copied !== 'copied') return
+        const timer = window.setTimeout(() => setCopied('idle'), COPIED_MS)
+        return () => window.clearTimeout(timer)
+    }, [copied])
+
+    // the same words Send would type, for a person who wants them somewhere else (review comment, 11-08)
+    const copy = useCallback(async (): Promise<void> => {
+        if (await copyWords(text)) return setCopied('copied')
+        setCopied('failed')
+        // selected, so the phone's own copy menu takes them in one press
+        if (words.current) window.getSelection()?.selectAllChildren(words.current)
+    }, [text])
 
     // once offered it stays: choosing clears the refusal, and the choice should still be on screen
     const [pick, setPick] = useState(initial === null)
@@ -104,12 +149,17 @@ export function DocSendSheet({ text, target: initial, onCancel, onDone, onOpenCh
                     )}
                 </header>
                 {/* all of it, scrolled: what a page wrote here goes to the agent as if typed */}
-                <pre className="phone-doc-text" data-testid="phone-doc-text">
+                <pre className="phone-doc-text" data-testid="phone-doc-text" ref={words}>
                     {text}
                 </pre>
                 {tooLong && (
                     <p className="phone-doc-sheet-note is-error" role="alert" data-testid="phone-doc-too-long">
                         <AlertTriangle size={12} aria-hidden="true" /> {text.length.toLocaleString()} characters. A comment can hold {PHONE_MAX_COMMENT_CHARS.toLocaleString()}.
+                    </p>
+                )}
+                {copied === 'failed' && (
+                    <p className="phone-doc-sheet-note is-error" role="alert" data-testid="phone-doc-copy-failed">
+                        <AlertTriangle size={12} aria-hidden="true" /> Copy failed — select the text
                     </p>
                 )}
                 {busyDraft !== null && <InputBusyNote key={busyDraft} draft={busyDraft} onClearAndSend={() => void send(busyDraft)} onDismiss={() => setBusyDraft(null)} />}
@@ -125,6 +175,9 @@ export function DocSendSheet({ text, target: initial, onCancel, onDone, onOpenCh
                         </button>
                     )}
                     {/* a send on its way cannot be taken back: closing here would only hide its answer */}
+                    <button type="button" className="phone-doc-button" data-testid="phone-doc-copy" onClick={() => void copy()}>
+                        {copied === 'copied' ? 'Copied' : 'Copy'}
+                    </button>
                     <button type="button" className="phone-doc-button" data-testid="phone-doc-cancel" disabled={sending} onClick={onCancel}>
                         Cancel
                     </button>

@@ -52,6 +52,8 @@ the file.
   meanwhile, later messages ignored so the words cannot change while being read, Send disabled for 600 ms so a finger that pressed the
   page's button does not land on it. It posts to the chat's own route, so there is no new way to type into a session; a question on
   screen or text in the Mac's box refuses it as it refuses a typed message.
+  Beside Send, **Copy** puts the same words on the phone's clipboard and sends nothing (review comment, 2026-11-08): the async
+  clipboard where the page may use it, the copy command otherwise, and if both fail the words are left selected.
 - **Links in a page move nothing but the frame.** Inside the folder they replace the page, so the panel's back is one press. To the web
   they become a real link in a sheet. To a file of the Mac they go to the file panel, which judges the path like any other.
 - **`.html` opens as a document unless the link names a line.** `report.html:42` is a place in the source: the code view.

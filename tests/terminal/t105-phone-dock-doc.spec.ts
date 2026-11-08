@@ -421,6 +421,22 @@ test('T105 ☰ → Dock → a report → a comment → Send: it lands in the row
     expect(await phone.getByTestId('phone-doc-target').textContent()).toContain('T105 Claude')
     expect(await phone.getByTestId('phone-doc-text').textContent()).toContain('dock-comment-words')
     expect(fs.readFileSync(transcript, 'utf8'), 'nothing goes before Send').not.toContain('Phone comment')
+
+    // Copy takes the same words Send would, and sends nothing (review comment, 11-08). The clipboard is the machine's: put it back.
+    const savedClipboard = await app.evaluate(({ clipboard }) => clipboard.readText())
+    try {
+        await app.evaluate(({ clipboard }) => clipboard.writeText('T105-BEFORE'))
+        const sheetText = (await phone.getByTestId('phone-doc-text').textContent()) ?? ''
+        await tap(cdp, phone, phone.getByTestId('phone-doc-copy'))
+        await expect(phone.getByTestId('phone-doc-copy')).toHaveText('Copied')
+        await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText()), { timeout: 5_000 }).toBe(sheetText)
+        expect(sheetText.startsWith('[Phone comment] ')).toBe(true)
+        await shot(phone, 'sheet-copied')
+        await expect(phone.getByTestId('phone-doc-sheet'), 'copying keeps the sheet').toBeVisible()
+        expect(fs.readFileSync(transcript, 'utf8'), 'copying sends nothing').not.toContain('Phone comment')
+    } finally {
+        await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), savedClipboard)
+    }
     await expect(phone.getByTestId('phone-doc-send')).toBeEnabled({ timeout: 3_000 })
     await tap(cdp, phone, phone.getByTestId('phone-doc-send'))
     await expect(phone.getByTestId('phone-doc-notice')).toBeVisible({ timeout: 15_000 })
