@@ -30,6 +30,22 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 음성 지휘(herdr-voice형)·질문에 말로 답(Hark형)
+- Discovered: 2026-11-08 Orca·herdr 보이스 모드 비교 뒤 사람 결정: 「orca 형으로 하고 herdr 는 백로그로」. Chat 받아쓰기(Orca형)는 같은 날 들어갔다(`src/main/Dictation.ts`).
+- Evidence: herdr-voice 는 실시간 음성 AI(Grok·OpenAI·Gemini)가 `list_agents`·`start_agent`·`read_pane` 같은 도구로 세션을 부린다. Hark 는 막힌 에이전트의 질문을 스피커로 묻고 답을 키로 넣는다. 우리 쪽 재료는 이미 있다 — Control API·MCP(세션 열기·입력·대기·화면 읽기), 질문 대기 감지(`SessionScreenStatus.ts`), 질문 카드(`promptScreen.ts`, 보내기 직전 같은 메뉴 재확인), 인박스, 폰 푸시.
+- Why deferred: 음성 AI 가 셸에 입력하는 길이 하나 더 생긴다 — API 키 비용·클라우드로 나가는 음성·위험 동작 확인(Hark R0~R3 같은)을 설계해야 한다. 앱에 「메인 에이전트」가 없어 누가 지휘하는지도 정해야 한다.
+- Trigger: 받아쓰기를 쓰면서 「말로 시키고 싶다」는 요구가 나올 때, 또는 사람이 시작하자고 할 때. Hark형(질문에 답)이 재료가 더 많이 있어 먼저 볼 후보다.
+- Fix direction(미정): Hark형 — 질문 대기가 뜨면 TTS 로 읽고, 받아쓰기 헬퍼로 답을 듣고, 질문 카드 경로로 보낸다. herdr형 — 실시간 음성 클라이언트가 Control API MCP 를 도구로 쓴다.
+- Owner: 없음
+
+### 받아쓰기 — 듣는 언어를 고르는 설정
+- Discovered: 2026-11-08 Chat 받아쓰기 시범.
+- Evidence: 헬퍼는 Mac 의 언어로 듣는다(`SFSpeechRecognizer()`, `native/dictation/main.swift`). `--locale` 은 받지만 앱이 넘기지 않는다.
+- Why deferred: 시범이라 가장 좁게 시작했다. 한국어 Mac 에서 영어로 말하면 한국어로 받아 적힌다.
+- Trigger: 시스템 언어와 다른 언어로 받아 적고 싶다는 말이 나올 때.
+- Fix direction: Settings › Terminal(Chat) 에 언어 선택, `dictation-start` 가 locale 을 넘기고 `status` 도 그 locale 로 기기 안 지원을 다시 본다.
+- Owner: 없음
+
 ### 보낸 기기에 맞춘 답변 형태(폰/컴퓨터)
 - Discovered: 2026-11-07 사람 아이디어: 「각 메세지 앞에, 컴퓨터에서 보내는지, 핸드폰에서 보내는지를 헤더처럼 달아서, 각 화면에서 보기 좋은 형태의 답변을 내게」.
 - Evidence: 폰 폭 390 에는 넓은 표가 맞지 않는다. 앱은 폰 입력을 이미 안다(`recordPhoneInput`, `src/main/phone/phoneApi.ts:64`).

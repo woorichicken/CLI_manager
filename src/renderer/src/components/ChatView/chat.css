@@ -373,3 +373,11 @@ button.chat-attachment-chip:hover { background: rgba(255, 255, 255, 0.16); }
 .draft-handoff-notice { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 2147483000; display: flex; align-items: flex-start; gap: 8px; max-width: min(520px, calc(100vw - 32px)); padding: 9px 12px; border-radius: 10px; background: #1e293b; color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.35); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.4; }
 .draft-handoff-notice svg { flex-shrink: 0; margin-top: 2px; color: #93c5fd; }
 .draft-handoff-notice button { margin-left: 4px; color: #94a3b8; flex-shrink: 0; }
+
+/* Dictation (the mic beside ＋, macOS): red while it listens, with a word so it is not only a color. */
+.chat-dictation.is-listening { color: #f87171; border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.12); padding: 2px 8px 2px 6px; }
+.chat-dictation.is-listening svg { animation: chat-dictation-pulse 1.2s ease-in-out infinite; }
+.chat-dictation-label { font-size: 0.95em; }
+.chat-dictation:disabled { opacity: 0.7; }
+@keyframes chat-dictation-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .chat-dictation.is-listening svg { animation: none; } }

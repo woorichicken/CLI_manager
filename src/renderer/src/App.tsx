@@ -1241,6 +1241,10 @@ function App() {
             if (getSessionViewMode(sessionId) === 'chat' && sendChatCommand(sessionId, direction < 0 ? 'pageUp' : 'pageDown')) return
             requestTerminalPage(sessionId, direction)
         },
+        // the mic lives in the Chat view's box: in Terminal view the key does nothing
+        onToggleDictation: (sessionId) => {
+            if (getSessionViewMode(sessionId) === 'chat') sendChatCommand(sessionId, 'dictation')
+        },
     })
 
     const handleAddWorktreeWorkspace = async (parentWorkspaceId: string, branchName: string) => {

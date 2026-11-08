@@ -5,6 +5,8 @@ import { InputBusyNote } from './InputBusyNote'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH } from '../../../../shared/conversation'
 import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands } from './chatLib'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
+import { DictationButton } from './DictationButton'
+import { useDictation } from './useDictation'
 
 export { appendDraft } from './draftStore'
 
@@ -67,6 +69,8 @@ export interface ComposerHandle {
      * text goes to that session's saved draft instead (round2 N01).
      */
     editText(text: string, forSession?: string): void
+    /** the mic: starts listening into the box, or stops (⌘⇧D) — nothing where dictation is unavailable */
+    toggleDictation(): void
 }
 
 export interface ComposerProps {
@@ -173,6 +177,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         [sessionId]
     )
 
+    // ---- dictation (the mic, macOS) ------------------------------------------------------------
+    const readBox = useCallback(() => {
+        const element = box.current
+        const length = textRef.current.length
+        return { text: textRef.current, start: element?.selectionStart ?? length, end: element?.selectionEnd ?? length }
+    }, [])
+    const dictation = useDictation({
+        dictation: transport.dictation,
+        sessionId,
+        readBox,
+        write: setDraft,
+        onError: (message) => setNotice({ tone: 'error', text: message })
+    })
+
     // ---- attachments -----------------------------------------------------------------------
     const addFiles = useCallback(
         (picked: File[]) => {
@@ -238,9 +256,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 }
                 const next = text.trim() ? `${text}\n${incoming}` : incoming
                 setDraft(next, next.length)
+            },
+            toggleDictation: () => {
+                if (!dictation.available) return
+                box.current?.focus()
+                dictation.toggle()
             }
         }),
-        [addFiles, setDraft, text, sessionId]
+        [addFiles, setDraft, text, sessionId, dictation]
     )
 
     // ---- completion menu -------------------------------------------------------------------
@@ -351,6 +374,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
         // IME composition (Korean, Japanese): Enter confirms the character, it does not send.
         if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+        // listening: the box is read-only, and Enter or Esc ends listening (the words stay, nothing is sent)
+        if (dictation.active) {
+            if (event.key === 'Enter' || event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                dictation.stop()
+            }
+            return
+        }
         if (menuOpen) {
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault()
@@ -455,7 +487,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               : message.length > MAX_CHAT_TEXT_LENGTH * NEAR_LIMIT
                 ? `${(MAX_CHAT_TEXT_LENGTH - message.length).toLocaleString()} characters left`
                 : null
-    const placeholder = pendingPick
+    const placeholder = dictation.active
+        ? 'Listening… speak, then press Enter or the mic to stop'
+        : pendingPick
         ? 'Enter confirms the option above · Esc cancels'
         : promptOptions
           ? touch
@@ -600,6 +634,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
                         onKeyDown={onKeyDown}
                         onPaste={onPaste}
+                        readOnly={dictation.active}
+                        data-dictating={dictation.active ? 'true' : undefined}
                     />
                     </div>
                     {showStop ? (
@@ -619,7 +655,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                             type="button"
                             className="chat-composer-send"
                             data-testid="chat-send"
-                            disabled={attaching || over > 0 || (empty && !pendingPick)}
+                            disabled={attaching || over > 0 || dictation.active || (empty && !pendingPick)}
                             onPointerDown={(event) => event.preventDefault()}
                             onClick={submit}
                             title={touch ? 'Send' : preferences.enterSends === false ? 'Send (⌘Enter)' : 'Send (Enter)'}
@@ -645,6 +681,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     <button type="button" className="chat-meta-chip is-icon" data-testid="chat-attach" title="Attach files (or paste / drop them)" aria-label="Attach files" onClick={() => picker.current?.click()}>
                         <Plus size={13} />
                     </button>
+                    <DictationButton controls={dictation} />
                     {status}
                     {hint && (
                         <span className={`chat-composer-hint${over > 0 ? ' is-over' : ''}`} data-testid="chat-composer-hint">

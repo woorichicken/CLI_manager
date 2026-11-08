@@ -35,7 +35,7 @@ export function useChatActions(): ChatActions | null {
  * Commands for one session's Chat view from outside it — the app's keyboard shortcuts. A
  * module bus rather than props: the shortcut handler sits in App, the view deep in a pane.
  */
-export type ChatCommandName = 'focus' | 'pageUp' | 'pageDown'
+export type ChatCommandName = 'focus' | 'pageUp' | 'pageDown' | 'dictation'
 
 type Listener = (command: ChatCommandName) => void
 const listeners = new Map<string, Set<Listener>>()

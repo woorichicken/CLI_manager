@@ -18,6 +18,10 @@
     <key>com.apple.security.network.client</key>
     <true/>
 
+    <!-- Chat 받아쓰기: 하드닝된 런타임은 이 권한 없이 마이크 입력을 막는다 -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
     <!-- 파일 시스템 접근 -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>

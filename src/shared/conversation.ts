@@ -14,6 +14,8 @@
  * that file is here.
  */
 
+import type { ChatDictation } from './dictation'
+
 /** Evidence of skill activity, not a claim that the skill's workflow completed. */
 export interface SkillActivity {
     name: string
@@ -342,6 +344,8 @@ export interface ChatTransport {
     openFile(sessionId: string, path: string, line?: number): void
     /** Opens a web address outside the app. */
     openLink(url: string): void
+    /** Speech to text into the message box (the Mac app). Absent: no mic button — a phone has its keyboard's. */
+    dictation?: ChatDictation
 }
 
 /** How many turns a Chat view asks for first. */

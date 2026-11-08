@@ -95,5 +95,12 @@ export const electronChatTransport: ChatTransport = {
     },
     openLink(url) {
         if (/^(https?:|mailto:)/i.test(url)) void window.api.openExternal(url)
+    },
+    dictation: {
+        status: () => window.api.dictationStatus(),
+        start: () => window.api.startDictation(),
+        stop: (id) => window.api.stopDictation(id),
+        cancel: (id) => window.api.cancelDictation(id),
+        onEvent: (listener) => window.api.onDictationEvent(listener)
     }
 }
