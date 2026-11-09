@@ -49,6 +49,8 @@ interface UseKeyboardShortcutsConfig {
     onFocusChatInput: (sessionId: string) => void
     /** One page of the chat, or of the terminal's scrollback. */
     onScrollPane: (sessionId: string, direction: 1 | -1) => void
+    /** Chat view: the mic in the message box (macOS) — starts or stops dictation. */
+    onToggleDictation: (sessionId: string) => void
 }
 
 function getShortcuts(settings: UserSettings): KeyboardShortcutMap {
@@ -132,6 +134,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onToggleChatView,
         onFocusChatInput,
         onScrollPane,
+        onToggleDictation,
     } = config
 
     // Chord mode state (for Cmd+T → number sequences)
@@ -314,6 +317,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
                     ['focusChatInput', onFocusChatInput],
                     ['scrollPaneUp', (sessionId) => onScrollPane(sessionId, -1)],
                     ['scrollPaneDown', (sessionId) => onScrollPane(sessionId, 1)],
+                    ['toggleDictation', onToggleDictation],
                 ]
                 for (const [action, run] of chatActions) {
                     if (!matchShortcut(e, shortcuts[action])) continue
@@ -496,6 +500,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onToggleChatView,
         onFocusChatInput,
         onScrollPane,
+        onToggleDictation,
         cancelChordMode,
         createSessionWithTemplateIndex,
     ])

@@ -180,6 +180,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         () =>
             onChatCommand(sessionId, (command) => {
                 if (command === 'focus') composer.current?.focus()
+                else if (command === 'dictation') composer.current?.toggleDictation()
                 else page(command === 'pageUp' ? -1 : 1)
             }),
         [sessionId, page]

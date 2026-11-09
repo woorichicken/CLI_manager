@@ -31,6 +31,15 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Chat dictation (mic button). macOS asks for these in the app's name: the helper is its child.
+  # Without the speech one, macOS kills the helper (SIGABRT) when it asks for permission.
+  extendInfo:
+    NSMicrophoneUsageDescription: CLI Manager uses the microphone only while you dictate a chat message.
+    NSSpeechRecognitionUsageDescription: CLI Manager turns your speech into text on this Mac when you dictate a chat message.
+  # Built by scripts/build-dictation.cjs (pnpm build:mac runs it first). Main finds it at resources/dictation/.
+  extraResources:
+    - from: native/dictation/bin/climanager-dictation
+      to: dictation/climanager-dictation
   # Notarization - requires APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
   notarize: true
 

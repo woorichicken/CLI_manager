@@ -336,7 +336,7 @@ export type ShortcutAction =
     | 'toggleMemo' | 'toggleRelated' | 'toggleChecklists'
     | 'revealInFinder' | 'openInEditor'
     | 'memoNewPage' | 'memoPrevPage' | 'memoNextPage' | 'memoDeletePage' | 'memoCopyPage'
-    | 'toggleChatView' | 'focusChatInput' | 'scrollPaneUp' | 'scrollPaneDown'
+    | 'toggleChatView' | 'focusChatInput' | 'scrollPaneUp' | 'scrollPaneDown' | 'toggleDictation'
 
 /** The memo actions a shortcut runs on the active session's memo (its header buttons). */
 export type MemoShortcutAction = Extract<ShortcutAction, `memo${string}`>
@@ -381,6 +381,8 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     focusChatInput:  { key: 'I', modifiers: ['mod', 'shift'], code: 'i' },
     scrollPaneUp:    { key: 'PageUp', modifiers: ['mod', 'shift'], code: 'PageUp' },
     scrollPaneDown:  { key: 'PageDown', modifiers: ['mod', 'shift'], code: 'PageDown' },
+    // D for dictate. Chat view on macOS only (the mic button); elsewhere the key does nothing.
+    toggleDictation: { key: 'D', modifiers: ['mod', 'shift'], code: 'd' },
 }
 
 /**
@@ -439,6 +441,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
     focusChatInput:  { label: 'Focus Message Box',   description: "Put the cursor in the chat's message box (the terminal in Terminal view)", group: 'chat' },
     scrollPaneUp:    { label: 'Scroll Up a Page',    description: 'Scroll the chat (or the terminal) up a page, keeping one line', group: 'chat' },
     scrollPaneDown:  { label: 'Scroll Down a Page',  description: 'Scroll the chat (or the terminal) down a page, keeping one line', group: 'chat' },
+    toggleDictation: { label: 'Dictate',             description: "Start or stop speech to text in the chat's message box (macOS). It types; you send", group: 'chat' },
 }
 
 export const SHORTCUT_GROUP_NAMES: Record<ShortcutGroup, string> = {

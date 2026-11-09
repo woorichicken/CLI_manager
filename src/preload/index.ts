@@ -4,6 +4,7 @@ import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_C
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
+import type { DictationEvent, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 // Custom APIs for renderer
 const api = {
@@ -394,6 +395,16 @@ const api = {
     listChatCommands: (sessionId: string): Promise<ChatCommand[]> => ipcRenderer.invoke('chat-commands', sessionId),
     saveChatAttachment: (name: string, bytes: Uint8Array): Promise<AttachResult> => ipcRenderer.invoke('chat-save-attachment', name, bytes),
     openChatPath: (target: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target),
+    // Chat dictation (macOS): src/main/Dictation.ts
+    dictationStatus: (): Promise<DictationStatus> => ipcRenderer.invoke('dictation-status'),
+    startDictation: (): Promise<DictationStartResult> => ipcRenderer.invoke('dictation-start'),
+    stopDictation: (id: number): Promise<void> => ipcRenderer.invoke('dictation-stop', id),
+    cancelDictation: (id: number): Promise<void> => ipcRenderer.invoke('dictation-cancel', id),
+    onDictationEvent: (callback: (event: DictationEvent) => void) => {
+        const listener = (_e: unknown, event: DictationEvent) => callback(event)
+        ipcRenderer.on('dictation-event', listener)
+        return () => ipcRenderer.removeListener('dictation-event', listener)
+    },
     answerPrompt: (sessionId: string, answer: PromptAnswer): Promise<PromptAnswerResult> =>
         ipcRenderer.invoke('prompt-answer', sessionId, answer)
 }

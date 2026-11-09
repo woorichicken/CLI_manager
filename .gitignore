@@ -3,6 +3,8 @@ node_modules/
 
 # Build outputs
 out/
+# Chat dictation helper — built by scripts/build-dictation.cjs
+native/dictation/bin/
 dist/
 *.js
 *.js.map

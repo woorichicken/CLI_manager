@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage, Tray, Menu, Notification } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage, Tray, Menu, Notification, webContents } from 'electron'
 import path, { join } from 'path'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -52,6 +52,7 @@ import { setupPhone, phoneConversationListeners, type PhoneSetup } from './phone
 import { workspacesInLoadOrder } from './workspaceLoadOrder'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
+import { DictationService } from './Dictation'
 
 // Set app name for development mode
 app.setName('CLI Manager')
@@ -410,6 +411,23 @@ const controlApiServer = new ControlApiServer({
     service: controlApiService,
     store,
     appVersion: app.getVersion()
+})
+
+// Chat dictation (the mic button): the Swift helper built by scripts/build-dictation.cjs.
+// Tests point CLIMANAGER_DICTATION_HELPER at a fake one — honored only outside a packaged release.
+const dictationHelperPath = (): string | null => {
+    const override = process.env.CLIMANAGER_DICTATION_HELPER
+    if (override && (!app.isPackaged || process.env.CLIMANGER_TEST_USERDATA)) return override
+    return app.isPackaged
+        ? path.join(process.resourcesPath, 'dictation', 'climanager-dictation')
+        : path.join(app.getAppPath(), 'native', 'dictation', 'bin', 'climanager-dictation')
+}
+const dictation = new DictationService({
+    helperPath: dictationHelperPath,
+    send: (owner, event) => {
+        const target = webContents.fromId(owner)
+        if (target && !target.isDestroyed()) target.send('dictation-event', event)
+    }
 })
 
 // Chat view: a session's conversation read from the agent's own transcript file, plus
@@ -3444,6 +3462,28 @@ app.whenReady().then(async () => {
     ipcMain.handle('remove-checklist-item', (_e, id: unknown, itemId: unknown): boolean =>
         typeof id === 'string' && typeof itemId === 'string' && checklists.removeItem(id, itemId) !== null
     )
+    // Chat dictation. A run belongs to the window that started it and ends when it goes away or reloads.
+    const dictationOwners = new Set<number>()
+    ipcMain.handle('dictation-status', () => dictation.status())
+    ipcMain.handle('dictation-start', (event) => {
+        const sender = event.sender
+        if (!dictationOwners.has(sender.id)) {
+            dictationOwners.add(sender.id)
+            const owner = sender.id
+            sender.once('destroyed', () => {
+                dictationOwners.delete(owner)
+                dictation.ownerGone(owner)
+            })
+            sender.on('did-start-loading', () => dictation.ownerGone(owner))
+        }
+        return dictation.start(sender.id)
+    })
+    ipcMain.handle('dictation-stop', (event, id: unknown): void => {
+        if (typeof id === 'number') dictation.stop(event.sender.id, id)
+    })
+    ipcMain.handle('dictation-cancel', (event, id: unknown): void => {
+        if (typeof id === 'number') dictation.cancel(event.sender.id, id)
+    })
     // Chat view (ConversationService). A window's subscriptions end with it.
     const chatSubscriptions = new Map<number, Map<string, number>>()
     const agentConversationReply = async (action: () => Promise<unknown>): Promise<unknown> => {
@@ -3653,6 +3693,7 @@ app.on('will-quit', () => {
     void controlApiServer.stop()
     void phone?.server.stop()
     terminalMirror.disposeAll()
+    dictation.dispose()
 })
 
 // Handle app quit request (Cmd+Q or close button)

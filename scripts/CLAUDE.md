@@ -19,6 +19,7 @@ gains an outward-facing effect belongs there, documented, not here.
 |---|---|---|---|
 | `release.cjs` | manual | Release orchestrator: preflight, build, artifact verification, publish | Commits, tags, pushes, creates a GitHub release |
 | `post-release.cjs` | manual | Distribution after a release: R2 upload, website download links, changelog row | Uploads to R2, commits and pushes the website repo, writes to the changelog database |
+| `build-dictation.cjs` | `build:mac` / `publish:mac` / `build:dictation` | Builds the Chat dictation helper (`native/dictation/main.swift`) into a universal `native/dictation/bin/climanager-dictation`; electron-builder copies it to `Resources/dictation/`. Not macOS: skips, exit 0 | Writes `native/dictation/bin/` (gitignored) |
 | `prepublish-check.cjs` | manual / CI | Repository hygiene gate: committed credentials, personal absolute paths, tracked-but-ignored files, oversized files, unpushed release commits | None (read-only) |
 | `sync-node-pty-prebuilds.cjs` | automatic | Runs on `postinstall`. Repairs `node-pty` native binaries when an install leaves wrong-arch `pty.node` / non-executable `spawn-helper`. | Rewrites files under `node_modules/node-pty/build/Release` |
 | `mock-cli/claude-mock.cjs` | manual | Generates Claude-Code-shaped terminal output (fps, history size, full-clear cadence) for the terminal tests | None |
