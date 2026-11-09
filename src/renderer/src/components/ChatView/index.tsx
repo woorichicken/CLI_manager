@@ -316,7 +316,8 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         return null
     }, [turns])
     const elapsed = useElapsed(working ? lastUser : null)
-    const promptOptions = prompt ? (prompt.answerable ? prompt.options.flatMap((option) => (option.number !== null && !option.custom ? [option.number] : [])) : []) : null
+    // a multiple choice is ticked on the card, not picked by its number
+    const promptOptions = prompt ? (prompt.answerable && !prompt.multi ? prompt.options.flatMap((option) => (option.number !== null && !option.custom ? [option.number] : [])) : []) : null
 
     const rail = useMemo(
         () =>

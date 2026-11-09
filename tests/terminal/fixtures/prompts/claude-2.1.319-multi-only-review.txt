@@ -1,0 +1,39 @@
+▎ actions and prompt injection before executing, runs the ones it assesses as lower-risk, and blocks the rest.
+▎ https://code.claude.com/docs/en/permission-modes
+
+❯ Call the AskUserQuestion tool exactly once with three questions. Q1 header 'Color' question 'Which color?'  
+  options Red, Blue (single choice). Q2 header 'Fruits' question 'Which fruits?' options Apple, Banana,       
+  Cherry with multiSelect true. Q3 header 'Size' question 'Which size?' options Small, Large. Do nothing      
+  else.                                                                                                       
+
+⏺ User answered Claude's questions:
+  ⎿  · Which color? → Red
+     · Which fruits? → Apple, Cherry
+     · Which size? → Large
+  
+⏺ Your answers:
+  - Color: Red
+  - Fruits: Apple, Cherry
+  - Size: Large
+
+✻ Cogitated for 3s · done 1:31 PM
+
+❯ Call AskUserQuestion once with ONE question only: header 'Review' question 'Which reviews do you want?'     
+  options A-review, B-review, C-review, multiSelect true. Do nothing else.                                    
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☒ Review  ✔ Submit  →
+
+Review your answers
+  
+ ● Which reviews do you want?
+   → A-review, B-review
+
+Ready to submit your answers?
+
+❯ 1. Submit answers
+  2. Cancel
+
+
+
+

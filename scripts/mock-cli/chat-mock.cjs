@@ -23,7 +23,11 @@
  *             Codex: its folder-trust dialog (the words CLI Manager already reads, TerminalMirror).
  *   QUESTION  an AskUserQuestion menu, copied from the real 2.1.312 screen (askuserquestion evidence):
  *             tab title, question, options with descriptions, "Type something.", a rule, "Chat about this".
- *   anything else: the turn works for --work-ms, then answers "Echo: <text>" with a small table.
+ *   FORM      (Claude) two questions under tabs, copied from real 2.1.319 screens (fixtures/prompts/claude-2.1.319-*):
+ *             "Which color?" (single), "Which fruits?" (multiple choice: Enter ticks a row, Enter on its Submit
+ *             row goes on), then "Ready to submit your answers?". Submitting prints `CHOSE: submit color=…; fruits=…`.
+ *   PLANOK    (Claude) the plan approval of 2.1.319 (ExitPlanMode); "Tell Claude what to change" takes typed words.
+ *   APPROVE   (Codex) its command approval of 0.166.0; Esc picks "No …" (`CHOSE: esc`).
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
  *   TABLE     answers with a five-column table wider than a phone (Korean cells).
  *   LINK <id> answers with a session link to <id>'s first 8 characters, in backticks and in a sentence (b2020233).
@@ -150,6 +154,21 @@ function topRule() {
     if (!NAME) return rule()
     return '─'.repeat(Math.max(3, cols() - 2 - NAME.length - 3)) + ` ${NAME} ─`
 }
+/** a long line wrapped at the terminal's width, as the real CLIs draw their dialogs (not cut) */
+function wrapped(text, indent) {
+    // the pane's real width: cols() keeps 40 at least, and a 390-wide window has fewer
+    const width = Math.max(10, (process.stdout.columns || 100) - 2 - indent.length)
+    const lines = []
+    let line = ''
+    for (const word of text.split(' ')) {
+        if (line && line.length + 1 + word.length > width) {
+            lines.push(indent + line)
+            line = word
+        } else line = line ? `${line} ${word}` : word
+    }
+    lines.push(indent + line)
+    return lines
+}
 function dashes() {
     return '╌'.repeat(cols() - 2)
 }
@@ -170,6 +189,42 @@ function menuLines() {
             if (option.description) lines.push(`     ${option.description}`)
         })
         lines.push('', 'Enter to select · ↑/↓ to navigate · Esc to cancel')
+    } else if (menu.kind === 'form') {
+        const tabs = `←  ${menu.step > 0 ? '☒' : '☐'} Color  ${menu.step > 1 || menu.ticks.some(Boolean) ? '☒' : '☐'} Fruits  ✔ Submit  →`
+        const at = (row) => (row === menu.selected ? '❯' : ' ')
+        lines.push(rule(), tabs, '')
+        if (menu.step === 0) {
+            lines.push('Which color?', '')
+            FORM_COLORS.forEach((color, index) => lines.push(`${at(index)} ${index + 1}. ${color}`, `     ${color}`))
+            lines.push(`${at(2)} 3. ${menu.customText || 'Type something.'}`, rule(), `${at(3)} 4. Chat about this`, '')
+            lines.push('Enter to select · Tab/Arrow keys to navigate · Esc to cancel')
+        } else if (menu.step === 1) {
+            lines.push('Which fruits?', '')
+            const box = (index) => `[${menu.ticks[index] ? '✔' : ' '}]`
+            FORM_FRUITS.forEach((fruit, index) => lines.push(`${at(index)} ${index + 1}. ${box(index)} ${fruit}`, `         ${fruit}`))
+            lines.push(`${at(3)} 4. ${box(3)} ${menu.customText || 'Type something'}`, `${at(4)}    Submit`, rule(), `${at(5)} 5. Chat about this`, '')
+            lines.push('Enter to select · Tab/Arrow keys to navigate · Esc to cancel')
+        } else {
+            lines.push('Review your answers', '', ' ● Which color?', `   → ${menu.color}`, ' ● Which fruits?', `   → ${formFruits().join(', ') || '(none)'}`, '')
+            lines.push('Ready to submit your answers?', '', `${at(0)} 1. Submit answers`, `${at(1)} 2. Cancel`)
+        }
+    } else if (menu.kind === 'plan-approval') {
+        lines.push(rule(), ' Ready to code?', '', " Here is Claude's plan:", dashes(), ' Plan: add a greeting', '', ' 1. Write hello.txt', ' 2. Read it back', dashes(), '', rule())
+        lines.push(...wrapped('Claude has written up a plan and is ready to execute. Would you like to proceed?', ' '), '')
+        menu.options.forEach((option, index) => {
+            const label = option.custom && menu.customText ? menu.customText : option.label
+            lines.push(`${index === menu.selected ? ' ❯' : '  '} ${index + 1}. ${label}`)
+            if (option.custom) lines.push(...wrapped('shift+tab to approve with this feedback', '      '))
+        })
+        lines.push('', ...wrapped('ctrl+g to edit in Vim · ~/.claude/plans/mock-plan.md', ' '))
+    } else if (menu.kind === 'codex-approve') {
+        lines.push('', ...wrapped('Would you like to run the following command?', '  '), '', '  Environment: local', '')
+        lines.push(...wrapped('Reason: Allow creating hello.txt in the current directory?', '  '), '', '  $ touch hello.txt', '')
+        menu.options.forEach((option, index) => {
+            const [first, ...rest] = wrapped(option.label, '     ')
+            lines.push(`${index === menu.selected ? '›' : ' '} ${index + 1}. ${first.trimStart()}`, ...rest)
+        })
+        lines.push('', ...wrapped('Press enter to confirm or esc to cancel', '  '))
     } else if (menu.kind === 'codex-trust') {
         lines.push('Do you trust the contents of this directory?')
         menu.options.forEach((option, index) => lines.push(`${index === menu.selected ? '›' : ' '} ${index + 1}. ${option.label}`))
@@ -299,10 +354,62 @@ function openMenu(kind) {
                 { label: 'Chat about this', chat: true }
             ]
         }
+    } else if (kind === 'form') {
+        // cursor positions: Q1 rows 0-3 · Q2 rows 0-3, its Submit row 4, "Chat about this" 5 · review 0-1
+        menu = { kind, step: 0, selected: 0, customText: '', color: null, ticks: [false, false, false, false] }
+    } else if (kind === 'plan-approval') {
+        menu = {
+            kind,
+            selected: 0,
+            customText: '',
+            options: [{ label: 'Yes, and use auto mode' }, { label: 'Yes, manually approve edits' }, { label: 'Tell Claude what to change', custom: true }]
+        }
+    } else if (kind === 'codex-approve') {
+        menu = {
+            kind,
+            selected: 0,
+            options: [
+                { label: 'Yes, proceed (y)' },
+                { label: "Yes, and don't ask again for commands that start with `touch hello.txt` (p)" },
+                { label: 'No, and tell Codex what to do differently (esc)' }
+            ]
+        }
+        say('• Running touch hello.txt')
     } else {
         menu = { kind: 'codex-trust', selected: 0, options: [{ label: 'Yes, continue' }, { label: 'No, quit' }] }
     }
     draw()
+}
+
+const FORM_COLORS = ['Red', 'Blue']
+const FORM_FRUITS = ['Apple', 'Banana', 'Cherry']
+/** how many rows the cursor walks on each step of FORM */
+const formRows = () => (menu.step === 0 ? 4 : menu.step === 1 ? 6 : 2)
+const formFruits = () => [...FORM_FRUITS.filter((_, index) => menu.ticks[index]), ...(menu.ticks[3] && menu.customText ? [menu.customText] : [])]
+
+/** Enter on FORM: a pick goes to the next question, a tick toggles, Submit goes to the review, the review submits. */
+function formEnter() {
+    if (menu.step === 0) {
+        if (menu.selected === 3) return say('CHOSE: chat about this')
+        menu.color = menu.selected === 2 ? menu.customText || 'Type something' : FORM_COLORS[menu.selected]
+        menu.step = 1
+        menu.selected = 0
+        menu.customText = ''
+        return
+    }
+    if (menu.step === 1) {
+        if (menu.selected <= 3) menu.ticks[menu.selected] = !menu.ticks[menu.selected]
+        else if (menu.selected === 4) {
+            menu.step = 2
+            menu.selected = 0
+        }
+        return
+    }
+    const summary = `color=${menu.color}; fruits=${formFruits().join(', ')}`
+    const submitted = menu.selected === 0
+    menu = null
+    say(submitted ? `CHOSE: submit ${summary}` : 'CHOSE: cancel')
+    if (submitted) recordAnswer(`You answered: ${summary}.`)
 }
 
 function choose() {
@@ -310,12 +417,13 @@ function choose() {
     const label = option.custom ? `custom ${menu.customText}` : option.label
     const kind = menu.kind
     menu = null
-    say(`CHOSE: ${label}`)
+    // Codex: its option's words ("Yes, proceed") are what the app reads as a waiting question — print its number
+    say(kind === 'codex-approve' ? `CHOSE: option ${label.match(/\((\w+)\)$/)?.[1] ?? label}` : `CHOSE: ${label}`)
     if (kind === 'permission') {
         const denied = label === 'No'
         recordToolResult('toolu_mock_1', denied ? "The user doesn't want to proceed with this tool use." : '', denied)
         recordAnswer(denied ? 'Understood — I did not run it.' : 'Created the probe file.')
-    } else if (kind === 'question') {
+    } else if (kind === 'question' || kind === 'plan-approval' || kind === 'codex-approve') {
         recordAnswer(`You picked ${label}.`)
     }
     draw()
@@ -348,6 +456,9 @@ function submit(text) {
     recordUser(text)
     if (text === 'ASK') openMenu(AGENT === 'codex' ? 'codex-trust' : 'permission')
     else if (text === 'QUESTION') openMenu('question')
+    else if (text === 'FORM' && AGENT !== 'codex') openMenu('form')
+    else if (text === 'PLANOK' && AGENT !== 'codex') openMenu('plan-approval')
+    else if (text === 'APPROVE' && AGENT === 'codex') openMenu('codex-approve')
     else if (text === 'PLAN') {
         recordPlan()
         answerTurn(text, 'Planned three steps.')
@@ -373,10 +484,20 @@ let escape = ''
 let escapeTimer = null
 function handleKey(key) {
     if (menu) {
+        const rowCount = menu.kind === 'form' ? formRows() : menu.options.length
+        // the typed-answer row of FORM: Q1 row 2, Q2 row 3 (typing ticks it)
+        const formCustom = menu.kind === 'form' && (menu.step === 0 ? menu.selected === 2 : menu.step === 1 && menu.selected === 3)
         if (key === '\x1b[A') menu.selected = Math.max(0, menu.selected - 1)
-        else if (key === '\x1b[B') menu.selected = Math.min(menu.options.length - 1, menu.selected + 1)
+        else if (key === '\x1b[B') menu.selected = Math.min(rowCount - 1, menu.selected + 1)
+        else if (key === '\x1b' && menu.kind === 'codex-approve') {
+            menu = null
+            say('CHOSE: esc')
+        } else if (key === '\r' && menu.kind === 'form') formEnter()
         else if (key === '\r') return choose()
-        else if (menu.kind === 'question' && menu.options[menu.selected].custom) {
+        else if (formCustom && key >= ' ') {
+            menu.customText += key
+            if (menu.step === 1) menu.ticks[3] = true
+        } else if ((menu.kind === 'question' || menu.kind === 'plan-approval') && menu.options[menu.selected].custom) {
             if (key === '\x7f') menu.customText = menu.customText.slice(0, -1)
             else if (key >= ' ') menu.customText += key
         }

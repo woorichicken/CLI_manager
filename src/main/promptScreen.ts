@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import type { ConversationAgent, PromptAnswer, PromptKind, PromptMenu, PromptOption } from '../shared/conversation'
+import type { ConversationAgent, PromptAnswer, PromptKind, PromptMenu, PromptOption, PromptStep } from '../shared/conversation'
 import { INPUT_BOX_RULE, isBusyRow, isInputBoxRule } from './screenLines'
 
 /**
@@ -15,9 +15,13 @@ import { INPUT_BOX_RULE, isBusyRow, isInputBoxRule } from './screenLines'
  * highlighted option then Enter, "Type something." takes the user's words, and
  * the menu must still be on screen, unchanged, right before keys are sent.
  *
- * Codex menus are read for display only (`answerable: false`): there is no copy
- * of a real Codex approval screen to check a layout against, and a wrong guess
- * would press Enter on the wrong option.
+ * Round chat-gap-1109 added, each from copies of real screens (fixtures/prompts,
+ * Claude Code 2.1.319 · codex-cli 0.166.0, the keys pressed while capturing them):
+ * Claude's question tabs as steps, its multiple choice (Enter ticks a row, Enter on
+ * the Next/Submit row goes on), its review of the answers ("Ready to submit your
+ * answers?" — no key hint under it) and its plan approval; Codex's command and edit
+ * approvals ("No … (esc)" is Esc, ovis `server/dialogs/codex.ts`). Codex's folder
+ * trust stays display only — the startup watcher answers it.
  */
 
 // A turn in progress (`isBusyRow`): a real question replaces the spinner (checked on 2.1.312).
@@ -31,7 +35,10 @@ const MENU_MARKERS = [
     /Do you trust the contents of this directory/i,
     /Press enter to continue/i,
     /Do you want to (proceed|make|create|allow|run)/i,
-    /Would you like to (run|make|apply)/i
+    /Would you like to (run|make|apply|proceed)/i,
+    /Ready to submit your answers\?/i,
+    // the plan approval's first words: a narrow pane wraps "Would you like to proceed?" apart
+    /written up a plan/i
 ]
 
 /** Footer rows: hints about keys, not part of the question. */
@@ -52,6 +59,35 @@ const BOX_BORDER = /[│┃╭╮╰╯┌┐└┘]/g
 const CHECKBOX = /^(\[[ x✔✓]\]|[☐☑☒◯◉●○])\s/i
 
 const CUSTOM_OPTION = /^Type something\.?$/i
+
+/** Claude's question tabs over the question: `←  ☐ Color  ☒ Fruits  ✔ Submit  →` (cut off by a narrow pane: no →) */
+const TAB_BAR = /^←\s+[☐☒☑✔]/
+
+/** A multiple choice's tick box at the start of its label: `[ ] Apple`, `[✔] Apple` (2.1.319) */
+const CHECKBOX_LABEL = /^\[([ xX✔✓])\]\s+(.+)$/
+
+/** The unnumbered row a multiple choice draws under its typed answer, the cursor on it or not */
+const SUBMIT_ROW = /^([❯›>])?\s*(Next|Submit)$/
+
+const REVIEW_QUESTION = /^Ready to submit your answers\?$/i
+const REVIEW_OPTIONS = ['Submit answers', 'Cancel']
+/** the most answers a review card lists (one line each) */
+const REVIEW_MAX_LINES = 12
+
+/** Claude's plan approval (ExitPlanMode, 2.1.319) and its typed-feedback row */
+const PLAN_QUESTION = /written up a plan and is ready to execute/i
+const PLAN_CUSTOM = /^Tell Claude what to change$/i
+/** the most plan lines a card carries — the card scrolls; the whole plan is in the terminal */
+const PLAN_MAX_LINES = 40
+/** what may stand under a plan's options: its key hint and the plan file */
+const PLAN_FOOTER = /ctrl\+g to edit|Esc to/i
+
+/** Codex's approval question (its first row — a narrow pane wraps it), the hint that closes it, the key after each option */
+const CODEX_APPROVAL = /^Would you like to (run|make|apply)\b/i
+/** the most rows a wrapped question takes (40 columns wrap the plan's over three) */
+const QUESTION_WRAP_ROWS = 4
+const CODEX_HINT = /^Press enter to confirm or esc to cancel$/i
+const CODEX_KEY_SUFFIX = /\s+\((y|p|a|n|esc)\)$/i
 
 const QUESTION_MAX = 300
 const CONTEXT_MAX_LINES = 6
@@ -211,6 +247,7 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
 
     // Numbered options, with the indented rows under each as its description.
     const options: PromptOption[] = []
+    let submitRow: PromptMenu['submitRow']
     let firstOptionRow = -1
     let lastOptionRow = -1
     /** the column each option's number is drawn at */
@@ -218,6 +255,12 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     for (let row = 0; row < rows.length; row++) {
         const line = rows[row]
         const trimmed = line.trim()
+        // a multiple choice's Next/Submit row: a place the cursor stops, not the last option's description
+        const submitMatch = options.some((option) => option.checked !== undefined) ? SUBMIT_ROW.exec(trimmed) : null
+        if (submitMatch && row === lastOptionRow + 1) {
+            submitRow = { label: submitMatch[2], selected: submitMatch[1] !== undefined, after: options.length - 1 }
+            continue
+        }
         const match = NUMBERED_OPTION.exec(trimmed)
         const column = match ? line.indexOf(`${match[2]}.`) : -1
         // A numbered line inside an option's description ("Runs these steps:" / "1. Install deps") sits
@@ -233,8 +276,11 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
             if (options.length > 0 && Number(match[2]) <= (options[options.length - 1].number ?? 0)) {
                 options.length = 0
                 firstOptionRow = -1
+                submitRow = undefined
             }
-            const label = match[3].trim()
+            let label = match[3].trim()
+            const box = CHECKBOX_LABEL.exec(label)
+            if (box) label = box[2].trim()
             numberColumn = column
             if (firstOptionRow < 0) firstOptionRow = row
             lastOptionRow = row
@@ -243,7 +289,8 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
                 number: Number(match[2]),
                 label,
                 selected: match[1] !== undefined,
-                ...(CUSTOM_OPTION.test(label) ? { custom: true } : {})
+                ...(CUSTOM_OPTION.test(label) ? { custom: true } : {}),
+                ...(box ? { checked: box[1] !== ' ' } : {})
             })
             continue
         }
@@ -257,6 +304,19 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
         }
     }
 
+    // Codex's options have no descriptions: rows under one are its label wrapped by a narrow pane, and the
+    // key named at its end ("Yes, proceed (y)", "No, … (esc)") may stand on the last of them.
+    if (agent === 'codex') {
+        for (const option of options) {
+            if (option.description) option.label = `${option.label} ${option.description}`
+            delete option.description
+            const key = CODEX_KEY_SUFFIX.exec(option.label)
+            if (!key) continue
+            option.label = option.label.slice(0, key.index).trim()
+            if (key[1].toLowerCase() === 'esc') option.escape = true
+        }
+    }
+
     // Claude's unnumbered menus (the folder-trust check): plain rows over "Enter to confirm".
     let confirm: ConfirmMenu | null = null
     if (options.length === 0 && /Enter to confirm/i.test(text)) {
@@ -267,13 +327,37 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     }
 
     const above = firstOptionRow >= 0 ? rows.slice(0, firstOptionRow) : rows
+    // Codex's approval asks above the lines it explains ("Reason: …?" under it ends in "?" too);
+    // a narrow pane wraps it: it ends on the first row ending in "?"
+    const codexFrom = agent === 'codex' ? findLast(above, (line) => CODEX_APPROVAL.test(line.trim())) : -1
+    let codexAt = -1
+    for (let row = codexFrom; row >= 0 && row < above.length && row < codexFrom + QUESTION_WRAP_ROWS && codexAt < 0; row++) {
+        if (/\?\s*$/.test(above[row].trim())) codexAt = row
+    }
     const questionAt = (() => {
+        if (codexAt >= 0) return codexAt
         for (let row = above.length - 1; row >= 0; row--) if (/[?？]\s*$/.test(above[row].trim())) return row
         for (let row = above.length - 1; row >= 0; row--) if (MENU_MARKERS.some((marker) => marker.test(above[row]))) return row
         return -1
     })()
-    const questionLine = confirm ? confirm.question : questionAt >= 0 ? above[questionAt].trim() : rows.find((line) => MENU_MARKERS.some((m) => m.test(line)))?.trim() ?? ''
+    let questionLine = confirm ? confirm.question : questionAt >= 0 ? above[questionAt].trim() : rows.find((line) => MENU_MARKERS.some((m) => m.test(line)))?.trim() ?? ''
+    const joined = (from: number): string => above.slice(from, questionAt + 1).map((line) => line.trim()).join(' ')
+    /** the question's first row: a narrow pane wraps it over the rows above its last */
+    let questionStart = questionAt
+    if (codexAt > codexFrom) {
+        questionLine = joined(codexFrom)
+        questionStart = codexFrom
+    }
+    for (let back = 1; back < QUESTION_WRAP_ROWS && questionAt - back >= 0 && !PLAN_QUESTION.test(questionLine); back++) {
+        if (PLAN_QUESTION.test(joined(questionAt - back))) {
+            questionLine = joined(questionAt - back)
+            questionStart = questionAt - back
+        }
+    }
     const question = questionLine.length > QUESTION_MAX ? `${questionLine.slice(0, QUESTION_MAX - 1)}…` : questionLine
+    const review = !confirm && REVIEW_QUESTION.test(questionLine)
+    const plan = !confirm && agent === 'claude' && PLAN_QUESTION.test(questionLine)
+    const steps = readSteps(above, questionAt)
 
     // The rows between the dialog's top edge (a full rule, or the prompt above it) and the question:
     // the command, the tab title. Dashed rules inside the dialog are skipped, not edges.
@@ -281,31 +365,108 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     while (top >= 0 && !INPUT_BOX_RULE.test(above[top].trim()) && !/^[❯>⏺●⎿]/.test(above[top].trim()) && questionAt - top <= CONTEXT_MAX_LINES * 2) top--
     // No edge found (Codex draws none): the rows above are the agent's output, not the dialog's.
     const edgeFound = top >= 0 && questionAt - top <= CONTEXT_MAX_LINES * 2
-    const context = confirm ? confirm.context : (questionAt > 0 && edgeFound ? above.slice(top + 1, questionAt) : [])
-        .map((line) => line.trim())
-        .filter((line) => line && !SEPARATOR.test(line) && !/^Tip:/i.test(line))
-        .slice(-CONTEXT_MAX_LINES)
+    const context = confirm
+        ? confirm.context
+        : review
+          ? reviewAnswers(above, questionAt)
+          : plan
+            ? planLines(above, questionStart)
+            : codexAt >= 0
+              ? above.slice(codexAt + 1).map((line) => line.trim()).filter(Boolean).slice(0, CONTEXT_MAX_LINES)
+              : (questionAt > 0 && edgeFound ? above.slice(top + 1, questionAt) : [])
+                    .map((line) => line.trim())
+                    .filter((line) => line && !SEPARATOR.test(line) && !/^Tip:/i.test(line) && !TAB_BAR.test(line))
+                    .slice(-CONTEXT_MAX_LINES)
+    if (plan) for (const option of options) if (PLAN_CUSTOM.test(option.label)) option.custom = true
+
+    // Claude draws no key hint under its review or its plan: they are open only while nothing else is
+    // under their options (an answered one stays above "⏺ User answered …").
+    const tail = lastOptionRow >= 0 ? rows.slice(lastOptionRow + 1) : []
+    if (review && (options.map((option) => option.label).join('\n') !== REVIEW_OPTIONS.join('\n') || tail.length > 0 && !(FOOTER.test(tail[0]) && menuIsLast(rows, lastOptionRow, false)))) return null
+    // (its hint and plan file, wrapped over a few rows by a narrow pane)
+    if (plan && tail.length > 0 && !(tail.length <= 3 && PLAN_FOOTER.test(tail[0]))) return null
 
     // An answered menu stays on screen above what came next ("● Done.", the welcome banner): open only
     // while nothing but its own key hint (wrapped, perhaps) and a rule sits under its hint row.
     if (agent === 'claude' && !menuIsLast(rows, confirm ? -1 : lastOptionRow, confirm !== null)) return null
 
-    const multi = options.some((option) => CHECKBOX.test(option.label))
-    const kind = kindOf([text, ...options.map((option) => option.label)].join('\n'), options)
-    const answerable = agent === 'claude' && options.length > 0 && !multi && options.some((option) => option.selected)
+    const multi = options.some((option) => option.checked !== undefined || CHECKBOX.test(option.label))
+    const kind: PromptKind = review ? 'review' : plan ? 'plan' : kindOf([text, ...options.map((option) => option.label)].join('\n'), options)
+    const highlighted = options.some((option) => option.selected)
+    // A multiple choice is answered only in the layout captured: tick boxes and the Next/Submit row under them.
+    const claudeAnswerable = agent === 'claude' && options.length > 0 && (multi ? submitRow !== undefined && (highlighted || submitRow.selected) : highlighted)
+    // Codex: its command and edit approvals, closed by their own hint and nothing after it (ovis codex.ts:147-166)
+    // (the hint alone under the options, wrapped by a narrow pane perhaps)
+    const codexAnswerable = agent === 'codex' && kind === 'permission' && codexAt >= 0 && highlighted &&
+        CODEX_HINT.test(tail.map((line) => line.trim()).join(' '))
+    const answerable = claudeAnswerable || codexAnswerable
     const selected = options.findIndex((option) => option.selected)
     // A hash, not the words: the card goes to a phone with its words masked (maskSnapshot), and a plain
-    // JSON signature carried the unmasked command — a key in it — right beside them (ovis dialogs/shared.ts:331)
+    // JSON signature carried the unmasked command — a key in it — right beside them (ovis dialogs/shared.ts:331).
+    // Ticks are left out: the answer names the rows to leave ticked, read again when it is sent.
     const signature = createHash('sha256')
-        .update(JSON.stringify([agent, kind, question, context, options.map((option) => option.label), selected]))
+        .update(JSON.stringify([agent, kind, question, context, options.map((option) => option.label), selected, submitRow?.selected ?? null]))
         .digest('hex')
-    return { agent, kind, question, context, options, multi, answerable, signature }
+    return { agent, kind, question, context, options, multi, ...(submitRow ? { submitRow } : {}), ...(steps ? { steps } : {}), answerable, signature }
+}
+
+function findLast(lines: string[], test: (line: string) => boolean): number {
+    for (let index = lines.length - 1; index >= 0; index--) if (test(lines[index])) return index
+    return -1
+}
+
+/** The question tabs over the question, read from the bar's marks; none when no bar sits between it and the panel's rule. */
+function readSteps(above: string[], questionAt: number): PromptStep[] | undefined {
+    for (let row = (questionAt >= 0 ? questionAt : above.length) - 1; row >= 0; row--) {
+        const line = above[row].trim()
+        if (INPUT_BOX_RULE.test(line)) return undefined
+        if (!TAB_BAR.test(line)) continue
+        const tabs = line.replace(/^←\s*/, '').replace(/\s*→\s*$/, '').split(/\s{2,}/).filter(Boolean)
+        return tabs.map((tab) => {
+            const mark = tab[0]
+            const label = tab.slice(1).trim()
+            return mark === '✔' ? { label, answered: false, submit: true as const } : { label, answered: mark === '☒' || mark === '☑' }
+        })
+    }
+    return undefined
+}
+
+/**
+ * The review's answers, one line each: `● Which fruits?` over `→ Apple, Cherry` becomes
+ * "Which fruits? → Apple, Cherry"; a line opening neither continues the one above (a wrapped answer).
+ */
+function reviewAnswers(above: string[], questionAt: number): string[] {
+    let top = questionAt - 1
+    while (top >= 0 && !TAB_BAR.test(above[top].trim()) && !INPUT_BOX_RULE.test(above[top].trim())) top--
+    const items: string[] = []
+    for (const raw of above.slice(top + 1, questionAt)) {
+        const line = raw.trim()
+        if (/^●\s+/.test(line)) items.push(line.replace(/^●\s+/, ''))
+        else if (/^→\s+/.test(line) && items.length > 0) items[items.length - 1] += ` → ${line.replace(/^→\s+/, '')}`
+        else if (items.length > 0 && line) items[items.length - 1] += ` ${line}`
+    }
+    return items.slice(0, REVIEW_MAX_LINES)
+}
+
+/** The plan over its question, from "Ready to code?" (or what is left of the panel) down to the rule above the question. */
+function planLines(above: string[], questionAt: number): string[] {
+    let row = questionAt - 1
+    while (row >= 0 && INPUT_BOX_RULE.test(above[row].trim())) row--
+    const lines: string[] = []
+    for (; row >= 0; row--) {
+        const line = above[row].trim()
+        if (/^Ready to code\?$/i.test(line) || INPUT_BOX_RULE.test(line) || /^[⏺●❯]/.test(line)) break
+        if (!line || DIVIDER.test(line) || SEPARATOR.test(line) || /^Here is Claude's plan:?$/i.test(line)) continue
+        lines.unshift(line)
+    }
+    return lines.slice(0, PLAN_MAX_LINES)
 }
 
 export const KEYS = {
     up: '\x1b[A',
     down: '\x1b[B',
-    enter: '\r'
+    enter: '\r',
+    esc: '\x1b'
 } as const
 
 /** One step of an answer: a key, or text typed as it is. */
@@ -317,26 +478,86 @@ export class PromptAnswerError extends Error {}
  * The keys that give `answer` to `menu`: arrows from the highlighted option to
  * the chosen one, then Enter. "Type something." takes the words typed into its
  * row, then Enter (no Enter before — the row is already the text field).
+ * A multiple choice: Enter on each row whose tick differs from the answer, then
+ * Enter on its Next/Submit row. Codex's "No … (esc)": Esc.
+ * The answer's shape is checked here: a phone sends it as JSON.
  */
 export function answerSteps(menu: PromptMenu, answer: PromptAnswer): AnswerStep[] {
     if (!menu.answerable) throw new PromptAnswerError('Answer this question in the terminal.')
-    const from = menu.options.findIndex((option) => option.selected)
-    if (from < 0) throw new PromptAnswerError('No option is highlighted on screen.')
-    const move = (to: number): AnswerStep[] => {
-        const steps: AnswerStep[] = []
-        const key = to > from ? KEYS.down : KEYS.up
-        for (let i = 0; i < Math.abs(to - from); i++) steps.push({ key })
+    if (!answer || typeof answer !== 'object') throw new PromptAnswerError('Pick an option or type an answer.')
+    const submit = menu.submitRow
+    /** where the cursor stops for an option: the Next/Submit row sits between two options */
+    const position = (index: number): number => (submit && index > submit.after ? index + 1 : index)
+    const selectedIndex = menu.options.findIndex((option) => option.selected)
+    let cursor = selectedIndex >= 0 ? position(selectedIndex) : submit?.selected ? submit.after + 1 : -1
+    const steps: AnswerStep[] = []
+    const moveTo = (to: number): void => {
+        if (cursor < 0) throw new PromptAnswerError('No option is highlighted on screen.')
+        const key = to > cursor ? KEYS.down : KEYS.up
+        for (let i = 0; i < Math.abs(to - cursor); i++) steps.push({ key })
+        cursor = to
+    }
+    const typed = (value: unknown): string => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '')
+
+    if ('optionIndices' in answer) {
+        if (!menu.multi || !submit) throw new PromptAnswerError('This question takes one answer.')
+        const indices = answer.optionIndices
+        if (!Array.isArray(indices) || indices.some((index) => !Number.isInteger(index) || menu.options[index]?.checked === undefined || menu.options[index].custom)) {
+            throw new PromptAnswerError('That option is not on screen.')
+        }
+        if ('customText' in answer && typeof answer.customText !== 'string') throw new PromptAnswerError('Type the answer as text.')
+        const text = typed(answer.customText)
+        if (indices.length === 0 && !text) throw new PromptAnswerError('Pick one or more options.')
+        const wanted = new Set(indices)
+        for (const option of menu.options) {
+            if (option.checked === undefined || option.custom || wanted.has(option.index) === option.checked) continue
+            moveTo(position(option.index))
+            steps.push({ key: KEYS.enter })
+        }
+        if (text) {
+            const custom = menu.options.find((option) => option.custom)
+            if (!custom) throw new PromptAnswerError('This question takes no typed answer.')
+            // typing into the row ticks it (ovis prompt.ts:457, measured on 2.1.301)
+            moveTo(position(custom.index))
+            steps.push({ text })
+        }
+        moveTo(submit.after + 1)
+        steps.push({ key: KEYS.enter })
         return steps
     }
     if ('customText' in answer) {
+        if (menu.multi) throw new PromptAnswerError('Tick the options, then go on.')
         const custom = menu.options.find((option) => option.custom)
-        const text = answer.customText.replace(/\s+/g, ' ').trim()
+        const text = typed(answer.customText)
         if (!custom) throw new PromptAnswerError('This question takes no typed answer.')
         if (!text) throw new PromptAnswerError('Type an answer first.')
-        return [...move(custom.index), { text }, { key: KEYS.enter }]
+        moveTo(position(custom.index))
+        return [...steps, { text }, { key: KEYS.enter }]
     }
+    if (!('optionIndex' in answer) || !Number.isInteger(answer.optionIndex)) throw new PromptAnswerError('Pick an option or type an answer.')
     const target = menu.options[answer.optionIndex]
     if (!target) throw new PromptAnswerError('That option is not on screen.')
     if (target.custom) throw new PromptAnswerError('Type the answer for this option.')
-    return [...move(target.index), { key: KEYS.enter }]
+    if (target.checked !== undefined) throw new PromptAnswerError('Tick the options, then go on.')
+    if (target.escape) return [{ key: KEYS.esc }]
+    moveTo(position(target.index))
+    return [...steps, { key: KEYS.enter }]
+}
+
+/**
+ * The option that must be highlighted when the first key that is no arrow goes (main reads the
+ * screen again right before it): -1 for a multiple choice's Next/Submit row. Esc moves nothing:
+ * the highlight stays where the menu had it.
+ */
+export function confirmTarget(menu: PromptMenu, answer: PromptAnswer): number {
+    const selected = menu.options.findIndex((option) => option.selected)
+    if ('optionIndices' in answer) {
+        const wanted = new Set(answer.optionIndices)
+        const toggle = menu.options.find((option) => option.checked !== undefined && !option.custom && wanted.has(option.index) !== option.checked)
+        if (toggle) return toggle.index
+        if (typeof answer.customText === 'string' && answer.customText.trim()) return menu.options.findIndex((option) => option.custom)
+        return -1
+    }
+    if ('customText' in answer) return menu.options.findIndex((option) => option.custom)
+    return menu.options[answer.optionIndex]?.escape ? selected : answer.optionIndex
 }

@@ -113,6 +113,21 @@
 /* Question card */
 .chat-prompt { border: 1px solid rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.06); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .chat-prompt-head { display: flex; align-items: flex-start; gap: 8px; font-weight: 500; }
+.chat-prompt-question { flex: 1; min-width: 0; }
+.chat-prompt-fold { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: var(--chat-dim); }
+.chat-prompt-fold:hover { background: var(--chat-soft); color: var(--chat-fg); }
+/* the body scrolls past a height: a long plan or many options never cover the chat (fb 2c234a60) */
+.chat-prompt-body { display: flex; flex-direction: column; gap: 8px; max-height: min(45vh, 420px); overflow-y: auto; overscroll-behavior: contain; }
+.chat-prompt-steps { display: flex; flex-wrap: wrap; gap: 4px; font-size: 0.78em; }
+.chat-prompt-step { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--chat-line); color: var(--chat-dim); }
+.chat-prompt-step.is-answered { color: #86efac; border-color: rgba(134, 239, 172, 0.4); }
+.chat-prompt-step.is-submit { border-style: dashed; }
+.chat-prompt-box { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-top: 2px; border: 1px solid var(--chat-faint); border-radius: 3px; }
+.chat-prompt-option.is-checked { border-color: rgba(96, 165, 250, 0.7); background: rgba(96, 165, 250, 0.12); }
+.chat-prompt-option.is-checked .chat-prompt-box { background: #60a5fa; border-color: #60a5fa; color: #0b1220; }
+.chat-prompt-multi-submit { align-self: flex-start; padding: 4px 12px; border-radius: 6px; border: 1px solid rgba(96, 165, 250, 0.6); background: rgba(96, 165, 250, 0.14); }
+.chat-prompt-multi-submit:disabled { opacity: 0.5; }
+.chat-prompt-context.is-plan { white-space: pre-wrap; }
 .chat-prompt-question { overflow-wrap: anywhere; }
 .chat-prompt-context { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82em; color: var(--chat-dim); background: var(--chat-code-bg); border-radius: 6px; padding: 6px 8px; overflow-wrap: anywhere; }
 .chat-prompt-options { display: flex; flex-direction: column; gap: 4px; }
