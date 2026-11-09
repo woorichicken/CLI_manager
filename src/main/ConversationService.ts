@@ -96,6 +96,8 @@ export interface ConversationMirror {
     lastOutputAt(id: string): number
     hasExited(id: string): boolean
     showsAwaitingInput(id: string): boolean
+    /** TerminalMirror.asksQuestion — the Chat's own, stricter test; showsAwaitingInput without it */
+    asksQuestion?(id: string): boolean
     inputBox(id: string): { typed: string; clipped?: boolean; typedRows?: number } | null
 }
 
@@ -238,7 +240,9 @@ export class ConversationService {
         const agent = agentOf(info)
         if (!info?.cliSessionId || agent === null) {
             this.dropIfIdle(sessionId, entry)
-            return { ...base, agent, unavailable: 'no-conversation', turns: [], totalTurns: 0, truncated: false }
+            // the agent runs and its file comes with the first message (Codex writes its rollout then):
+            // nothing is wrong — the chat says «no conversation yet» and takes that first message
+            return { ...base, agent, unavailable: agent === null ? 'no-conversation' : 'not-found', turns: [], totalTurns: 0, truncated: false }
         }
         try {
             const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
@@ -657,7 +661,9 @@ export class ConversationService {
     }
 
     private blockedReason(sessionId: string, entry: Watched): ChatSendResult | null {
-        if (entry.prompt || this.deps.mirror.showsAwaitingInput(sessionId) && !entry.working) {
+        const mirror = this.deps.mirror
+        const asks = mirror.asksQuestion ? mirror.asksQuestion(sessionId) : mirror.showsAwaitingInput(sessionId)
+        if (entry.prompt || (asks && !entry.working)) {
             return {
                 status: 'rejected',
                 reason: 'awaiting_input',

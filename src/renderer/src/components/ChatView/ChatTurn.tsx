@@ -4,7 +4,7 @@ import type { ConversationAgent, ConversationTurn } from '../../../../shared/con
 import { Markdown } from './markdown/Markdown'
 import { UserParts } from './TurnParts'
 import { WorkBlock } from './WorkBlock'
-import { isLiveWorkTurn, turnSegments, workStartsOpen } from './workBlocks'
+import { isLiveWorkTurn, turnSegments, workBlockStartsOpen } from './workBlocks'
 
 const AGENT_NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
 const COPIED_MS = 1500
@@ -25,7 +25,8 @@ export const ChatTurn = memo(function ChatTurn({
     working,
     waiting,
     agent,
-    index
+    index,
+    foldWork = true
 }: {
     turn: ConversationTurn
     last: boolean
@@ -35,6 +36,8 @@ export const ChatTurn = memo(function ChatTurn({
     agent: ConversationAgent
     /** its place among the turns shown, for the rail's jumps */
     index: number
+    /** Settings › Terminal › Chat view «Collapse work» (default on): every block starts folded */
+    foldWork?: boolean
 }) {
     if (turn.role === 'user') {
         return (
@@ -45,7 +48,6 @@ export const ChatTurn = memo(function ChatTurn({
     }
     const live = isLiveWorkTurn(turn, last, working || waiting)
     const segments = turnSegments(turn.parts)
-    const settledOpen = workStartsOpen(false, turn.parts)
     const answer = segments
         .filter((segment) => segment.kind === 'answer')
         .flatMap((segment) => segment.parts.map((part) => part.text))
@@ -73,7 +75,7 @@ export const ChatTurn = memo(function ChatTurn({
                         parts={segment.parts}
                         live={live && lastSegment}
                         waiting={waiting && live && lastSegment}
-                        startsOpen={(live && lastSegment) || (lastSegment && settledOpen)}
+                        startsOpen={workBlockStartsOpen({ live: live && lastSegment, waiting: waiting && live && lastSegment, last: lastSegment }, turn.parts, foldWork)}
                         startTs={turn.ts}
                         endTs={turn.end_ts}
                     />

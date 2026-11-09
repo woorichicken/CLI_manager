@@ -48,6 +48,18 @@ export function workStartsOpen(live: boolean, parts: ConversationPart[]): boolea
     return parts.slice(after).some((part) => part.kind === 'text' && part.text.trim().length > 0)
 }
 
+/**
+ * Whether one block starts open, until the reader opens or closes it (ovis workBlockStartsOpen).
+ * `live`/`waiting` are the block's own (only the turn's head runs or waits); `last`: no part of the turn
+ * comes after its run. With «Collapse work» on (Settings › Terminal › Chat view, the default here — fb
+ * 4c6ea086: «closed until I open it») every block starts folded, the running one too; the block that waits
+ * on the person still opens, since it may hold what they answer. Off: `workStartsOpen`.
+ */
+export function workBlockStartsOpen(block: { live: boolean; waiting: boolean; last: boolean }, parts: ConversationPart[], foldWork: boolean): boolean {
+    if (foldWork) return block.waiting
+    return block.live || (block.last && workStartsOpen(false, parts))
+}
+
 type WorkCategory = 'edit' | 'read' | 'command' | 'other'
 
 const CATEGORY_LABEL: Record<WorkCategory, [string, string]> = {

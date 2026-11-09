@@ -478,6 +478,16 @@ export class TerminalMirror {
         return { busy: false, question: showsQuestion(region) ? questionLine(region) : null }
     }
 
+    /**
+     * A question waits on the person, by screenStatus's stricter reading — for the Chat's send. The
+     * agent's own words above its input box («Yes, proceed» in an answer) are no question: they blocked
+     * the Chat's next message (chat-gap-1109 finding). The API keeps showsAwaitingInput, which errs
+     * towards «waiting» on purpose (T66).
+     */
+    asksQuestion(id: string): boolean {
+        return this.screenStatus(id).question !== null
+    }
+
     /** Every mirrored terminal id. */
     ids(): string[] {
         return [...this.mirrors.keys()]

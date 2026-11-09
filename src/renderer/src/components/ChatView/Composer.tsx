@@ -493,9 +493,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         : pendingPick
         ? 'Enter confirms the option above · Esc cancels'
         : promptOptions
-          ? touch
-              ? 'Type an option’s number, or tap it above'
-              : 'Type an option’s number, or click it above'
+          ? // short: the longer words broke onto a second line the one-row box cuts off at 390
+            touch
+              ? 'Type a number, or tap above'
+              : 'Type a number, or click above'
           : touch
             ? `Message ${agentName}`
             : preferences.enterSends === false
