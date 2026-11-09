@@ -94,6 +94,8 @@ export interface ConversationMirror {
     screen(id: string): string[]
     flush(id: string): Promise<void>
     lastOutputAt(id: string): number
+    /** TerminalMirror.outputCount — what refreshScreen compares; lastOutputAt without it */
+    outputCount?(id: string): number
     hasExited(id: string): boolean
     showsAwaitingInput(id: string): boolean
     /** TerminalMirror.asksQuestion — the Chat's own, stricter test; showsAwaitingInput without it */
@@ -789,14 +791,30 @@ export class ConversationService {
      * kept until the next output (a question card staying after its answer, or never showing).
      */
     private async refreshScreen(sessionId: string, entry: Watched, force = false): Promise<void> {
-        const outputAt = this.deps.mirror.lastOutputAt(sessionId)
+        // read before the flush, so a chunk that comes after counts as new. A count, not the time: the
+        // agent closing a menu in two writes within one millisecond left the card up until more output came
+        // (chat-gap-r3-1109, T113 — the screen was read between the two)
+        const mirror = this.deps.mirror
+        const outputAt = mirror.outputCount ? mirror.outputCount(sessionId) : mirror.lastOutputAt(sessionId)
         if (!force && outputAt === entry.lastScreenAt) return
-        await this.deps.mirror.flush(sessionId)
+        await mirror.flush(sessionId)
         entry.lastScreenAt = outputAt
         const screen = this.deps.mirror.screen(sessionId)
         entry.working = screen.some(isBusyRow)
         entry.screenMode = screenAgentMode(screen)
         entry.prompt = entry.working ? null : readPrompt(screen, agentOf(this.deps.session(sessionId)) ?? 'claude')
+        // any read can be the one a view gets (getConversation reads too): a change it sees is announced
+        // here, or the next poll compares two equal states and the view keeps a card already answered
+        // (chat-gap-r3-1109, T113: main said no prompt at rev 7 while the card it had sent at rev 7 stayed)
+        this.noteState(sessionId, entry)
+    }
+
+    /** Bumps the revision when what views show (conversation id, working, mode, menu, queue) changed. */
+    private noteState(sessionId: string, entry: Watched): void {
+        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
+        if (key === entry.lastKey) return
+        entry.lastKey = key
+        this.bump(sessionId, entry)
     }
 
     private ensureTimer(): void {
@@ -838,11 +856,8 @@ export class ConversationService {
                     console.error('[conversation] poll read failed', sessionId, error)
                 }
             }
-            const key = JSON.stringify([info?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
-            if (transcriptChanged || key !== entry.lastKey) {
-                entry.lastKey = key
-                this.bump(sessionId, entry)
-            }
+            if (transcriptChanged) this.bump(sessionId, entry)
+            this.noteState(sessionId, entry)
             await this.drainQueue(sessionId, entry)
         }
         if (this.watched.size === 0) this.stopTimer()

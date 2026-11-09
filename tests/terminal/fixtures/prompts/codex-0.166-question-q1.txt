@@ -1,0 +1,34 @@
+│ ✨─ Update available! 0.166.0 -> 0.167.0         │
+│ Run brew upgrade --cask codex to update.        │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+ 
+ 
+  >_ OpenAI Codex (v0.166.0)
+     /…/project
+ 
+  To get started, describe a task or try one of these commands:
+ 
+  /init - create an AGENTS.md file with instructions for Codex
+  /status - show current session configuration
+  /permissions - choose what Codex is allowed to do
+  /model - choose what model and reasoning effort to use
+  /review - review any changes and find issues
+ 
+ 
+› Use the request_user_input tool to ask me two questions: "Which color?" with options Red and Blue, and
+  "Which size?" with options Small and Large. Do nothing else.
+ 
+ 
+ 
+  Question 1/2 (2 unanswered)
+  Which color?
+ 
+  › 1. Red                Choose red.                                                                       
+    2. Blue               Choose blue.
+    3. None of the above  Optionally, add details in notes (tab)
+ 
+  tab to add notes | enter to submit answer | ←/→ to navigate questions | esc to interrupt
+ 
