@@ -98,9 +98,23 @@ export interface PromptOption {
     selected: boolean
     /** "Type something." — answering it types the user's own words */
     custom?: boolean
+    /** a multiple-choice row: ticked on screen (`[✔]`) or not (`[ ]`); absent on a plain row */
+    checked?: boolean
+    /** Codex's "No … (esc)": answered with Esc, not Enter */
+    escape?: boolean
 }
 
-export type PromptKind = 'permission' | 'question' | 'trust' | 'menu'
+/** `review`: Claude's "Ready to submit your answers?" after several questions · `plan`: its plan approval */
+export type PromptKind = 'permission' | 'question' | 'trust' | 'menu' | 'review' | 'plan'
+
+/** One tab of Claude's question bar (`←  ☒ Color  ☐ Fruits  ✔ Submit  →`). */
+export interface PromptStep {
+    label: string
+    /** ☒: the question has an answer (the bar's colors, not read here, tell which tab is shown) */
+    answered: boolean
+    /** the bar's last tab, the review of the answers */
+    submit?: true
+}
 
 /**
  * A question the agent is waiting on, read from the live screen (not the
@@ -115,12 +129,19 @@ export interface PromptMenu {
     /** lines above the question worth showing (the command, the tab title) */
     context: string[]
     options: PromptOption[]
-    /** several options can be ticked — answered in the terminal for now */
+    /** several options can be ticked (`PromptOption.checked`) */
     multi: boolean
     /**
+     * A multiple choice's unnumbered row under its typed answer: "Next" (more questions follow) or
+     * "Submit". `after`: the option it is drawn under (the cursor passes it between that one and the next).
+     */
+    submitRow?: { label: string; selected: boolean; after: number }
+    /** the question bar of several questions, in order */
+    steps?: PromptStep[]
+    /**
      * The card can send keys for this menu. False when the screen layout is one
-     * this app has no captured copy of (Codex menus, multi-select): the card then
-     * only offers "Answer in Terminal".
+     * this app has no captured copy of (Codex's folder trust, an unknown multiple
+     * choice): the card then only offers "Answer in Terminal".
      */
     answerable: boolean
     signature: string
@@ -298,6 +319,8 @@ export const MAX_CHAT_TEXT_LENGTH = 100_000
 export type PromptAnswer =
     | { signature: string; optionIndex: number }
     | { signature: string; customText: string }
+    /** a multiple choice: the rows to leave ticked (and words for its typed row), then on to the next step */
+    | { signature: string; optionIndices: number[]; customText?: string }
 
 export type PromptAnswerResult =
     | { status: 'answered' }

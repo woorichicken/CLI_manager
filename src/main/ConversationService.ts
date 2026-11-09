@@ -16,7 +16,7 @@ import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../share
 // the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
 import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatView/chatMentions'
 import { isBusyRow, screenAgentMode } from './screenLines'
-import { answerSteps, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
+import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 
 /**
@@ -601,7 +601,7 @@ export class ConversationService {
         this.lastAnswer.set(sessionId, { signature: current.signature, outputAt: this.deps.mirror.lastOutputAt(sessionId) })
         const entry = this.entry(sessionId)
         entry.sending = true
-        const target = 'customText' in answer ? current.options.findIndex((option) => option.custom) : answer.optionIndex
+        const target = confirmTarget(current, answer)
         try {
             let confirmed = false
             for (const [index, step] of steps.entries()) {
@@ -633,8 +633,9 @@ export class ConversationService {
     }
 
     /**
-     * Whether the screen shows `menu` (same question and options) with option `target` highlighted,
-     * waiting up to CONFIRM_MS for the agent to draw the keys already sent.
+     * Whether the screen shows `menu` (same question and options) with option `target` highlighted
+     * (-1: a multiple choice's Next/Submit row), waiting up to CONFIRM_MS for the agent to draw the
+     * keys already sent. Ticks may differ: the keys sent so far tick rows.
      */
     private async highlightsOption(sessionId: string, menu: PromptMenu, target: number): Promise<boolean> {
         const agent = agentOf(this.deps.session(sessionId)) ?? 'claude'
@@ -649,7 +650,7 @@ export class ConversationService {
                 now.options.every((option, index) => option.label === menu.options[index].label)
             if (!same) return false
             const selected = now.options.findIndex((option) => option.selected)
-            if (selected === target) return true
+            if (selected === target && (target >= 0 || now.submitRow?.selected === true)) return true
             if (Date.now() >= deadline) return false
             await sleep(CONFIRM_POLL_MS)
         }

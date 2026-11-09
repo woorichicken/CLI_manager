@@ -1485,6 +1485,9 @@ app.whenReady().then(async () => {
         session.cliToolName = cliToolName
         if (cliCommand) session.cliCommand = cliCommand
         store.set('workspaces', workspaces)
+        // The window's own copy of the session learns it too: the Chat button reads it, and a session
+        // started from a template (`cldy` …) showed no Chat until the app restarted (fb a0699080 · fcd92be3).
+        broadcast('cli-session-detected', { workspaceId, sessionId, cliSessionId, cliToolName, cliCommand: session.cliCommand })
         return true
     })
 
@@ -3576,7 +3579,9 @@ app.whenReady().then(async () => {
     })
     ipcMain.handle('prompt-answer', (_e, sessionId: string, answer: PromptAnswer) => {
         const valid = typeof sessionId === 'string' && answer && typeof answer.signature === 'string' &&
-            (('optionIndex' in answer && Number.isInteger(answer.optionIndex)) || ('customText' in answer && typeof answer.customText === 'string'))
+            (('optionIndex' in answer && Number.isInteger(answer.optionIndex)) ||
+                ('optionIndices' in answer && Array.isArray(answer.optionIndices)) ||
+                ('customText' in answer && typeof answer.customText === 'string'))
         return valid
             ? conversationService.answerPrompt(sessionId, answer)
             : { status: 'rejected', reason: 'bad_answer', message: 'Pick an option or type an answer.' }

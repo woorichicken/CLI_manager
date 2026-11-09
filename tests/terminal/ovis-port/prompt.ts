@@ -104,7 +104,6 @@ Enter to select · Tab/Arrow keys to navigate · Esc to cancel
         })
 
         test('parses Claude Code 2.1 question tabs, their review, and tool approvals without the old markers — multiple choice tab', () => {
-            test.fixme(true, "src/shared/conversation.ts:116 multi-select is terminal-only; checkbox labels and the Type something row stay as drawn")
             const sets = parse(`
 ←  ☒ Route  ☐ Sets  ✔ Submit  →
 Which datasets?
@@ -126,7 +125,6 @@ Enter to select · Tab/Arrow keys to navigate · Esc to cancel
         })
 
         test('parses Claude Code 2.1 question tabs, their review, and tool approvals without the old markers — review of answers', () => {
-            test.fail(true, "ovis-port bug: the answers-review menu (Ready to submit your answers?) has no MENU_MARKERS match, so no card (null)")
             const review = parse(`
 ←  ☒ Route  ☒ Author  ✔ Submit  →
 Review your answers
@@ -138,7 +136,8 @@ Ready to submit your answers?
 ❯ 1. Submit answers
   2. Cancel
 `)
-            expect(review).toMatchObject({ kind: 'menu', question: 'Ready to submit your answers?' })
+            // ovis calls it a menu; ours is 'review', so the card can list the answers (chat-gap-1109 Q-1)
+            expect(review).toMatchObject({ kind: 'review', question: 'Ready to submit your answers?' })
             expect(customIndex(review)).toBeNull()
             expect(labels(review)).toEqual(['Submit answers', 'Cancel'])
         })
@@ -673,7 +672,6 @@ ${after}`
         ].join('\n')
 
         test('reads [✔] rows as ticked, without the box in their labels', () => {
-            test.fixme(true, "src/shared/conversation.ts:116 multi-select is terminal-only; checkbox labels and the Type something row stay as drawn")
             const prompt = parse(screen(true, 'B'))!
             expect(prompt).toMatchObject({ kind: 'question', question: 'Which ones?', multi: true })
             expect(customIndex(prompt)).toBe(2)
@@ -681,7 +679,6 @@ ${after}`
         })
 
         test('keeps the card with the cursor on Submit, counting the moves from that row', () => {
-            test.fixme(true, "src/shared/conversation.ts:116 multi-select is terminal-only; checkbox labels and the Type something row stay as drawn")
             const prompt = parse(screen(true, 'Submit'))!
             expect(prompt).toMatchObject({ question: 'Which ones?', multi: true })
             expect(prompt.options.filter(isAnswer).map((o) => o.label)).toEqual(['Option A', 'Option B'])

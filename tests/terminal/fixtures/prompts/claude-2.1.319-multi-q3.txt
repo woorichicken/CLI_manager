@@ -1,0 +1,39 @@
+ ▐▛███▛█   Claude Code v2.1.319
+▝▜██████▀  Haiku 5.5 · Claude Ultra
+ ▝▝   ▝▝   /…/00000000-0000-4000-8000-000000000000/scratchpad/proj-a
+
+▎ Auto mode is now Claude Code's default permission mode.
+▎ Auto mode lets Claude handle permission prompts automatically. Claude checks each tool call for risky
+▎ actions and prompt injection before executing, runs the ones it assesses as lower-risk, and blocks the rest.
+▎ https://code.claude.com/docs/en/permission-modes
+
+❯ Call the AskUserQuestion tool exactly once with three questions. Q1 header 'Color' question 'Which color?'  
+  options Red, Blue (single choice). Q2 header 'Fruits' question 'Which fruits?' options Apple, Banana,       
+  Cherry with multiSelect true. Q3 header 'Size' question 'Which size?' options Small, Large. Do nothing      
+  else.                                                                                                       
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☒ Color  ☒ Fruits  ☐ Size  ✔ Submit  →
+
+Which size?
+
+❯ 1. Small
+     Small
+  2. Large
+     Large
+  3. Type something.
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
