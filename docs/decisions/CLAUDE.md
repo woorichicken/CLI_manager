@@ -33,6 +33,7 @@ know X".
 | [0009](0009-phone-connection-second-server.md) | A phone reaches the app through a second, opt-in server — never the Control API | active |
 | [0010](0010-phone-reads-only-what-the-chat-names.md) | A phone reads only the files its chat names | active |
 | [0011](0011-phone-documents-in-a-sandboxed-frame.md) | A phone opens a report in a sandboxed frame; only the person's press sends its comments | active |
+| [0012](0012-dictation-log-stays-on-this-mac.md) | The dictation log stays on this Mac, off by default, and expires | active |
 
 ## Template
 

@@ -306,6 +306,13 @@ export interface ChatPreferences {
     pinLastMessage?: boolean
     /** A path the chat names opens in the app's preview; off: in the Mac's default app. Default on. */
     openFilesInApp?: boolean
+    /**
+     * Keep a log of dictation on this Mac: the words heard next to the message sent (`userData/dictation-log/`,
+     * 30 days). Default off — decision 0012.
+     */
+    dictationLog?: boolean
+    /** With the log on, also keep each run's sound (7 days). Default off. */
+    dictationLogAudio?: boolean
 }
 
 export const DEFAULT_QUICK_REPLIES = ['continue', 'yes', 'no', 'retry']

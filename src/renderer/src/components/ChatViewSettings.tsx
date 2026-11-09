@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { UserSettings } from '../../../shared/types'
 import { DEFAULT_QUICK_REPLIES } from '../../../shared/conversation'
+import { DictationLogSettings } from './DictationLogSettings'
 
 /**
  * Settings › Terminal › Chat view: how the chat's message box sends, and one-tap replies over the
@@ -18,8 +19,15 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
 
     const update = (patch: Partial<NonNullable<UserSettings['chat']>>): void => setSettings((prev) => ({ ...prev, chat: { ...prev.chat, ...patch } }))
 
-    const toggle = (on: boolean, onClick: () => void, testId: string) => (
-        <button type="button" data-testid={testId} aria-pressed={on} onClick={onClick} className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-blue-600' : 'bg-gray-600'}`}>
+    const toggle = (on: boolean, onClick: () => void, testId: string, disabled = false) => (
+        <button
+            type="button"
+            data-testid={testId}
+            aria-pressed={on}
+            disabled={disabled}
+            onClick={onClick}
+            className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-blue-600' : 'bg-gray-600'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+        >
             <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${on ? 'translate-x-6' : 'translate-x-1'}`} />
         </button>
     )
@@ -80,6 +88,12 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
                         </div>
                     )}
                 </div>
+                <DictationLogSettings
+                    logOn={chat.dictationLog === true}
+                    audioOn={chat.dictationLog === true && chat.dictationLogAudio === true}
+                    update={update}
+                    toggle={toggle}
+                />
             </div>
         </div>
     )

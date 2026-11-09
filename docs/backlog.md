@@ -13,6 +13,14 @@ roadmap and not a wishlist: every entry names a path and a trigger that makes it
 
 Any session may append to `## Open
 
+### 폰 받아쓰기
+- Discovered: 2026-11-09 사람 결정: 「목소리 기록도 병렬로 바로 시작」, 폰 받아쓰기는 백로그 — 폰 키보드의 마이크로 우선 대체.
+- Evidence: Chat 받아쓰기는 Mac 에서만 돈다(`src/main/Dictation.ts` + Swift 헬퍼). 폰 Chat 은 `phoneChatTransport` 에 `dictation` 이 없어 마이크 버튼이 안 그려진다(`ChatDictation` 이 없으면 숨김, `src/shared/dictation.ts`). 받아쓰기 기록(`DictationLog.ts`)도 Mac 실행만 담는다.
+- Why deferred: 폰 키보드(iOS·Android)의 마이크가 이미 같은 일을 한다. 폰 소리를 Mac 으로 보내면 소리가 네트워크를 탄다 — 결정 0009·0012 를 다시 봐야 한다.
+- Trigger: 폰 키보드 마이크로 부족하다는 말이 나올 때(한국어 인식 품질·코드 낱말·긴 말).
+- Fix direction(후보): 폰 마이크 → (Tailscale 위) Mac 헬퍼 인식 — 헬퍼에 소리 입력 모드(`listen --stdin-audio`)를 더하고 폰 서버에 WS 경로. 기록에는 `surface: 'phone'`.
+- Owner: 없음
+
 ### D4 통합 뒤 명령 판정·이어짐 입력·복원 브리지 후속 (N16~N20)
 - Discovered: 2026-11-08 D4 재검수 3회차(`review-claude-3.md`).
 - Evidence: `shared/agentCommand.ts`는 프롬프트 뒤 옵션(N17)을 버리고, 불명확한 마지막 구간에서 준비/감싸는 명령도 입력에서 빠지며(N18), 앞 구간에 있는 에이전트 프롬프트는 남을 수 있다(N19). `preload.writeRestoredTerminal(id, data)`는 임의 글을 받는 형태다(N20, 권한 문제는 아님). `TerminalMirror.hasContinuationPrompt`는 cmdand/cmdor/if/subsh/cursh/array/복합·사용자 PROMPT2를 모두 알지 못한다(N16).

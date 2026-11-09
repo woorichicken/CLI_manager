@@ -3,11 +3,16 @@ import { existsSync } from 'fs'
 import { createInterface } from 'readline'
 import {
     DICTATION_MAX_SECONDS,
+    type DictationCancelReason,
     type DictationErrorCode,
     type DictationEvent,
+    type DictationOutcome,
+    type DictationStartContext,
     type DictationStartResult,
     type DictationStatus
 } from '../shared/dictation'
+import { addDictationResult, dictationTranscriptText, emptyDictationTranscript, type DictationTranscript } from '../shared/dictationTranscript'
+import type { DictationRecorder } from './DictationLog'
 
 /**
  * Runs the dictation helper (native/dictation/main.swift) for the Chat view's mic button.
@@ -30,6 +35,8 @@ export interface DictationServiceOptions {
     platform?: NodeJS.Platform
     /** delivers an event to the window that owns the run */
     send(owner: number, event: DictationEvent): void
+    /** the dictation log (Settings › Chat view, default off); absent in tests that do not need it */
+    recorder?: DictationRecorder
 }
 
 interface ActiveRun {
@@ -39,6 +46,10 @@ interface ActiveRun {
     /** `final` or `error` already reached the window: an exit after it is the normal end */
     settled: boolean
     cancelled: boolean
+    /** why main killed it — the log tells Esc from a box that went away */
+    cancelReason: DictationCancelReason
+    /** the words across pauses (a result after a pause holds only the new words) */
+    transcript: DictationTranscript
     killTimer: ReturnType<typeof setTimeout>
 }
 
@@ -89,7 +100,7 @@ export class DictationService {
         return value
     }
 
-    start(owner: number): DictationStartResult {
+    start(owner: number, context: DictationStartContext = {}): DictationStartResult {
         const helper = this.helper()
         if (!helper) return { status: 'rejected', code: 'unsupported', message: 'Dictation is not available in this build.' }
         if (this.active) {
@@ -98,12 +109,16 @@ export class DictationService {
         const id = this.nextId++
         // The answers can change at the first use (macOS asks): read them again next time.
         this.statusCache = null
+        const recorder = this.options.recorder
         let child: ChildProcessWithoutNullStreams
         try {
             // CLIMANAGER_DICTATION_DEBUG=1: the helper logs its microphone and audio levels (no sound vs. no words)
             const args = process.env.CLIMANAGER_DICTATION_DEBUG === '1' ? ['listen', '--debug'] : ['listen']
+            const audioPath = recorder?.begin(id, owner, context).audioPath
+            if (audioPath) args.push('--audio-out', audioPath)
             child = spawn(helper, args, { stdio: ['pipe', 'pipe', 'pipe'] })
         } catch (error) {
+            recorder?.ended(id, 'discarded')
             return { status: 'rejected', code: 'helper_failed', message: error instanceof Error ? error.message : String(error) }
         }
         const run: ActiveRun = {
@@ -112,6 +127,8 @@ export class DictationService {
             child,
             settled: false,
             cancelled: false,
+            cancelReason: 'cancelled',
+            transcript: emptyDictationTranscript(),
             killTimer: setTimeout(() => child.kill('SIGKILL'), DICTATION_MAX_SECONDS * 1000 + KILL_GRACE_MS)
         }
         this.active = run
@@ -121,9 +138,14 @@ export class DictationService {
         }
 
         createInterface({ input: child.stdout }).on('line', (line) => {
-            const event = parseLine(id, line)
+            let event = parseLine(id, line)
             if (!event || run.settled) return
+            if (event.type === 'partial' || event.type === 'final') {
+                run.transcript = addDictationResult(run.transcript, event.text)
+                event = { ...event, text: dictationTranscriptText(run.transcript) }
+            }
             if (event.type === 'final' || event.type === 'error') run.settled = true
+            recorder?.heard(id, event, event.type === 'listening' ? listeningLocale(line) : undefined)
             deliver(event)
         })
         // the helper writes nothing there on purpose; macOS's own messages are worth a log line
@@ -141,7 +163,7 @@ export class DictationService {
                 // macOS ends a process with SIGABRT when the responsible app has no usage
                 // description for what it asked — Speech Recognition, in a build without our Info.plist.
                 const code_: DictationErrorCode = signal === 'SIGABRT' || code === 134 ? 'permission_setup' : 'helper_failed'
-                deliver({
+                const failure: DictationEvent = {
                     id,
                     type: 'error',
                     code: code_,
@@ -149,8 +171,11 @@ export class DictationService {
                         code_ === 'permission_setup'
                             ? 'macOS stopped dictation: this build of CLI Manager cannot ask for Speech Recognition. Use an installed release.'
                             : `Dictation stopped unexpectedly (${signal ?? `exit ${code}`}).`
-                })
+                }
+                if (!run.cancelled) recorder?.heard(id, failure)
+                deliver(failure)
             }
+            recorder?.ended(id, run.cancelled ? run.cancelReason : undefined)
             deliver({ id, type: 'ended' })
         })
         return { status: 'started', id }
@@ -163,22 +188,34 @@ export class DictationService {
         if (!run.child.stdin.writableEnded) run.child.stdin.end('stop\n')
     }
 
-    /** Stops at once and drops the words not yet final; the window hears nothing more. */
-    cancel(owner: number, id?: number): void {
+    /**
+     * Stops at once and drops the words not yet final; the window hears nothing more.
+     * `reason`: Esc (`cancelled`) or the box went away (`discarded`) — only the dictation log reads it.
+     */
+    cancel(owner: number, id?: number, reason: DictationCancelReason = 'cancelled'): void {
         const run = this.active
         if (!run || run.owner !== owner || (id !== undefined && run.id !== id)) return
+        if (run.cancelled) return
         run.cancelled = true
+        run.cancelReason = reason
         run.child.kill('SIGTERM')
+    }
+
+    /** What the Chat view did with a finished run's words (sent / emptied) — for the dictation log. */
+    report(owner: number, id: number, outcome: DictationOutcome): void {
+        this.options.recorder?.report(id, owner, outcome)
     }
 
     /** A window closed or reloaded: its run must not keep the microphone open. */
     ownerGone(owner: number): void {
-        this.cancel(owner)
+        this.cancel(owner, undefined, 'discarded')
+        this.options.recorder?.ownerGone(owner)
     }
 
     /** App quit. */
     dispose(): void {
         if (this.active) this.active.child.kill('SIGTERM')
+        this.options.recorder?.flush()
     }
 }
 
@@ -197,6 +234,16 @@ export function parseStatus(stdout: string): DictationStatus {
         }
     } catch {
         return unavailable('helper_failed')
+    }
+}
+
+/** The language a `listening` line names ("" when it names none). */
+function listeningLocale(line: string): string {
+    try {
+        const raw = JSON.parse(line) as Record<string, unknown>
+        return typeof raw.locale === 'string' ? raw.locale : ''
+    } catch {
+        return ''
     }
 }
 

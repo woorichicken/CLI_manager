@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds the Chat view's dictation helper (native/dictation/main.swift) into
+ * Builds the Chat view's dictation helper (native/dictation/main.swift + Transcript.swift) into
  * native/dictation/bin/climanager-dictation — one universal binary (arm64 + x86_64),
  * because the mac release ships both architectures and electron-builder copies the
  * same extraResources file into each.
@@ -15,7 +15,8 @@ const fs = require('fs')
 const path = require('path')
 
 const ROOT = path.join(__dirname, '..')
-const SOURCE = path.join(ROOT, 'native/dictation/main.swift')
+// main.swift is the program; Transcript.swift its running text across pauses (tested alone through `accumulate`)
+const SOURCES = ['main.swift', 'Transcript.swift'].map((name) => path.join(ROOT, 'native/dictation', name))
 const OUT_DIR = path.join(ROOT, 'native/dictation/bin')
 const OUT = path.join(OUT_DIR, 'climanager-dictation')
 // SFSpeechRecognizer's on-device mode needs 10.15; Electron itself needs 11.
@@ -40,7 +41,7 @@ function main() {
     fs.mkdirSync(OUT_DIR, { recursive: true })
     const parts = ARCHES.map((arch) => {
         const part = path.join(OUT_DIR, `climanager-dictation-${arch}`)
-        run('xcrun', ['swiftc', '-O', '-target', `${arch}-apple-macos${MIN_MACOS}`, SOURCE, '-o', part])
+        run('xcrun', ['swiftc', '-O', '-target', `${arch}-apple-macos${MIN_MACOS}`, ...SOURCES, '-o', part])
         return part
     })
     run('xcrun', ['lipo', '-create', ...parts, '-output', OUT])

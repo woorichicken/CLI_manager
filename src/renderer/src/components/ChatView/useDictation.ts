@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatDictation, DictationEvent } from '../../../../shared/dictation'
+import type { ChatDictation, DictationAgent, DictationEvent } from '../../../../shared/dictation'
 import { dictationAnchor, placeDictation, type DictationAnchor } from './dictationText'
 
 /**
@@ -25,11 +25,22 @@ export interface DictationControls {
     stop(): void
     /** stops and takes this run's words back out of the box (Esc) — the text from before stays */
     cancel(): void
+    /**
+     * The box is about to be sent: takes the finished runs whose words are in it (for the dictation log).
+     * Give them to `sent` once it went, or back to `restore` when the send was refused and the text returned.
+     */
+    takeForSend(): number[]
+    sent(runs: number[], text: string): void
+    restore(runs: number[]): void
+    /** the box is empty: words dictated into it were not sent (edited-away) */
+    boxEmptied(): void
 }
 
 interface Options {
     dictation: ChatDictation | undefined
     sessionId: string
+    /** which agent the words are for — the dictation log keeps it */
+    agent?: DictationAgent
     /** the box's text and selection when listening starts */
     readBox(): { text: string; start: number; end: number }
     /** puts the box's text and moves the cursor */
@@ -38,13 +49,21 @@ interface Options {
     onError(message: string): void
 }
 
-export function useDictation({ dictation, sessionId, readBox, write, onError }: Options): DictationControls {
+/**
+ * Finished runs whose words sit in a session's box, waiting to be sent — per session, outside the
+ * component, because the box's draft outlives the view (draftStore). Only the dictation log reads
+ * what becomes of them (main ignores the reports when the log is off); one that is never reported
+ * counts as discarded there after half an hour.
+ */
+const awaitingSend = new Map<string, number[]>()
+
+export function useDictation({ dictation, sessionId, agent, readBox, write, onError }: Options): DictationControls {
     const [available, setAvailable] = useState(false)
     const [state, setState] = useState<DictationState>('idle')
     const run = useRef<{ id: number | null; anchor: DictationAnchor } | null>(null)
     // the latest callbacks without re-subscribing on every render
-    const callbacks = useRef({ write, onError })
-    callbacks.current = { write, onError }
+    const callbacks = useRef({ write, onError, sessionId })
+    callbacks.current = { write, onError, sessionId }
 
     useEffect(() => {
         if (!dictation) return
@@ -69,6 +88,10 @@ export function useDictation({ dictation, sessionId, readBox, write, onError }: 
             else if (event.type === 'partial' || event.type === 'final') {
                 const placed = placeDictation(current.anchor, event.text)
                 callbacks.current.write(placed.text, placed.caret)
+                if (event.type === 'final' && event.text.trim()) {
+                    const session = callbacks.current.sessionId
+                    awaitingSend.set(session, [...(awaitingSend.get(session) ?? []), event.id])
+                }
             } else if (event.type === 'error') callbacks.current.onError(event.message)
             else if (event.type === 'ended') {
                 run.current = null
@@ -83,7 +106,7 @@ export function useDictation({ dictation, sessionId, readBox, write, onError }: 
             const current = run.current
             run.current = null
             setState('idle')
-            if (dictation && current?.id != null) void dictation.cancel(current.id)
+            if (dictation && current?.id != null) void dictation.cancel(current.id, 'discarded')
         },
         [dictation, sessionId]
     )
@@ -96,13 +119,13 @@ export function useDictation({ dictation, sessionId, readBox, write, onError }: 
         setState('starting')
         let result
         try {
-            result = await dictation.start()
+            result = await dictation.start({ agent })
         } catch (error) {
             result = { status: 'rejected' as const, code: 'helper_failed' as const, message: error instanceof Error ? error.message : String(error) }
         }
         if (run.current !== current) {
             // the session changed while main started it: end it unseen
-            if (result.status === 'started') void dictation.cancel(result.id)
+            if (result.status === 'started') void dictation.cancel(result.id, 'discarded')
             return
         }
         if (result.status === 'rejected') {
@@ -112,7 +135,7 @@ export function useDictation({ dictation, sessionId, readBox, write, onError }: 
             return
         }
         current.id = result.id
-    }, [dictation, readBox])
+    }, [dictation, readBox, agent])
 
     const stop = useCallback((): void => {
         const current = run.current
@@ -129,13 +152,40 @@ export function useDictation({ dictation, sessionId, readBox, write, onError }: 
         const restored = placeDictation(current.anchor, '')
         callbacks.current.write(restored.text, restored.caret)
         // still starting (no id yet): start() sees the run is gone and ends it unseen
-        if (current.id !== null) void dictation.cancel(current.id)
+        if (current.id !== null) void dictation.cancel(current.id, 'cancelled')
     }, [dictation])
+
+    const takeForSend = useCallback((): number[] => {
+        const runs = awaitingSend.get(sessionId) ?? []
+        awaitingSend.delete(sessionId)
+        return runs
+    }, [sessionId])
+
+    const sent = useCallback(
+        (runs: number[], text: string): void => {
+            for (const id of runs) void dictation?.report?.(id, { type: 'sent', text })
+        },
+        [dictation]
+    )
+
+    const restore = useCallback(
+        (runs: number[]): void => {
+            if (runs.length > 0) awaitingSend.set(sessionId, [...runs, ...(awaitingSend.get(sessionId) ?? [])])
+        },
+        [sessionId]
+    )
+
+    const boxEmptied = useCallback((): void => {
+        const runs = awaitingSend.get(sessionId)
+        if (!runs) return
+        awaitingSend.delete(sessionId)
+        for (const id of runs) void dictation?.report?.(id, { type: 'edited-away' })
+    }, [dictation, sessionId])
 
     const toggle = useCallback((): void => {
         if (state === 'idle') void start()
         else if (state === 'listening') stop()
     }, [state, start, stop])
 
-    return { available: available && dictation !== undefined, state, active: state !== 'idle', toggle, stop, cancel }
+    return { available: available && dictation !== undefined, state, active: state !== 'idle', toggle, stop, cancel, takeForSend, sent, restore, boxEmptied }
 }

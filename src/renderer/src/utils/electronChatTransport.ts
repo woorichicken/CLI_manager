@@ -98,9 +98,10 @@ export const electronChatTransport: ChatTransport = {
     },
     dictation: {
         status: () => window.api.dictationStatus(),
-        start: () => window.api.startDictation(),
+        start: (context) => window.api.startDictation(context),
         stop: (id) => window.api.stopDictation(id),
-        cancel: (id) => window.api.cancelDictation(id),
+        cancel: (id, reason) => window.api.cancelDictation(id, reason),
+        report: (id, outcome) => window.api.reportDictation(id, outcome),
         onEvent: (listener) => window.api.onDictationEvent(listener)
     }
 }

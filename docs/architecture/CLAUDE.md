@@ -147,6 +147,20 @@ rules stay in the root; this file is the inventory.
   Codex·다중 선택 카드 버튼(실제 화면 사본이 없다) — 이유와 크기는 `gap.md` 「다음 판」
 - 회귀: `t73-chat-view-unit.spec.ts`(해석·리더·메뉴 판정, Electron 없이) · `t74-chat-view.spec.ts`(앱 — `scripts/mock-cli/chat-mock.cjs` 가 화면과
   기록 파일을 함께 만든다)
+- **받아쓰기**(마이크, macOS · 사람 결정 11-08 Orca형 — 받아 적기만, 보내기는 사람): `src/main/Dictation.ts` 가 Swift 헬퍼
+  (`native/dictation/main.swift` + `Transcript.swift`, `scripts/build-dictation.cjs`)를 자식으로 돌려 줄마다 JSON 을 창에 전한다. 렌더러 `ChatView/useDictation.ts`
+  (자리 `dictationText.ts`). 결과 글은 **한 번의 받아쓰기 전체**다 — 말이 잠깐 멈추면 인식기의 결과가 새 말만 담고 다시 시작해서, 헬퍼(`Transcript.swift`)와
+  main(`src/shared/dictationTranscript.ts`, 옛 헬퍼 대비 · 이미 누적된 글엔 아무것도 안 함)이 앞 글을 이어 붙인다(11-09 제보 「공백이 있으면 내용이 사라진다」). 두 규칙은
+  `tests/terminal/fixtures/dictation-transcript-cases.json` 하나로 T106 이 둘 다 본다(헬퍼는 `climanager-dictation accumulate`)
+- **받아쓰기 기록**(Settings › Terminal › Chat view 「Keep dictation log」, 기본 꺼짐 — [`../decisions/0012-dictation-log-stays-on-this-mac.md`](../decisions/0012-dictation-log-stays-on-this-mac.md)):
+  `src/main/DictationLog.ts` 가 `userData/dictation-log/YYYY-MM-DD.jsonl`(시작한 날, 0600, 폴더 0700)에 받아쓰기 한 번에 한 줄을 쓴다 —
+  `{ v, id, startedAt, durationMs, locale, agent, partialCount, finalText, sentText, outcome, error?, audioFile }`.
+  `outcome`: `sent`(Chat 이 보낸 입력칸 전체 = `sentText`, 첨부 경로는 빼고) · `edited-away`(보내지 않고 칸을 비움) · `cancelled`(Esc) · `discarded`(다른 세션·창 닫힘·
+  앱 종료·30분 안에 소식 없음) · `empty`(아무것도 못 들음) · `failed`(+`error`). 듣기 전에 끝난 것(권한 거부)은 쓰지 않는다. 글은 `maskSecrets.ts` 로 가린 뒤 쓴다.
+  「Also keep audio」(기본 꺼짐, 기록을 켜야 켤 수 있음)면 헬퍼에 `--audio-out <폴더>/audio/<id>.wav` 를 넘긴다(AVAudioFile, 들어온 형식 그대로 16bit PCM).
+  보관: 글 30일 · 소리 7일, 시작 때 + 하루 한 번 `prune`(꺼져 있어도 남은 것은 지운다, 폴더는 만들지 않는다). 기록을 쓰기 직전에 설정을 다시 읽어 그새 끄면 아무것도 안 남긴다.
+  렌더러는 보낸 결과만 알린다(`useDictation` 의 `takeForSend`·`sent`·`restore`·`boxEmptied` — 세션마다 모듈 맵, 초안처럼 보기를 넘어 산다). 제보·폰·Control API 어디에도 안 실린다.
+  회귀: `t106-dictation-unit`(누적) · `t114-dictation-log-unit` · `t115-dictation-log`(앱 — 가짜 헬퍼 `pause` 모드)
 
 #### 16. Phone connection (Settings › Phone)
 - 근거: [`../decisions/0009-phone-connection-second-server.md`](../decisions/0009-phone-connection-second-server.md). 기본 꺼짐 — 켜면 main 안
@@ -394,6 +408,9 @@ User Action (Renderer)
   `chat-save-attachment(name, bytes)` → `AttachResult`(32MB) · `chat-open-path(path)` → `shell.openPath`. `@` 파일 찾기는 기존 `search-files` 를 쓴다
 - 설정(`settings.chat`, Settings › Terminal › Chat view): `enterSends` · `showQuickReplies`·`quickReplies` · `pinLastMessage`(기본 끔 — 내 마지막 말이 화면 밖으로 나가면 위에 고정) · `openFilesInApp`(기본 켬, 끄면 `chat-open-path`). 입력칸의 명령 글자는 textarea 를 투명하게 두고 그 아래 같은 글을 그려 칠한다(`commandPieces`). 모드 칩(`ConversationMeta.mode`)은 화면의 입력 상자 아래 줄 → 없으면 마지막 프롬프트의 `permissionMode`(Codex: `turn_context` 의 collaboration·sandbox) 순이고, 기본 모드는 칩이 없다
 - 폰(☰ ⚙, 브라우저 저장 `phone-chat-settings`): Return 으로 보내기 · 빠른 답(Mac 에 직접 넣은 문구가 있으면 기본 켬 — `/me` 의 `quickRepliesSet`, 폰에서 끈 것은 유지) · 내 마지막 말(Mac 설정을 따르다 폰에서 고르면 그대로 — `/me` 의 `pinLastMessage`) · 다른 세션 알림(띠와 ☰ 숫자, 끄면 상태 점만)
+- 받아쓰기: `dictation-status` · `dictation-start(context: { agent })` · `dictation-stop(id)` · `dictation-cancel(id, 'cancelled'|'discarded')` · 이벤트 `dictation-event`.
+  기록: `dictation-report(id, { type: 'sent', text } | { type: 'edited-away' })`(기록이 꺼져 있으면 main 이 버린다) · `dictation-log-open-folder` → `'opened'|'missing'|오류` ·
+  `dictation-log-delete-all`. 설정 `settings.chat.dictationLog` · `dictationLogAudio`(둘 다 기본 끔)
 - 코드: `src/main/ConversationService.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · `chatCommands.ts` · `chatAttachments.ts` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
   `SessionViewToggle.tsx` · `ChatFilePreview.tsx` · `ChatViewSettings.tsx` · `hooks/useSessionViewMode.ts`(peek 포함) · `utils/electronChatTransport.ts`
 
