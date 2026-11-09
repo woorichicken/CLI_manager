@@ -18,7 +18,7 @@ export function DictationButton({ controls }: { controls: DictationControls }): 
             data-state={controls.state}
             aria-pressed={controls.active}
             aria-label={label}
-            title={hint(listening ? 'Stop dictation — the words stay in the box' : 'Dictate — speech becomes text here, you send it', 'toggleDictation')}
+            title={hint(listening ? 'Stop dictation — the words stay (Esc discards them)' : 'Dictate — speech becomes text here, you send it', 'toggleDictation')}
             disabled={busy}
             // keep the box's selection: listening starts where the cursor is
             onPointerDown={(event) => event.preventDefault()}

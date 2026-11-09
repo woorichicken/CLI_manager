@@ -100,7 +100,9 @@ export class DictationService {
         this.statusCache = null
         let child: ChildProcessWithoutNullStreams
         try {
-            child = spawn(helper, ['listen'], { stdio: ['pipe', 'pipe', 'pipe'] })
+            // CLIMANAGER_DICTATION_DEBUG=1: the helper logs its microphone and audio levels (no sound vs. no words)
+            const args = process.env.CLIMANAGER_DICTATION_DEBUG === '1' ? ['listen', '--debug'] : ['listen']
+            child = spawn(helper, args, { stdio: ['pipe', 'pipe', 'pipe'] })
         } catch (error) {
             return { status: 'rejected', code: 'helper_failed', message: error instanceof Error ? error.message : String(error) }
         }

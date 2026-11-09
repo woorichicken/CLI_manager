@@ -8,7 +8,8 @@ import { dictationAnchor, placeDictation, type DictationAnchor } from './dictati
  * device; anywhere else `available` is false and the button is not drawn.
  *
  * While listening the box is read-only: the words replace themselves as the recognizer hears more,
- * and a keystroke in between would land in the middle of them.
+ * and a keystroke in between would land in the middle of them. The words show as they are heard and
+ * stay unless the person presses Esc (people's decision 11-09: 「ESC 로 취소 안하면 그대로 적히게」).
  */
 
 export type DictationState = 'idle' | 'starting' | 'listening' | 'finishing'
@@ -22,6 +23,8 @@ export interface DictationControls {
     toggle(): void
     /** stops and keeps the words heard so far */
     stop(): void
+    /** stops and takes this run's words back out of the box (Esc) — the text from before stays */
+    cancel(): void
 }
 
 interface Options {
@@ -118,10 +121,21 @@ export function useDictation({ dictation, sessionId, readBox, write, onError }: 
         void dictation.stop(current.id)
     }, [dictation])
 
+    const cancel = useCallback((): void => {
+        const current = run.current
+        if (!dictation || !current) return
+        run.current = null
+        setState('idle')
+        const restored = placeDictation(current.anchor, '')
+        callbacks.current.write(restored.text, restored.caret)
+        // still starting (no id yet): start() sees the run is gone and ends it unseen
+        if (current.id !== null) void dictation.cancel(current.id)
+    }, [dictation])
+
     const toggle = useCallback((): void => {
         if (state === 'idle') void start()
         else if (state === 'listening') stop()
     }, [state, start, stop])
 
-    return { available: available && dictation !== undefined, state, active: state !== 'idle', toggle, stop }
+    return { available: available && dictation !== undefined, state, active: state !== 'idle', toggle, stop, cancel }
 }

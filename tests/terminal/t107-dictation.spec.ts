@@ -9,6 +9,7 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  *
  *  - the mic beside ＋ in a Claude session's Chat; click → listening (box read-only), the words grow at
  *    the cursor, Enter stops — the words stay and nothing reaches the agent; a second Enter sends them
+ *  - Esc while listening takes this run's words back out; the text from before stays (people's decision 11-09)
  *  - ⌘⇧D starts and stops it from the box; in Terminal view the key does nothing
  *  - moving to another session while listening ends that run; its words never land in the other box
  *  - a refused run (microphone off) says why in the note; a Mac that cannot do it on the device has no mic
@@ -118,6 +119,27 @@ test('T107 the mic types at the cursor, Enter stops it without sending, the next
 
     await composer.press('Enter')
     await expect.poll(() => terminalLines(page, FIRST), { timeout: 15_000 }).toContain(`ANSWER[1]: 이 문장 뒤에 ${HEARD}.`)
+})
+
+test('T107 Esc while listening takes the words back out; the text from before stays', async () => {
+    test.setTimeout(180_000)
+    const { page } = await launch()
+    await openChat(page, 'T107 First')
+    const composer = chat(page).getByTestId('chat-composer')
+    const mic = chat(page).getByTestId('chat-dictation')
+    await expect(mic).toBeVisible({ timeout: 10_000 })
+    await composer.fill('먼저 쓴 글')
+    await mic.click()
+    // the words show as they are heard
+    await expect(composer).toHaveValue(/^먼저 쓴 글 안녕하세요/, { timeout: 10_000 })
+    await composer.press('Escape')
+    await expect(mic).toHaveAttribute('data-state', 'idle', { timeout: 10_000 })
+    await expect(composer).toHaveValue('먼저 쓴 글')
+    await expect.poll(calls, { timeout: 10_000 }).toContain('killed')
+    // nothing late from that run lands in the box
+    await page.waitForTimeout(800)
+    await expect(composer).toHaveValue('먼저 쓴 글')
+    expect(await terminalLines(page, FIRST)).not.toContain('ANSWER[')
 })
 
 test('T107 ⌘⇧D starts and stops it from the box; in Terminal view the key does nothing', async () => {

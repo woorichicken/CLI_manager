@@ -103,18 +103,45 @@ guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
 }
 
 // ---- listening ---------------------------------------------------------------------------------
-let engine = AVAudioEngine()
+// AVCaptureSession, not AVAudioEngine: with a Bluetooth headset as the input (16 kHz HFP) the engine
+// started without error and its tap never ran — 0 buffers, connected to the mixer or not (11-09 실측).
+// A capture session follows the Mac's chosen input like any recording app does.
 let request = SFSpeechAudioBufferRecognitionRequest()
 request.requiresOnDeviceRecognition = true
 request.shouldReportPartialResults = true
 if #available(macOS 13, *) { request.addsPunctuation = true }
 
-let input = engine.inputNode
-let format = input.outputFormat(forBus: 0)
-guard format.sampleRate > 0, format.channelCount > 0 else { fail("no_microphone", "No microphone is connected.") }
-input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in request.append(buffer) }
-engine.prepare()
-do { try engine.start() } catch { fail("audio_failed", "Could not start the microphone: \(error.localizedDescription)") }
+guard let device = AVCaptureDevice.default(for: .audio) else { fail("no_microphone", "No microphone is connected.") }
+let session = AVCaptureSession()
+do {
+    let deviceInput = try AVCaptureDeviceInput(device: device)
+    guard session.canAddInput(deviceInput) else { fail("audio_failed", "Could not use the microphone \(device.localizedName).") }
+    session.addInput(deviceInput)
+} catch {
+    fail("audio_failed", "Could not open the microphone: \(error.localizedDescription)")
+}
+
+/** Counts what arrives, for the once-a-second stderr line that tells "no sound" from "sound but no words". */
+final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    private let lock = NSLock()
+    private var buffers = 0
+    private var loudest: Float = -160
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        request.appendAudioSampleBuffer(sampleBuffer)
+        let level = connection.audioChannels.first?.averagePowerLevel ?? -160
+        lock.lock(); buffers += 1; loudest = max(loudest, level); lock.unlock()
+    }
+    func sample() -> (Int, Float) {
+        lock.lock(); defer { loudest = -160; lock.unlock() }
+        return (buffers, loudest)
+    }
+}
+let sink = AudioSink()
+let output = AVCaptureAudioDataOutput()
+output.setSampleBufferDelegate(sink, queue: DispatchQueue(label: "climanager.dictation.audio"))
+guard session.canAddOutput(output) else { fail("audio_failed", "Could not read the microphone \(device.localizedName).") }
+session.addOutput(output)
+session.startRunning()
 
 var lastText = ""
 var stopping = false
@@ -132,8 +159,7 @@ func finish(_ code: Int32) -> Never {
 func stopListening() {
     if stopping { return }
     stopping = true
-    engine.stop()
-    input.removeTap(onBus: 0)
+    session.stopRunning()
     request.endAudio()
     // The recognizer usually answers within a second; never leave main waiting on it.
     DispatchQueue.main.asyncAfter(deadline: .now() + finalWaitSeconds) { finish(0) }
@@ -155,6 +181,16 @@ let task = recognizer.recognitionTask(with: request) { result, error in
 _ = task
 
 emit(["type": "listening", "locale": recognizer.locale.identifier])
+// `--debug` (main passes it when CLIMANAGER_DICTATION_DEBUG=1): which microphone, and once a second
+// how much audio arrived and how loud — tells "no sound" from "sound but no words" (main logs stderr).
+if arguments.contains("--debug") {
+    FileHandle.standardError.write("input \(device.localizedName)\n".data(using: .utf8)!)
+    // Once a second: did audio arrive, and how loud (dB) — tells "no sound" from "sound but no words".
+    Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+        let (count, loudest) = sink.sample()
+        FileHandle.standardError.write(String(format: "buffers=%d loudest=%.0fdB\n", count, loudest).data(using: .utf8)!)
+    }
+}
 
 // "stop" (or main closing stdin, or main going away) ends the run.
 Thread.detachNewThread {

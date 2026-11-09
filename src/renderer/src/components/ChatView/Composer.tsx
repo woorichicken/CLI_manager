@@ -374,12 +374,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
         // IME composition (Korean, Japanese): Enter confirms the character, it does not send.
         if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
-        // listening: the box is read-only, and Enter or Esc ends listening (the words stay, nothing is sent)
+        // listening: the box is read-only. Enter stops and keeps the words (nothing is sent); Esc takes them back out
         if (dictation.active) {
             if (event.key === 'Enter' || event.key === 'Escape') {
                 event.preventDefault()
                 event.stopPropagation()
-                dictation.stop()
+                if (event.key === 'Escape') dictation.cancel()
+                else dictation.stop()
             }
             return
         }
@@ -488,7 +489,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 ? `${(MAX_CHAT_TEXT_LENGTH - message.length).toLocaleString()} characters left`
                 : null
     const placeholder = dictation.active
-        ? 'Listening… speak, then press Enter or the mic to stop'
+        ? 'Listening… Enter keeps the words · Esc discards them'
         : pendingPick
         ? 'Enter confirms the option above · Esc cancels'
         : promptOptions
