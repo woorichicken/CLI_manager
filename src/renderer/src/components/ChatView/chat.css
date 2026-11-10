@@ -430,3 +430,31 @@ button.chat-attachment-chip:hover { background: rgba(255, 255, 255, 0.16); }
 .chat-dictation:disabled { opacity: 0.7; }
 @keyframes chat-dictation-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .chat-dictation.is-listening svg { animation: none; } }
+
+/* «Fork into a new session» (ForkDialog.tsx): over the chat (and over an earlier fork's notice), the chat itself untouched underneath */
+.chat-fork-layer { position: absolute; inset: 0; z-index: 32; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.chat-fork-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+.chat-fork-dialog { position: relative; width: min(460px, 100%); max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 10px; background: var(--chat-bg); border: 1px solid var(--chat-line); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); font-size: 0.92em; }
+.chat-fork-title { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.chat-fork-close { margin-left: auto; color: var(--chat-faint); padding: 2px; border-radius: 4px; }
+.chat-fork-close:hover { color: var(--chat-fg); background: var(--chat-soft); }
+.chat-fork-scope { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.chat-fork-scope legend { color: var(--chat-dim); font-size: 0.86em; margin-bottom: 2px; }
+.chat-fork-scope label { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--chat-line); border-radius: 8px; cursor: pointer; }
+.chat-fork-scope label:has(input:checked) { border-color: rgba(59, 130, 246, 0.6); background: rgba(59, 130, 246, 0.08); }
+.chat-fork-scope label[data-disabled] { opacity: 0.55; cursor: default; }
+.chat-fork-scope input { margin-top: 3px; }
+.chat-fork-scope span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chat-fork-scope small, .chat-fork-note { color: var(--chat-dim); font-size: 0.86em; line-height: 1.4; }
+.chat-fork-message { display: flex; flex-direction: column; gap: 4px; color: var(--chat-dim); font-size: 0.9em; }
+.chat-fork-message textarea { resize: vertical; min-height: 64px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--chat-line); background: var(--chat-soft); color: var(--chat-fg); font: inherit; font-size: 1.05em; }
+.chat-fork-quote { display: flex; align-items: center; gap: 8px; }
+.chat-fork-quote[data-disabled] { color: var(--chat-faint); }
+.chat-fork-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.chat-fork-actions button { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--chat-line); }
+.chat-fork-actions .chat-fork-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+.chat-fork-notice { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 31; display: flex; align-items: flex-start; gap: 8px; width: max-content; max-width: min(520px, calc(100% - 32px)); padding: 9px 12px; border-radius: 10px; background: #1e293b; color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.35); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.4; }
+.chat-fork-notice svg { flex-shrink: 0; margin-top: 2px; color: #93c5fd; }
+.chat-fork-notice[data-state="rejected"] svg { color: #fca5a5; }
+.chat-fork-notice button { color: #94a3b8; flex-shrink: 0; }
+.chat-fork-notice .chat-fork-show { color: #93c5fd; text-decoration: underline; }

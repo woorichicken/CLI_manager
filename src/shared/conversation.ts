@@ -269,6 +269,42 @@ export type InterruptResult =
     | { status: 'stopped' }
     | { status: 'rejected'; reason: 'not_working' | 'not_running' | 'revoked'; message: string }
 
+/**
+ * «Fork into a new session» on one of the agent's replies: a new session in the same workspace, with the
+ * same agent, listed under this one (Related «Opened»), opened behind the current one.
+ * `whole`: the agent's own fork of the conversation (Claude `--resume … --fork-session`, Codex `fork`) —
+ * the replies after this one come along too. `excerpt`: a fresh agent whose first message is the last
+ * turns up to this reply, copied from the transcript (not a summary), then the person's words.
+ */
+export type ChatForkScope = 'whole' | 'excerpt'
+
+export interface ChatForkRequest {
+    /** the reply's place among all the conversation's turns (0 = the first of `totalTurns`) */
+    turnIndex: number
+    /** that turn's `ts` as the view showed it: main forks only while the same turn is at that place */
+    turnTs: string | null
+    scope: ChatForkScope
+    /** what the person wrote for the new session (may be empty) */
+    message: string
+    /** quote this reply above the message (`whole`; the excerpt ends with it anyway) */
+    quote: boolean
+}
+
+export type ChatForkResult =
+    | {
+          status: 'forked'
+          sessionId: string
+          name: string
+          /** the first message went in (false: there was none, or it could not be typed — `note` says why) */
+          messageSent: boolean
+          note?: string
+      }
+    | {
+          status: 'rejected'
+          reason: 'no_conversation' | 'turn_changed' | 'unknown_session' | 'too_large' | 'revoked' | 'failed'
+          message: string
+      }
+
 /** What a picked or pasted file became: a path the agent can read (`@path` in the message). */
 export type AttachResult =
     | { status: 'attached'; path: string }
@@ -379,6 +415,8 @@ export interface ChatTransport {
     openFile(sessionId: string, path: string, line?: number): void
     /** Opens a web address outside the app. */
     openLink(url: string): void
+    /** «Fork into a new session» from one reply (ChatForkRequest). Absent: no Fork button. */
+    fork?(sessionId: string, request: ChatForkRequest): Promise<ChatForkResult>
     /** Speech to text into the message box (the Mac app). Absent: no mic button — a phone has its keyboard's. */
     dictation?: ChatDictation
 }

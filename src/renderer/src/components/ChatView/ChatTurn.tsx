@@ -1,5 +1,5 @@
 import { memo, useRef, useState } from 'react'
-import { Check, Copy, FileText } from 'lucide-react'
+import { Check, Copy, FileText, GitFork } from 'lucide-react'
 import type { ConversationAgent, ConversationTurn } from '../../../../shared/conversation'
 import { Markdown } from './markdown/Markdown'
 import { UserParts } from './TurnParts'
@@ -26,7 +26,8 @@ export const ChatTurn = memo(function ChatTurn({
     waiting,
     agent,
     index,
-    foldWork = true
+    foldWork = true,
+    onFork
 }: {
     turn: ConversationTurn
     last: boolean
@@ -38,6 +39,8 @@ export const ChatTurn = memo(function ChatTurn({
     index: number
     /** Settings › Terminal › Chat view «Collapse work» (default on): every block starts folded */
     foldWork?: boolean
+    /** «Fork into a new session» from this reply (its place among the turns shown); absent: no button */
+    onFork?: (index: number) => void
 }) {
     if (turn.role === 'user') {
         return (
@@ -57,6 +60,21 @@ export const ChatTurn = memo(function ChatTurn({
             <div className="chat-turn-label">
                 <span title={turnTime(turn.end_ts ?? turn.ts)}>{AGENT_NAMES[agent]}</span>
                 {answer && !(live && last) && <CopyAnswer markdown={answer} />}
+                {answer && !(live && last) && onFork && (
+                    <span className="chat-copy-answer">
+                        <button
+                            type="button"
+                            data-testid="chat-fork"
+                            title="Fork into a new session"
+                            aria-label="Fork into a new session"
+                            // the keyboard stays where it was (the message box): the dialog gives it back there on close
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => onFork(index)}
+                        >
+                            <GitFork size={12} />
+                        </button>
+                    </span>
+                )}
             </div>
             {segments.map((segment, segmentIndex) => {
                 const lastSegment = segmentIndex === segments.length - 1

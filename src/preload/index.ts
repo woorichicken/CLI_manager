@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
-import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, ChatCommand, ChatForkRequest, ChatForkResult, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
@@ -396,6 +396,7 @@ const api = {
     discardQueuedChat: (sessionId: string, id: string): Promise<boolean> => ipcRenderer.invoke('chat-discard-queued', sessionId, id),
     sendQueuedChatNow: (sessionId: string, id: string): Promise<ChatSendResult> => ipcRenderer.invoke('chat-send-queued-now', sessionId, id),
     interruptChat: (sessionId: string): Promise<InterruptResult> => ipcRenderer.invoke('chat-interrupt', sessionId),
+    forkChat: (sessionId: string, request: ChatForkRequest): Promise<ChatForkResult> => ipcRenderer.invoke('chat-fork', sessionId, request),
     getChatImage: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-image', sessionId, ref),
     getChatToolOutput: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-tool-output', sessionId, ref),
     listChatCommands: (sessionId: string): Promise<ChatCommand[]> => ipcRenderer.invoke('chat-commands', sessionId),

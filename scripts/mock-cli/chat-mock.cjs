@@ -15,6 +15,10 @@
  *   --mode-row <text>     the row under the input box (default `⏵⏵ accept edits on`); `none` draws no row
  *   --permission-mode <m> what a prompt records as `permissionMode` (Claude Code 2.1.3xx: default, plan, auto, …)
  *   --continue            new records follow the transcript's last entry (a resumed session), so its history stays on the branch
+ *   --show-args           print the start's own arguments (`ARGS: --resume <id> --fork-session`) — what the app typed after
+ *                         the saved command (T117 Fork)
+ *   --fresh-transcript <file>  a start that is not a plain resume (`--fork-session`, Codex `fork`, no `--resume`) writes its
+ *                         records here instead of --transcript: a fork is a new conversation, the parent's file stays as it was
  *
  * Prompts:
  *   ASK       a permission question. The layout is copied from a real Claude Code 2.1.312 screen
@@ -55,7 +59,18 @@ const arg = (name, fallback) => {
     const index = process.argv.indexOf(name)
     return index > 0 ? process.argv[index + 1] : fallback
 }
-const TRANSCRIPT = arg('--transcript')
+/** the mock's own options; the rest of argv is what the app typed after the saved command */
+const OWN_VALUE_FLAGS = new Set(['--transcript', '--agent', '--work-ms', '--user-delay-ms', '--name', '--spinner', '--mode-row', '--permission-mode', '--fresh-transcript'])
+const OWN_FLAGS = new Set(['--continue', '--show-args'])
+const START_ARGS = []
+for (let i = 2; i < process.argv.length; i++) {
+    if (OWN_VALUE_FLAGS.has(process.argv[i])) i++
+    else if (!OWN_FLAGS.has(process.argv[i])) START_ARGS.push(process.argv[i])
+}
+const FORKED = START_ARGS.includes('--fork-session') || START_ARGS[0] === 'fork'
+const PLAIN_RESUME = !FORKED && (START_ARGS.includes('--resume') || START_ARGS[0] === 'resume')
+const FRESH_TRANSCRIPT = arg('--fresh-transcript')
+const TRANSCRIPT = FRESH_TRANSCRIPT && !PLAIN_RESUME ? FRESH_TRANSCRIPT : arg('--transcript')
 const AGENT = arg('--agent', 'claude')
 const WORK_MS = Number(arg('--work-ms', '1200'))
 /** how long a submitted prompt takes to reach the transcript (Claude Code writes it at once; a slow disk does not) */
@@ -653,6 +668,7 @@ process.stdin.setEncoding('utf8')
 // Bracketed paste, as Claude Code and Codex ask for it.
 out('\x1b[?2004h')
 say(AGENT === 'codex' ? '>_ OpenAI Codex (mock)' : ' ▐▛███▜▌   Claude Code (mock)')
+if (process.argv.includes('--show-args')) say(`ARGS: ${START_ARGS.join(' ') || '(none)'}`)
 say('')
 draw()
 process.stdin.on('data', feed)

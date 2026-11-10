@@ -1,5 +1,6 @@
 import { AgentConversations, AgentConversationError } from './agentConversations'
 import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList } from '../shared/conversation'
+import type { ForkOpenInput, ForkOpenResult } from './ConversationService'
 import { existsSync, realpathSync, statSync } from 'fs'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
@@ -399,6 +400,11 @@ export interface ControlApiDeps {
     conversations?: () => AgentConversations
     /** A session is gone for good (closed or deleted): drop what was kept for it elsewhere. */
     onSessionForgotten?: (sessionId: string) => void
+    /**
+     * Watch for the conversation a Codex start in this terminal writes (index.ts startCodexCapture).
+     * `codex fork <id>` is not a start the terminal's own detection takes, so a fork asks for it.
+     */
+    watchCodexStart?: (sessionId: string, baseCommand: string) => void
 }
 
 export const CONTROL_API_SESSION_CHANNEL = 'control-api-session'
@@ -639,6 +645,60 @@ export class ControlApiService {
             result.session = this.getSession(session.id)
         }
 
+        return result
+    }
+
+    /**
+     * Chat «Fork into a new session» (ConversationService.fork): the person's action, not an AI's —
+     * the new session gets no AI mark and the parent does not become an orchestrator. It goes into the
+     * parent's workspace (and session folder), under the parent in Related («Opened»), and opens behind
+     * the current screen (no focus). The first message is typed the way `openSession` types its prompt,
+     * with the Chat's stricter question test, once the agent is up.
+     */
+    async openFork(input: ForkOpenInput): Promise<ForkOpenResult> {
+        const { workspace, session: parent } = this.requireSession(input.parentId)
+        const session: TerminalSession = {
+            id: uuidv4(),
+            name: input.name.slice(0, MAX_NAME_LENGTH),
+            cwd: parent.cwd || workspace.path,
+            type: 'regular',
+            initialCommand: input.command,
+            // the agent is known before its conversation is: a restart of the new session resumes what
+            // ClaudeSessionSync / the Codex watch find, on the person's own start command
+            cliToolName: input.agent,
+            cliCommand: input.cliCommand,
+            ...(parent.sessionFolderId ? { sessionFolderId: parent.sessionFolderId } : {})
+        }
+        this.deps.mirror.attach(session.id)
+        const workspaces = this.workspaces()
+        const target = workspaces.find((w) => w.id === workspace.id)!
+        target.sessions = [...(target.sessions ?? []), session]
+        this.deps.store.set('workspaces', workspaces)
+        this.emit({ type: 'opened', workspaceId: workspace.id, sessionId: session.id, session, focus: false })
+        this.deps.relations.recordOpened(input.parentId, session.id)
+
+        const result: ForkOpenResult = { sessionId: session.id, name: session.name, messageSent: false }
+        if (!(await this.waitForPty(session.id, PTY_START_TIMEOUT_MS))) {
+            result.note = 'The session was added, but its terminal did not start.'
+            return result
+        }
+        if (input.watchCodex) this.deps.watchCodexStart?.(session.id, input.cliCommand)
+        if (!input.prompt.trim()) return result
+        if (!(await this.waitForStartup(session.id, true))) {
+            result.note = 'The agent did not finish starting within a minute, so the first message was not sent. Send it in the new session.'
+            return result
+        }
+        if (this.deps.mirror.asksQuestion(session.id)) {
+            result.note = 'The new session is asking a question, so the first message was not sent. Answer it there, then send the message.'
+            return result
+        }
+        try {
+            result.messageSent = await this.typeAndSubmit(session.id, { text: input.prompt, submit: true }, input.allowed, (id) => this.deps.mirror.asksQuestion(id))
+            if (!result.messageSent) result.note = 'The first message is in the new session\'s input box but was not submitted. Press Enter there.'
+        } catch (error) {
+            if (error instanceof ControlApiError && error.code === 'revoked') throw error
+            result.note = `The first message was not sent: ${error instanceof Error ? error.message : String(error)}`
+        }
         return result
     }
 

@@ -45,7 +45,7 @@ import { TranscriptReader } from './TranscriptReader'
 import { ConversationService } from './ConversationService'
 import { createChatCommandLister } from './chatCommands'
 import { saveChatAttachment } from './chatAttachments'
-import type { PromptAnswer } from '../shared/conversation'
+import type { ChatForkRequest, PromptAnswer } from '../shared/conversation'
 import { MAX_CHAT_TEXT_LENGTH } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import { FeedbackModeState } from './feedbackMode'
@@ -185,6 +185,8 @@ function setCodexAwaitingFirstMessage(id: string, waiting: boolean): void {
 }
 const pendingSessionRestores = new Set<string>()
 let forgetClaudeSession = (_id: string): void => {}
+/** Set once the app is ready (startCodexCapture): a Chat fork's `codex fork` asks for its new conversation to be watched. */
+let watchCodexStart = (_id: string, _baseCommand: string): void => {}
 function stopCodexCapture(id: string): void {
     codexCaptureStops.get(id)?.()
     codexCaptureStops.delete(id)
@@ -412,6 +414,7 @@ const controlApiService = new ControlApiService({
     inbox,
     checklists,
     conversations: () => agentConversations,
+    watchCodexStart: (sessionId, baseCommand) => watchCodexStart(sessionId, baseCommand),
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)
@@ -468,7 +471,7 @@ const conversationService = new ConversationService({
             const session = workspace.sessions?.find((s) => s.id === id)
             if (session) {
                 const cliToolName = session.cliToolName ?? (codexAwaitingFirstMessage.has(id) ? 'codex' : undefined)
-                return { cwd: session.cwd || workspace.path, cliSessionId: session.cliSessionId, cliToolName }
+                return { cwd: session.cwd || workspace.path, cliSessionId: session.cliSessionId, cliToolName, cliCommand: session.cliCommand, name: session.name }
             }
         }
         return null
@@ -482,6 +485,8 @@ const conversationService = new ConversationService({
     type: (id, text, allowed) => controlApiService.typeForChat(id, text, allowed),
     // a queued message goes only to the program it was queued for (F03)
     agentProcess: (id) => terminalManager.foregroundProgram(id),
+    resolveAlias: (name) => cliSessionTracker.resolveAlias(name),
+    openFork: (input) => controlApiService.openFork(input),
     onChange: (sessionId, revision) => {
         broadcast('conversation-changed', { sessionId, revision })
         phoneConversationListeners.emit(sessionId, revision)
@@ -1426,6 +1431,7 @@ app.whenReady().then(async () => {
         setCodexAwaitingFirstMessage(terminalId, true)
     }
     cliSessionTracker.onCodexStarted = startCodexCapture
+    watchCodexStart = startCodexCapture
     const resumeChecks = new Map<string, symbol>()
     cliSessionTracker.onCodexResumed = (terminalId, cliSessionId, baseCommand) => {
         const token = Symbol()
@@ -3599,6 +3605,14 @@ app.whenReady().then(async () => {
             ? conversationService.send(sessionId, text, undefined, typeof options?.clearDraft === 'string' ? { clearDraft: options.clearDraft } : {})
             : { status: 'rejected', reason: 'empty', message: 'Nothing to send.' }
     )
+    // «Fork into a new session» from one reply: the aliases first — the fork keeps the person's start command
+    ipcMain.handle('chat-fork', async (_e, sessionId: unknown, request: unknown) => {
+        if (typeof sessionId !== 'string' || !request || typeof request !== 'object') {
+            return { status: 'rejected', reason: 'unknown_session', message: 'No such session.' }
+        }
+        await ensureShellAliases()
+        return conversationService.fork(sessionId, request as ChatForkRequest)
+    })
     ipcMain.handle('chat-cancel-queued', (_e, sessionId: string): void => {
         if (typeof sessionId === 'string') conversationService.cancelQueued(sessionId)
     })

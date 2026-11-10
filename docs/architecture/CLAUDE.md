@@ -162,6 +162,21 @@ rules stay in the root; this file is the inventory.
   렌더러는 보낸 결과만 알린다(`useDictation` 의 `takeForSend`·`sent`·`restore`·`boxEmptied` — 세션마다 모듈 맵, 초안처럼 보기를 넘어 산다). 제보·폰·Control API 어디에도 안 실린다.
   회귀: `t106-dictation-unit`(누적) · `t114-dictation-log-unit` · `t115-dictation-log`(앱 — 가짜 헬퍼 `pause` 모드)
 
+- **Fork into a new session**(11-10, 브리프 `chat-fork-1110`): 에이전트 답 머리의 갈래 아이콘(복사 옆, 툴팁 「Fork into a new session」) → `ForkDialog.tsx`.
+  넘길 것 = **Whole**(기본 — Claude `<저장된 시작 명령> --resume <id> --fork-session`, Codex `<…> fork <id>`, 이 답 **뒤** 대화도 같이 복사된다) 또는
+  **Excerpt**(새 에이전트를 그냥 열고, 첫 말 = 이 답까지 최근 6턴의 사람 말 + 최종 답 글 — 턴당 4,000자·합 12,000자, `maskSecrets` 로 가림, AI 요약 아님).
+  첫 말은 **시작 명령에 넣지 않는다** — 에이전트가 뜬 뒤 Control API 의 첫 프롬프트 길(`waitForStartup` → 질문 확인 → `typeAndSubmit`, 붙여넣기)로 친다.
+  셸 따옴표가 필요 없고, 셸 줄 편집기가 뜨기 전 긴 줄이 터미널 줄 상한(macOS MAX_CANON 1024)에 걸리지 않는다. 시작 명령은 `agentCommand.ts` 규칙대로
+  사람의 alias·옵션·준비 줄을 지키고 옛 resume 대상은 뺀다(`chatFork.forkBaseCommand`).
+  main: `ConversationService.fork` 가 그 답을 기록에서 다시 읽어 **같은 자리·같은 시각의 에이전트 턴**인지 확인(`turn_changed`) → `ControlApiService.openFork` 가
+  부모의 워크스페이스·세션 폴더에 새 세션(`<이름> · fork`, `cliToolName`·`cliCommand` 는 미리, `cliSessionId` 는 없음)을 만들고 `focus: false` 로 알린 뒤
+  Related 「Opened」(부모 → 새 세션)를 남긴다. **사람의 동작이라 AI 표시·오케스트레이터 표시가 없다.** 새 대화 id 는 Claude 는 `ClaudeSessionSync`(레지스트리),
+  Codex `fork` 는 터미널의 시작 감지가 안 잡아서(`isInteractiveCodex` 에서 fork 는 비대화형) main 이 직접 `startCodexCapture` 를 건다. `cliSessionId` 를
+  미리 넣지 않는 이유: TerminalView 는 `resumeCommand` 가 있으면 `initialCommand` 대신 그걸 친다 — 아직 없는 대화를 resume 하게 된다.
+  누른 뒤 모달은 바로 닫히고 포커스는 원래 자리로(아이콘의 mousedown 이 포커스를 안 뺏는다), 아래 알림 한 줄이 결과(첫 말 들어감·안 들어간 이유·Show)를 보인다.
+  폰: `POST /api/phone/chat/:id/fork`(drive 만, 철회 확인 뒤 첫 말 직전에 다시). 대화 파일이 없는 세션은 Whole 을 끄고 이유를 보인다(main 도 거절).
+  입력칸 전용 명령 `/split` 은 백로그. 회귀: `t116-chat-fork-unit` · `t117-chat-fork`(chat-mock `--show-args`·`--fresh-transcript`)
+
 #### 16. Phone connection (Settings › Phone)
 - 근거: [`../decisions/0009-phone-connection-second-server.md`](../decisions/0009-phone-connection-second-server.md). 기본 꺼짐 — 켜면 main 안
   두 번째 서버(`src/main/phone/PhoneServer.ts`)가 `127.0.0.1:47830`(`settings.phone.port`, 시험은 0)에만 듣는다. Control API 와 포트·경로·토큰이 다르다
@@ -403,6 +418,7 @@ User Action (Renderer)
   `conversation-unsubscribe(sessionId)`(창이 닫히면 그 창 구독은 풀린다) · `conversation-changed` (main → renderer, `{ sessionId, revision }`)
 - `chat-send(sessionId, text)` → `ChatSendResult`(`sent` · `queued` · `rejected` + 이유) · `chat-cancel-queued(sessionId)` ·
   `prompt-answer(sessionId, { signature, optionIndex | customText })` → `PromptAnswerResult`(`answered` · `rejected: prompt_changed …`)
+- Fork: `chat-fork(sessionId, ChatForkRequest{ turnIndex, turnTs, scope: 'whole'|'excerpt', message, quote })` → `ChatForkResult`(`forked` + 새 세션 id·이름·`messageSent`·`note` · `rejected: no_conversation|turn_changed|unknown_session|too_large|revoked|failed`). 별칭을 먼저 읽는다
 - 2회차: `chat-discard-queued(sessionId, id)` · `chat-send-queued-now(sessionId, id)` → `ChatSendResult` · `chat-interrupt(sessionId)` → `InterruptResult` ·
   `chat-image(sessionId, ref)` → data: URL | null · `chat-tool-output(sessionId, ref)` → string | null · `chat-commands(sessionId)` → `ChatCommand[]` ·
   `chat-save-attachment(name, bytes)` → `AttachResult`(32MB) · `chat-open-path(path)` → `shell.openPath`. `@` 파일 찾기는 기존 `search-files` 를 쓴다
@@ -411,7 +427,7 @@ User Action (Renderer)
 - 받아쓰기: `dictation-status` · `dictation-start(context: { agent })` · `dictation-stop(id)` · `dictation-cancel(id, 'cancelled'|'discarded')` · 이벤트 `dictation-event`.
   기록: `dictation-report(id, { type: 'sent', text } | { type: 'edited-away' })`(기록이 꺼져 있으면 main 이 버린다) · `dictation-log-open-folder` → `'opened'|'missing'|오류` ·
   `dictation-log-delete-all`. 설정 `settings.chat.dictationLog` · `dictationLogAudio`(둘 다 기본 끔)
-- 코드: `src/main/ConversationService.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · `chatCommands.ts` · `chatAttachments.ts` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
+- 코드: `src/main/ConversationService.ts` · `chatFork.ts` · `TranscriptReader.ts` · `promptScreen.ts` · `transcript/` · `chatCommands.ts` · `chatAttachments.ts` · 렌더러 `components/ChatView/` · `SessionChatSlot.tsx` ·
   `SessionViewToggle.tsx` · `ChatFilePreview.tsx` · `ChatViewSettings.tsx` · `hooks/useSessionViewMode.ts`(peek 포함) · `utils/electronChatTransport.ts`
 
 #### Phone connection

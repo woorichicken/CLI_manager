@@ -2,6 +2,8 @@ import type http from 'http'
 import type {
     AttachResult,
     ChatCommand,
+    ChatForkRequest,
+    ChatForkResult,
     ChatSendOptions,
     ChatSendResult,
     DraftFromTerminalResult,
@@ -45,6 +47,8 @@ export interface PhoneConversation {
     sendQueuedNow(sessionId: string, id: string, from?: ChatSender): Promise<ChatSendResult>
     interrupt(sessionId: string, from?: ChatSender): Promise<InterruptResult>
     answerPrompt(sessionId: string, answer: PromptAnswer, from?: ChatSender): Promise<PromptAnswerResult>
+    /** «Fork into a new session»: opens a session on the Mac, so it is a drive device's action */
+    fork(sessionId: string, request: ChatForkRequest, from?: ChatSender): Promise<ChatForkResult>
     getImage(sessionId: string, ref: string): Promise<string | null>
     getToolOutput(sessionId: string, ref: string): Promise<string | null>
     listCommands(sessionId: string): ChatCommand[]
@@ -85,7 +89,7 @@ function refuseRevoked(res: http.ServerResponse): void {
     send(res, 401, { status: 'rejected', reason: 'revoked', error: 'revoked', message: 'This device was disconnected from the Mac.' })
 }
 
-const DRIVE_ONLY = new Set(['send', 'draft-to-terminal', 'draft-from-terminal', 'cancel-queued', 'discard-queued', 'send-queued-now', 'interrupt', 'answer', 'attach'])
+const DRIVE_ONLY = new Set(['send', 'draft-to-terminal', 'draft-from-terminal', 'cancel-queued', 'discard-queued', 'send-queued-now', 'interrupt', 'answer', 'attach', 'fork'])
 
 export async function handlePhoneApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL, deps: PhoneApiDeps): Promise<void> {
     const path = url.pathname
@@ -252,6 +256,17 @@ async function handleChat(
         case 'interrupt': {
             const result = await c.interrupt(sessionId, sender)
             if (result.status === 'stopped') deps.recordPhoneInput(sessionId, 'stopped the turn (Esc)')
+            send(res, 200, result)
+            return
+        }
+        case 'fork': {
+            const request = body.request as ChatForkRequest | undefined
+            if (!request || typeof request !== 'object') {
+                send(res, 400, { status: 'rejected', reason: 'failed', message: 'No fork request.' })
+                return
+            }
+            const result = await c.fork(sessionId, request, sender)
+            if (result.status === 'forked') deps.recordPhoneInput(sessionId, `forked into a new session (${request.scope === 'excerpt' ? 'excerpt' : 'whole conversation'})`)
             send(res, 200, result)
             return
         }
