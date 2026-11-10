@@ -21,12 +21,11 @@ Any session may append to `## Open
 - Fix direction: 칩 → 팝오버 목록(셸 명령 설명·에이전트 이름·경과), 끝난 것은 접기. 폰은 같은 부품.
 - Owner: 없음
 
-### 폰 Chat 첫 화면 — 처음엔 몇 턴만, 바뀌면 바뀐 만큼만(ovis 방식)
-- Discovered: 2026-11-10 fb-1110 91e1b27e · 1e556f10. 이번에 gzip 과 중복 요청을 고쳐 16MB 기록이 LTE 중계 1.94→0.51초, Wi-Fi 0.56→0.22초가 됐다(T118).
-- Evidence: 남은 몫은 렌더 ~0.1초(폰 CPU 4배 감속)와 바뀔 때마다 200턴 창 전체를 다시 받는 것(gzip 뒤 130KB). ovis 는 첫 쪽이 10 프롬프트(설정 10/25/50)·「앞 더 보기」·`If-None-Match` 로 안 바뀌면 304·클라이언트 캐시로 먼저 그림(`refs/ovis` `src/lib/settings.ts:349`, `server/pane-routes.ts:289`, `src/lib/api.ts:584`).
-- Why deferred: 폰 첫 턴 수를 줄이면 「앞 더 보기」가 일찍 나온다 — 화면 동작이 바뀌어 사람이 정할 일. 이번 범위는 잰 원인(전송량·중복)만 고쳤다.
+### 폰 Chat — 바뀌면 바뀐 만큼만(ETag·304, ovis 방식)
+- Discovered: 2026-11-10 fb-1110 91e1b27e · 1e556f10. 첫 쪽은 3회차에 고쳤다(사람 결정 11-10) — 폰은 최근 20턴(`PHONE_CHAT_TURN_PAGE`)만 읽고 「Show earlier」로 20턴씩 더(T123). 16MB 사본 T118: Wi-Fi 0.22→0.14초, LTE 중계 0.51→0.28초, 전송 130→36KB.
+- Evidence: 남은 몫은 턴이 바뀔 때마다 첫 쪽 창 전체를 다시 받는 것(지금 36KB)과 렌더 ~0.06초(폰 CPU 4배 감속). ovis 는 `If-None-Match` 로 안 바뀌면 304·클라이언트 캐시로 먼저 그림(`refs/ovis` `server/pane-routes.ts:289`, `src/lib/api.ts:584`).
 - Trigger: 폰에서 Chat 이 바쁜 턴 동안 버벅인다는 제보가 다시 오거나, 실기기 측정에서 렌더가 0.3초를 넘을 때.
-- Fix direction: 폰 첫 limit 을 40 안팎으로, 응답에 ETag(revision) → 304. 재는 법: `PHONE_READ_PERF=1 PHONE_READ_TRANSCRIPT=<익명 사본> npx playwright test tests/terminal/t118-phone-read-perf.spec.ts`.
+- Fix direction: 응답에 ETag(revision + limit) → 304. 재는 법: `PHONE_READ_PERF=1 PHONE_READ_TRANSCRIPT=<익명 사본> npx playwright test tests/terminal/t118-phone-read-perf.spec.ts`.
 - Owner: 없음
 
 ### 질문 판정 — 메뉴가 화면 맨 아래면 위쪽 스피너 글은 무시(ovis·herdr 규칙)

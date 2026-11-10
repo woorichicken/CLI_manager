@@ -549,6 +549,7 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
   - T120 2.1.322 질문 카드(fb-1110 4f10a0fc) — 실제 2.1.322 AskUserQuestion 화면 사본(미리보기 칸·2문항·`│` 막대 여러 줄 질문, 중립 내용 `fixtures/prompts/claude-2.1.322-ask-preview-*`)을 `claude` 라는 이름의 실행 파일로 띄우고 Chat 카드의 질문 전체·보기(미리보기 글 없음)를 본다. 창 1800 폭 — 사본(115칸)보다 좁으면 줄이 접힌다. `T120_SHOTS`·`T120_LABEL`. 옛 파서에서 질문이 키 안내 줄이라 실패
   - T121 턴 끝·recap·백그라운드 유닛(fb-1110 a0ba98c4) — `system/turn_duration` 이 답에 `done`(끝난 시각·걸린 ms), `system/away_summary` 가 `recap` 으로 붙는지(사이 notice 는 건너뜀, 사람 프롬프트 뒤의 늦은 기록은 안 붙음, 숫자·글 없으면 뺌) · `screenBackground` 가 입력 상자 아래 줄의 `· 1 shell · ← 1 agent`(복수형·한쪽만)를 세고 상자 위 글·상자 없는 화면은 null
   - T122 턴 끝·recap·백그라운드 화면(fb-1110 a0ba98c4) — 기록(답 + turn_duration + away_summary)과 Claude 화면 사본(`claude` 실행 파일, T120 방식)으로 Chat 답 아래 「Took 29s · done …」·「※ recap …」, 입력칸 줄 칩 「1 shell · 1 agent」, 답 속 표는 표 그대로. `T122_SHOTS`·`T122_LABEL`. 옛 코드에서 실패
+  - T123 폰 첫 쪽(fb-1110 3회차) — 질문·답 45쌍(90턴) 기록으로 폰(390) Chat 이 `?limit=20` 으로 최근 20턴만 그리고 「Showing the last 20 of 90 turns.」, 맨 위에서 「Show earlier」마다 20턴씩 위에 붙고 읽던 턴이 같은 줄(±2px — Safari 는 스크롤 앵커가 없어 손으로 지킨다), 끝까지 펴면 90턴이 한 번씩 순서대로·안내 없음, 같은 세션 Mac Chat 은 그대로 90턴(200 창). `T123_SHOTS`·`T123_LABEL`. 옛 코드에서 실패(20 기대 ↔ 90)
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - **새 클론·워크트리에서는 먼저 `pnpm exec electron-builder install-app-deps`**. `pnpm install`이
