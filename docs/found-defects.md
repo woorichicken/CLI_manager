@@ -23,6 +23,15 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 `tests/terminal/t1-data-loss.spec.ts` — 부하가 높으면 「끝났다」를 입력한 명령 줄에서 읽고 일찍 센다
+- Date: 2026-11-10
+- Where: `waitForBufferText(…, 'SEQ-DONE-…')`(`tests/terminal/helpers.ts`)는 마지막 80줄에 그 글이 있으면 끝으로 본다. 입력한 명령 `seq 1 300000; echo SEQ-DONE-…` 자체에도 그 글이 있다.
+- What: v1.31.0 빌드 전체 실행(부하 평균 21~32)에서 실패. 단독으로 다시 돌린 6터미널 시험도 부하 29~45 에서 두 번 다 `sess-t1-1 should reach 300000`(받은 값 161139 · 140599). 단독 1터미널은 30815 로 한 번 실패한 뒤 다음엔 통과. 6.8~10초 만에 끝나 `seq` 가 다 찍히기 전에 셌다. v1.30.0 이후 터미널 출력 경로 코드는 바뀌지 않았다.
+- Surfaced by: `node scripts/release.cjs --version 1.31.0 --build`. 그 릴리즈는 `--skip-tests` 로 나갔다(T22·T26·T35 는 단독 재실행에서 통과).
+- Impact: 시험의 헛실패로 보인다. 제품의 출력 유실과 구분이 안 돼, 머신이 바쁠 때 전체 스위트가 빨갛게 된다.
+- Workaround: 부하가 낮을 때 그 스펙만 다시 돌린다.
+- Fix direction: 끝 표지를 명령 줄에 안 나오는 글로 만든다(예: `echo SEQ-DONE-$((1+1))` → 화면엔 `SEQ-DONE-2`). 그 뒤 부하 속에서 다시 재서 진짜 유실인지 가른다.
+
 ### 🐛 `tests/terminal/t78-phone-quality.spec.ts` — 전체 스위트에서 가끔 재연결 뒤 「typed while away」가 Mac 터미널에 안 닿는다
 - Date: 2026-11-10
 - Where: T78 재연결 단계(298–303줄) — 폰 서버를 껐다 켠 뒤 입력칸 글을 보내고 `waitForBufferText(…, 'typed while away', 15_000)` 로 기다린다.
