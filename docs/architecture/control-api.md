@@ -105,6 +105,24 @@ For MCP, set the header in the client config, e.g. Claude Code `.mcp.json`:
 `"headers": { "X-Caller-Session": "${CLIMANAGER_SESSION_ID}" }`. With curl:
 `-H "X-Caller-Session: $CLIMANAGER_SESSION_ID"`.
 
+### Forking a conversation
+
+`POST /v1/sessions/:id/fork` / MCP `fork_session` is the Chat view's **Fork** button for an AI: a new
+session that continues the conversation, opened **in the background** (no focus) in the same
+workspace and session folder, named `<name> · fork`, recorded as `opened` from the forked session in
+Related. Use it when the user **explicitly** asks to split a conversation — the MCP instructions and
+the `climanager-session` skill (`clim fork`) say so; an agent does not split on its own.
+
+- `whole` (default): the agent's own fork — Claude `<saved start command> --resume <id> --fork-session`,
+  Codex `<saved start command> fork <id>`. The turns after the reply come along too.
+- `excerpt`: the plain start command; the first message is the last ≤6 turns up to the reply (the
+  person's words and the final answer text, capped and masked with `maskSecrets`), then `message`.
+- `message` is typed once the agent is up (the same path as `POST /v1/sessions` `prompt`), never on
+  the command line. `messageSent: false` with a `note` when it could not go in.
+- Reading the forked session marks it like any read; the **new session is marked AI-driven** (an AI
+  opened it). The caller does not become an orchestrator — the relation is the forked session's.
+- `turnIndex` counts all the conversation's turns from 0; it must be an agent reply (`409 turn_changed`).
+
 ## Inbox
 
 A session that needs the user's hands — sign in somewhere (often a browser login an agent cannot do),
@@ -289,6 +307,7 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/sessions/:id/rename` | `name` (trimmed, ≤80 chars) | session — renames it in the sidebar; does not set the AI mark |
 | POST | `/v1/sessions/:id/session-folder` | `folder`: id or name, or `null` to take it out | session. `404 folder_not_found`, `409 ambiguous_folder`; a label change — no AI mark, no relation |
 | GET | `/v1/sessions/:id/relations` | | `{ sessionId, relations: [{ sessionId, name, workspaceName, kind: opened\|connected\|manual, direction: outgoing\|incoming, at }] }` — `outgoing` = this session is the `from` of the pair. Pairs the user removed are left out. Not a field of the session so the list (100+ sessions) stays small |
+| POST | `/v1/sessions/:id/fork` | `scope` (`whole` default \| `excerpt`), `message`, `quote`, `turnIndex` (default: the latest reply) | `201 { session, scope, messageSent, note? }` — see [Forking a conversation](#forking-a-conversation). `400` bad scope/turnIndex, `404 not_found`, `409 no_conversation`, `409 turn_changed`, `413 too_large` |
 | GET | `/v1/session-folders` | | `{ folders: [{ id, name, createdAt, sessions: [{ id, name, workspaceName }] }] }`, stored order |
 | POST | `/v1/session-folders` | `name` | `201 { folder, created: true }`; a folder of that name (trimmed, case-insensitive) exists → `200 { folder, created: false }`. `400` for an empty name |
 | POST | `/v1/session-folders/:folder/rename` | `name` | folder. `409 name_taken`, `409 ambiguous_folder`, `404 folder_not_found` |
@@ -351,12 +370,12 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 `POST /mcp`, JSON-RPC 2.0, stateless, `application/json` responses; `GET` → 405. Protocol versions
 2024-11-05 … 2025-11-25 are echoed. Tools: `list_workspaces`, `list_templates`, `list_sessions`,
 `open_session` (with `folder`, `session_folder`, `ephemeral`), `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
-`focus_session`, `rename_session`, `release_session`, `close_session` (with `hand_to`), `list_session_folders`, `create_session_folder`, `rename_session_folder`, `delete_session_folder`, `move_session_to_folder` (`session_id`, `folder`: string or null), `list_session_relations`, `unregister_workspace`, `inbox_notify`
+`focus_session`, `rename_session`, `release_session`, `close_session` (with `hand_to`), `list_session_folders`, `create_session_folder`, `rename_session_folder`, `delete_session_folder`, `move_session_to_folder` (`session_id`, `folder`: string or null), `list_session_relations`, `fork_session` (`session_id`, `scope`, `message`, `quote`, `turn_index`), `unregister_workspace`, `inbox_notify`
 (`kind`, `text`, `url`, `session_id` — or the caller header), `inbox_list` (`unread_only`), `checklist_list` (`status`, `project`),
 `checklist_create` (`title`, `items`, `due`, `project`), `checklist_update` (`checklist`, `title`, `due`, `project` — null clears),
 `checklist_add_items` (`checklist`, `items`), `checklist_check` (`checklist`, `item` — number from 1 or id, `done` default true; answers
 "<title>: 2/5 checked."), `checklist_remove_item`, `checklist_remove`. The server instructions ask a coordinating agent to keep its plan
-in a checklist and check items off as they finish. Domain errors come back as tool results with
+in a checklist and check items off as they finish, and to call `fork_session` when the user explicitly asks to split a conversation. Domain errors come back as tool results with
 `isError: true` so the model can read them; screen results are plain text, not JSON.
 
 ## MCP 없이 쓰기 (REST + 셸)

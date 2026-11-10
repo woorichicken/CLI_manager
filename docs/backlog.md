@@ -17,6 +17,7 @@ Any session may append to `## Open
 - Discovered: 2026-11-10 사람 요청 — 한 세션에서 여러 이야기가 나올 때 한 갈래를 새 세션으로 떼어 보내고 여기서는 하던 일을 계속하고 싶다.
 - Evidence: 먼저 Chat 말풍선 머리의 Fork 버튼 → 모달(대화 전체 복사 `claude --resume <id> --fork-session` · `codex fork <id>` 기본, 기록 발췌 선택)로 만들기로 했다. 같은 동작을 입력칸에서 치는 길은 없다. `split` 은 Claude·Codex 명령 표(`src/main/chatCommands.ts`)에 없어 겹치지 않는다(같은 날 확인).
 - Why deferred: 사람 결정 「전용 명령어는 일단 백로그로」 — 버튼 + 모달을 먼저 써 보고 정한다.
+- Update 2026-11-10: Fork 버튼 들어감(`feat/chat-fork-1110` — `ChatView/ForkDialog.tsx`, main `ConversationService.fork`·`ControlApiService.openFork`, 폰 `POST …/fork`). `/split` 은 이 모달을 여는 길로 만들면 된다.
 - Trigger: Fork 버튼을 쓰면서 키보드·폰 입력칸에서 바로 보내고 싶다는 말이 나올 때.
 - Fix direction: 앱이 Chat 입력칸에서 가로채는 `/split <이야기>`(에이전트에는 안 보냄), `/` 메뉴에 「CLI Manager」 묶음으로, 고른 뒤 같은 모달을 연다.
 - Owner: 없음

@@ -12,6 +12,7 @@ import { QueuedMessages } from './QueuedMessages'
 import { useConversation } from './useConversation'
 import { useElapsed } from './WorkBlock'
 import { ChatActionsContext, onChatCommand, type ChatActions, type GalleryImage } from './chatContext'
+import { ForkDialog, ForkNotice, type ForkProgress, type ForkTarget } from './ForkDialog'
 import { artifactLinks, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
 import './chat.css'
 
@@ -96,6 +97,7 @@ interface SentWaiting {
     at: number
 }
 let sentSequence = 0
+let forkSequence = 0
 
 export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink }: ChatViewProps) {
     const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? CHAT_TURN_LIMIT)
@@ -111,6 +113,10 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const [now, setNow] = useState(() => Date.now())
     const [picked, setPicked] = useState<number | null>(null)
     const [gallery, setGallery] = useState<{ images: GalleryImage[]; index: number } | null>(null)
+    /** the reply the Fork dialog is open on, and where the keyboard was before it opened */
+    const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
+    const [forkProgress, setForkProgress] = useState<ForkProgress | null>(null)
+    const forkReturnFocus = useRef<HTMLElement | null>(null)
     const [railRoom, setRailRoom] = useState(false)
     /** the person's last message has scrolled off the top (edf2aef3) */
     const [lastAbove, setLastAbove] = useState(false)
@@ -130,6 +136,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         setSent([])
         setPicked(null)
         setGallery(null)
+        setForkTarget(null)
     }, [sessionId])
 
     const restored = useRef<string | null>(null)
@@ -298,6 +305,40 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         refresh()
     }, [picked, refresh, sessionId, snapshot?.prompt, transport])
 
+    // stable across snapshots, so the memoized turns do not redraw for it
+    const snapshotRef = useRef(snapshot)
+    snapshotRef.current = snapshot
+    const forkFromTurn = useCallback((index: number): void => {
+        const current = snapshotRef.current
+        const turn = current?.turns[index]
+        if (!current || !turn) return
+        forkReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        setForkTarget({ turnIndex: current.totalTurns - current.turns.length + index, turnTs: turn.ts })
+    }, [])
+    const openFork = transport.fork && !readOnly ? forkFromTurn : undefined
+    // closing the dialog gives the keyboard back to where it was (the message box, its caret and draft untouched)
+    const closeFork = useCallback((): void => {
+        setForkTarget(null)
+        const back = forkReturnFocus.current
+        forkReturnFocus.current = null
+        if (back?.isConnected) window.setTimeout(() => back.focus(), 0)
+    }, [])
+    const startFork = useCallback(
+        (choice: { scope: 'whole' | 'excerpt'; message: string; quote: boolean }): void => {
+            const target = forkTarget
+            closeFork()
+            if (!target || !transport.fork) return
+            const id = ++forkSequence
+            setForkProgress({ id, state: 'opening' })
+            void transport
+                .fork(sessionId, { ...target, ...choice })
+                .catch((error): { status: 'rejected'; reason: 'failed'; message: string } => ({ status: 'rejected', reason: 'failed', message: error instanceof Error ? error.message : String(error) }))
+                .then((result) => setForkProgress((current) => (current?.id === id ? { id, state: 'done', result } : current)))
+        },
+        [closeFork, forkTarget, sessionId, transport]
+    )
+    const dismissFork = useCallback(() => setForkProgress(null), [])
+
     const agent = snapshot?.agent ?? null
     const agentName = agent ? NAMES[agent] : 'the agent'
     const prompt = snapshot?.prompt ?? null
@@ -383,7 +424,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onShowEarlier={() => (pinned.current = false, setLimit((current) => current + MORE_TURNS))} />
+                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={() => (pinned.current = false, setLimit((current) => current + MORE_TURNS))} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -476,6 +517,22 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                     </div>
                 </div>
                 {gallery && <ImageLightbox images={gallery.images} start={gallery.index} onClose={() => setGallery(null)} />}
+                {forkTarget && snapshot && (
+                    <ForkDialog
+                        agent={agent ?? 'claude'}
+                        wholeUnavailable={snapshot.agent === null || snapshot.unavailable ? 'The conversation file is not there yet, so the agent cannot fork it.' : null}
+                        touch={touch}
+                        onCancel={closeFork}
+                        onFork={startFork}
+                    />
+                )}
+                {forkProgress && (
+                    <ForkNotice
+                        progress={forkProgress}
+                        onShow={onSessionLink ? (id) => onSessionLink(`climanager://session/${id}`) : undefined}
+                        onDismiss={dismissFork}
+                    />
+                )}
             </div>
         </ChatActionsContext.Provider>
     )
@@ -519,7 +576,7 @@ function PinnedLastMessage({ words, onGo }: { words: string; onGo: () => void })
     )
 }
 
-function Turns({ snapshot, foldWork, onShowEarlier }: { snapshot: ConversationSnapshot; foldWork: boolean; onShowEarlier: () => void }) {
+function Turns({ snapshot, foldWork, onFork, onShowEarlier }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number) => void; onShowEarlier: () => void }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
     return (
@@ -549,6 +606,7 @@ function Turns({ snapshot, foldWork, onShowEarlier }: { snapshot: ConversationSn
                     waiting={snapshot.prompt !== null}
                     agent={agent}
                     foldWork={foldWork}
+                    onFork={onFork}
                 />
             ))}
         </>

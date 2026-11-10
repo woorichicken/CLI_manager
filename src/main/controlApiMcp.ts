@@ -35,6 +35,8 @@ You can also work in sessions the user opened: list_sessions with scope "all" (u
 
 When you coordinate work across sessions, keep the plan in a checklist the user sees in CLI Manager's header: checklist_create with a title, the items, a due date (YYYY-MM-DD) and the project (workspace name). Give the work to sessions as usual with send_input, and check items off with checklist_check as they finish — any session may check them. Checklists belong to no session: closing a session leaves them alone.
 
+When the user explicitly asks to split the conversation — to move one topic into a new session and keep going here ("split this off", "fork this into a new session", "세션 나눠줘") — call fork_session on the session the conversation is in (your own: $CLIMANAGER_SESSION_ID), not open_session with the context retyped. scope "whole" (the default) gives the new session the agent's own fork of the whole conversation (Claude --fork-session, Codex fork); "excerpt" starts a fresh agent whose first message is the last few turns, copied. Put what the new session should work on in message. The new session opens in the background under this one in Related; tell the user its name. Do not split on your own initiative.
+
 When you need the user's hands — sign in to something in a browser, review a page or a diff, answer a question you cannot decide — call inbox_notify. The request shows in CLI Manager's inbox with your session, and it is marked read when the user opens your session. Keep the text to one line saying what to do; put the page in url.
 
 Rules: the first time you read, type into, wait on or focus a session it is marked as AI-driven and highlighted in green, so the user can see where you are working. They may type into it or disconnect it at any time — re-read the screen before acting. If a call reports "disconnected", the user took the session back: stop working in it unless they ask you to continue. Closing a session kills whatever runs in it; never close one you did not open unless the user asked. If a screen shows a question (awaitingInput: true) — a permission prompt, or Claude Code asking whether to trust a new folder — read the options and answer with send_input keys (e.g. ["down","enter"], ["1"]); text is refused until the question is gone. Trusting a folder or approving an action is the user's call: only accept when the user's request clearly covers it.`
@@ -384,6 +386,22 @@ const TOOLS: ToolDefinition[] = [
         }
     },
     {
+        name: 'fork_session',
+        description:
+            'Split a conversation: open a new session that continues it, in the background, under this one in Related — the Chat\'s Fork button. Use it when the user explicitly asks to split the conversation or move a topic to a new session. scope "whole" (default): the agent\'s own fork of the whole conversation; "excerpt": a fresh agent given the last turns up to the reply, copied. message: what the new session should do (typed as its first message once it is up). turn_index: which reply (0 = the first turn); default the latest reply.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                ...sessionIdProperty,
+                scope: { type: 'string', enum: ['whole', 'excerpt'] },
+                message: { type: 'string', description: 'The new session\'s first message.' },
+                quote: { type: 'boolean', description: 'Quote the reply above the message (whole only).' },
+                turn_index: { type: 'number', description: 'The reply to fork from, among all turns. Default: the latest reply.' }
+            },
+            required: ['session_id']
+        }
+    },
+    {
         name: 'list_session_relations',
         description:
             'The sessions related to this one (shown in its Related dialog): which it opened, which opened it, which were added by hand. Pairs the user removed are not listed.',
@@ -547,6 +565,19 @@ async function callTool(
                 throw new InvalidParams('folder must be a folder id or name, or null')
             }
             return JSON.stringify(service.moveSessionToFolder(str(args, 'session_id', true)!, args.folder as string | null), null, 1)
+        }
+        case 'fork_session': {
+            const turnIndex = args.turn_index
+            if (turnIndex !== undefined && turnIndex !== null && typeof turnIndex !== 'number') throw new InvalidParams('turn_index must be a number')
+            const result = await service.forkSession(str(args, 'session_id', true)!, {
+                scope: args.scope ?? undefined,
+                message: str(args, 'message'),
+                quote: bool(args, 'quote'),
+                ...(typeof turnIndex === 'number' ? { turnIndex } : {}),
+                client,
+                caller
+            })
+            return JSON.stringify(result, null, 1)
         }
         case 'list_session_relations':
             return JSON.stringify(service.sessionRelations(str(args, 'session_id', true)!), null, 1)

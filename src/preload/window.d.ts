@@ -268,6 +268,7 @@ declare global {
             discardQueuedChat: (sessionId: string, id: string) => Promise<boolean>
             sendQueuedChatNow: (sessionId: string, id: string) => Promise<ChatSendResult>
             interruptChat: (sessionId: string) => Promise<InterruptResult>
+            forkChat: (sessionId: string, request: import('../shared/conversation').ChatForkRequest) => Promise<import('../shared/conversation').ChatForkResult>
             getChatImage: (sessionId: string, ref: string) => Promise<string | null>
             getChatToolOutput: (sessionId: string, ref: string) => Promise<string | null>
             listChatCommands: (sessionId: string) => Promise<ChatCommand[]>

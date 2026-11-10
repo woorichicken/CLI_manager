@@ -1,4 +1,4 @@
-import type { AttachResult, ChatCommand, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
+import type { AttachResult, ChatCommand, ChatForkResult, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../../shared/conversation'
 import { chatPath, getJson, postJson, socketUrl } from './api'
 import { reconnectDelay } from './usePhoneTerminal'
@@ -119,6 +119,13 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void,
                 reason: 'not_running' as const,
                 message: error instanceof Error ? error.message : String(error)
             })),
+        // a view-only device is refused (403 view_only): the chat says so, as for a send
+        fork: (sessionId, request) =>
+            postJson<ChatForkResult>(chatPath(sessionId, 'fork'), { request }).catch((error): ChatForkResult => {
+                const message = error instanceof Error ? error.message : String(error)
+                if (/view_only|only watch/i.test(message)) onViewOnly?.(message)
+                return { status: 'rejected', reason: 'failed', message }
+            }),
         async attachFile(sessionId, file): Promise<AttachResult> {
             if (file.size > MAX_ATTACH_BYTES) {
                 return { status: 'rejected', reason: 'too_large', message: `Files are limited to ${MAX_ATTACH_BYTES / 1024 / 1024} MB.` }

@@ -1,5 +1,6 @@
 import { AgentConversations, AgentConversationError } from './agentConversations'
-import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList } from '../shared/conversation'
+import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList, ChatForkRequest, ChatForkResult } from '../shared/conversation'
+import type { ForkOpenInput, ForkOpenResult } from './ConversationService'
 import { existsSync, realpathSync, statSync } from 'fs'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
@@ -399,7 +400,33 @@ export interface ControlApiDeps {
     conversations?: () => AgentConversations
     /** A session is gone for good (closed or deleted): drop what was kept for it elsewhere. */
     onSessionForgotten?: (sessionId: string) => void
+    /**
+     * Watch for the conversation a Codex start in this terminal writes (index.ts startCodexCapture).
+     * `codex fork <id>` is not a start the terminal's own detection takes, so a fork asks for it.
+     */
+    watchCodexStart?: (sessionId: string, baseCommand: string) => void
+    /** The Chat's fork (ConversationService.fork) — `fork_session` checks the reply and builds the command there. */
+    forkConversation?: (sessionId: string, request: ChatForkRequest, aiClient: string) => Promise<ChatForkResult>
 }
+
+export interface ForkSessionInput {
+    scope?: unknown
+    message?: string
+    quote?: boolean
+    /** the reply's place among all the turns; absent: the latest reply */
+    turnIndex?: number
+    client: string
+    caller?: string
+}
+
+export interface ForkSessionResult {
+    session: ApiSession
+    scope: 'whole' | 'excerpt'
+    messageSent: boolean
+    note?: string
+}
+
+const FORK_REFUSALS: Record<string, number> = { unknown_session: 404, no_conversation: 409, turn_changed: 409, too_large: 413, revoked: 401, failed: 500 }
 
 export const CONTROL_API_SESSION_CHANNEL = 'control-api-session'
 export const CONTROL_API_MASTERS_CHANNEL = 'control-api-masters'
@@ -640,6 +667,85 @@ export class ControlApiService {
         }
 
         return result
+    }
+
+    /**
+     * Chat «Fork into a new session» (ConversationService.fork): the person's action, not an AI's —
+     * the new session gets no AI mark and the parent does not become an orchestrator. It goes into the
+     * parent's workspace (and session folder), under the parent in Related («Opened»), and opens behind
+     * the current screen (no focus). The first message is typed the way `openSession` types its prompt,
+     * with the Chat's stricter question test, once the agent is up.
+     */
+    async openFork(input: ForkOpenInput): Promise<ForkOpenResult> {
+        const { workspace, session: parent } = this.requireSession(input.parentId)
+        const session: TerminalSession = {
+            id: uuidv4(),
+            name: input.name.slice(0, MAX_NAME_LENGTH),
+            cwd: parent.cwd || workspace.path,
+            type: 'regular',
+            initialCommand: input.command,
+            ...(input.aiClient ? { aiControl: { client: input.aiClient, since: Date.now() } } : {}),
+            // the agent is known before its conversation is: a restart of the new session resumes what
+            // ClaudeSessionSync / the Codex watch find, on the person's own start command
+            cliToolName: input.agent,
+            cliCommand: input.cliCommand,
+            ...(parent.sessionFolderId ? { sessionFolderId: parent.sessionFolderId } : {})
+        }
+        this.deps.mirror.attach(session.id)
+        const workspaces = this.workspaces()
+        const target = workspaces.find((w) => w.id === workspace.id)!
+        target.sessions = [...(target.sessions ?? []), session]
+        this.deps.store.set('workspaces', workspaces)
+        this.emit({ type: 'opened', workspaceId: workspace.id, sessionId: session.id, session, focus: false })
+        this.deps.relations.recordOpened(input.parentId, session.id)
+
+        const result: ForkOpenResult = { sessionId: session.id, name: session.name, messageSent: false }
+        if (!(await this.waitForPty(session.id, PTY_START_TIMEOUT_MS))) {
+            result.note = 'The session was added, but its terminal did not start.'
+            return result
+        }
+        if (input.watchCodex) this.deps.watchCodexStart?.(session.id, input.cliCommand)
+        if (!input.prompt.trim()) return result
+        if (!(await this.waitForStartup(session.id, true))) {
+            result.note = 'The agent did not finish starting within a minute, so the first message was not sent. Send it in the new session.'
+            return result
+        }
+        if (this.deps.mirror.asksQuestion(session.id)) {
+            result.note = 'The new session is asking a question, so the first message was not sent. Answer it there, then send the message.'
+            return result
+        }
+        try {
+            result.messageSent = await this.typeAndSubmit(session.id, { text: input.prompt, submit: true }, input.allowed, (id) => this.deps.mirror.asksQuestion(id))
+            if (!result.messageSent) result.note = 'The first message is in the new session\'s input box but was not submitted. Press Enter there.'
+        } catch (error) {
+            if (error instanceof ControlApiError && error.code === 'revoked') throw error
+            result.note = `The first message was not sent: ${error instanceof Error ? error.message : String(error)}`
+        }
+        return result
+    }
+
+    /**
+     * `fork_session`: the same fork as the Chat's Fork button, asked by an AI — for when the user says to split
+     * the conversation. Reading the session marks it as any read does; the new session is marked AI-driven.
+     */
+    async forkSession(sessionId: string, input: ForkSessionInput): Promise<ForkSessionResult> {
+        const scope = input.scope ?? 'whole'
+        if (scope !== 'whole' && scope !== 'excerpt') throw new ControlApiError(400, 'bad_request', 'scope must be "whole" or "excerpt".')
+        if (input.turnIndex !== undefined && (!Number.isInteger(input.turnIndex) || input.turnIndex < 0)) {
+            throw new ControlApiError(400, 'bad_request', 'turnIndex must be a whole number (0 = the first turn).')
+        }
+        if (input.message !== undefined && input.message.length > MAX_TEXT_LENGTH) {
+            throw new ControlApiError(413, 'too_large', `message is limited to ${MAX_TEXT_LENGTH} characters.`)
+        }
+        this.connect(sessionId, input.client, input.caller)
+        if (!this.deps.forkConversation) throw new ControlApiError(503, 'unavailable', 'Forking is unavailable.')
+        const result = await this.deps.forkConversation(
+            sessionId,
+            { scope, message: input.message ?? '', quote: input.quote === true, ...(input.turnIndex !== undefined ? { turnIndex: input.turnIndex } : {}) },
+            input.client || 'api'
+        )
+        if (result.status === 'rejected') throw new ControlApiError(FORK_REFUSALS[result.reason] ?? 500, result.reason, result.message)
+        return { session: this.getSession(result.sessionId), scope, messageSent: result.messageSent, ...(result.note ? { note: result.note } : {}) }
     }
 
     async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession> {

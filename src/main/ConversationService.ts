@@ -1,5 +1,7 @@
 import type {
     ChatCommand,
+    ChatForkRequest,
+    ChatForkResult,
     ChatSendOptions,
     ChatSendResult,
     DraftFromTerminalResult,
@@ -18,6 +20,8 @@ import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatVi
 import { isBusyRow, screenAgentMode } from './screenLines'
 import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
+import type { AliasResolver } from '../shared/agentCommand'
+import { forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName } from './chatFork'
 
 /**
  * The Chat view's main-process side: one conversation per terminal session,
@@ -88,6 +92,36 @@ export interface ConversationSessionInfo {
     cwd?: string
     cliSessionId?: string
     cliToolName?: string
+    /** the session's saved start command (Fork keeps the person's alias and options) */
+    cliCommand?: string
+    /** the sidebar name (Fork names the new session after it) */
+    name?: string
+}
+
+/** What «Fork into a new session» asks main to open (ControlApiService.openFork). */
+export interface ForkOpenInput {
+    parentId: string
+    agent: ConversationAgent
+    name: string
+    /** typed into the new terminal's shell */
+    command: string
+    /** the start command the new session keeps for its own restart */
+    cliCommand: string
+    /** typed into the agent once it is up; '' for none */
+    prompt: string
+    /** `codex fork` is not a start the app recognizes by itself: main watches for the new conversation */
+    watchCodex: boolean
+    /** asked again before the first message is typed (a phone can be disconnected meanwhile) */
+    allowed?: () => boolean
+    /** an AI asked through the Control API: the new session is marked AI-driven, as one `open_session` made */
+    aiClient?: string
+}
+
+export interface ForkOpenResult {
+    sessionId: string
+    name: string
+    messageSent: boolean
+    note?: string
 }
 
 export interface ConversationMirror {
@@ -125,6 +159,10 @@ export interface ConversationServiceDeps {
     listCommands?(agent: ConversationAgent, cwd: string | undefined): ChatCommand[]
     /** The Mac's home folder, for `~/` paths in the chat. */
     home?: string
+    /** The shell's aliases (`cldy` → `claude …`), for the fork's start command. */
+    resolveAlias?: AliasResolver
+    /** Opens the fork's session (ControlApiService.openFork). Absent: Fork is refused. */
+    openFork?(input: ForkOpenInput): Promise<ForkOpenResult>
 }
 
 interface Watched {
@@ -258,6 +296,73 @@ export class ConversationService {
             console.error('[conversation] read failed', sessionId, error)
             this.dropIfIdle(sessionId, entry)
             return { ...base, agent, unavailable: 'read-failed', turns: [], totalTurns: 0, truncated: false }
+        }
+    }
+
+    /**
+     * «Fork into a new session» from one reply. The reply is read again here: the view's index and
+     * time must still name the same agent turn, or the fork is refused (the conversation moved on, a
+     * /clear). Nothing is typed into this session — the new one gets the command and the first message.
+     */
+    async fork(sessionId: string, request: ChatForkRequest, from?: From, options: { aiClient?: string } = {}): Promise<ChatForkResult> {
+        const sender = senderOf(from)
+        const info = this.deps.session(sessionId)
+        if (!info) return { status: 'rejected', reason: 'unknown_session', message: 'This session no longer exists.' }
+        const agent = agentOf(info)
+        if (!agent || !info.cliSessionId || !this.deps.openFork) {
+            return { status: 'rejected', reason: 'no_conversation', message: 'This session has no agent conversation to fork yet.' }
+        }
+        const message = typeof request?.message === 'string' ? request.message : ''
+        if (message.length > MAX_TEXT_LENGTH) return { status: 'rejected', reason: 'too_large', message: `The message is limited to ${MAX_TEXT_LENGTH} characters.` }
+        let turns
+        try {
+            turns = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)?.turns ?? null
+        } catch (error) {
+            console.error('[conversation] fork read failed', sessionId, error)
+            turns = null
+        }
+        if (!turns) return { status: 'rejected', reason: 'no_conversation', message: 'The conversation file could not be read, so there is nothing to fork from.' }
+        // no place given (the Control API's default): the agent's latest reply
+        const index = request?.turnIndex === undefined ? turns.map((item) => item.role).lastIndexOf('assistant') : request.turnIndex
+        if (request?.turnIndex === undefined && index < 0) {
+            return { status: 'rejected', reason: 'no_conversation', message: 'The agent has not answered in this conversation yet, so there is nothing to fork from.' }
+        }
+        const turn = Number.isInteger(index) ? turns[index] : undefined
+        const tsGiven = request?.turnTs !== undefined && request.turnTs !== null
+        if (!turn || turn.role !== 'assistant' || (tsGiven && turn.ts !== request.turnTs)) {
+            return { status: 'rejected', reason: 'turn_changed', message: 'The conversation changed since this reply was shown. Look again and fork from it.' }
+        }
+        const scope = request.scope === 'excerpt' ? 'excerpt' : 'whole'
+        const name = forkSessionName(info.name ?? '')
+        const base = forkBaseCommand(agent, info.cliCommand, this.deps.resolveAlias)
+        let command: string
+        try {
+            command = scope === 'whole' ? forkCommand(agent, info.cliCommand, info.cliSessionId, this.deps.resolveAlias) : base.input
+        } catch {
+            return { status: 'rejected', reason: 'no_conversation', message: 'The linked conversation id cannot be forked.' }
+        }
+        const prompt = forkFirstMessage({ turns, turnIndex: index, agent, sourceName: info.name?.trim() || 'Session', scope, message, quote: request.quote === true })
+        if (prompt.length > MAX_TEXT_LENGTH) return { status: 'rejected', reason: 'too_large', message: `The message is limited to ${MAX_TEXT_LENGTH} characters.` }
+        if (sender && !sender.allowed()) return REVOKED
+        try {
+            const opened = await this.deps.openFork({
+                parentId: sessionId,
+                agent,
+                name,
+                command,
+                cliCommand: base.stored,
+                prompt,
+                watchCodex: scope === 'whole' && agent === 'codex',
+                ...(sender ? { allowed: sender.allowed } : {}),
+                ...(options.aiClient ? { aiClient: options.aiClient } : {})
+            })
+            return { status: 'forked', ...opened }
+        } catch (error) {
+            const code = (error as { code?: string }).code
+            if (code === 'revoked') return REVOKED
+            if (code === 'not_found') return { status: 'rejected', reason: 'unknown_session', message: 'This session no longer exists.' }
+            console.error('[conversation] fork failed', sessionId, error)
+            return { status: 'rejected', reason: 'failed', message: error instanceof Error ? error.message : String(error) }
         }
     }
 
