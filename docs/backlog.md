@@ -13,6 +13,14 @@ roadmap and not a wishlist: every entry names a path and a trigger that makes it
 
 Any session may append to `## Open
 
+### 앱 안 브라우저 — HTML 보고서·웹 페이지를 앱에서 열기
+- Discovered: 2026-11-10 사람 요청: 「html 일정 이상 넘어가면 too large 떠서 브라우저에서 보고 있는데 … 다른 것처럼 이 앱 안에서 브라우저를 쓸 수 있으면 좋겠는데 일단 백로그로」.
+- Evidence: Mac 미리보기는 글 파일을 500KB 까지만 읽고(`read-file-content`, `src/main/index.ts` `maxSize = 500000`) 넘으면 `File too large (NNNKB)`, 그 아래여도 `.html` 은 소스만 보인다(`components/FilePreview.tsx`). Fork 리뷰 페이지가 925KB 였다. 폰은 이미 HTML 을 분리 칸에서 64MB 까지 그린다(`phone/phoneDoc.ts`, 결정 0011 — `connect-src 'none'`, 바깥 스크립트·글꼴 막음, localStorage 는 칸 안 대체).
+- Why deferred: 범위가 갈린다 — (a) 보고서만 폰 칸 방식으로 그리기(바깥 자원 막힘) vs (b) 바깥 사이트까지 여는 진짜 브라우저 탭(`WebContentsView`, 주소창·뒤로·로그인 쿠키 분리). (b) 는 보안 경계(앱 IPC 와 분리·권한 요청·다운로드)를 새로 정해야 한다.
+- Trigger: 사람이 시작하자고 할 때, 또는 큰 HTML 보고서를 앱 밖으로 여는 일이 계속 불편하다는 말이 다시 나올 때.
+- Fix direction: 먼저 (a) — `.html` 은 기본으로 그려서 보이고 Source 전환 · 「Open in browser」 버튼, 한도는 폰과 같은 64MB. (b) 는 그 뒤 따로 결정 기록을 쓰고.
+- Owner: 없음
+
 ### Chat 「새 세션으로 보내기」 전용 명령(`/split`)
 - Discovered: 2026-11-10 사람 요청 — 한 세션에서 여러 이야기가 나올 때 한 갈래를 새 세션으로 떼어 보내고 여기서는 하던 일을 계속하고 싶다.
 - Evidence: 먼저 Chat 말풍선 머리의 Fork 버튼 → 모달(대화 전체 복사 `claude --resume <id> --fork-session` · `codex fork <id>` 기본, 기록 발췌 선택)로 만들기로 했다. 같은 동작을 입력칸에서 치는 길은 없다. `split` 은 Claude·Codex 명령 표(`src/main/chatCommands.ts`)에 없어 겹치지 않는다(같은 날 확인).
