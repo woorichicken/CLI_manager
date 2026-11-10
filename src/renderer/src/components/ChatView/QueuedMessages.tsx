@@ -51,6 +51,8 @@ export function QueuedMessages({
     }, [sessionId])
     const shown = queued.filter((message) => pressed.get(message.id) !== 'gone')
     if (shown.length === 0) return null
+    /** rows still waiting for the turn to end (not the ones on their way now) */
+    const waiting = shown.filter((message) => pressed.get(message.id) !== 'sending').length
 
     const sendNow = async (message: QueuedMessage): Promise<void> => {
         mark(message.id, 'sending')
@@ -145,9 +147,11 @@ export function QueuedMessages({
                     </li>
                 ))}
             </ol>
-            <div className="chat-queued-note">
-                <Clock size={12} aria-hidden="true" /> {shown.length === 1 ? 'Sends' : 'They send'} when {agentName} finishes this turn
-            </div>
+            {waiting > 0 && (
+                <div className="chat-queued-note">
+                    <Clock size={12} aria-hidden="true" /> {waiting === 1 ? 'Sends' : 'They send'} when {agentName} finishes this turn
+                </div>
+            )}
             {error && (
                 <p className="chat-composer-note is-error" role="alert" data-testid="chat-queued-error">
                     {error}
