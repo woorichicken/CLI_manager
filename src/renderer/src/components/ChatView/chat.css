@@ -334,8 +334,10 @@
 .chat-diff-line.is-del { background: rgba(248, 113, 113, 0.12); color: var(--hl-deleted); }
 .chat-diff-sign { width: 1ch; flex-shrink: 0; color: var(--chat-faint); }
 .chat-file-link { color: #60a5fa; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; text-align: left; overflow-wrap: anywhere; font: inherit; }
-/* a span (role=button) that reads as words: a drag over it selects them (d05e93fc) */
-span.chat-file-link { cursor: pointer; user-select: text; -webkit-user-select: text; }
+/* a span (role=button) that reads as words: a drag over it selects them (d05e93fc). inline-block as the
+   <button> it replaced was: an inline span breaks across two lines and its box's middle is then another
+   word — a tap there opened the link beside it on the phone (T98·T102, fix-1110) */
+span.chat-file-link { display: inline-block; cursor: pointer; user-select: text; -webkit-user-select: text; }
 span.chat-file-link:focus-visible { outline: 1px solid #60a5fa; outline-offset: 1px; border-radius: 2px; }
 .chat-view a[href] { -webkit-user-drag: none; }
 .chat-file-link:hover { text-decoration-style: solid; }
