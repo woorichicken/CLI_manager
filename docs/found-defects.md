@@ -23,6 +23,15 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 `tests/terminal/t78-phone-quality.spec.ts` — 전체 스위트에서 가끔 재연결 뒤 「typed while away」가 Mac 터미널에 안 닿는다
+- Date: 2026-11-10
+- Where: T78 재연결 단계(298–303줄) — 폰 서버를 껐다 켠 뒤 입력칸 글을 보내고 `waitForBufferText(…, 'typed while away', 15_000)` 로 기다린다.
+- What: v1.30.0 릴리즈 빌드의 두 번째 전체 실행에서 1450 통과 · 이 1건 실패. 같은 코드로 첫 전체 실행은 통과했고, 따로 3번 돌려 3번 다 통과했다.
+- Surfaced by: `node scripts/release.cjs --version 1.30.0 --build` 의 전체 시험. 그 릴리즈는 `--build --skip-tests` 로 나갔다(타입 검사는 돌았다).
+- Impact: 제품 결함인지 시험 시간 문제인지 아직 모른다. 원인은 재 보지 않았다. 전체 스위트가 부하 속에서 다시 빨갛게 될 수 있다.
+- Workaround: 그 스펙만 다시 돌린다(`pnpm test:term t78`).
+- Fix direction: 실패할 때 폰 소켓이 다시 붙었는지(「Reconnecting…」이 사라졌는지)와 보내기 응답을 함께 남기게 해서, 다음 실패에서 원인을 가른다.
+
 ### 🐛 저장된 명령이 에이전트 이름이 아니면 재시작 때 맨 `claude`·`codex` 로 친다
 - Date: 2026-11-08
 - Where: `src/shared/agentCommand.ts` `decideAgentCommand` 의 `fallback` 이 `inputCommand: agent` 를 준다. 저장값은 `storedCommand` 로 남는다. 재시작 입력은 `src/main/index.ts` · `src/renderer/src/utils/resumeCommand.ts`.
