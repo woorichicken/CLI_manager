@@ -105,11 +105,6 @@ test('T123 the phone reads 20 turns first; Show earlier brings every older turn,
     expect(await turnsOnScreen(view)).toEqual(expected.slice(-PAGE))
     expect(asked.length).toBeGreaterThan(0)
     expect(asked.every((search) => search === `?limit=${PAGE}`), asked.join(' ')).toBe(true)
-    if (process.env.T123_SHOTS) {
-        fs.mkdirSync(process.env.T123_SHOTS, { recursive: true })
-        await phone.waitForTimeout(500)
-        await phone.screenshot({ path: path.join(process.env.T123_SHOTS, `t123-first-${process.env.T123_LABEL ?? 'run'}.png`) })
-    }
 
     // Show earlier, page by page, from the top of the chat: the turn that was first stays on the same line
     let shown = PAGE
@@ -119,6 +114,11 @@ test('T123 the phone reads 20 turns first; Show earlier brings every older turn,
         await phone.waitForTimeout(150)
         const first = await turnsOnScreen(view).then((list) => list[0])
         const firstTurn = view.locator('[data-testid="chat-turn"]', { hasText: `${first}:` }).first()
+        if (pages === 0 && process.env.T123_SHOTS) {
+            // the top of the first page: where «Show earlier» is
+            fs.mkdirSync(process.env.T123_SHOTS, { recursive: true })
+            await phone.screenshot({ path: path.join(process.env.T123_SHOTS, `t123-first-${process.env.T123_LABEL ?? 'run'}.png`) })
+        }
         const before = await firstTurn.evaluate((element) => element.getBoundingClientRect().top - element.closest('[data-testid="chat-scroll"]')!.getBoundingClientRect().top)
         await older.getByTestId('chat-show-earlier').click()
         shown = Math.min(TURNS, shown + PAGE)
