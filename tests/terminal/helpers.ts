@@ -108,6 +108,14 @@ function seededAgentCommand(session: SeedSession, userDataDir: string, index: nu
 }
 
 /**
+ * CLIMANGER_TEST_LANG=ko-KR runs the app in another language: Playwright's `locale` (what toLocaleTimeString
+ * writes in the window). LANG, --lang and -AppleLanguages do not change it under Playwright (T122, checked 11-11).
+ */
+function appLocale(): { locale?: string } {
+    return process.env.CLIMANGER_TEST_LANG ? { locale: process.env.CLIMANGER_TEST_LANG } : {}
+}
+
+/**
  * Seed more than one workspace — needed whenever a test depends on the shape of
  * the workspace list itself (ordering, worktree children, add/remove).
  */
@@ -175,6 +183,7 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
 
     const app = await electron.launch({
         args: [path.join(REPO_ROOT, 'out/main/index.js')],
+        ...appLocale(),
         env: {
             ...process.env,
             CLIMANGER_TEST_USERDATA: userDataDir,
@@ -468,6 +477,7 @@ export async function launchAppForLoop(opts: LoopLaunchOptions): Promise<LaunchR
 
     const app = await electron.launch({
         args: [path.join(REPO_ROOT, 'out/main/index.js')],
+        ...appLocale(),
         env: {
             ...process.env,
             CLIMANGER_TEST_USERDATA: userDataDir,
