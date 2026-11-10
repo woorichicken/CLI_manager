@@ -258,6 +258,45 @@ test.describe('T73 question menus off the screen (promptScreen)', () => {
         expect(() => answerSteps(menu, { signature: menu.signature, optionIndex: 2 })).toThrow()
     })
 
+    // fb-1110 4f10a0fc: the card named its key hint as the question («Enter to select · …») when the question
+    // did not end in «?», and an option's preview box was read into the labels. Real 2.1.322 screens (115×43).
+    test('real 2.1.322 AskUserQuestion: a question without «?» is the question, not the key hint', () => {
+        const menu = readPrompt(screen('claude-2.1.322-askuserquestion.txt'), 'claude')!
+        expect(menu.kind).toBe('question')
+        expect(menu.question).toBe('Pick a color')
+        expect(menu.context).toEqual(['☐ Color'])
+        expect(menu.options.map((o) => o.label)).toEqual(['Red', 'Blue', 'Type something.', 'Chat about this'])
+        expect(menu.answerable).toBe(true)
+    })
+
+    test('real 2.1.322 AskUserQuestion with previews: the wrapped «│» question whole, labels without the preview box', () => {
+        const menu = readPrompt(screen('claude-2.1.322-ask-preview-q1.txt'), 'claude')!
+        expect(menu.kind).toBe('question')
+        expect(menu.question).toBe(
+            "주말 장보기 목록을 다시 확인했습니다. 마감은 토요일 10:00이고, 예산은 지난주와 같습니다. 새로 확인한 것: 냉장고 칸은 두 칸이 비었고, 손님은 네 명이 오며, 메모에는 '간단하지만 따뜻한 음식'을 원한다고 적혀 있습니다. 어떤 요리를 중심으로 장을 볼까요? (날씨가 추워서 국물 요리를 추천합니다.)"
+        )
+        expect(menu.context).toEqual([])
+        // the wrapped «(추천)» stays on its label; the box's edges and lines are no labels or descriptions
+        expect(menu.options.map((o) => [o.label, o.selected, o.description ?? null])).toEqual([
+            ['A. 김치찌개와 계란말이 (추천)', true, null],
+            ['B. 샐러드와 파스타', false, null],
+            ['C. 떡볶이와 순대 포장', false, null]
+        ])
+        expect(menu.steps?.map((step) => step.label)).toEqual(['메뉴', '장소', 'Submit'])
+        expect(menu.answerable).toBe(true)
+        expect(answerSteps(menu, { signature: menu.signature, optionIndex: 2 })).toEqual([{ key: KEYS.down }, { key: KEYS.down }, { key: KEYS.enter }])
+    })
+
+    test('real 2.1.322 AskUserQuestion, second tab: a question with «?» inside and «.)» at its end', () => {
+        const menu = readPrompt(screen('claude-2.1.322-ask-preview-q2.txt'), 'claude')!
+        expect(menu.question).toBe(
+            "장보기는 마트에서만 해도 되지만, 시장에 들러 채소를 따로 사면 '신선도'와 '비용'을 함께 챙길 수 있습니다. 이 방향으로 갈까요? (지난주 메모: 시장은 토요일 오후에 붐비므로, 오전에 다녀오는 쪽을 권했습니다.)"
+        )
+        expect(menu.options.map((o) => o.label)).toEqual(['마트 + 시장 (추천)', '마트만', '온라인 주문', 'Type something.', 'Chat about this'])
+        expect(menu.options[1].description).toBe('한 곳에서 모두 삽니다. 시간이 가장 적게 들지만 채소 값이 조금 더 듭니다.')
+        expect(menu.steps?.map((step) => [step.label, step.answered])).toEqual([['메뉴', true], ['장소', false], ['Submit', false]])
+    })
+
     test('the signature changes when the highlight moves or the command differs', () => {
         const lines = screen('claude-2.1.312-permission.txt')
         const before = readPrompt(lines, 'claude')!

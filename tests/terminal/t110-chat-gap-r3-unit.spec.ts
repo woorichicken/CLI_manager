@@ -163,6 +163,34 @@ test.describe('T110 new 2 the Chat send asks the stricter question test', () => 
         expect(mirror.asksQuestion('s1')).toBe(false)
     })
 
+    // fb-1110 39ffc005 (reported on 1.29.0, whose Chat send used showsAwaitingInput): the bottom of the
+    // reported 115×43 screen, copied from the report's terminal lines — «「Yes, proceed」» in the answer.
+    test('the 39ffc005 screen: the old guard (API) says waiting, the Chat send does not', async () => {
+        const rule = '─'.repeat(115)
+        const screen = [
+            '  남은 할 일: 위 1~4 결정, 「Yes, proceed」 오탐을 found-defects에 기록',
+            '',
+            '✻ Worked for 33s · done 10:29 PM',
+            '',
+            '※ recap: v1.29.0이 배포됐고, 지금은 다음 회차 범위와 받아쓰기 개선(영어 힌트, 폰 받아쓰기, 목소리 기록)을 함께',
+            '  정하는 중입니다. 다음 배포 묶음과 이 셋을 어떻게 할지 정해 주시면 바로 시작합니다. (disable recaps in /config)',
+            '',
+            rule,
+            '❯',
+            rule,
+            '  ~/Downloads/CLImanger | branch:main | Opus',
+            '  5h:[--------]0% wk:[#-------]11%(4d12h) | thinking | session:19m | ctx:[##--------]23%',
+            '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent'
+        ].join('\r\n')
+        const terminals = fakeTerminals()
+        const mirror = new TerminalMirror(terminals as never)
+        terminals.events.emit('created', 's1', 115, 43)
+        terminals.events.emit('output', 's1', screen)
+        await mirror.flush('s1')
+        expect(mirror.showsAwaitingInput('s1'), 'what 1.29.0 asked: the report').toBe(true)
+        expect(mirror.asksQuestion('s1'), 'what the Chat asks since 1.30.0').toBe(false)
+    })
+
     test('a real permission prompt: both say waiting', async () => {
         const mirror = await mirrorShowing(REAL_PERMISSION)
         expect(mirror.showsAwaitingInput('s1')).toBe(true)

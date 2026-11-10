@@ -65,6 +65,21 @@ const CUSTOM_OPTION = /^Type something\.?$/i
 /** Claude's question tabs over the question: `←  ☐ Color  ☒ Fruits  ✔ Submit  →` (cut off by a narrow pane: no →) */
 const TAB_BAR = /^←\s+[☐☒☑✔]/
 
+/** One question's header over it: ` ☐ Color ` (2.1.312, 2.1.322) — several questions draw TAB_BAR instead */
+const QUESTION_HEADER = /^[☐☒☑✔]\s+\S/
+
+/**
+ * An AskUserQuestion whose options carry a `preview` (2.1.322): the options on the left, the highlighted
+ * one's preview in a box to their right, its top edge on an option's row (fb-1110 4f10a0fc, captured).
+ * Descriptions are not drawn in this layout: a row indented under an option is its label wrapped.
+ */
+const PREVIEW_BOX_TOP = /^\s*[❯›>]?\s*\d{1,2}\.\s+\S.*?\s{2,}┌─{6,}┐\s*$/
+const PREVIEW_BOX_BOTTOM = /└─{6,}┘\s*$/
+/** where the right column starts on a row inside the box: its edge after two blanks, or at the row's start */
+const PREVIEW_EDGE = /\s{2,}[│┌└]|^\s*[│┌└]/
+/** the notes hint under the box («Notes: press n to add notes»), drawn in the right column */
+const PREVIEW_NOTES = /^\s{8,}Notes:/
+
 /** A multiple choice's tick box at the start of its label: `[ ] Apple`, `[✔] Apple` (2.1.319) */
 const CHECKBOX_LABEL = /^\[([ xX✔✓])\]\s+(.+)$/
 
@@ -261,7 +276,8 @@ function kindOf(text: string, options: PromptOption[]): PromptKind {
  */
 export function readPrompt(screen: string[], agent: ConversationAgent): PromptMenu | null {
     if (screen.some(isBusyRow)) return null
-    const rows = belowInputBox(screen)
+    const { rows: drawn, preview } = withoutPreview(belowInputBox(screen))
+    const rows = drawn
         .map(clean)
         .filter((line) => line.trim() !== '')
         .slice(-MENU_REGION_LINES)
@@ -331,6 +347,14 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
         }
     }
 
+    // the preview layout draws no descriptions: what sits under an option is its label, wrapped
+    if (preview) {
+        for (const option of options) {
+            if (option.description) option.label = `${option.label} ${option.description}`
+            delete option.description
+        }
+    }
+
     // Codex's options have no descriptions: rows under one are its label wrapped by a narrow pane, and the
     // key named at its end ("Yes, proceed (y)", "No, … (esc)") may stand on the last of them.
     // Codex's question: label and description on one row, two spaces or more between them
@@ -373,8 +397,10 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     for (let row = codexFrom; row >= 0 && row < above.length && row < codexFrom + QUESTION_WRAP_ROWS && codexAt < 0; row++) {
         if (/\?\s*$/.test(above[row].trim())) codexAt = row
     }
+    const asked = agent === 'claude' && !confirm && firstOptionRow > 0 ? claudeQuestionRows(above) : -1
     const questionAt = (() => {
         if (codexAt >= 0) return codexAt
+        if (asked >= 0) return above.length - 1
         for (let row = above.length - 1; row >= 0; row--) if (/[?？]\s*$/.test(above[row].trim())) return row
         for (let row = above.length - 1; row >= 0; row--) if (MENU_MARKERS.some((marker) => marker.test(above[row]))) return row
         return -1
@@ -383,6 +409,10 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     const joined = (from: number): string => above.slice(from, questionAt + 1).map((line) => line.trim()).join(' ')
     /** the question's first row: a narrow pane wraps it over the rows above its last */
     let questionStart = questionAt
+    if (asked >= 0) {
+        questionLine = joined(asked)
+        questionStart = asked
+    }
     if (codexAt > codexFrom) {
         questionLine = joined(codexFrom)
         questionStart = codexFrom
@@ -400,10 +430,11 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
 
     // The rows between the dialog's top edge (a full rule, or the prompt above it) and the question:
     // the command, the tab title. Dashed rules inside the dialog are skipped, not edges.
-    let top = questionAt - 1
-    while (top >= 0 && !INPUT_BOX_RULE.test(above[top].trim()) && !/^[❯>⏺●⎿]/.test(above[top].trim()) && questionAt - top <= CONTEXT_MAX_LINES * 2) top--
+    // (from the question's first row: a wrapped question is the question, not context above it)
+    let top = questionStart - 1
+    while (top >= 0 && !INPUT_BOX_RULE.test(above[top].trim()) && !/^[❯>⏺●⎿]/.test(above[top].trim()) && questionStart - top <= CONTEXT_MAX_LINES * 2) top--
     // No edge found (Codex draws none): the rows above are the agent's output, not the dialog's.
-    const edgeFound = top >= 0 && questionAt - top <= CONTEXT_MAX_LINES * 2
+    const edgeFound = top >= 0 && questionStart - top <= CONTEXT_MAX_LINES * 2
     const progress = codexQuestion ? findLast(above, (line) => CODEX_ASK_PROGRESS.test(line.trim())) : -1
     const progressMatch = progress >= 0 ? CODEX_ASK_PROGRESS.exec(above[progress].trim()) : null
     const context = codexQuestion
@@ -416,7 +447,7 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
             ? planLines(above, questionStart)
             : codexAt >= 0
               ? above.slice(codexAt + 1).map((line) => line.trim()).filter(Boolean).slice(0, CONTEXT_MAX_LINES)
-              : (questionAt > 0 && edgeFound ? above.slice(top + 1, questionAt) : [])
+              : (questionAt > 0 && edgeFound ? above.slice(top + 1, questionStart) : [])
                     .map((line) => line.trim())
                     .filter((line) => line && !SEPARATOR.test(line) && !/^Tip:/i.test(line) && !TAB_BAR.test(line))
                     .slice(-CONTEXT_MAX_LINES)
@@ -494,6 +525,41 @@ function readMcpConfirm(rows: string[]): PromptMenu | null {
         answerable: options.filter((option) => option.selected).length === 1,
         signature
     }
+}
+
+/**
+ * Claude's AskUserQuestion: the first row of its question, or -1. The question is every row between its
+ * header (the tab bar, or « ☐ Color » for one question) and the first option — 2.1.322 wraps a long one
+ * in a «│» quote bar, and it need not end in «?» («Pick a color», «…권했습니다.)» — fb-1110 4f10a0fc: the
+ * row ending in «?» was looked for, none was, and the card named its key hint as the question).
+ * Not the review of the answers nor a plan approval: their question is a row of its own under more rows.
+ */
+function claudeQuestionRows(above: string[]): number {
+    const header = findLast(above, (line) => TAB_BAR.test(line.trim()) || QUESTION_HEADER.test(line.trim()))
+    if (header < 0 || header === above.length - 1) return -1
+    const block = above.slice(header + 1).map((line) => line.trim())
+    if (block.length > QUESTION_WRAP_ROWS * 2 || block.some((line) => REVIEW_QUESTION.test(line) || PLAN_QUESTION.test(line))) return -1
+    return header + 1
+}
+
+/**
+ * The screen with an AskUserQuestion's preview column cut off its rows (see PREVIEW_BOX_TOP): its box
+ * edges were read as part of the options' labels, its lines as more labels. Other screens come back as
+ * they were. Cut at the box's edge character, not a column: a wide (Hangul) cell is one character.
+ */
+function withoutPreview(screen: string[]): { rows: string[]; preview: boolean } {
+    const top = screen.findIndex((line) => PREVIEW_BOX_TOP.test(line))
+    if (top < 0) return { rows: screen, preview: false }
+    let bottom = -1
+    for (let row = top + 1; row < screen.length && bottom < 0; row++) if (PREVIEW_BOX_BOTTOM.test(screen[row])) bottom = row
+    if (bottom < 0) return { rows: screen, preview: false }
+    const rows = screen.map((line, row) => {
+        if (row > bottom && row <= bottom + 3 && PREVIEW_NOTES.test(line)) return ''
+        if (row < top || row > bottom) return line
+        const edge = line.search(PREVIEW_EDGE)
+        return edge < 0 ? line : line.slice(0, edge)
+    })
+    return { rows, preview: true }
 }
 
 function findLast(lines: string[], test: (line: string) => boolean): number {
