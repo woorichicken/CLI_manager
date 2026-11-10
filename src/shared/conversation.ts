@@ -436,6 +436,14 @@ export interface ChatTransport {
 /** How many turns a Chat view asks for first. */
 export const CHAT_TURN_LIMIT = 200
 
+/**
+ * The phone's first page, and each «Show earlier» after it (fb-1110 3회차). 20 turns is about ten prompts —
+ * ovis' first page (`refs/ovis` src/lib/settings.ts:349). Measured on a 16MB transcript (an anonymised
+ * copy): the reader holds 39 turns there, so 40 would cut nothing; 20 turns are 178KB instead of 625KB
+ * (36KB instead of 130KB gzipped).
+ */
+export const PHONE_CHAT_TURN_PAGE = 20
+
 /** The program currently owning the terminal's input. pid/argv are internal command fallbacks. */
 export interface AgentConversationFront {
     kind: 'shell' | 'claude' | 'codex' | 'other' | 'none' | 'unknown'
