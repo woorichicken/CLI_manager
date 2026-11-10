@@ -1,0 +1,42 @@
+ ▐▛███▛█   Claude Code v2.1.322
+▝▜██████▀  Haiku 5.5 · Claude Ultra
+ ▝▝   ▝▝   /…/00000000-0000-4000-8000-000000000000/scratchpad/askbg
+
+
+❯ Do these two steps in this order. Step 1: call the Agent tool once with run_in_background set to true,           
+  subagent_type general-purpose, description "sleeper", prompt "Run the bash command: sleep 100. Then reply        
+  done.". Step 2: right after launching it, without waiting, call AskUserQuestion with one question "Pick a color" 
+  header "Color" options Red and Blue.                                                                             
+
+⏺ Agent(sleeper)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Color 
+
+Pick a color
+
+❯ 1. Red
+     Red
+  2. Blue
+     Blue
+  3. Type something.
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

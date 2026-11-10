@@ -1,6 +1,7 @@
 import http from 'http'
 import type { AddressInfo, Socket } from 'net'
 import { existsSync, readFileSync } from 'fs'
+import { gzipSync } from 'zlib'
 import { extname, join, normalize } from 'path'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { PhoneMe, PhoneRole } from '../../shared/phone'
@@ -541,11 +542,28 @@ function header(req: http.IncomingMessage, name: string): string | null {
     return (Array.isArray(value) ? value[0] : value) ?? null
 }
 
+/**
+ * JSON this long or longer goes gzipped to a page that takes it. A conversation is mostly text: the
+ * snapshot of a 16 MB transcript was 822 KB on the wire, about 1.7 s on a phone over LTE through a
+ * Tailscale relay — gzipped ~6× smaller (fb-1110 91e1b27e · 1e556f10, T118). Level 4: 1 MB in ~7 ms on the
+ * main process (level 6 took 22 ms for 11% less).
+ */
+const GZIP_FROM_BYTES = 8 * 1024
+const GZIP_LEVEL = 4
+
 export function send(res: http.ServerResponse, status: number, body: unknown): void {
     res.statusCode = status
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
     res.setHeader('Cache-Control', 'no-store')
-    res.end(JSON.stringify(body))
+    const text = JSON.stringify(body)
+    const accepts = res.req ? /\bgzip\b/i.test(header(res.req, 'accept-encoding') ?? '') : false
+    if (accepts && Buffer.byteLength(text) >= GZIP_FROM_BYTES) {
+        res.setHeader('Content-Encoding', 'gzip')
+        res.setHeader('Vary', 'Accept-Encoding')
+        res.end(gzipSync(text, { level: GZIP_LEVEL }))
+        return
+    }
+    res.end(text)
 }
 
 export function readCookie(cookieHeader: string | undefined, name: string): string | null {

@@ -81,6 +81,10 @@ export interface ConversationTurn {
     /** Last recorded assistant activity, never the next user's timestamp. */
     end_ts?: string
     parts: ConversationPart[]
+    /** Claude's turn-end record (`turn_duration`): when the turn finished and how long it took */
+    done?: { at: string; ms: number }
+    /** Claude's idle recap (`away_summary`) written after this answer */
+    recap?: string
 }
 
 export type ConversationAgent = 'claude' | 'codex'
@@ -164,6 +168,37 @@ export interface ConversationMeta {
      * shows one, else what the last prompt recorded (`permissionMode`); Codex: its turn_context.
      */
     mode?: string | null
+    /**
+     * What runs in the background, as Claude's row under its input box counts it (`· 1 shell · ← 2 agents`).
+     * Screen only — the records do not keep a running count (fb-1110 a0ba98c4). Absent: the row shows none.
+     */
+    background?: { shells: number; agents: number }
+}
+
+/**
+ * One background command or subagent of a Claude session, read from its transcript (ovis BackgroundTasks:
+ * `transcript/backgroundTasks.ts`). `lost`: the transcript never said it ended, but Claude's own count
+ * under its input box no longer holds it.
+ */
+export interface BackgroundTask {
+    id: string
+    kind: 'shell' | 'agent'
+    /** a command's description (else the command), a subagent's description (else its type) */
+    title: string
+    /** the subagent's type (`Explore`, `general-purpose`); null for a command */
+    agent: string | null
+    status: 'running' | 'completed' | 'failed' | 'cancelled' | 'lost'
+    startedAt: string | null
+    endedAt: string | null
+}
+
+/** What the background chip's list shows: running first (oldest first), then what ended in the last day. */
+export interface BackgroundTaskList {
+    tasks: BackgroundTask[]
+    /** running that Claude counts but the transcript does not show yet (a call just made) */
+    moreRunning: number
+    /** the Mac's clock, so a phone counts elapsed time on it */
+    serverTime: string
 }
 
 /** A message sent from the chat while the agent worked, waiting for the turn to end. */
@@ -412,6 +447,8 @@ export interface ChatTransport {
     getToolOutput(sessionId: string, ref: string): Promise<string | null>
     /** The `/` commands the session's agent offers. */
     listCommands(sessionId: string): Promise<ChatCommand[]>
+    /** The background commands and subagents the session runs, for the chip's list (ovis BackgroundTasks). */
+    listBackgroundTasks(sessionId: string): Promise<BackgroundTaskList>
     /** Files under the session's folder whose name or path matches, as paths relative to it. */
     searchFiles(sessionId: string, query: string): Promise<string[]>
     /** Shows a file the chat names (absolute, or relative to the session's folder), at a line when given. */
@@ -426,6 +463,14 @@ export interface ChatTransport {
 
 /** How many turns a Chat view asks for first. */
 export const CHAT_TURN_LIMIT = 200
+
+/**
+ * The phone's first page, and each «Show earlier» after it (fb-1110 3회차). 20 turns is about ten prompts —
+ * ovis' first page (`refs/ovis` src/lib/settings.ts:349). Measured on a 16MB transcript (an anonymised
+ * copy): the reader holds 39 turns there, so 40 would cut nothing; 20 turns are 178KB instead of 625KB
+ * (36KB instead of 130KB gzipped).
+ */
+export const PHONE_CHAT_TURN_PAGE = 20
 
 /** The program currently owning the terminal's input. pid/argv are internal command fallbacks. */
 export interface AgentConversationFront {

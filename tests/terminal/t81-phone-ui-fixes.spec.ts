@@ -332,6 +332,62 @@ test('T81 F19 a queued message’s Edit restores it only once it is withdrawn', 
     await phone.close()
 })
 
+// fb-1110 e4ce1a2f: Send now and ✕ looked like nothing happened until the Mac answered and the conversation was
+// read again. They show at once now (the requests are held here, so «at once» is before any answer); a refusal
+// brings the row back with its reason.
+test('T81 e4ce1a2f Send now and ✕ show before the Mac answers; a refused ✕ brings the row back', async () => {
+    test.setTimeout(120_000)
+    const { app, page, base } = await launch()
+    const { phone, cdp } = await openPhone(app, base, `session=${AGENT}&view=chat`, 't81-e4ce')
+    const box = phone.locator('.chat-composer textarea')
+    await expect(box).toBeVisible({ timeout: 15_000 })
+    await box.fill('first job')
+    await tap(cdp, phone, 'chat-send')
+    await waitForBufferText(page, AGENT, 'ANSWER[1]: first job', 10_000)
+    await phone.waitForTimeout(800) // the chat has seen the turn working
+    for (const text of ['q-one', 'q-two']) {
+        await box.fill(text)
+        await tap(cdp, phone, 'chat-send')
+    }
+    const items = phone.getByTestId('chat-queued-item')
+    await expect(items).toHaveCount(2, { timeout: 10_000 })
+
+    const shot = async (name: string): Promise<void> => {
+        const dir = process.env.T81_SHOTS
+        if (!dir) return
+        fs.mkdirSync(dir, { recursive: true })
+        await phone.waitForTimeout(400)
+        await phone.screenshot({ path: path.join(dir, `${name}-${process.env.T81_LABEL ?? 'run'}.png`) })
+    }
+    await shot('e4ce-queued')
+    await hold(app, ['discard-queued', 'send-queued-now'])
+    await tap(cdp, phone, 'chat-queued-discard', 1)
+    await shot('e4ce-after-discard-tap')
+    await expect(items, '✕: the row goes at once').toHaveCount(1, { timeout: 1_000 })
+    await expect(items.first()).toContainText('q-one')
+    await tap(cdp, phone, 'chat-queued-send-now', 0)
+    await shot('e4ce-after-send-now-tap')
+    await expect(items.first(), 'Send now: «Sending…» at once').toHaveAttribute('data-state', 'sending', { timeout: 1_000 })
+    await expect(phone.getByTestId('chat-queued-sending')).toBeVisible()
+    expect(await release(app), 'both were still on their way').toBe(2)
+    await waitForBufferText(page, AGENT, 'HELD: q-one', 10_000)
+    await expect(items).toHaveCount(0, { timeout: 10_000 })
+
+    // a ✕ that does not get through: the row comes back, with the reason
+    await box.fill('q-three')
+    await tap(cdp, phone, 'chat-send')
+    await expect(items).toHaveCount(1, { timeout: 10_000 })
+    await block(app, ['discard-queued'])
+    await tap(cdp, phone, 'chat-queued-discard', 0)
+    await expect(phone.getByTestId('chat-queued-error')).toBeVisible({ timeout: 5_000 })
+    await expect(items).toHaveCount(1)
+    await expect(items.first()).toHaveAttribute('data-state', 'queued')
+    await block(app, [])
+    await waitForBufferText(page, AGENT, ': q-three', 30_000)
+    expect(await termText(page, AGENT)).not.toContain('q-two')
+    await phone.close()
+})
+
 test('T81 F20 a question on screen: a number and the Send button pick that option', async () => {
     test.setTimeout(120_000)
     const { app, page, base } = await launch()

@@ -3642,6 +3642,9 @@ app.whenReady().then(async () => {
     ipcMain.handle('chat-commands', (_e, sessionId: unknown) =>
         typeof sessionId === 'string' ? conversationService.listCommands(sessionId) : []
     )
+    ipcMain.handle('chat-background-tasks', (_e, sessionId: unknown) =>
+        typeof sessionId === 'string' ? conversationService.listBackgroundTasks(sessionId) : { tasks: [], moreRunning: 0, serverTime: new Date().toISOString() }
+    )
     // A pasted picture has no path of its own: it is stored for the agent to read (`@path` in the message).
     ipcMain.handle('chat-save-attachment', (_e, name: unknown, bytes: unknown) =>
         saveChatAttachment(path.join(os.tmpdir(), 'climanager-chat'), typeof name === 'string' ? name : 'pasted', bytes)

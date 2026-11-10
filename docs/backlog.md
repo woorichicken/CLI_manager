@@ -13,6 +13,21 @@ roadmap and not a wishlist: every entry names a path and a trigger that makes it
 
 Any session may append to `## Open
 
+### 폰 Chat — 바뀌면 바뀐 만큼만(ETag·304, ovis 방식)
+- Discovered: 2026-11-10 fb-1110 91e1b27e · 1e556f10. 첫 쪽은 3회차에 고쳤다(사람 결정 11-10) — 폰은 최근 20턴(`PHONE_CHAT_TURN_PAGE`)만 읽고 「Show earlier」로 20턴씩 더(T123). 16MB 사본 T118: Wi-Fi 0.22→0.14초, LTE 중계 0.51→0.28초, 전송 130→36KB.
+- Evidence: 남은 몫은 턴이 바뀔 때마다 첫 쪽 창 전체를 다시 받는 것(지금 36KB)과 렌더 ~0.06초(폰 CPU 4배 감속). ovis 는 `If-None-Match` 로 안 바뀌면 304·클라이언트 캐시로 먼저 그림(`refs/ovis` `server/pane-routes.ts:289`, `src/lib/api.ts:584`).
+- Trigger: 폰에서 Chat 이 바쁜 턴 동안 버벅인다는 제보가 다시 오거나, 실기기 측정에서 렌더가 0.3초를 넘을 때.
+- Fix direction: 응답에 ETag(revision + limit) → 304. 재는 법: `PHONE_READ_PERF=1 PHONE_READ_TRANSCRIPT=<익명 사본> npx playwright test tests/terminal/t118-phone-read-perf.spec.ts`.
+- Owner: 없음
+
+### 질문 판정 — 메뉴가 화면 맨 아래면 위쪽 스피너 글은 무시(ovis·herdr 규칙)
+- Discovered: 2026-11-10 fb-1110 4f10a0fc 비교.
+- Evidence: 우리는 화면 어디든 일하는 중 줄(`isBusyRow`)이 있으면 질문 카드를 안 읽는다(`promptScreen.readPrompt` 첫 줄, T94 「a menu is not read under a 2.1.318 spinner」가 그 결정을 고정). ovis 는 메뉴 키 안내가 마지막 1~3줄이면 그 위 스피너 글을 무시하고(`refs/ovis server/dialogs/live.ts:87-99`), herdr 도 질문 규칙(980)이 스피너 줄(970)보다 높다(`claude.toml`). 이번 실제 캡처에서는 질문 중 스피너가 남지 않아 재현되지 않았다.
+- Why deferred: T66·T94 가 일부러 정한 방향(에이전트 출력 속 대화상자 글은 질문이 아님)을 뒤집는 일이라 사람이 정한다.
+- Trigger: 질문이 떠 있는데 Chat 이 「working」으로 남는 제보가 1.31 이후에도 다시 올 때.
+- Fix direction: Claude 만, 메뉴의 첫 보기 줄 위에 있는 busy 줄은 무시. 키 안내가 마지막이어야 한다(`menuIsLast`)는 조건은 그대로.
+- Owner: 없음
+
 ### 앱 안 브라우저 — HTML 보고서·웹 페이지를 앱에서 열기
 - Discovered: 2026-11-10 사람 요청: 「html 일정 이상 넘어가면 too large 떠서 브라우저에서 보고 있는데 … 다른 것처럼 이 앱 안에서 브라우저를 쓸 수 있으면 좋겠는데 일단 백로그로」.
 - Evidence: Mac 미리보기는 글 파일을 500KB 까지만 읽고(`read-file-content`, `src/main/index.ts` `maxSize = 500000`) 넘으면 `File too large (NNNKB)`, 그 아래여도 `.html` 은 소스만 보인다(`components/FilePreview.tsx`). Fork 리뷰 페이지가 925KB 였다. 폰은 이미 HTML 을 분리 칸에서 64MB 까지 그린다(`phone/phoneDoc.ts`, 결정 0011 — `connect-src 'none'`, 바깥 스크립트·글꼴 막음, localStorage 는 칸 안 대체).

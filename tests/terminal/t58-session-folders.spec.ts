@@ -103,18 +103,43 @@ test.describe('T58 session folders', () => {
         await expect(list.locator('[data-session-item="s-b1"]')).toBeVisible()
         await expect.poll(() => storedSession(userDataDir, 's-b1')?.sessionFolderId).toBeUndefined()
 
-        // The heading folds the folder, and the menu's Collapse All / Expand All acts on session folders.
+        // The heading folds the folder, and the header's fold-all button acts on session folders —
+        // one press, out of the … menu since 09aa3d01.
         await dragRowOver(page, 's-a1', heading)
         await page.mouse.up()
         await expect(body.locator('[data-session-item="s-a1"]')).toBeVisible()
         await heading.click()
         await expect(body).toHaveCount(0)
         await expect.poll(() => storedFolders(userDataDir)[0].isExpanded).toBe(false)
-        await page.getByTestId('sidebar-more').click()
-        await expect(page.getByTestId('sidebar-collapse-session-folders')).toHaveText('Expand All')
-        await page.getByTestId('sidebar-collapse-session-folders').click()
+        if (process.env.T58_SHOTS) {
+            fs.mkdirSync(process.env.T58_SHOTS, { recursive: true })
+            await page.waitForTimeout(300)
+            const box = (await page.locator('.glass-panel').first().boundingBox())!
+            await page.screenshot({ path: path.join(process.env.T58_SHOTS, `09aa-header-${process.env.T58_LABEL ?? 'run'}.png`), clip: { x: box.x, y: box.y, width: box.width, height: 260 } })
+        }
+        const foldAll = page.getByTestId('sidebar-collapse-session-folders')
+        await expect(foldAll).toHaveAttribute('data-state', 'collapsed')
+        await expect(foldAll).toHaveAttribute('title', 'Expand all session folders')
+        await foldAll.click()
         await expect(body.locator('[data-session-item="s-a1"]')).toBeVisible()
         await expect.poll(() => storedFolders(userDataDir)[0].isExpanded).toBe(true)
+        await expect(foldAll).toHaveAttribute('data-state', 'expanded')
+        await foldAll.click()
+        await expect(body).toHaveCount(0)
+        await expect.poll(() => storedFolders(userDataDir)[0].isExpanded).toBe(false)
+        // not in the … menu any more
+        await page.getByTestId('sidebar-more').click()
+        await expect(page.getByTestId('sidebar-more-menu').getByTestId('sidebar-collapse-session-folders')).toHaveCount(0)
+        await page.keyboard.press('Escape')
+        // at the default width the title is whole and the view toggle stands where the folder view has it
+        const title = page.locator('.glass-panel > div').first().locator('span').first()
+        expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth), 'All sessions title not cut').toBe(true)
+        const toggle = page.getByTestId('sidebar-view-toggle')
+        const allX = (await toggle.boundingBox())!.x
+        await toggle.click()
+        await expect(page.getByTestId('sidebar-add-workspace')).toBeVisible()
+        expect((await toggle.boundingBox())!.x, 'the toggle does not move').toBe(allX)
+        await toggle.click()
     })
 
     test('renaming and deleting a folder; deleting keeps its sessions; a folder that is gone counts as none', async () => {

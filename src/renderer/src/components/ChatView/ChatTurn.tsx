@@ -5,6 +5,7 @@ import { Markdown } from './markdown/Markdown'
 import { UserParts } from './TurnParts'
 import { WorkBlock } from './WorkBlock'
 import { isLiveWorkTurn, turnSegments, workBlockStartsOpen } from './workBlocks'
+import { formatElapsed } from './chatLib'
 
 const AGENT_NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
 const COPIED_MS = 1500
@@ -99,9 +100,28 @@ export const ChatTurn = memo(function ChatTurn({
                     />
                 )
             })}
+            {turn.done && !(live && last) && (
+                // Claude's own turn-end line: how long the turn took and when it ended (fb-1110 a0ba98c4)
+                <div className="chat-turn-done" data-testid="chat-turn-done" title={new Date(turn.done.at).toLocaleString()}>
+                    Took {formatElapsed(turn.done.ms)} · done {clockTime(turn.done.at)}
+                </div>
+            )}
+            {turn.recap && (
+                <div className="chat-recap" data-testid="chat-recap">
+                    <span className="chat-recap-label">※ recap</span> {turn.recap}
+                </div>
+            )}
         </div>
     )
 })
+
+/** «2:14 PM» today, «11/9 2:14 PM» another day — the turn-end line's «done» time. */
+function clockTime(ts: string): string {
+    const date = new Date(ts)
+    if (Number.isNaN(date.getTime())) return ''
+    const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    return date.toDateString() === new Date().toDateString() ? time : `${date.toLocaleDateString([], { month: 'numeric', day: 'numeric' })} ${time}`
+}
 
 /**
  * Copy an answer as Markdown (what the agent wrote) or as plain text (what the chat shows: the

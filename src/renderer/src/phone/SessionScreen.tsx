@@ -1,4 +1,4 @@
-import type { ChatPreferences } from '../../../shared/conversation'
+import { PHONE_CHAT_TURN_PAGE, type ChatPreferences } from '../../../shared/conversation'
 import { carryDraft } from '../components/ChatView/draftHandoff'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Menu, MessageSquareText, TerminalSquare } from 'lucide-react'
@@ -149,6 +149,7 @@ export function SessionScreen({
                         canOpenFiles={role === 'drive'}
                         onSessionLink={onSessionLink}
                         onOpenTerminal={() => onLens('terminal')}
+                        turnPage={PHONE_CHAT_TURN_PAGE}
                     />
                 ) : (
                     // keyed: another session's terminal must not inherit this one's Type, Ctrl or line

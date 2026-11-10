@@ -1,4 +1,4 @@
-import type { AttachResult, ChatCommand, ChatForkResult, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
+import type { AttachResult, BackgroundTaskList, ChatCommand, ChatForkResult, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ChatTransport, ConversationSnapshot, InterruptResult, PromptAnswerResult } from '../../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../../shared/conversation'
 import { chatPath, getJson, postJson, socketUrl } from './api'
 import { reconnectDelay } from './usePhoneTerminal'
@@ -150,6 +150,8 @@ export function createPhoneChatTransport(onViewOnly?: (message: string) => void,
             (await getJson<{ output: string | null }>(`${chatPath(sessionId, 'tool-output')}?ref=${encodeURIComponent(ref)}`).catch(() => ({ output: null }))).output,
         listCommands: async (sessionId) =>
             (await getJson<{ commands: ChatCommand[] }>(chatPath(sessionId, 'commands')).catch(() => ({ commands: [] }))).commands,
+        // rejects when the request fails: the list says it could not refresh rather than «nothing runs»
+        listBackgroundTasks: (sessionId) => getJson<BackgroundTaskList>(chatPath(sessionId, 'background')),
         searchFiles: async () => [],
         openFile: (sessionId, path, line) => onOpenFile?.(sessionId, path, line),
         openLink(url) {

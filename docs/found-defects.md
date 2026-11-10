@@ -23,6 +23,12 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 Chat 전환 — 질문 화면에서도 「터미널에 쓰던 글이 있다(여러 줄)」 알림이 뜬다
+- Date: 2026-11-10
+- Where: Terminal → Chat 전환의 초안 옮기기(`ConversationService.takeTerminalDraft` → `HandoffNoticeToast`). 화면의 입력 상자를 읽어 판단한다.
+- What: 실제 Claude 2.1.322 AskUserQuestion(미리보기 칸이 있는 2문항) 화면 사본을 띄운 세션에서 Chat 으로 바꾸면 「There is text you were writing in the terminal (more than one line) — it stays there.」가 뜬다. 쓰던 글은 없다 — 질문 대화상자의 두 규칙선 사이(「Chat about this」 등)를 입력 상자로 읽은 것으로 보인다. 옮기는 글은 없어 해는 없고 알림만 틀리다.
+- Surfaced by: fb-1110 T120 캡처(`tests/terminal/t120-ask-preview-card.spec.ts`, 고치기 전·후 둘 다).
+
 ### 🐛 `tests/terminal/t1-data-loss.spec.ts` — 부하가 높으면 「끝났다」를 입력한 명령 줄에서 읽고 일찍 센다
 - Date: 2026-11-10
 - Where: `waitForBufferText(…, 'SEQ-DONE-…')`(`tests/terminal/helpers.ts`)는 마지막 80줄에 그 글이 있으면 끝으로 본다. 입력한 명령 `seq 1 300000; echo SEQ-DONE-…` 자체에도 그 글이 있다.

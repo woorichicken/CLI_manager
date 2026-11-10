@@ -84,6 +84,7 @@ export const electronChatTransport: ChatTransport = {
     getImage: (sessionId, ref) => window.api.getChatImage(sessionId, ref),
     getToolOutput: (sessionId, ref) => window.api.getChatToolOutput(sessionId, ref),
     listCommands: (sessionId) => window.api.listChatCommands(sessionId),
+    listBackgroundTasks: (sessionId) => window.api.listChatBackgroundTasks(sessionId),
     async searchFiles(sessionId, query) {
         const cwd = cwdBySession.get(sessionId)
         if (!cwd) return []

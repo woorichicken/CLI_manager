@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Plus, PanelLeftClose, GripVertical, Folder, ChevronDown, ChevronRight, Search, List, FolderTree } from 'lucide-react'
+import { Plus, PanelLeftClose, GripVertical, Folder, ChevronDown, ChevronRight, Search, List, FolderTree, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
 import { Workspace, WorkspaceFolder, SessionFolder, SessionRelation, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import type { SessionFolderActions } from '../../hooks/useSessionFolders'
@@ -1090,7 +1090,7 @@ export function Sidebar({
                             <SidebarMoreMenu
                                 folderKind="session"
                                 anyExpanded={anySessionFolderExpanded}
-                                showCollapseAll={sessionFolders.length > 0}
+                                showCollapseAll={false}
                                 onToggleCollapseAll={() => void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), !anySessionFolderExpanded)}
                                 onNewFolder={() => setShowFolderPrompt('session')}
                                 onAddWorkspace={onAddWorkspace}
@@ -1099,6 +1099,23 @@ export function Sidebar({
                         {/* Adding a project folder belongs to the folder view; All sessions keeps it in
                             the … menu (report d9783659). Left of the view toggle for the same reason as
                             the … menu: the toggle stays put when this drops out. */}
+                        {/* All sessions: folding every session folder is one press on the header (report
+                            09aa3d01 — it was inside the … menu). It takes the slot the folder view gives
+                            «+», so the header keeps the folder view's button count at the default width
+                            and the view toggle does not move. */}
+                        {isAllSessionsView && sessionFolderActions && sessionFolders.length > 0 && (
+                            <button
+                                data-testid="sidebar-collapse-session-folders"
+                                data-state={anySessionFolderExpanded ? 'expanded' : 'collapsed'}
+                                onClick={() => void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), !anySessionFolderExpanded)}
+                                className="p-1 hover:bg-white/10 rounded transition-colors"
+                                title={anySessionFolderExpanded ? 'Collapse all session folders' : 'Expand all session folders'}
+                            >
+                                {anySessionFolderExpanded
+                                    ? <ChevronsDownUp size={14} className="text-gray-400" />
+                                    : <ChevronsUpDown size={14} className="text-gray-400" />}
+                            </button>
+                        )}
                         {!isAllSessionsView && (
                             <button
                                 data-testid="sidebar-add-workspace"

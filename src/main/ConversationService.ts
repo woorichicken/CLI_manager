@@ -1,4 +1,5 @@
 import type {
+    BackgroundTaskList,
     ChatCommand,
     ChatForkRequest,
     ChatForkResult,
@@ -17,9 +18,10 @@ import type {
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
 // the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
 import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatView/chatMentions'
-import { isBusyRow, screenAgentMode } from './screenLines'
+import { isBusyRow, screenAgentMode, screenBackground } from './screenLines'
 import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
+import { BackgroundTaskReader, settleBackground } from './transcript/backgroundTasks'
 import type { AliasResolver } from '../shared/agentCommand'
 import { forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName } from './chatFork'
 
@@ -36,6 +38,14 @@ import { forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName } from 
  */
 
 const POLL_MS = 700
+/**
+ * How long a session nobody watches keeps what was read (the parsed transcript, the revision). A phone asks
+ * for the conversation before its socket subscribes: dropped at once, the subscription started over — the
+ * transcript read from the start again and a «changed» sent for nothing, so the phone fetched the whole
+ * conversation twice on every open (fb-1110 91e1b27e · 1e556f10: 2 requests × 822 KB on a 16 MB transcript).
+ * Coming back to a session within it is no first read either.
+ */
+const IDLE_KEEP_MS = 30_000
 /** Text sent while the agent works waits for this much quiet after the turn ends. */
 const QUEUE_QUIET_MS = 1500
 const MAX_TEXT_LENGTH = MAX_CHAT_TEXT_LENGTH
@@ -163,6 +173,8 @@ export interface ConversationServiceDeps {
     resolveAlias?: AliasResolver
     /** Opens the fork's session (ControlApiService.openFork). Absent: Fork is refused. */
     openFork?(input: ForkOpenInput): Promise<ForkOpenResult>
+    /** Tests shrink it; the app uses IDLE_KEEP_MS. */
+    idleKeepMs?: number
 }
 
 interface Watched {
@@ -174,11 +186,15 @@ interface Watched {
     working: boolean
     /** the mode the screen shows under the input box; null: it shows none */
     screenMode: string | null
+    /** background shells and agents the screen counts (screenBackground), or null */
+    background?: { shells: number; agents: number } | null
     prompt: PromptMenu | null
     queue: QueueItem[]
     sending: boolean
     /** the last queued message typed that only the terminal can show (ConversationSnapshot.terminalOpened) */
     terminalOpened: { id: string; command: string } | null
+    /** set while nobody watches: lets the entry go when it fires (dropIfIdle) */
+    idleTimer?: NodeJS.Timeout
 }
 
 /**
@@ -204,6 +220,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 export class ConversationService {
     private readonly watched = new Map<string, Watched>()
+    private readonly backgroundReader = new BackgroundTaskReader()
     /**
      * One lane per session for everything that writes keys (sends, Send now, the queue, card
      * answers, Stop): the next waits until the last is typed, and checks the screen again then.
@@ -228,7 +245,10 @@ export class ConversationService {
     constructor(private readonly deps: ConversationServiceDeps) {}
 
     subscribe(sessionId: string): void {
-        this.entry(sessionId).subscribers += 1
+        const entry = this.entry(sessionId)
+        entry.subscribers += 1
+        if (entry.idleTimer) clearTimeout(entry.idleTimer)
+        entry.idleTimer = undefined
         this.ensureTimer()
     }
 
@@ -256,6 +276,8 @@ export class ConversationService {
 
     /** The session closed: forget it, queued text included. */
     forget(sessionId: string): void {
+        const idleTimer = this.watched.get(sessionId)?.idleTimer
+        if (idleTimer) clearTimeout(idleTimer)
         this.watched.delete(sessionId)
         this.lastAnswer.delete(sessionId)
         this.wholeOutputPaths.delete(sessionId)
@@ -290,7 +312,8 @@ export class ConversationService {
             if (read === null) return { ...base, agent, unavailable: 'not-found', turns: [], totalTurns: 0, truncated: false }
             const turns = read.turns.slice(-Math.max(1, Math.min(limit, 2000)))
             // the screen follows shift+tab at once; the record only names the mode of the last prompt
-            const meta = agent === 'claude' && entry.screenMode ? { ...(read.meta ?? { model: null, effort: null }), mode: entry.screenMode } : read.meta
+            const screenMeta = agent === 'claude' ? { ...(entry.screenMode ? { mode: entry.screenMode } : {}), ...(entry.background ? { background: entry.background } : {}) } : {}
+            const meta = Object.keys(screenMeta).length > 0 ? { ...(read.meta ?? { model: null, effort: null }), ...screenMeta } : read.meta
             return { ...base, agent, turns, totalTurns: read.turns.length, truncated: read.truncated, meta }
         } catch (error) {
             console.error('[conversation] read failed', sessionId, error)
@@ -650,6 +673,26 @@ export class ConversationService {
         }
     }
 
+    /**
+     * The background commands and subagents of a Claude session, for the chip's list (ovis BackgroundTasks).
+     * Read from its transcript as it grows; the screen's count settles what still runs (settleBackground).
+     */
+    async listBackgroundTasks(sessionId: string): Promise<BackgroundTaskList> {
+        const now = Date.now()
+        const empty: BackgroundTaskList = { tasks: [], moreRunning: 0, serverTime: new Date(now).toISOString() }
+        const info = this.deps.session(sessionId)
+        if (!info?.cliSessionId || agentOf(info) !== 'claude') return empty
+        const entry = this.entry(sessionId)
+        await this.refreshScreen(sessionId, entry)
+        const files = this.deps.reader.locate('claude', info.cliSessionId, info.cwd)
+        this.dropIfIdle(sessionId, entry)
+        // the session's own file holds its subagents' folder; an older file of the thread does not
+        const parentPath = files.find((file) => file.endsWith(`${info.cliSessionId}.jsonl`)) ?? files[files.length - 1]
+        if (!parentPath) return { ...empty, moreRunning: (entry.background?.shells ?? 0) + (entry.background?.agents ?? 0) }
+        const settled = settleBackground(this.backgroundReader.read(parentPath, now), entry.background ?? null, !entry.working)
+        return { ...empty, ...settled }
+    }
+
     /** The `/` commands the session's agent offers in its folder. */
     listCommands(sessionId: string): ChatCommand[] {
         const info = this.deps.session(sessionId)
@@ -877,11 +920,22 @@ export class ConversationService {
         return entry
     }
 
+    /** Lets go of a session nobody watches — after IDLE_KEEP_MS, if nobody came back for it by then. */
     private dropIfIdle(sessionId: string, entry: Watched): void {
-        if (entry.subscribers > 0 || entry.queue.length > 0 || entry.sending) return
-        this.watched.delete(sessionId)
-        this.deps.reader.forget(sessionId)
-        if (this.watched.size === 0) this.stopTimer()
+        if (!this.idle(entry)) return
+        if (entry.idleTimer) clearTimeout(entry.idleTimer)
+        entry.idleTimer = setTimeout(() => {
+            entry.idleTimer = undefined
+            if (this.watched.get(sessionId) !== entry || !this.idle(entry)) return
+            this.watched.delete(sessionId)
+            this.deps.reader.forget(sessionId)
+            if (this.watched.size === 0) this.stopTimer()
+        }, this.deps.idleKeepMs ?? IDLE_KEEP_MS)
+        entry.idleTimer.unref?.()
+    }
+
+    private idle(entry: Watched): boolean {
+        return entry.subscribers === 0 && entry.queue.length === 0 && !entry.sending
     }
 
     private bump(sessionId: string, entry: Watched): void {
@@ -907,6 +961,7 @@ export class ConversationService {
         const screen = this.deps.mirror.screen(sessionId)
         entry.working = screen.some(isBusyRow)
         entry.screenMode = screenAgentMode(screen)
+        entry.background = screenBackground(screen)
         entry.prompt = entry.working ? null : readPrompt(screen, agentOf(this.deps.session(sessionId)) ?? 'claude')
         // any read can be the one a view gets (getConversation reads too): a change it sees is announced
         // here, or the next poll compares two equal states and the view keeps a card already answered
@@ -916,7 +971,7 @@ export class ConversationService {
 
     /** Bumps the revision when what views show (conversation id, working, mode, menu, queue) changed. */
     private noteState(sessionId: string, entry: Watched): void {
-        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
+        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.background ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
         if (key === entry.lastKey) return
         entry.lastKey = key
         this.bump(sessionId, entry)

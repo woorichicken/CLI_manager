@@ -1,6 +1,7 @@
 import type http from 'http'
 import type {
     AttachResult,
+    BackgroundTaskList,
     ChatCommand,
     ChatForkRequest,
     ChatForkResult,
@@ -52,6 +53,7 @@ export interface PhoneConversation {
     getImage(sessionId: string, ref: string): Promise<string | null>
     getToolOutput(sessionId: string, ref: string): Promise<string | null>
     listCommands(sessionId: string): ChatCommand[]
+    listBackgroundTasks(sessionId: string): Promise<BackgroundTaskList>
     mentionedPaths(sessionId: string): Promise<{ paths: ReadonlySet<string>; cwd?: string }>
 }
 
@@ -189,6 +191,12 @@ async function handleChat(
             case 'commands':
                 send(res, 200, { commands: c.listCommands(sessionId) })
                 return
+            case 'background': {
+                // a command's title is the command itself when it has no description: masked as the chat is
+                const list = await c.listBackgroundTasks(sessionId)
+                send(res, 200, { ...list, tasks: list.tasks.map((task) => ({ ...task, title: deps.maskLine(task.title) })) })
+                return
+            }
         }
         send(res, 404, { error: 'not_found' })
         return

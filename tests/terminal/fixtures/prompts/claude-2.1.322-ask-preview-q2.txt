@@ -1,0 +1,42 @@
+ ▐▛███▛█   Claude Code v2.1.322
+▝▜██████▀  Haiku 5.5 · Claude Ultra
+ ▝▝   ▝▝   /…/00000000-0000-4000-8000-000000000000/scratchpad/askbg
+
+
+❯ Read the file ask.json in this folder. Then call AskUserQuestion with exactly the questions array in that file,  
+  unchanged (keep every label, description and preview). Do nothing else.                                          
+  
+  Read 1 file (ctrl+o to expand)
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☒ 메뉴  ☐ 장소  ✔ Submit  →
+
+│ 장보기는 마트에서만 해도 되지만, 시장에 들러 채소를 따로 사면 '신선도'와 '비용'을 함께 챙길 수 있습니다. 이 
+│ 방향으로 갈까요? (지난주 메모: 시장은 토요일 오후에 붐비므로, 오전에 다녀오는 쪽을 권했습니다.)
+
+❯ 1. 마트 + 시장 (추천)
+     가공식품은 마트에서 사고, 채소와 과일은 시장에서 따로 삽니다. 영수증은 한 장으로 모아 가계부에 적고, 남은 돈은
+     다음 주로 넘깁니다.
+  2. 마트만                       
+     한 곳에서 모두 삽니다. 시간이 가장 적게 들지만 채소 값이 조금 더 듭니다.
+  3. 온라인 주문
+     집에서 주문합니다. 배송 시간에 맞춰 집에 있어야 합니다.
+  4. Type something.
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

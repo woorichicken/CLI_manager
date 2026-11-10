@@ -6,6 +6,7 @@ import { ChatTurn } from './ChatTurn'
 import { endedOnAnswer } from './workBlocks'
 import { appendDraft, Composer, type ComposerHandle } from './Composer'
 import { ArtifactsChip, ContextChip, ModeChip, ModelChip, PlanChip } from './ComposerChips'
+import { BackgroundChip } from './BackgroundTasksChip'
 import { ImageLightbox } from './ChatImages'
 import { PromptCard } from './PromptCard'
 import { QueuedMessages } from './QueuedMessages'
@@ -53,6 +54,11 @@ export interface ChatViewProps {
      * the link stays words — the same link in the terminal already goes through the app's own handler.
      */
     onSessionLink?: (uri: string) => void
+    /**
+     * How many turns the chat reads first, and how many more each «Show earlier» adds. The Mac reads
+     * CHAT_TURN_LIMIT; the phone a short first page (PHONE_CHAT_TURN_PAGE — fb-1110, ovis' first page).
+     */
+    turnPage?: number
 }
 
 /** Within this many pixels of the end, new turns keep the view pinned to the bottom. */
@@ -99,8 +105,10 @@ interface SentWaiting {
 let sentSequence = 0
 let forkSequence = 0
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink }: ChatViewProps) {
-    const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? CHAT_TURN_LIMIT)
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink, turnPage }: ChatViewProps) {
+    const firstTurns = turnPage ?? CHAT_TURN_LIMIT
+    const moreTurns = turnPage ?? MORE_TURNS
+    const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? firstTurns)
     const { snapshot, refresh } = useConversation(transport, sessionId, limit)
     const scroller = useRef<HTMLDivElement>(null)
     const column = useRef<HTMLDivElement>(null)
@@ -132,7 +140,8 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     useEffect(() => {
         const remembered = scrollMemory.get(sessionId)
         pinned.current = remembered?.pinned ?? true
-        setLimit(remembered?.limit ?? CHAT_TURN_LIMIT)
+        setLimit(remembered?.limit ?? firstTurns)
+        earlierAnchor.current = null
         setSent([])
         setPicked(null)
         setGallery(null)
@@ -140,9 +149,26 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     }, [sessionId])
 
     const restored = useRef<string | null>(null)
+    /**
+     * «Show earlier» puts turns above what is being read: the reader stays on the same line. Kept by hand —
+     * Safari on iPhone has no scroll anchoring, and Chrome's would also be undone by the next pinned read.
+     */
+    const earlierAnchor = useRef<{ fromBottom: number; shown: number } | null>(null)
+    const showEarlier = (): void => {
+        const element = scroller.current
+        pinned.current = false
+        if (element && snapshot) earlierAnchor.current = { fromBottom: element.scrollHeight - element.scrollTop, shown: snapshot.turns.length }
+        setLimit((current) => current + moreTurns)
+    }
     useLayoutEffect(() => {
         const element = scroller.current
         if (!element || !snapshot) return
+        const anchor = earlierAnchor.current
+        if (anchor && snapshot.turns.length > anchor.shown) {
+            earlierAnchor.current = null
+            element.scrollTop = element.scrollHeight - anchor.fromBottom
+            return
+        }
         if (restored.current !== sessionId) {
             restored.current = sessionId
             const remembered = scrollMemory.get(sessionId)
@@ -424,7 +450,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={() => (pinned.current = false, setLimit((current) => current + MORE_TURNS))} />
+                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -507,6 +533,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                     <PlanChip items={todos} />
                                     <ArtifactsChip links={artifacts} onOpen={(url) => transport.openLink(url)} />
                                     <ModeChip agent={agent} meta={snapshot?.meta ?? null} />
+                                    <BackgroundChip meta={snapshot?.meta ?? null} transport={transport} sessionId={sessionId} />
                                     <span className="chat-status-spacer" />
                                     <ModelChip agent={agent} meta={snapshot?.meta ?? null} working={working} onCommand={(text) => void sendText(text)} />
                                     <ContextChip meta={snapshot?.meta ?? null} canCompact={!working && !prompt} onCompact={() => void sendText('/compact')} />

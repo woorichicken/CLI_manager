@@ -264,6 +264,7 @@
 .chat-queued-actions button { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border-radius: 6px; font-size: 0.78em; color: var(--chat-dim); }
 .chat-queued-actions button:hover:not(:disabled) { color: var(--chat-fg); background: var(--chat-soft); }
 .chat-queued-actions button:disabled { opacity: 0.5; }
+.chat-queued-sending { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; font-size: 0.78em; color: var(--chat-dim); }
 .chat-sent { display: flex; flex-direction: column; gap: 8px; }
 .chat-user-bubble.is-sending { opacity: 0.55; }
 .chat-sent-clock { display: inline-block; margin-left: 6px; vertical-align: -1px; color: var(--chat-dim); }
@@ -322,6 +323,26 @@
 /* Plans, diffs, file links */
 .chat-todos { list-style: none; margin: 2px 0 4px; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 2px; font-size: 0.86em; }
 .chat-popover .chat-todos { padding-left: 6px; }
+/* Background tasks (ovis BackgroundTasks.css, in this chat's tokens) */
+.chat-bg-tasks { display: flex; flex-direction: column; gap: 2px; min-width: 240px; }
+.chat-bg-list { list-style: none; margin: 0; padding: 0 2px; display: flex; flex-direction: column; gap: 2px; }
+.chat-bg-list[hidden] { display: none; }
+.chat-bg-task { display: flex; align-items: flex-start; gap: 7px; padding: 4px 6px; border-radius: 6px; }
+.chat-bg-task-icon { margin-top: 3px; flex-shrink: 0; color: var(--chat-faint); }
+.chat-bg-task.is-running .chat-bg-task-icon { color: #60a5fa; }
+.chat-bg-task.is-completed .chat-bg-task-icon { color: #34d399; }
+.chat-bg-task.is-failed .chat-bg-task-icon, .chat-bg-task.is-lost .chat-bg-task-icon { color: #f87171; }
+.chat-bg-task-main { display: flex; flex-direction: column; min-width: 0; }
+.chat-bg-task-title { display: flex; align-items: center; gap: 5px; color: var(--chat-fg); overflow-wrap: anywhere; }
+.chat-bg-task-title svg { flex-shrink: 0; color: var(--chat-faint); }
+.chat-bg-task:not(.is-running) .chat-bg-task-title { color: var(--chat-dim); }
+.chat-bg-task-meta { color: var(--chat-faint); font-size: 0.9em; }
+.chat-bg-note { color: var(--chat-faint); padding: 2px 8px; }
+.chat-bg-note.is-hint { font-size: 0.9em; border-top: 1px solid var(--chat-line); margin-top: 4px; padding-top: 6px; }
+.chat-bg-ended-toggle { display: flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 6px; color: var(--chat-dim); text-align: left; }
+.chat-bg-ended-toggle:hover { background: var(--chat-soft); }
+.chat-bg-ended-failed { color: #f87171; }
+
 .chat-todo { display: flex; align-items: flex-start; gap: 6px; color: var(--chat-dim); }
 .chat-todo svg { margin-top: 3px; flex-shrink: 0; }
 .chat-todo.is-completed { color: var(--chat-faint); text-decoration: line-through; }
@@ -458,3 +479,8 @@ button.chat-attachment-chip:hover { background: rgba(255, 255, 255, 0.16); }
 .chat-fork-notice[data-state="rejected"] svg { color: #fca5a5; }
 .chat-fork-notice button { color: #94a3b8; flex-shrink: 0; }
 .chat-fork-notice .chat-fork-show { color: #93c5fd; text-decoration: underline; }
+
+/* Claude's turn-end line and idle recap (fb-1110 a0ba98c4): quiet, under the answer */
+.chat-turn-done { margin-top: 6px; font-size: 0.78em; color: var(--chat-dim); }
+.chat-recap { margin-top: 6px; font-size: 0.86em; font-style: italic; color: var(--chat-dim); line-height: 1.5; }
+.chat-recap-label { font-style: normal; font-weight: 600; margin-right: 4px; }
