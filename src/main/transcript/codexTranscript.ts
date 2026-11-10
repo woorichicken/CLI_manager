@@ -186,6 +186,32 @@ export function codexCallFailed(output: string): boolean {
   return code !== null && code[1] !== "0";
 }
 
+/** What the chat reads as a stopped turn — the words Claude Code records (chatLib INTERRUPTED_TEXT). */
+const STOPPED_MARKER = "[Request interrupted by user]";
+
+/**
+ * What a Codex `exec` script runs, for its row (chat-gap C-5): Codex 0.16x wraps its calls in a script
+ * (`text(await tools.exec_command({cmd:"git status"}))`), so the row read «exec» alone — 498 of 539
+ * recorded scripts run a command. The first command (and how many more), else the tools it calls, else
+ * its first line.
+ */
+export function execSummary(script: string): string {
+  const commands: string[] = [];
+  for (const match of script.matchAll(/\bcmd\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g)) {
+    const literal = match[1]!;
+    let value: string | null = null;
+    if (literal.startsWith('"')) {
+      try { value = JSON.parse(literal) as string; } catch { value = null; }
+    } else value = literal.slice(1, -1).replace(/\\(.)/g, "$1");
+    const command = value?.replace(/\s+/g, " ").trim();
+    if (command) commands.push(command);
+  }
+  if (commands.length > 0) return commands.length === 1 ? commands[0]! : `${commands[0]} (+${commands.length - 1} more)`;
+  const tools = [...new Set([...script.matchAll(/\btools\.([A-Za-z_]\w*)\s*\(/g)].map((match) => match[1]!))];
+  if (tools.length > 0) return tools.join(", ");
+  return script.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+}
+
 interface CodexParseState {
   turns: ConversationTurn[];
   tools: Map<string, Extract<ConversationPart, { kind: "tool" }>>;
@@ -259,6 +285,13 @@ export function createCodexTranscriptParser(state: CodexParseState = { turns: []
           if (turn?.role === "assistant" && ts) turn.end_ts = ts;
           state.startedAt = undefined;
         }
+        // the person stopped the turn (Esc): marked as Claude Code marks it, so the chat shows «Stopped»
+        // where a finished turn would end (chat-gap C-6 — 33 of 33 recorded aborts say "interrupted")
+        if (payload.type === "turn_aborted") {
+          const last = turns.at(-1);
+          const marked = last?.role === "user" && last.parts.length === 1 && last.parts[0]!.kind === "text" && last.parts[0]!.text === STOPPED_MARKER;
+          if (!marked) turns.push({ role: "user", ts: ts || null, parts: [{ kind: "text", text: STOPPED_MARKER }] });
+        }
         if (payload.type === "user_message" && (!payload.kind || payload.kind === "plain")) {
           message("user", contentText(payload.message, true), "event", ts, undefined, codexImageParts(entry));
         }
@@ -302,6 +335,7 @@ export function createCodexTranscriptParser(state: CodexParseState = { turns: []
         // a patch, bare or in an exec script, is summed up by the files it touches
         const patch = typeof raw === "string" ? patchText(raw) : null;
         const summary = patch !== null && patchFiles(patch).length > 0 ? patchFiles(patch).join(", ")
+          : name === "exec" && typeof raw === "string" ? execSummary(raw)
           : /^request_user_input/.test(name) && questionTitles(args).length > 0
           ? questionTitles(args).join(" · ")
           : [args.cmd, args.command, args.file_path, args.path, args.pattern, args.description, args.url].find((v) => typeof v === "string");

@@ -37,12 +37,14 @@ const MENU_MARKERS = [
     /Do you want to (proceed|make|create|allow|run)/i,
     /Would you like to (run|make|apply|proceed)/i,
     /Ready to submit your answers\?/i,
+    // Codex's request_user_input (0.166): its hint row
+    /tab to add notes/i,
     // the plan approval's first words: a narrow pane wraps "Would you like to proceed?" apart
     /written up a plan/i
 ]
 
 /** Footer rows: hints about keys, not part of the question. */
-const FOOTER = /(Enter to (confirm|select)|Esc to cancel|to navigate|Tab to amend|Press enter to continue)/i
+const FOOTER = /(Enter to (confirm|select)|Esc to cancel|to navigate|Tab to amend|Press enter to continue|tab to add notes)/i
 
 /** How many non-blank rows at the bottom a menu can take. */
 const MENU_REGION_LINES = 30
@@ -88,6 +90,27 @@ const CODEX_APPROVAL = /^Would you like to (run|make|apply)\b/i
 const QUESTION_WRAP_ROWS = 4
 const CODEX_HINT = /^Press enter to confirm or esc to cancel$/i
 const CODEX_KEY_SUFFIX = /\s+\((y|p|a|n|esc)\)$/i
+/**
+ * Codex's request_user_input (0.166, captured 2026-11-09 with `--enable default_mode_request_user_input`):
+ * «Question 1/2 (2 unanswered)», the question, `› 1. Red    Choose red.` rows whose last is «None of the
+ * above», and this hint. Measured: ↑/↓ move, Enter submits the highlighted one (the last question: all of
+ * them); on «None of the above» Tab opens a notes line, the words go there, Enter submits — recorded as
+ * `["None of the above", "user_note: <words>"]`. Esc interrupts the turn: no answer.
+ */
+const CODEX_ASK_HINT = /tab to add notes.*enter to submit (?:answer|all).*esc to interrupt/i
+const CODEX_ASK_PROGRESS = /^Question (\d+)\/(\d+)\b/
+const CODEX_ASK_CUSTOM = /^None of the above$/i
+
+/**
+ * Claude Code's MCP elicitation with no fields (2.1.319, fb 58814f80): «MCP server "x" requests your input»
+ * (a narrow pane wraps it), the server's words, `❯ Accept    Decline` on one row. Measured with a test
+ * server: Enter sends the highlighted one, ↑/↓ go round the two, Esc cancels.
+ */
+const MCP_HEADER_START = /^MCP server\b/
+const MCP_HEADER_END = /requests your input$/i
+const MCP_CHOICE = /^([❯›>])?\s*Accept\s{2,}([❯›>])?\s*Decline$/
+/** the most rows between the header and the choice row */
+const MCP_PANEL_ROWS = 16
 
 const QUESTION_MAX = 300
 const CONTEXT_MAX_LINES = 6
@@ -242,6 +265,10 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
         .map(clean)
         .filter((line) => line.trim() !== '')
         .slice(-MENU_REGION_LINES)
+    if (agent === 'claude') {
+        const mcp = readMcpConfirm(rows)
+        if (mcp) return mcp
+    }
     const text = rows.join('\n')
     if (!MENU_MARKERS.some((marker) => marker.test(text))) return null
 
@@ -306,7 +333,19 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
 
     // Codex's options have no descriptions: rows under one are its label wrapped by a narrow pane, and the
     // key named at its end ("Yes, proceed (y)", "No, … (esc)") may stand on the last of them.
-    if (agent === 'codex') {
+    // Codex's question: label and description on one row, two spaces or more between them
+    const codexQuestion = agent === 'codex' && CODEX_ASK_HINT.test(rows.slice(lastOptionRow + 1).map((line) => line.trim()).join(' '))
+    if (codexQuestion) {
+        for (const option of options) {
+            const [label, ...rest] = option.label.split(/\s{2,}/)
+            option.label = label.trim()
+            const description = [rest.join(' '), option.description ?? ''].join(' ').replace(/\s+/g, ' ').trim()
+            if (description) option.description = description
+            else delete option.description
+            if (CODEX_ASK_CUSTOM.test(option.label)) option.custom = true
+        }
+    }
+    if (agent === 'codex' && !codexQuestion) {
         for (const option of options) {
             if (option.description) option.label = `${option.label} ${option.description}`
             delete option.description
@@ -365,7 +404,11 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     while (top >= 0 && !INPUT_BOX_RULE.test(above[top].trim()) && !/^[❯>⏺●⎿]/.test(above[top].trim()) && questionAt - top <= CONTEXT_MAX_LINES * 2) top--
     // No edge found (Codex draws none): the rows above are the agent's output, not the dialog's.
     const edgeFound = top >= 0 && questionAt - top <= CONTEXT_MAX_LINES * 2
-    const context = confirm
+    const progress = codexQuestion ? findLast(above, (line) => CODEX_ASK_PROGRESS.test(line.trim())) : -1
+    const progressMatch = progress >= 0 ? CODEX_ASK_PROGRESS.exec(above[progress].trim()) : null
+    const context = codexQuestion
+        ? progressMatch && progressMatch[2] !== '1' ? [`Question ${progressMatch[1]} of ${progressMatch[2]}`] : []
+        : confirm
         ? confirm.context
         : review
           ? reviewAnswers(above, questionAt)
@@ -399,7 +442,10 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     // (the hint alone under the options, wrapped by a narrow pane perhaps)
     const codexAnswerable = agent === 'codex' && kind === 'permission' && codexAt >= 0 && highlighted &&
         CODEX_HINT.test(tail.map((line) => line.trim()).join(' '))
-    const answerable = claudeAnswerable || codexAnswerable
+    // Codex's question: open while its hint is all that is under its rows; the last row takes typed words
+    const codexAsks = codexQuestion && highlighted && options.at(-1)?.custom === true &&
+        CODEX_ASK_HINT.test(tail.map((line) => line.trim()).join(' '))
+    const answerable = claudeAnswerable || codexAnswerable || codexAsks
     const selected = options.findIndex((option) => option.selected)
     // A hash, not the words: the card goes to a phone with its words masked (maskSnapshot), and a plain
     // JSON signature carried the unmasked command — a key in it — right beside them (ovis dialogs/shared.ts:331).
@@ -408,6 +454,46 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
         .update(JSON.stringify([agent, kind, question, context, options.map((option) => option.label), selected, submitRow?.selected ?? null]))
         .digest('hex')
     return { agent, kind, question, context, options, multi, ...(submitRow ? { submitRow } : {}), ...(steps ? { steps } : {}), answerable, signature }
+}
+
+/**
+ * An MCP server's Accept / Decline (Q-5), or null. Open only while its key hint is the last thing drawn.
+ * Cancel is the dialog's Esc («Esc to cancel»): no row of its own, offered as an option that presses Esc.
+ */
+function readMcpConfirm(rows: string[]): PromptMenu | null {
+    const choiceAt = findLast(rows, (line) => MCP_CHOICE.test(line.trim()))
+    if (choiceAt < 0 || !menuIsLast(rows, choiceAt, false) || rows.length - choiceAt > 4) return null
+    let headerAt = -1
+    for (let row = choiceAt - 1; row >= 0 && choiceAt - row <= MCP_PANEL_ROWS && headerAt < 0; row--) if (MCP_HEADER_START.test(rows[row].trim())) headerAt = row
+    if (headerAt < 0) return null
+    let headerEnd = headerAt
+    while (headerEnd < choiceAt - 1 && headerEnd - headerAt < QUESTION_WRAP_ROWS && !MCP_HEADER_END.test(rows[headerEnd].trim())) headerEnd++
+    if (!MCP_HEADER_END.test(rows[headerEnd].trim())) return null
+    const header = rows.slice(headerAt, headerEnd + 1).map((line) => line.trim()).join(' ')
+    const panel = rows.slice(headerEnd + 1, choiceAt).map((line) => line.trim()).filter((line) => line && !SEPARATOR.test(line))
+    const askedAt = findLast(panel, (line) => /[?？]$/.test(line))
+    const question = askedAt >= 0 ? panel[askedAt] : header
+    const context = [header, ...(askedAt >= 0 ? panel.slice(0, askedAt) : panel)].slice(0, CONTEXT_MAX_LINES)
+    const choice = MCP_CHOICE.exec(rows[choiceAt].trim())!
+    const options: PromptOption[] = [
+        { index: 0, number: null, label: 'Accept', selected: choice[1] !== undefined },
+        { index: 1, number: null, label: 'Decline', selected: choice[2] !== undefined },
+        { index: 2, number: null, label: 'Cancel', selected: false, escape: true }
+    ]
+    const selected = options.findIndex((option) => option.selected)
+    const signature = createHash('sha256')
+        .update(JSON.stringify(['claude', 'mcp', question, context, options.map((option) => option.label), selected]))
+        .digest('hex')
+    return {
+        agent: 'claude',
+        kind: 'permission',
+        question: question.length > QUESTION_MAX ? `${question.slice(0, QUESTION_MAX - 1)}…` : question,
+        context,
+        options,
+        multi: false,
+        answerable: options.filter((option) => option.selected).length === 1,
+        signature
+    }
 }
 
 function findLast(lines: string[], test: (line: string) => boolean): number {
@@ -466,7 +552,8 @@ export const KEYS = {
     up: '\x1b[A',
     down: '\x1b[B',
     enter: '\r',
-    esc: '\x1b'
+    esc: '\x1b',
+    tab: '\t'
 } as const
 
 /** One step of an answer: a key, or text typed as it is. */
@@ -532,7 +619,9 @@ export function answerSteps(menu: PromptMenu, answer: PromptAnswer): AnswerStep[
         if (!custom) throw new PromptAnswerError('This question takes no typed answer.')
         if (!text) throw new PromptAnswerError('Type an answer first.')
         moveTo(position(custom.index))
-        return [...steps, { text }, { key: KEYS.enter }]
+        // Codex's «None of the above» takes its words in a notes line Tab opens (measured, 0.166)
+        const notes = menu.agent === 'codex' && menu.kind === 'question' ? [{ key: KEYS.tab }] : []
+        return [...steps, ...notes, { text }, { key: KEYS.enter }]
     }
     if (!('optionIndex' in answer) || !Number.isInteger(answer.optionIndex)) throw new PromptAnswerError('Pick an option or type an answer.')
     const target = menu.options[answer.optionIndex]

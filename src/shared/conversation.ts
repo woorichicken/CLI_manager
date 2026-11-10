@@ -306,6 +306,11 @@ export interface ChatPreferences {
     pinLastMessage?: boolean
     /** A path the chat names opens in the app's preview; off: in the Mac's default app. Default on. */
     openFilesInApp?: boolean
+    /**
+     * Every work block starts folded, the running one too — only one that waits on the person opens
+     * (fb 4c6ea086). Off: the running block opens, as in ovis by default. Default on.
+     */
+    foldWork?: boolean
 }
 
 export const DEFAULT_QUICK_REPLIES = ['continue', 'yes', 'no', 'retry']

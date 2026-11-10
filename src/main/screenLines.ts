@@ -29,11 +29,16 @@ const BOX_LABELED_RULE = /^─{2,}\s.*─$/
  * settled turn's row has no ellipsis (`✻ Cogitated for 11s`), so it never matches.
  */
 const ESC_TO_INTERRUPT = /esc to interrupt/i
+/**
+ * Codex's question (request_user_input, 0.166) names Esc in its own hint — `tab to add notes | enter to submit
+ * answer | … | esc to interrupt` — while it waits on the person, not working (chat-gap-r3-1109, captured).
+ */
+const CODEX_ASK_HINT = /tab to add notes|enter to submit (?:answer|all)/i
 const CLAUDE_SPINNER_ROW = /^\s*[·✢✳✶✻✽*]\s+[^\s()…][^()…]*…\s*\((?:\d|running\b)/
 
 /** A screen row that says the agent is working on a turn (see above). */
 export function isBusyRow(row: string): boolean {
-    return ESC_TO_INTERRUPT.test(row) || CLAUDE_SPINNER_ROW.test(row)
+    return (ESC_TO_INTERRUPT.test(row) && !CODEX_ASK_HINT.test(row)) || CLAUDE_SPINNER_ROW.test(row)
 }
 
 /** One edge of an agent's input box. `trimmed` is a row with its edges' blanks removed. */

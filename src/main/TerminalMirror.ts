@@ -102,6 +102,8 @@ interface Mirror {
     term: HeadlessTerminal
     serializer: SerializeAddon
     lastOutputAt: number
+    /** how many output chunks arrived: two in the same millisecond still differ (lastOutputAt does not) */
+    outputCount: number
     exited: boolean
     /** Attached to a pty that was already running, so earlier output is missing. */
     partial: boolean
@@ -157,6 +159,7 @@ export class TerminalMirror {
             if (!mirror) return
             mirror.term.write(data)
             mirror.lastOutputAt = Date.now()
+            mirror.outputCount++
         })
         terminals.events.on('exited', (id) => {
             const mirror = this.mirrors.get(id)
@@ -184,7 +187,7 @@ export class TerminalMirror {
             if (params[0] === ERASE_SCROLLBACK_PARAM) this.onScrollbackErased?.(id)
             return false
         })
-        this.mirrors.set(id, { term, serializer, lastOutputAt: 0, exited: false, partial: this.terminals.hasTerminal(id) })
+        this.mirrors.set(id, { term, serializer, lastOutputAt: 0, outputCount: 0, exited: false, partial: this.terminals.hasTerminal(id) })
     }
 
     /**
@@ -263,6 +266,11 @@ export class TerminalMirror {
 
     lastOutputAt(id: string): number {
         return this.mirrors.get(id)?.lastOutputAt ?? 0
+    }
+
+    /** Output chunks so far — a change test that two chunks in one millisecond do not fool. */
+    outputCount(id: string): number {
+        return this.mirrors.get(id)?.outputCount ?? 0
     }
 
     hasExited(id: string): boolean {
@@ -476,6 +484,16 @@ export class TerminalMirror {
         if (lines.some((line) => isBusyRow(line))) return { busy: true, question: null }
         const region = questionRegion(linesUnderInputBox(lines))
         return { busy: false, question: showsQuestion(region) ? questionLine(region) : null }
+    }
+
+    /**
+     * A question waits on the person, by screenStatus's stricter reading — for the Chat's send. The
+     * agent's own words above its input box («Yes, proceed» in an answer) are no question: they blocked
+     * the Chat's next message (chat-gap-1109 finding). The API keeps showsAwaitingInput, which errs
+     * towards «waiting» on purpose (T66).
+     */
+    asksQuestion(id: string): boolean {
+        return this.screenStatus(id).question !== null
     }
 
     /** Every mirrored terminal id. */

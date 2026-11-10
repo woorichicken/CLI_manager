@@ -12,6 +12,7 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
     const showQuick = chat.showQuickReplies === true
     const pinLast = chat.pinLastMessage === true
     const openInApp = chat.openFilesInApp !== false
+    const foldWork = chat.foldWork !== false
     const replies = chat.quickReplies ?? DEFAULT_QUICK_REPLIES
     const [repliesText, setRepliesText] = useState(replies.join('\n'))
     useEffect(() => setRepliesText((chat.quickReplies ?? DEFAULT_QUICK_REPLIES).join('\n')), [chat.quickReplies])
@@ -35,6 +36,13 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
                         <p className="text-xs text-gray-400 mt-0.5">On: Enter sends, Shift+Enter starts a new line. Off: Enter starts a new line and ⌘Enter sends.</p>
                     </div>
                     {toggle(enterSends, () => update({ enterSends: !enterSends }), 'chat-setting-enter-sends')}
+                </div>
+                <div className="p-4 bg-black/20 border border-white/10 rounded-lg flex items-center justify-between gap-3">
+                    <div>
+                        <p className="text-sm text-white">Collapse work</p>
+                        <p className="text-xs text-gray-400 mt-0.5">On: tool calls stay folded under one line, even while the agent works, until you open them. A question still opens its block. Off: the running block opens.</p>
+                    </div>
+                    {toggle(foldWork, () => update({ foldWork: !foldWork }), 'chat-setting-fold-work')}
                 </div>
                 <div className="p-4 bg-black/20 border border-white/10 rounded-lg flex items-center justify-between gap-3">
                     <div>

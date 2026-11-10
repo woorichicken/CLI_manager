@@ -1,0 +1,31 @@
+ ▐▛███▛█   Claude Code v2.1.319
+▝▜██████▀  Haiku 5.5 · Claude Ultra
+ ▝▝   ▝▝   /…/project
+
+
+❯ Call the confirm_drop tool from the elicit-test MCP server once. Do nothing else.                           
+
+  Calling elicit-test… (ctrl+o to expand)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  MCP server “elicit-test” requests your input
+
+  This drops the demo table.
+  It may permanently remove data.
+  Run it on project abcdefghijklmnopqrst?
+
+  ❯ Accept    Decline
+
+  Esc to cancel · ↑/↓ to navigate
+
+
+
+
+
+
+
+
+
+
+
+

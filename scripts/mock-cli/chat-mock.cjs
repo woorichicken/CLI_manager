@@ -28,6 +28,12 @@
  *             row goes on), then "Ready to submit your answers?". Submitting prints `CHOSE: submit color=…; fruits=…`.
  *   PLANOK    (Claude) the plan approval of 2.1.319 (ExitPlanMode); "Tell Claude what to change" takes typed words.
  *   APPROVE   (Codex) its command approval of 0.166.0; Esc picks "No …" (`CHOSE: esc`).
+ *   MCPOK     (Claude) an MCP server's Accept / Decline (elicitation with no fields), copied from a real 2.1.319
+ *             screen (fixtures/prompts/claude-2.1.319-mcp-elicitation.txt): ↑/↓ go round the two, Enter prints
+ *             `CHOSE: accept` / `CHOSE: decline`, Esc `CHOSE: cancel` — the keys measured with a test MCP server.
+ *   ASKCX     (Codex) request_user_input with two questions, as 0.166.0 draws it (fixtures/prompts/codex-0.166-question-*):
+ *             Enter answers the highlighted row; on "None of the above" Tab opens a notes line. The last answer
+ *             prints `CHOSE: ask color=…; size=…` (a note as `size=None of the above (note: …)`).
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
  *   TABLE     answers with a five-column table wider than a phone (Korean cells).
  *   LINK <id> answers with a session link to <id>'s first 8 characters, in backticks and in a sentence (b2020233).
@@ -225,6 +231,16 @@ function menuLines() {
             lines.push(`${index === menu.selected ? '›' : ' '} ${index + 1}. ${first.trimStart()}`, ...rest)
         })
         lines.push('', ...wrapped('Press enter to confirm or esc to cancel', '  '))
+    } else if (menu.kind === 'mcp-elicit') {
+        lines.push(rule(), '  MCP server “mock-db” requests your input', '', '  This drops the demo table.', '  It may permanently remove data.', '  Run it on project abcdefghijklmnopqrst?', '')
+        lines.push(`  ${menu.selected === 0 ? '❯' : ' '} Accept  ${menu.selected === 1 ? '❯' : ' '} Decline`, '', '  Esc to cancel · ↑/↓ to navigate')
+    } else if (menu.kind === 'codex-ask') {
+        const question = ASK_QUESTIONS[menu.step]
+        lines.push('', `  Question ${menu.step + 1}/${ASK_QUESTIONS.length} (${ASK_QUESTIONS.length - menu.step} unanswered)`, `  ${question.text}`)
+        question.options.forEach(([label, description], index) => lines.push(`  ${index === menu.selected ? '›' : ' '} ${index + 1}. ${label.padEnd(19)}${description}`))
+        const last = menu.step === ASK_QUESTIONS.length - 1
+        if (menu.notes !== null) lines.push(`  › ${menu.notes || 'Add notes'}`, '', `  tab or esc to clear notes | enter to submit ${last ? 'all' : 'answer'}`)
+        else lines.push('', `  tab to add notes | enter to submit ${last ? 'all' : 'answer'} | ←/→ to navigate questions | esc to interrupt`)
     } else if (menu.kind === 'codex-trust') {
         lines.push('Do you trust the contents of this directory?')
         menu.options.forEach((option, index) => lines.push(`${index === menu.selected ? '›' : ' '} ${index + 1}. ${option.label}`))
@@ -375,10 +391,37 @@ function openMenu(kind) {
             ]
         }
         say('• Running touch hello.txt')
+    } else if (kind === 'mcp-elicit') {
+        menu = { kind, selected: 0, options: [{ label: 'Accept' }, { label: 'Decline' }] }
+        say('  Calling mock-db… (ctrl+o to expand)')
+    } else if (kind === 'codex-ask') {
+        menu = { kind, step: 0, selected: 0, notes: null, answers: [], options: ASK_QUESTIONS[0].options.map(([label]) => ({ label })) }
     } else {
         menu = { kind: 'codex-trust', selected: 0, options: [{ label: 'Yes, continue' }, { label: 'No, quit' }] }
     }
     draw()
+}
+
+const ASK_QUESTIONS = [
+    { id: 'color', text: 'Which color?', options: [['Red', 'Choose red.'], ['Blue', 'Choose blue.'], ['None of the above', 'Optionally, add details in notes (tab)']] },
+    { id: 'size', text: 'Which size?', options: [['Small', 'Choose small.'], ['Large', 'Choose large.'], ['None of the above', 'Optionally, add details in notes (tab)']] }
+]
+
+/** Enter on ASKCX: the highlighted row (with its note) answers this question; the last one sends them all. */
+function askEnter() {
+    const question = ASK_QUESTIONS[menu.step]
+    const label = question.options[menu.selected][0]
+    menu.answers.push(`${question.id}=${label}${menu.notes ? ` (note: ${menu.notes})` : ''}`)
+    menu.notes = null
+    if (menu.step < ASK_QUESTIONS.length - 1) {
+        menu.step++
+        menu.selected = 0
+        return
+    }
+    const summary = menu.answers.join('; ')
+    menu = null
+    say(`CHOSE: ask ${summary}`)
+    recordAnswer(`You answered: ${summary}.`)
 }
 
 const FORM_COLORS = ['Red', 'Blue']
@@ -459,6 +502,8 @@ function submit(text) {
     else if (text === 'FORM' && AGENT !== 'codex') openMenu('form')
     else if (text === 'PLANOK' && AGENT !== 'codex') openMenu('plan-approval')
     else if (text === 'APPROVE' && AGENT === 'codex') openMenu('codex-approve')
+    else if (text === 'MCPOK' && AGENT !== 'codex') openMenu('mcp-elicit')
+    else if (text === 'ASKCX' && AGENT === 'codex') openMenu('codex-ask')
     else if (text === 'PLAN') {
         recordPlan()
         answerTurn(text, 'Planned three steps.')
@@ -483,6 +528,30 @@ const WIDE_TABLE = [
 let escape = ''
 let escapeTimer = null
 function handleKey(key) {
+    if (menu && menu.kind === 'mcp-elicit') {
+        // two choices on one row: ↑ and ↓ both go round them (measured on 2.1.319)
+        if (key === '\x1b[A' || key === '\x1b[B') menu.selected = 1 - menu.selected
+        else if (key === '\r' || key === '\x1b') {
+            const action = key === '\x1b' ? 'cancel' : menu.selected === 0 ? 'accept' : 'decline'
+            menu = null
+            say(`CHOSE: ${action}`)
+            recordAnswer(`The server got ${action}.`)
+        }
+        return draw()
+    }
+    if (menu && menu.kind === 'codex-ask') {
+        const custom = menu.selected === ASK_QUESTIONS[menu.step].options.length - 1
+        if (menu.notes !== null) {
+            if (key === '\r') askEnter()
+            else if (key === '\t' || key === '\x1b') menu.notes = null
+            else if (key === '\x7f') menu.notes = menu.notes.slice(0, -1)
+            else if (key >= ' ') menu.notes += key
+        } else if (key === '\x1b[A') menu.selected = Math.max(0, menu.selected - 1)
+        else if (key === '\x1b[B') menu.selected = Math.min(ASK_QUESTIONS[menu.step].options.length - 1, menu.selected + 1)
+        else if (key === '\t' && custom) menu.notes = ''
+        else if (key === '\r') askEnter()
+        return draw()
+    }
     if (menu) {
         const rowCount = menu.kind === 'form' ? formRows() : menu.options.length
         // the typed-answer row of FORM: Q1 row 2, Q2 row 3 (typing ticks it)
