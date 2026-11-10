@@ -4,7 +4,7 @@ import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_C
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
-import type { DictationEvent, DictationStartResult, DictationStatus } from '../shared/dictation'
+import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 // Custom APIs for renderer
 const api = {
@@ -403,9 +403,13 @@ const api = {
     openChatPath: (target: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target),
     // Chat dictation (macOS): src/main/Dictation.ts
     dictationStatus: (): Promise<DictationStatus> => ipcRenderer.invoke('dictation-status'),
-    startDictation: (): Promise<DictationStartResult> => ipcRenderer.invoke('dictation-start'),
+    startDictation: (context?: DictationStartContext): Promise<DictationStartResult> => ipcRenderer.invoke('dictation-start', context ?? {}),
     stopDictation: (id: number): Promise<void> => ipcRenderer.invoke('dictation-stop', id),
-    cancelDictation: (id: number): Promise<void> => ipcRenderer.invoke('dictation-cancel', id),
+    cancelDictation: (id: number, reason?: DictationCancelReason): Promise<void> => ipcRenderer.invoke('dictation-cancel', id, reason),
+    // the dictation log (Settings › Chat view, default off): what became of a run's words, the folder, Delete all
+    reportDictation: (id: number, outcome: DictationOutcome): Promise<void> => ipcRenderer.invoke('dictation-report', id, outcome),
+    openDictationLogFolder: (): Promise<string> => ipcRenderer.invoke('dictation-log-open-folder'),
+    deleteDictationLog: (): Promise<void> => ipcRenderer.invoke('dictation-log-delete-all'),
     onDictationEvent: (callback: (event: DictationEvent) => void) => {
         const listener = (_e: unknown, event: DictationEvent) => callback(event)
         ipcRenderer.on('dictation-event', listener)

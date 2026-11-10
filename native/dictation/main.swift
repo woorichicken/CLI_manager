@@ -5,6 +5,13 @@
 //   climanager-dictation status            → {"type":"status", "supported", "onDevice", "locale", "speech", "mic"}
 //   climanager-dictation listen            → {"type":"listening"} · {"type":"partial","text"} · {"type":"final","text"}
 //                                             or {"type":"error","code","message"}; "stop" on stdin (or EOF) ends it
+//                        [--audio-out <path>] also writes what the microphone heard to <path> (WAV) — the
+//                                             dictation log's "Also keep audio" (src/main/DictationLog.ts)
+//   climanager-dictation accumulate        → for the tests: reads {"text","end"} lines (recognizer results) on
+//                                             stdin and prints {"text"} — the running text (Transcript.swift)
+//
+// `text` is always the whole run so far: after a pause the recognizer starts its result over with
+// only the new words, and Transcript.swift keeps what came before (BRIEF-add1, 11-09).
 //
 // Why a separate program: Electron has no speech recognizer of its own (Chromium's Web Speech API
 // calls Google's servers with keys Electron does not ship). Apple's SFSpeechRecognizer is native-only.
@@ -60,9 +67,22 @@ func micStatus() -> String {
     }
 }
 
+let arguments = CommandLine.arguments
+
+// No recognizer, no microphone: the accumulation rule alone, for T106 (tests/terminal/fixtures/dictation-transcript-cases.json).
+if arguments.count > 1 && arguments[1] == "accumulate" {
+    var transcript = Transcript()
+    while let line = readLine() {
+        guard let data = line.data(using: .utf8),
+              let raw = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
+        transcript.add(raw["text"] as? String ?? "", utteranceEnd: raw["end"] as? Bool ?? false)
+        emit(["text": transcript.text])
+    }
+    exit(0)
+}
+
 // The language the Mac is set to. A locale flag is accepted for tests and a later language setting.
 var localeId: String? = nil
-let arguments = CommandLine.arguments
 if let index = arguments.firstIndex(of: "--locale"), index + 1 < arguments.count { localeId = arguments[index + 1] }
 let recognizer: SFSpeechRecognizer? = localeId.map { SFSpeechRecognizer(locale: Locale(identifier: $0)) } ?? SFSpeechRecognizer()
 let command = arguments.count > 1 ? arguments[1] : "status"
@@ -121,6 +141,59 @@ do {
     fail("audio_failed", "Could not open the microphone: \(error.localizedDescription)")
 }
 
+// `--audio-out <path>`: the dictation log keeps the run's sound (main makes the folder 0700, the file is 0600).
+var audioOutPath: String? = nil
+if let index = arguments.firstIndex(of: "--audio-out"), index + 1 < arguments.count { audioOutPath = arguments[index + 1] }
+
+/**
+ * Writes the captured sound to a WAV file, in the format it arrives in (the first buffer decides).
+ * A failure only loses the recording — never the dictation: it is logged to stderr and writing stops.
+ */
+final class AudioRecorder {
+    private let url: URL
+    private var file: AVAudioFile?
+    private var failed = false
+    init(path: String) { url = URL(fileURLWithPath: path) }
+
+    func append(_ sampleBuffer: CMSampleBuffer) {
+        if failed { return }
+        guard let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
+        let format = AVAudioFormat(cmAudioFormatDescription: description)
+        let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
+        buffer.frameLength = frames
+        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(sampleBuffer, at: 0, frameCount: Int32(frames), into: buffer.mutableAudioBufferList)
+        guard status == noErr else { return give("copy failed (\(status))") }
+        do {
+            if file == nil {
+                let settings: [String: Any] = [
+                    AVFormatIDKey: kAudioFormatLinearPCM,
+                    AVSampleRateKey: format.sampleRate,
+                    AVNumberOfChannelsKey: format.channelCount,
+                    AVLinearPCMBitDepthKey: 16,
+                    AVLinearPCMIsFloatKey: false,
+                    AVLinearPCMIsBigEndianKey: false
+                ]
+                file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: format.commonFormat, interleaved: format.isInterleaved)
+                chmod(url.path, 0o600)
+            }
+            try file?.write(from: buffer)
+        } catch {
+            give(error.localizedDescription)
+        }
+    }
+
+    /** AVAudioFile writes the WAV header's sizes when it is released. */
+    func close() { file = nil }
+
+    private func give(_ reason: String) {
+        failed = true
+        file = nil
+        FileHandle.standardError.write("audio-out: \(reason)\n".data(using: .utf8)!)
+    }
+}
+let audioRecorder = audioOutPath.map { AudioRecorder(path: $0) }
+
 /** Counts what arrives, for the once-a-second stderr line that tells "no sound" from "sound but no words". */
 final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private let lock = NSLock()
@@ -128,6 +201,7 @@ final class AudioSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private var loudest: Float = -160
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         request.appendAudioSampleBuffer(sampleBuffer)
+        audioRecorder?.append(sampleBuffer)
         let level = connection.audioChannels.first?.averagePowerLevel ?? -160
         lock.lock(); buffers += 1; loudest = max(loudest, level); lock.unlock()
     }
@@ -143,7 +217,8 @@ guard session.canAddOutput(output) else { fail("audio_failed", "Could not read t
 session.addOutput(output)
 session.startRunning()
 
-var lastText = ""
+/** Everything heard so far — across pauses, where the recognizer's result starts over (Transcript.swift). */
+var transcript = Transcript()
 var stopping = false
 var finished = false
 
@@ -151,7 +226,8 @@ var finished = false
 func finish(_ code: Int32) -> Never {
     if !finished {
         finished = true
-        emit(["type": "final", "text": lastText])
+        audioRecorder?.close()
+        emit(["type": "final", "text": transcript.text])
     }
     exit(code)
 }
@@ -160,6 +236,7 @@ func stopListening() {
     if stopping { return }
     stopping = true
     session.stopRunning()
+    // the capture queue may still hold a buffer; the file is closed in finish()
     request.endAudio()
     // The recognizer usually answers within a second; never leave main waiting on it.
     DispatchQueue.main.asyncAfter(deadline: .now() + finalWaitSeconds) { finish(0) }
@@ -167,9 +244,12 @@ func stopListening() {
 
 let task = recognizer.recognitionTask(with: request) { result, error in
     if let result {
-        lastText = result.bestTranscription.formattedString
+        // macOS 14+: a result with metadata closes an utterance — what comes next is new words
+        var utteranceEnd = false
+        if #available(macOS 14, *) { utteranceEnd = result.speechRecognitionMetadata != nil }
+        transcript.add(result.bestTranscription.formattedString, utteranceEnd: utteranceEnd)
         if result.isFinal { finish(0) }
-        emit(["type": "partial", "text": lastText])
+        emit(["type": "partial", "text": transcript.text])
     }
     if let error {
         // Stopping with nothing said ends in "no speech detected": that is an empty result, not a failure.

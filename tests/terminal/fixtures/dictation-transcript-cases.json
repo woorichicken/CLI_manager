@@ -1,0 +1,18 @@
+{
+    "_about": "Recognizer results in order and the text the box should hold after each run (BRIEF-add1, 11-09: a pause wiped the words before it). Read by T106 against src/shared/dictationTranscript.ts and against the built helper's `accumulate` command (native/dictation/Transcript.swift) — the two must agree.",
+    "cases": [
+        { "name": "a pause starts a new result: the words before stay", "results": [{ "text": "hello world" }, { "text": "next" }, { "text": "next words" }], "expected": "hello world next words" },
+        { "name": "Korean, after a pause", "results": [{ "text": "안녕하세요" }, { "text": "안녕하세요 받아쓰기" }, { "text": "시험입니다" }], "expected": "안녕하세요 받아쓰기 시험입니다" },
+        { "name": "three pauses", "results": [{ "text": "a b c" }, { "text": "d e" }, { "text": "f" }], "expected": "a b c d e f" },
+        { "name": "growing results replace each other", "results": [{ "text": "안녕" }, { "text": "안녕하세요" }, { "text": "안녕하세요 받아쓰기" }], "expected": "안녕하세요 받아쓰기" },
+        { "name": "a revision that shortens to a prefix is not a pause", "results": [{ "text": "hello world" }, { "text": "hello" }], "expected": "hello" },
+        { "name": "a revision of the last word is not a pause", "results": [{ "text": "hello world" }, { "text": "hello word" }], "expected": "hello word" },
+        { "name": "punctuation added later is not a pause", "results": [{ "text": "Hello world" }, { "text": "Hello world." }], "expected": "Hello world." },
+        { "name": "a recognizer that keeps the whole text after a pause adds nothing twice", "results": [{ "text": "hello world" }, { "text": "hello world next" }], "expected": "hello world next" },
+        { "name": "an empty result keeps what was heard", "results": [{ "text": "hello" }, { "text": "" }], "expected": "hello" },
+        { "name": "the end of an utterance (macOS 14 metadata): what follows is new", "results": [{ "text": "hello world", "end": true }, { "text": "hello" }], "expected": "hello world hello" },
+        { "name": "a short answer, its end marked, then longer new words", "results": [{ "text": "네", "end": true }, { "text": "알겠습니다 진행해" }], "expected": "네 알겠습니다 진행해" },
+        { "name": "the end of an utterance, then the whole text again: nothing twice", "results": [{ "text": "hello world", "end": true }, { "text": "hello world again" }], "expected": "hello world again" },
+        { "name": "the final result of the last utterance only", "results": [{ "text": "hello world" }, { "text": "next words" }, { "text": "next words." }], "expected": "hello world next words." }
+    ]
+}

@@ -45,16 +45,42 @@ export type DictationEvent =
 
 export type DictationStartResult = { status: 'started'; id: number } | { status: 'rejected'; code: DictationErrorCode; message: string }
 
+/** Which agent the words were for — the dictation log keeps it (`src/main/DictationLog.ts`). */
+export type DictationAgent = 'claude' | 'codex'
+
+export interface DictationStartContext {
+    agent?: DictationAgent
+}
+
+/**
+ * Why a run is cancelled: the person pressed Esc (`cancelled`), or the box it typed into went away —
+ * another session, a closed view (`discarded`). Only the dictation log tells them apart.
+ */
+export type DictationCancelReason = 'cancelled' | 'discarded'
+
+/**
+ * What became of a run's words, as the Chat view saw it — the dictation log's `sentText`.
+ *  - `sent`: the message box was sent; `text` is the whole box as sent (edits included)
+ *  - `edited-away`: the box was emptied without sending
+ */
+export type DictationOutcome = { type: 'sent'; text: string } | { type: 'edited-away' }
+
 /** What a Chat view needs; absent on a transport that has no dictation (the phone uses its keyboard's mic). */
 export interface ChatDictation {
     status(): Promise<DictationStatus>
-    start(): Promise<DictationStartResult>
+    start(context?: DictationStartContext): Promise<DictationStartResult>
     /** ends listening; the last words still arrive as `final` */
     stop(id: number): Promise<void>
     /** ends listening and drops what was not final yet */
-    cancel(id: number): Promise<void>
+    cancel(id: number, reason?: DictationCancelReason): Promise<void>
+    /** what became of a finished run's words — only the dictation log reads it (Settings › Chat view) */
+    report?(id: number, outcome: DictationOutcome): Promise<void>
     onEvent(listener: (event: DictationEvent) => void): () => void
 }
+
+/** Settings › Chat view › Keep dictation log: where and how long (people's decision 11-09, decision 0012). */
+export const DICTATION_LOG_TEXT_DAYS = 30
+export const DICTATION_LOG_AUDIO_DAYS = 7
 
 /** One run is cut after this long by the helper; main kills it a little later if it did not stop. */
 export const DICTATION_MAX_SECONDS = 300

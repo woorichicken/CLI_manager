@@ -307,6 +307,13 @@ export interface ChatPreferences {
     /** A path the chat names opens in the app's preview; off: in the Mac's default app. Default on. */
     openFilesInApp?: boolean
     /**
+     * Keep a log of dictation on this Mac: the words heard next to the message sent (`userData/dictation-log/`,
+     * 30 days). Default off — decision 0012.
+     */
+    dictationLog?: boolean
+    /** With the log on, also keep each run's sound (7 days). Default off. */
+    dictationLogAudio?: boolean
+    /**
      * Every work block starts folded, the running one too — only one that waits on the person opens
      * (fb 4c6ea086). Off: the running block opens, as in ovis by default. Default on.
      */

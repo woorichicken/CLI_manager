@@ -46,6 +46,7 @@ import { ConversationService } from './ConversationService'
 import { createChatCommandLister } from './chatCommands'
 import { saveChatAttachment } from './chatAttachments'
 import type { PromptAnswer } from '../shared/conversation'
+import { MAX_CHAT_TEXT_LENGTH } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import { FeedbackModeState } from './feedbackMode'
 import { setupPhone, phoneConversationListeners, type PhoneSetup } from './phone/phoneSetup'
@@ -53,6 +54,7 @@ import { workspacesInLoadOrder } from './workspaceLoadOrder'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
 import { DictationService } from './Dictation'
+import { DictationLog } from './DictationLog'
 
 // Set app name for development mode
 app.setName('CLI Manager')
@@ -436,8 +438,19 @@ const dictationHelperPath = (): string | null => {
         ? path.join(process.resourcesPath, 'dictation', 'climanager-dictation')
         : path.join(app.getAppPath(), 'native', 'dictation', 'bin', 'climanager-dictation')
 }
+// Settings › Chat view › Keep dictation log (default off, decision 0012): this Mac only, never in a report.
+const dictationLog = new DictationLog({
+    dir: path.join(app.getPath('userData'), 'dictation-log'),
+    settings: () => {
+        const chat = (store.get('settings') as UserSettings | undefined)?.chat
+        const enabled = chat?.dictationLog === true
+        return { enabled, audio: enabled && chat?.dictationLogAudio === true }
+    },
+    homeDir: os.homedir()
+})
 const dictation = new DictationService({
     helperPath: dictationHelperPath,
+    recorder: dictationLog,
     send: (owner, event) => {
         const target = webContents.fromId(owner)
         if (target && !target.isDestroyed()) target.send('dictation-event', event)
@@ -3488,7 +3501,7 @@ app.whenReady().then(async () => {
     // Chat dictation. A run belongs to the window that started it and ends when it goes away or reloads.
     const dictationOwners = new Set<number>()
     ipcMain.handle('dictation-status', () => dictation.status())
-    ipcMain.handle('dictation-start', (event) => {
+    ipcMain.handle('dictation-start', (event, context: unknown) => {
         const sender = event.sender
         if (!dictationOwners.has(sender.id)) {
             dictationOwners.add(sender.id)
@@ -3499,14 +3512,38 @@ app.whenReady().then(async () => {
             })
             sender.on('did-start-loading', () => dictation.ownerGone(owner))
         }
-        return dictation.start(sender.id)
+        const agent = (context as { agent?: unknown } | null)?.agent
+        return dictation.start(sender.id, { agent: agent === 'claude' || agent === 'codex' ? agent : undefined })
     })
     ipcMain.handle('dictation-stop', (event, id: unknown): void => {
         if (typeof id === 'number') dictation.stop(event.sender.id, id)
     })
-    ipcMain.handle('dictation-cancel', (event, id: unknown): void => {
-        if (typeof id === 'number') dictation.cancel(event.sender.id, id)
+    ipcMain.handle('dictation-cancel', (event, id: unknown, reason: unknown): void => {
+        if (typeof id === 'number') dictation.cancel(event.sender.id, id, reason === 'discarded' ? 'discarded' : 'cancelled')
     })
+    ipcMain.handle('dictation-report', (event, id: unknown, outcome: unknown): void => {
+        const value = outcome as { type?: unknown; text?: unknown } | null
+        if (typeof id !== 'number' || !value) return
+        if (value.type === 'sent' && typeof value.text === 'string') dictation.report(event.sender.id, id, { type: 'sent', text: value.text.slice(0, MAX_CHAT_TEXT_LENGTH) })
+        else if (value.type === 'edited-away') dictation.report(event.sender.id, id, { type: 'edited-away' })
+    })
+    // Settings › Chat view: the log's folder in Finder ('missing' before anything was kept) and Delete all
+    ipcMain.handle('dictation-log-open-folder', async (): Promise<'opened' | 'missing' | string> => {
+        if (!existsSync(dictationLog.folder)) return 'missing'
+        const error = await shell.openPath(dictationLog.folder)
+        return error || 'opened'
+    })
+    ipcMain.handle('dictation-log-delete-all', (): void => dictationLog.deleteAll())
+    // retention: at start and once a day (30 days of text, 7 of sound)
+    const pruneDictationLog = (): void => {
+        try {
+            dictationLog.prune()
+        } catch (error) {
+            console.warn('[dictation-log] prune failed:', error instanceof Error ? error.message : error)
+        }
+    }
+    pruneDictationLog()
+    setInterval(pruneDictationLog, 24 * 60 * 60 * 1000).unref()
     // Chat view (ConversationService). A window's subscriptions end with it.
     const chatSubscriptions = new Map<number, Map<string, number>>()
     const agentConversationReply = async (action: () => Promise<unknown>): Promise<unknown> => {

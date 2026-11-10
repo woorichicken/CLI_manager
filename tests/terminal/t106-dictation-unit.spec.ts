@@ -6,6 +6,7 @@ import path from 'path'
 import { DictationService, parseLine, parseStatus } from '../../src/main/Dictation'
 import { dictationAnchor, placeDictation } from '../../src/renderer/src/components/ChatView/dictationText'
 import type { DictationEvent } from '../../src/shared/dictation'
+import { addDictationResult, dictationTranscriptText, emptyDictationTranscript } from '../../src/shared/dictationTranscript'
 
 /**
  * T106 — Chat dictation without Electron (people's decision 11-08: Orca-style, macOS on-device).
@@ -20,6 +21,14 @@ import type { DictationEvent } from '../../src/shared/dictation'
 const REPO = path.join(__dirname, '../..')
 const FAKE = path.join(__dirname, 'fixtures/fake-dictation.cjs')
 const REAL = path.join(REPO, 'native/dictation/bin/climanager-dictation')
+
+/** Recognizer results in order → the text the box holds (BRIEF-add1: a pause wiped the words before it). */
+interface TranscriptCase {
+    name: string
+    results: Array<{ text: string; end?: boolean }>
+    expected: string
+}
+const TRANSCRIPT_CASES = (JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/dictation-transcript-cases.json'), 'utf8')) as { cases: TranscriptCase[] }).cases
 
 test.describe('T106 where dictated words go', () => {
     test('at the cursor, with a space only where the text has none', () => {
@@ -41,6 +50,37 @@ test.describe('T106 where dictated words go', () => {
 
     test('a stale selection past the end is clamped', () => {
         expect(placeDictation(dictationAnchor('abc', 10, 12), 'd')).toEqual({ text: 'abc d', caret: 5 })
+    })
+})
+
+test.describe('T106 a pause in speech keeps the words before it', () => {
+    for (const item of TRANSCRIPT_CASES) {
+        test(`main: ${item.name}`, () => {
+            let state = emptyDictationTranscript()
+            for (const result of item.results) state = addDictationResult(state, result.text, result.end === true)
+            expect(dictationTranscriptText(state)).toBe(item.expected)
+        })
+    }
+
+    test('the box: the words before the pause stay at the cursor', () => {
+        const anchor = dictationAnchor('앞 글', 4, 4)
+        let state = emptyDictationTranscript()
+        const shown: string[] = []
+        for (const text of ['hello world', 'next', 'next words']) {
+            state = addDictationResult(state, text)
+            shown.push(placeDictation(anchor, dictationTranscriptText(state)).text)
+        }
+        expect(shown).toEqual(['앞 글 hello world', '앞 글 hello world next', '앞 글 hello world next words'])
+    })
+
+    test('the built helper accumulates the same way (native/dictation/Transcript.swift)', () => {
+        test.skip(process.platform !== 'darwin' || !fs.existsSync(REAL), 'helper not built (pnpm build:dictation)')
+        for (const item of TRANSCRIPT_CASES) {
+            const input = item.results.map((result) => JSON.stringify({ text: result.text, end: result.end === true })).join('\n') + '\n'
+            const out = execFileSync(REAL, ['accumulate'], { input, encoding: 'utf8', timeout: 5000 }).trim().split('\n')
+            expect(out.length, item.name).toBe(item.results.length)
+            expect((JSON.parse(out.at(-1) ?? '{}') as { text?: string }).text, item.name).toBe(item.expected)
+        }
     })
 })
 
@@ -117,6 +157,17 @@ test.describe('T106 DictationService with the fake helper', () => {
         expect(events.at(-2)).toEqual({ id, type: 'final', text: '안녕하세요 받아쓰기 시험입니다.' })
         expect(events.at(-1)).toEqual({ id, type: 'ended' })
         expect(calls(log)).toEqual(['status', 'listen', 'stop', 'end'])
+    })
+
+    test('a helper whose result restarts after a pause: the window still gets every word, final too', async () => {
+        const { service, events } = harness('pause')
+        const started = service.start(7)
+        const id = started.status === 'started' ? started.id : -1
+        await until(() => events.filter((e) => e.type === 'partial').length >= 3)
+        service.stop(7, id)
+        await until(() => events.some((e) => e.type === 'ended'))
+        expect(events.filter((e) => e.type === 'partial').map((e) => (e as { text: string }).text)).toEqual(['안녕하세요', '안녕하세요 받아쓰기', '안녕하세요 받아쓰기 시험입니다'])
+        expect(events.at(-2)).toEqual({ id, type: 'final', text: '안녕하세요 받아쓰기 시험입니다.' })
     })
 
     test('one run at a time; another window cannot stop or cancel it', async () => {

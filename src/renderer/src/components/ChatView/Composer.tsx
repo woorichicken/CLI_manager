@@ -186,10 +186,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const dictation = useDictation({
         dictation: transport.dictation,
         sessionId,
+        agent: codex ? 'codex' : 'claude',
         readBox,
         write: setDraft,
         onError: (message) => setNotice({ tone: 'error', text: message })
     })
+    // dictated words wiped out of the box without sending — the dictation log's `edited-away`
+    const boxEmptied = dictation.boxEmptied
+    useEffect(() => {
+        if (text.trim() === '') boxEmptied()
+    }, [text, boxEmptied])
 
     // ---- attachments -----------------------------------------------------------------------
     const addFiles = useCallback(
@@ -340,6 +346,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         const outgoing = override ?? message
         if (!outgoing.trim() || (override === undefined && (attaching || over > 0))) return
         const taken = override === undefined ? { text, attachments } : null
+        // dictated words in the box: the log keeps the box as sent next to what was heard
+        const dictated = taken ? dictation.takeForSend() : []
         if (taken) {
             setDraft('')
             setAttachments([])
@@ -358,11 +366,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             if (result.reason === 'input_busy' && result.draft !== undefined) setBusyDraft(result.draft)
             else setNotice({ tone: 'error', text: result.message })
             if (taken && textRef.current === '' && attachmentsRef.current.length === 0) {
+                dictation.restore(dictated)
                 setDraft(taken.text, taken.text.length)
                 setAttachments(taken.attachments)
             }
+            // refused and the box holds other text: those words went nowhere (the log counts them discarded)
             return
         }
+        dictation.sent(dictated, taken?.text ?? outgoing)
         if (result.status === 'queued') setNotice({ tone: 'info', text: `${agentName} is working — it gets this when the turn ends.` })
     }
 

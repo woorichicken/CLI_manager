@@ -3,7 +3,7 @@ import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, Worksp
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
-import type { DictationEvent, DictationStartResult, DictationStatus } from '../shared/dictation'
+import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 declare global {
     interface Window {
@@ -274,9 +274,13 @@ declare global {
             saveChatAttachment: (name: string, bytes: Uint8Array) => Promise<AttachResult>
             openChatPath: (target: string) => Promise<{ success: boolean; error?: string }>
             dictationStatus: () => Promise<DictationStatus>
-            startDictation: () => Promise<DictationStartResult>
+            startDictation: (context?: DictationStartContext) => Promise<DictationStartResult>
             stopDictation: (id: number) => Promise<void>
-            cancelDictation: (id: number) => Promise<void>
+            cancelDictation: (id: number, reason?: DictationCancelReason) => Promise<void>
+            reportDictation: (id: number, outcome: DictationOutcome) => Promise<void>
+            /** 'opened', 'missing' (nothing kept yet) or Finder's error */
+            openDictationLogFolder: () => Promise<string>
+            deleteDictationLog: () => Promise<void>
             onDictationEvent: (callback: (event: DictationEvent) => void) => () => void
             answerPrompt: (sessionId: string, answer: PromptAnswer) => Promise<PromptAnswerResult>
         }
