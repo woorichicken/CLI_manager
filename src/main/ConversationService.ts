@@ -113,6 +113,8 @@ export interface ForkOpenInput {
     watchCodex: boolean
     /** asked again before the first message is typed (a phone can be disconnected meanwhile) */
     allowed?: () => boolean
+    /** an AI asked through the Control API: the new session is marked AI-driven, as one `open_session` made */
+    aiClient?: string
 }
 
 export interface ForkOpenResult {
@@ -302,7 +304,7 @@ export class ConversationService {
      * time must still name the same agent turn, or the fork is refused (the conversation moved on, a
      * /clear). Nothing is typed into this session — the new one gets the command and the first message.
      */
-    async fork(sessionId: string, request: ChatForkRequest, from?: From): Promise<ChatForkResult> {
+    async fork(sessionId: string, request: ChatForkRequest, from?: From, options: { aiClient?: string } = {}): Promise<ChatForkResult> {
         const sender = senderOf(from)
         const info = this.deps.session(sessionId)
         if (!info) return { status: 'rejected', reason: 'unknown_session', message: 'This session no longer exists.' }
@@ -320,9 +322,14 @@ export class ConversationService {
             turns = null
         }
         if (!turns) return { status: 'rejected', reason: 'no_conversation', message: 'The conversation file could not be read, so there is nothing to fork from.' }
-        const index = request?.turnIndex
+        // no place given (the Control API's default): the agent's latest reply
+        const index = request?.turnIndex === undefined ? turns.map((item) => item.role).lastIndexOf('assistant') : request.turnIndex
+        if (request?.turnIndex === undefined && index < 0) {
+            return { status: 'rejected', reason: 'no_conversation', message: 'The agent has not answered in this conversation yet, so there is nothing to fork from.' }
+        }
         const turn = Number.isInteger(index) ? turns[index] : undefined
-        if (!turn || turn.role !== 'assistant' || (request.turnTs !== null && turn.ts !== request.turnTs)) {
+        const tsGiven = request?.turnTs !== undefined && request.turnTs !== null
+        if (!turn || turn.role !== 'assistant' || (tsGiven && turn.ts !== request.turnTs)) {
             return { status: 'rejected', reason: 'turn_changed', message: 'The conversation changed since this reply was shown. Look again and fork from it.' }
         }
         const scope = request.scope === 'excerpt' ? 'excerpt' : 'whole'
@@ -346,7 +353,8 @@ export class ConversationService {
                 cliCommand: base.stored,
                 prompt,
                 watchCodex: scope === 'whole' && agent === 'codex',
-                ...(sender ? { allowed: sender.allowed } : {})
+                ...(sender ? { allowed: sender.allowed } : {}),
+                ...(options.aiClient ? { aiClient: options.aiClient } : {})
             })
             return { status: 'forked', ...opened }
         } catch (error) {

@@ -45,7 +45,7 @@ import { TranscriptReader } from './TranscriptReader'
 import { ConversationService } from './ConversationService'
 import { createChatCommandLister } from './chatCommands'
 import { saveChatAttachment } from './chatAttachments'
-import type { ChatForkRequest, PromptAnswer } from '../shared/conversation'
+import type { ChatForkRequest, ChatForkResult, PromptAnswer } from '../shared/conversation'
 import { MAX_CHAT_TEXT_LENGTH } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import { FeedbackModeState } from './feedbackMode'
@@ -415,6 +415,10 @@ const controlApiService = new ControlApiService({
     checklists,
     conversations: () => agentConversations,
     watchCodexStart: (sessionId, baseCommand) => watchCodexStart(sessionId, baseCommand),
+    forkConversation: async (sessionId, request, aiClient): Promise<ChatForkResult> => {
+        await ensureShellAliases()
+        return conversationService.fork(sessionId, request, undefined, { aiClient })
+    },
     onSessionForgotten: (sessionId) => {
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)

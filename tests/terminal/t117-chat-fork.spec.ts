@@ -17,6 +17,8 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  *    Meanwhile the screen stays: the same session in front, the chat box keeps its draft and the focus.
  *  - Mac: Excerpt: the plain saved command, the first message = the turns up to that reply + the words.
  *  - phone: the same button and dialog over the phone page; the fork is made on the Mac.
+ *  - AI (Control API): `POST /v1/sessions/:id/fork` and MCP `fork_session` — the latest reply by default, the new
+ *    session marked AI-driven (an AI opened it), the MCP instructions say to fork when the user asks to split.
  *
  * T117_SHOTS=<dir> (+ T117_LABEL) saves captures at 1280 and 390, before the checks.
  */
@@ -59,6 +61,7 @@ interface Launched {
     project: string
     fresh: string
     transcript: string
+    home: string
 }
 
 async function launch(): Promise<Launched> {
@@ -85,15 +88,15 @@ async function launch(): Promise<Launched> {
             }
         ],
         {
-            settings: { phone: { enabled: true, port: PORT } },
-            env: { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: path.join(home, 'codex'), CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile }
+            settings: { phone: { enabled: true, port: PORT }, controlApi: { enabled: true, port: 0 } },
+            env: { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: path.join(home, 'codex'), CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile, CLIMANAGER_HOME: path.join(home, 'clim') }
         }
     )
     const { app, page } = result
     await resizeMainWindow(app, 1280, 800)
     await waitForBufferText(page, PARENT, 'Claude Code (mock)', 20_000)
     const state = await page.evaluate(() => window.api.getPhoneState())
-    return { app, page, base: `http://127.0.0.1:${state.port}`, project, fresh, transcript }
+    return { app, page, base: `http://127.0.0.1:${state.port}`, project, fresh, transcript, home }
 }
 
 interface StoredSession {
@@ -317,4 +320,68 @@ test('T117 phone: the same Fork button and dialog; the new session is made on th
     await expect.poll(() => freshPrompts(fresh), { timeout: 30_000 }).toEqual(['From the phone'])
     // the Mac's screen did not move to the new session
     expect(await visibleSessions(page)).not.toContain(child.id)
+})
+
+test('T117 API: REST and MCP fork — the latest reply by default, an AI mark on the new session, refusals', async () => {
+    test.setTimeout(180_000)
+    const { page, fresh, home } = await launch()
+    const discoveryPath = path.join(home, 'clim', 'control-api.json')
+    await expect.poll(() => fs.existsSync(discoveryPath), { timeout: 15_000 }).toBe(true)
+    const discovery = JSON.parse(fs.readFileSync(discoveryPath, 'utf8')) as { url: string; mcpUrl: string; token: string }
+    const api = async (route: string, body: unknown, caller?: string): Promise<{ status: number; json: any }> => {
+        const res = await fetch(discovery.url + route, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't117', ...(caller ? { 'X-Caller-Session': caller } : {}) },
+            body: JSON.stringify(body)
+        })
+        const text = await res.text()
+        return { status: res.status, json: text ? JSON.parse(text) : null }
+    }
+    const rpc = async (method: string, params: unknown): Promise<any> => {
+        const res = await fetch(discovery.mcpUrl, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-Client-Name': 't117-mcp' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+        })
+        return JSON.parse(await res.text()).result
+    }
+
+    // the agent in the parent asks to split itself: the latest reply, whole conversation
+    const rest = await api(`/v1/sessions/${PARENT}/fork`, { message: 'API branch: only the docs' }, PARENT)
+    expect(rest.status).toBe(201)
+    expect(rest.json.session.name).toBe('T117 Claude · fork')
+    expect(rest.json.scope).toBe('whole')
+    expect(rest.json.messageSent).toBe(true)
+    const first = forks().find((s) => s.id === rest.json.session.id)!
+    expect(first.initialCommand).toBe(`${first.cliCommand} --resume ${CLAUDE_ID} --fork-session`)
+    // an AI opened it: marked like a session open_session made
+    expect(first.aiControl).toMatchObject({ client: 't117' })
+    expect(readConfig().sessionRelations).toContainEqual(expect.objectContaining({ from: PARENT, to: first.id, kind: 'opened' }))
+    await expect.poll(() => terminalLines(page, first.id), { timeout: 30_000 }).toContain(`ARGS: --resume ${CLAUDE_ID} --fork-session`)
+    await expect.poll(() => freshPrompts(fresh), { timeout: 30_000 }).toEqual(['API branch: only the docs'])
+
+    // MCP: the tool is listed, the instructions say when to use it, an excerpt fork goes through
+    const init = await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't117', version: '1' } })
+    expect(init.instructions).toContain('fork_session')
+    const tools = await rpc('tools/list', {})
+    const tool = tools.tools.find((t: { name: string }) => t.name === 'fork_session')
+    expect(tool).toBeTruthy()
+    expect(tool.description).toMatch(/split|fork/i)
+    const mcp = await rpc('tools/call', { name: 'fork_session', arguments: { session_id: PARENT, scope: 'excerpt', message: 'MCP branch' } })
+    expect(mcp.isError).toBeFalsy()
+    const forked = JSON.parse(mcp.content[0].text)
+    expect(forked.scope).toBe('excerpt')
+    await expect.poll(() => freshPrompts(fresh).length, { timeout: 30_000 }).toBe(2)
+    const excerpt = freshPrompts(fresh)[1]
+    expect(excerpt).toContain('Add a guard to src/a.ts')
+    expect(excerpt.trim().endsWith('MCP branch')).toBe(true)
+
+    // refusals: a bad scope, an unknown session, a session with no agent conversation, a turn that is not a reply
+    expect((await api(`/v1/sessions/${PARENT}/fork`, { scope: 'half' })).status).toBe(400)
+    expect((await api('/v1/sessions/no-such-session/fork', {})).status).toBe(404)
+    const shell = await api(`/v1/sessions/${SHELL}/fork`, {})
+    expect(shell.status).toBe(409)
+    expect(shell.json.error.code).toBe('no_conversation')
+    expect((await api(`/v1/sessions/${PARENT}/fork`, { turnIndex: 0 })).status).toBe(409)
+    expect(forks()).toHaveLength(2)
 })

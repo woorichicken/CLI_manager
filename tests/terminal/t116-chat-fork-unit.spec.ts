@@ -222,6 +222,19 @@ test.describe('ConversationService.fork', () => {
         expect(call.prompt.trim().endsWith('Branch here')).toBe(true)
     })
 
+    test('no place given (the Control API): the latest reply, and the AI client marks the new session', async () => {
+        const { service, calls } = setup()
+        const result = await service.fork('parent', { scope: 'excerpt', message: 'go', quote: false }, undefined, { aiClient: 'mcp' })
+        expect(result).toMatchObject({ status: 'forked' })
+        const call = calls[0] as { prompt: string; aiClient?: string }
+        expect(call.aiClient).toBe('mcp')
+        // the latest reply is the second answer: the excerpt reaches it
+        expect(call.prompt).toContain('second answer')
+        // a person's fork from the Chat carries no AI client
+        await service.fork('parent', request())
+        expect((calls[1] as { aiClient?: string }).aiClient).toBeUndefined()
+    })
+
     test('refused: another turn at that place now, a user turn, no linked conversation, an unknown session', async () => {
         const { service, calls } = setup()
         expect(await service.fork('parent', request({ turnTs: '2026-11-10T09:00:00.000Z' }))).toMatchObject({ status: 'rejected', reason: 'turn_changed' })

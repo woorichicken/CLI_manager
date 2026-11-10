@@ -279,10 +279,13 @@ export type InterruptResult =
 export type ChatForkScope = 'whole' | 'excerpt'
 
 export interface ChatForkRequest {
-    /** the reply's place among all the conversation's turns (0 = the first of `totalTurns`) */
-    turnIndex: number
-    /** that turn's `ts` as the view showed it: main forks only while the same turn is at that place */
-    turnTs: string | null
+    /**
+     * the reply's place among all the conversation's turns (0 = the first of `totalTurns`). Absent (the
+     * Control API's default): the latest reply of the agent.
+     */
+    turnIndex?: number
+    /** that turn's `ts` as the view showed it: main forks only while the same turn is at that place. Absent: not checked */
+    turnTs?: string | null
     scope: ChatForkScope
     /** what the person wrote for the new session (may be empty) */
     message: string

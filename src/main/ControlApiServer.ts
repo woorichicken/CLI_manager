@@ -457,6 +457,18 @@ export class ControlApiServer {
                 return { ok: true, ...service.closeSession(params.id, handTo) }
             }),
             route('GET', '/v1/sessions/:id/relations', ({ params }) => service.sessionRelations(params.id)),
+            route('POST', '/v1/sessions/:id/fork', async ({ params, body, client, caller }) =>
+                created(
+                    await service.forkSession(params.id, {
+                        scope: body.scope,
+                        message: optionalString(body, 'message'),
+                        quote: optionalBoolean(body, 'quote'),
+                        turnIndex: optionalNumber(body.turnIndex, 'turnIndex'),
+                        client,
+                        caller
+                    })
+                )
+            ),
             route('POST', '/v1/sessions/:id/session-folder', ({ params, body }) => {
                 const folder = body.folder
                 if (folder !== null && typeof folder !== 'string') {

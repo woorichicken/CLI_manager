@@ -1,5 +1,5 @@
 import { AgentConversations, AgentConversationError } from './agentConversations'
-import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList } from '../shared/conversation'
+import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList, ChatForkRequest, ChatForkResult } from '../shared/conversation'
 import type { ForkOpenInput, ForkOpenResult } from './ConversationService'
 import { existsSync, realpathSync, statSync } from 'fs'
 import path from 'path'
@@ -405,7 +405,28 @@ export interface ControlApiDeps {
      * `codex fork <id>` is not a start the terminal's own detection takes, so a fork asks for it.
      */
     watchCodexStart?: (sessionId: string, baseCommand: string) => void
+    /** The Chat's fork (ConversationService.fork) — `fork_session` checks the reply and builds the command there. */
+    forkConversation?: (sessionId: string, request: ChatForkRequest, aiClient: string) => Promise<ChatForkResult>
 }
+
+export interface ForkSessionInput {
+    scope?: unknown
+    message?: string
+    quote?: boolean
+    /** the reply's place among all the turns; absent: the latest reply */
+    turnIndex?: number
+    client: string
+    caller?: string
+}
+
+export interface ForkSessionResult {
+    session: ApiSession
+    scope: 'whole' | 'excerpt'
+    messageSent: boolean
+    note?: string
+}
+
+const FORK_REFUSALS: Record<string, number> = { unknown_session: 404, no_conversation: 409, turn_changed: 409, too_large: 413, revoked: 401, failed: 500 }
 
 export const CONTROL_API_SESSION_CHANNEL = 'control-api-session'
 export const CONTROL_API_MASTERS_CHANNEL = 'control-api-masters'
@@ -663,6 +684,7 @@ export class ControlApiService {
             cwd: parent.cwd || workspace.path,
             type: 'regular',
             initialCommand: input.command,
+            ...(input.aiClient ? { aiControl: { client: input.aiClient, since: Date.now() } } : {}),
             // the agent is known before its conversation is: a restart of the new session resumes what
             // ClaudeSessionSync / the Codex watch find, on the person's own start command
             cliToolName: input.agent,
@@ -700,6 +722,30 @@ export class ControlApiService {
             result.note = `The first message was not sent: ${error instanceof Error ? error.message : String(error)}`
         }
         return result
+    }
+
+    /**
+     * `fork_session`: the same fork as the Chat's Fork button, asked by an AI — for when the user says to split
+     * the conversation. Reading the session marks it as any read does; the new session is marked AI-driven.
+     */
+    async forkSession(sessionId: string, input: ForkSessionInput): Promise<ForkSessionResult> {
+        const scope = input.scope ?? 'whole'
+        if (scope !== 'whole' && scope !== 'excerpt') throw new ControlApiError(400, 'bad_request', 'scope must be "whole" or "excerpt".')
+        if (input.turnIndex !== undefined && (!Number.isInteger(input.turnIndex) || input.turnIndex < 0)) {
+            throw new ControlApiError(400, 'bad_request', 'turnIndex must be a whole number (0 = the first turn).')
+        }
+        if (input.message !== undefined && input.message.length > MAX_TEXT_LENGTH) {
+            throw new ControlApiError(413, 'too_large', `message is limited to ${MAX_TEXT_LENGTH} characters.`)
+        }
+        this.connect(sessionId, input.client, input.caller)
+        if (!this.deps.forkConversation) throw new ControlApiError(503, 'unavailable', 'Forking is unavailable.')
+        const result = await this.deps.forkConversation(
+            sessionId,
+            { scope, message: input.message ?? '', quote: input.quote === true, ...(input.turnIndex !== undefined ? { turnIndex: input.turnIndex } : {}) },
+            input.client || 'api'
+        )
+        if (result.status === 'rejected') throw new ControlApiError(FORK_REFUSALS[result.reason] ?? 500, result.reason, result.message)
+        return { session: this.getSession(result.sessionId), scope, messageSent: result.messageSent, ...(result.note ? { note: result.note } : {}) }
     }
 
     async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession> {

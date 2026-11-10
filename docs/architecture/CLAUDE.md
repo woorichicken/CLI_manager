@@ -175,6 +175,8 @@ rules stay in the root; this file is the inventory.
   미리 넣지 않는 이유: TerminalView 는 `resumeCommand` 가 있으면 `initialCommand` 대신 그걸 친다 — 아직 없는 대화를 resume 하게 된다.
   누른 뒤 모달은 바로 닫히고 포커스는 원래 자리로(아이콘의 mousedown 이 포커스를 안 뺏는다), 아래 알림 한 줄이 결과(첫 말 들어감·안 들어간 이유·Show)를 보인다.
   폰: `POST /api/phone/chat/:id/fork`(drive 만, 철회 확인 뒤 첫 말 직전에 다시). 대화 파일이 없는 세션은 Whole 을 끄고 이유를 보인다(main 도 거절).
+  AI: Control API `POST /v1/sessions/:id/fork` · MCP `fork_session` · `clim fork`(climanager-session 스킬) — 같은 `ConversationService.fork`, 답을 안 주면 마지막 답,
+  새 세션에 AI 표시. MCP 안내문(`controlApiMcp.ts` INSTRUCTIONS)이 「사람이 세션을 나눠 달라고 명시적으로 말하면 fork_session」을 기본 규칙으로 싣는다 ([`control-api.md`](control-api.md) 「Forking a conversation」).
   입력칸 전용 명령 `/split` 은 백로그. 회귀: `t116-chat-fork-unit` · `t117-chat-fork`(chat-mock `--show-args`·`--fresh-transcript`)
 
 #### 16. Phone connection (Settings › Phone)
