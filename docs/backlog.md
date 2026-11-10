@@ -13,6 +13,14 @@ roadmap and not a wishlist: every entry names a path and a trigger that makes it
 
 Any session may append to `## Open
 
+### Chat 「새 세션으로 보내기」 전용 명령(`/split`)
+- Discovered: 2026-11-10 사람 요청 — 한 세션에서 여러 이야기가 나올 때 한 갈래를 새 세션으로 떼어 보내고 여기서는 하던 일을 계속하고 싶다.
+- Evidence: 먼저 Chat 말풍선 머리의 Fork 버튼 → 모달(대화 전체 복사 `claude --resume <id> --fork-session` · `codex fork <id>` 기본, 기록 발췌 선택)로 만들기로 했다. 같은 동작을 입력칸에서 치는 길은 없다. `split` 은 Claude·Codex 명령 표(`src/main/chatCommands.ts`)에 없어 겹치지 않는다(같은 날 확인).
+- Why deferred: 사람 결정 「전용 명령어는 일단 백로그로」 — 버튼 + 모달을 먼저 써 보고 정한다.
+- Trigger: Fork 버튼을 쓰면서 키보드·폰 입력칸에서 바로 보내고 싶다는 말이 나올 때.
+- Fix direction: 앱이 Chat 입력칸에서 가로채는 `/split <이야기>`(에이전트에는 안 보냄), `/` 메뉴에 「CLI Manager」 묶음으로, 고른 뒤 같은 모달을 연다.
+- Owner: 없음
+
 ### 폰 받아쓰기
 - Discovered: 2026-11-09 사람 결정: 「목소리 기록도 병렬로 바로 시작」, 폰 받아쓰기는 백로그 — 폰 키보드의 마이크로 우선 대체.
 - Evidence: Chat 받아쓰기는 Mac 에서만 돈다(`src/main/Dictation.ts` + Swift 헬퍼). 폰 Chat 은 `phoneChatTransport` 에 `dictation` 이 없어 마이크 버튼이 안 그려진다(`ChatDictation` 이 없으면 숨김, `src/shared/dictation.ts`). 받아쓰기 기록(`DictationLog.ts`)도 Mac 실행만 담는다.
