@@ -49,6 +49,30 @@
     --hl-inserted: #15803d;
     --hl-deleted: #b91c1c;
 }
+/* A Markdown file drawn in the Mac preview (FilePreview renderMarkdown, fb d89cfc4a): the preview is dark in
+   both themes, so the chat's dark tokens, fixed */
+.chat-file-document {
+    --chat-fg: #e0e0e0;
+    --chat-dim: #a0a0a0;
+    --chat-faint: #6b7280;
+    --chat-line: rgba(255, 255, 255, 0.12);
+    --chat-soft: rgba(255, 255, 255, 0.04);
+    --chat-code-bg: rgba(0, 0, 0, 0.35);
+    --hl-keyword: #c792ea;
+    --hl-string: #c3e88d;
+    --hl-number: #f78c6c;
+    --hl-comment: #6b7280;
+    --hl-function: #82aaff;
+    --hl-type: #ffcb6b;
+    --hl-variable: #f07178;
+    --hl-meta: #89ddff;
+    --hl-inserted: #7ee787;
+    --hl-deleted: #ff7b72;
+    color: var(--chat-fg);
+    font-size: 13px;
+    line-height: 1.55;
+    padding: 12px 16px 20px;
+}
 .chat-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 /* room for the session memo button (top right) */
 .chat-scroll > .chat-column { padding-top: 40px; }
@@ -248,16 +272,20 @@
 .chat-stopped { display: inline-flex; align-items: center; gap: 4px; color: var(--chat-faint); font-size: 0.8em; border: 1px dashed var(--chat-line); border-radius: 999px; padding: 1px 8px; }
 .chat-user-fold { display: block; margin-top: 4px; color: #60a5fa; font-size: 0.82em; }
 .chat-user-fold:hover { text-decoration: underline; }
-/* `button.`: the reset's [type="button"] { background: transparent } weighs the same as one class and comes later */
-button.chat-pinned-last {
+.chat-pinned-last {
     position: absolute; top: 8px; left: 16px; right: 16px; z-index: 5; max-width: 828px; margin: 0 auto; display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; text-align: left;
     /* solid: --chat-bubble and --chat-bg are both see-through, and the answer would show through it */
     background: var(--chat-pinned-bg); border: 1px solid var(--chat-line); border-radius: 10px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3); font-size: 0.9em;
 }
 /* the session memo button sits at the top right of a Mac chat */
 .chat-view:not([data-touch]) .chat-pinned-last { right: 56px; }
-.chat-pinned-last > svg { flex-shrink: 0; margin-top: 3px; color: var(--chat-faint); }
+.chat-pinned-last { flex-direction: column; gap: 4px; }
+.chat-pinned-last-toggle { display: flex; align-items: flex-start; gap: 8px; min-width: 0; width: 100%; text-align: left; color: inherit; font: inherit; }
+.chat-pinned-last-toggle > svg { flex-shrink: 0; margin-top: 3px; color: var(--chat-faint); }
 .chat-pinned-last-text { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.chat-pinned-last[data-expanded="true"] .chat-pinned-last-text { display: block; -webkit-line-clamp: unset; }
+.chat-pinned-last-go { align-self: flex-end; color: #60a5fa; font-size: 0.85em; padding: 0 2px; }
+.chat-pinned-last-go:hover { text-decoration: underline; }
 .chat-copy-answer { display: inline-flex; gap: 2px; margin-left: 8px; opacity: 0; transition: opacity 0.15s; }
 .chat-turn-assistant:hover .chat-copy-answer, .chat-copy-answer:focus-within { opacity: 1; }
 .chat-copy-answer button { color: var(--chat-faint); padding: 2px; border-radius: 4px; }
@@ -306,6 +334,10 @@ button.chat-pinned-last {
 .chat-diff-line.is-del { background: rgba(248, 113, 113, 0.12); color: var(--hl-deleted); }
 .chat-diff-sign { width: 1ch; flex-shrink: 0; color: var(--chat-faint); }
 .chat-file-link { color: #60a5fa; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; text-align: left; overflow-wrap: anywhere; font: inherit; }
+/* a span (role=button) that reads as words: a drag over it selects them (d05e93fc) */
+span.chat-file-link { cursor: pointer; user-select: text; -webkit-user-select: text; }
+span.chat-file-link:focus-visible { outline: 1px solid #60a5fa; outline-offset: 1px; border-radius: 2px; }
+.chat-view a[href] { -webkit-user-drag: none; }
 .chat-file-link:hover { text-decoration-style: solid; }
 .chat-file-link.is-code { text-decoration: none; }
 .chat-file-link.is-code code { color: #93c5fd; }

@@ -101,6 +101,7 @@ declare global {
 
             // CLI Session Tracking
             onCliSessionDetected: (callback: (data: { workspaceId: string; sessionId: string; cliSessionId: string; cliToolName: string; cliCommand?: string }) => void) => () => void
+            onAgentPending: (callback: (data: { sessionId: string; agent: 'codex' | null }) => void) => () => void
             updateSessionCliInfo: (workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string) => Promise<boolean>
             clearSessionCliInfo: (workspaceId: string, sessionId: string) => Promise<boolean>
             listAgentConversations: (sessionId: string) => Promise<AgentConversationList | AgentConversationFailure>

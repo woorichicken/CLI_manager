@@ -3,6 +3,11 @@ import { X, FileText, Loader2, AlertCircle, ExternalLink, Image } from 'lucide-r
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { IMAGE_EXTENSIONS } from '../../../shared/fileKinds'
+import { Markdown } from './ChatView/markdown/Markdown'
+import './ChatView/chat.css'
+
+/** Files drawn as their words with `renderMarkdown` (the phone file panel's list, PhoneFilePanel MARKDOWN_NAME). */
+const MARKDOWN_NAME = /\.(?:md|mdx|markdown)$/i
 
 const isImageFile = (filePath: string): boolean => {
     const ext = filePath.split('.').pop()?.toLowerCase() || ''
@@ -16,6 +21,11 @@ interface FilePreviewProps {
     relativePath?: string
     line?: number
     onOpenInEditor?: () => void
+    /**
+     * A Markdown file opens drawn (headings, lists, tables), with Preview / Source above it — as the phone's
+     * file panel (fb d89cfc4a). Asked for by the Chat's preview; ⌘P file search keeps its source view.
+     */
+    renderMarkdown?: boolean
 }
 
 // Map file extensions to Prism language identifiers
@@ -84,8 +94,12 @@ const getLanguageFromPath = (filePath: string): string => {
     return langMap[ext] || 'text'
 }
 
-export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onOpenInEditor }: FilePreviewProps) {
+export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onOpenInEditor, renderMarkdown = false }: FilePreviewProps) {
     const [content, setContent] = useState<string>('')
+    const markdown = renderMarkdown && MARKDOWN_NAME.test(filePath)
+    // a line asked for is a place in the source: the drawn words have no line numbers
+    const [source, setSource] = useState(!markdown || line !== undefined)
+    useEffect(() => setSource(!markdown || line !== undefined), [filePath, line, markdown])
     const [imageData, setImageData] = useState<{ data: string; mimeType: string } | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -203,6 +217,28 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
+                        {markdown && (
+                            <div className="flex items-center mr-1 rounded border border-white/10 overflow-hidden text-[11px]" role="group" aria-label="Preview or source">
+                                <button
+                                    type="button"
+                                    aria-pressed={!source}
+                                    data-testid="file-preview-rendered"
+                                    onClick={() => setSource(false)}
+                                    className={`px-2 py-0.5 transition-colors ${!source ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    Preview
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-pressed={source}
+                                    data-testid="file-preview-source"
+                                    onClick={() => setSource(true)}
+                                    className={`px-2 py-0.5 transition-colors ${source ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    Source
+                                </button>
+                            </div>
+                        )}
                         {onOpenInEditor && (
                             <button
                                 onClick={onOpenInEditor}
@@ -251,8 +287,15 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                         </div>
                     )}
 
+                    {/* Markdown, drawn */}
+                    {!loading && !error && content && !source && (
+                        <div className="chat-file-document" data-testid="file-preview-document">
+                            <Markdown>{content}</Markdown>
+                        </div>
+                    )}
+
                     {/* Code Preview */}
-                    {!loading && !error && content && (
+                    {!loading && !error && content && source && (
                         <SyntaxHighlighter
                             language={language}
                             style={vscDarkPlus}

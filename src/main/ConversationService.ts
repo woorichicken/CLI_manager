@@ -94,8 +94,12 @@ export interface ConversationMirror {
     screen(id: string): string[]
     flush(id: string): Promise<void>
     lastOutputAt(id: string): number
+    /** TerminalMirror.outputCount — what refreshScreen compares; lastOutputAt without it */
+    outputCount?(id: string): number
     hasExited(id: string): boolean
     showsAwaitingInput(id: string): boolean
+    /** TerminalMirror.asksQuestion — the Chat's own, stricter test; showsAwaitingInput without it */
+    asksQuestion?(id: string): boolean
     inputBox(id: string): { typed: string; clipped?: boolean; typedRows?: number } | null
 }
 
@@ -238,7 +242,9 @@ export class ConversationService {
         const agent = agentOf(info)
         if (!info?.cliSessionId || agent === null) {
             this.dropIfIdle(sessionId, entry)
-            return { ...base, agent, unavailable: 'no-conversation', turns: [], totalTurns: 0, truncated: false }
+            // the agent runs and its file comes with the first message (Codex writes its rollout then):
+            // nothing is wrong — the chat says «no conversation yet» and takes that first message
+            return { ...base, agent, unavailable: agent === null ? 'no-conversation' : 'not-found', turns: [], totalTurns: 0, truncated: false }
         }
         try {
             const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
@@ -657,7 +663,9 @@ export class ConversationService {
     }
 
     private blockedReason(sessionId: string, entry: Watched): ChatSendResult | null {
-        if (entry.prompt || this.deps.mirror.showsAwaitingInput(sessionId) && !entry.working) {
+        const mirror = this.deps.mirror
+        const asks = mirror.asksQuestion ? mirror.asksQuestion(sessionId) : mirror.showsAwaitingInput(sessionId)
+        if (entry.prompt || (asks && !entry.working)) {
             return {
                 status: 'rejected',
                 reason: 'awaiting_input',
@@ -783,14 +791,30 @@ export class ConversationService {
      * kept until the next output (a question card staying after its answer, or never showing).
      */
     private async refreshScreen(sessionId: string, entry: Watched, force = false): Promise<void> {
-        const outputAt = this.deps.mirror.lastOutputAt(sessionId)
+        // read before the flush, so a chunk that comes after counts as new. A count, not the time: the
+        // agent closing a menu in two writes within one millisecond left the card up until more output came
+        // (chat-gap-r3-1109, T113 — the screen was read between the two)
+        const mirror = this.deps.mirror
+        const outputAt = mirror.outputCount ? mirror.outputCount(sessionId) : mirror.lastOutputAt(sessionId)
         if (!force && outputAt === entry.lastScreenAt) return
-        await this.deps.mirror.flush(sessionId)
+        await mirror.flush(sessionId)
         entry.lastScreenAt = outputAt
         const screen = this.deps.mirror.screen(sessionId)
         entry.working = screen.some(isBusyRow)
         entry.screenMode = screenAgentMode(screen)
         entry.prompt = entry.working ? null : readPrompt(screen, agentOf(this.deps.session(sessionId)) ?? 'claude')
+        // any read can be the one a view gets (getConversation reads too): a change it sees is announced
+        // here, or the next poll compares two equal states and the view keeps a card already answered
+        // (chat-gap-r3-1109, T113: main said no prompt at rev 7 while the card it had sent at rev 7 stayed)
+        this.noteState(sessionId, entry)
+    }
+
+    /** Bumps the revision when what views show (conversation id, working, mode, menu, queue) changed. */
+    private noteState(sessionId: string, entry: Watched): void {
+        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
+        if (key === entry.lastKey) return
+        entry.lastKey = key
+        this.bump(sessionId, entry)
     }
 
     private ensureTimer(): void {
@@ -832,11 +856,8 @@ export class ConversationService {
                     console.error('[conversation] poll read failed', sessionId, error)
                 }
             }
-            const key = JSON.stringify([info?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
-            if (transcriptChanged || key !== entry.lastKey) {
-                entry.lastKey = key
-                this.bump(sessionId, entry)
-            }
+            if (transcriptChanged) this.bump(sessionId, entry)
+            this.noteState(sessionId, entry)
             await this.drainQueue(sessionId, entry)
         }
         if (this.watched.size === 0) this.stopTimer()

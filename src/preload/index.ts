@@ -138,6 +138,12 @@ const api = {
         ipcRenderer.on('cli-session-detected', handler)
         return () => ipcRenderer.removeListener('cli-session-detected', handler)
     },
+    /** A Codex started and waits for its first message (`agent: 'codex'`), or no longer does (`null`). */
+    onAgentPending: (callback: (data: { sessionId: string; agent: 'codex' | null }) => void): () => void => {
+        const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; agent: 'codex' | null }) => callback(data)
+        ipcRenderer.on('agent-pending', handler)
+        return () => ipcRenderer.removeListener('agent-pending', handler)
+    },
     updateSessionCliInfo: (workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string): Promise<boolean> =>
         ipcRenderer.invoke('update-session-cli-info', workspaceId, sessionId, cliSessionId, cliToolName, cliCommand),
     clearSessionCliInfo: (workspaceId: string, sessionId: string): Promise<boolean> =>

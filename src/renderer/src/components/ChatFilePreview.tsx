@@ -26,6 +26,7 @@ export function ChatFilePreview({ openInApp = true }: { openInApp?: boolean }) {
             isOpen
             filePath={target.path}
             line={target.line}
+            renderMarkdown
             onClose={() => setTarget(null)}
             onOpenInEditor={() => {
                 void window.api.openFileInEditor(target.path, '/', target.line)

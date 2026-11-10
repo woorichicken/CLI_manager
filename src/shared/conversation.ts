@@ -313,6 +313,11 @@ export interface ChatPreferences {
     dictationLog?: boolean
     /** With the log on, also keep each run's sound (7 days). Default off. */
     dictationLogAudio?: boolean
+    /**
+     * Every work block starts folded, the running one too — only one that waits on the person opens
+     * (fb 4c6ea086). Off: the running block opens, as in ovis by default. Default on.
+     */
+    foldWork?: boolean
 }
 
 export const DEFAULT_QUICK_REPLIES = ['continue', 'yes', 'no', 'retry']

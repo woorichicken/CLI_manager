@@ -13,21 +13,72 @@ import { foldCode, parseMarkdown, type InlineNode, type ListBlock, type Markdown
 import { languageForFence } from './highlight'
 import { HighlightedCode } from './HighlightedCode'
 
-/** A file path the chat can open: a button that reads as the text or code it replaced. */
-export function FilePathLink({ path, code, open }: { path: string; code: boolean; open: (path: string) => void }) {
+/** Words were just selected by a drag: the click that ends it opens nothing (d05e93fc). */
+export function endsADrag(): boolean {
+    const selection = window.getSelection()
+    return selection !== null && !selection.isCollapsed && selection.toString().trim().length > 0
+}
+
+/**
+ * Something the chat opens (a file, a session), drawn as the words it replaced. A span with the
+ * button role, not a <button>: a drag that starts on a button selects nothing — the person could not
+ * copy a line with a path in it (d05e93fc). Enter and Space open it as a button would.
+ */
+export function ChatLink({ className = 'chat-file-link', title, testId, onOpen, children }: { className?: string; title: string; testId: string; onOpen: () => void; children: ReactNode }) {
     return (
-        <button type="button" className={`chat-file-link${code ? ' is-code' : ''}`} title={`Open ${path}`} data-testid="chat-file-link" onClick={() => open(path)}>
-            {code ? <code>{path}</code> : path}
-        </button>
+        <span
+            role="button"
+            tabIndex={0}
+            className={className}
+            title={title}
+            data-testid={testId}
+            onClick={() => {
+                if (!endsADrag()) onOpen()
+            }}
+            onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                onOpen()
+            }}
+        >
+            {children}
+        </span>
     )
 }
 
-/** A session link: a button that reads as the link it replaced and shows that session (b2020233). */
+/** A file path the chat can open: reads as the text or code it replaced. */
+export function FilePathLink({ path, code, open }: { path: string; code: boolean; open: (path: string) => void }) {
+    return (
+        <ChatLink className={`chat-file-link${code ? ' is-code' : ''}`} title={`Open ${path}`} testId="chat-file-link" onOpen={() => open(path)}>
+            {code ? <code>{path}</code> : path}
+        </ChatLink>
+    )
+}
+
+/** A session link: reads as the link it replaced and shows that session (b2020233). */
 export function SessionLinkButton({ uri, code, open }: { uri: string; code: boolean; open: (uri: string) => void }) {
     return (
-        <button type="button" className={`chat-file-link${code ? ' is-code' : ''}`} title="Show this session" data-testid="chat-session-link" onClick={() => open(uri)}>
+        <ChatLink className={`chat-file-link${code ? ' is-code' : ''}`} title="Show this session" testId="chat-session-link" onOpen={() => open(uri)}>
             {code ? <code>{uri}</code> : uri}
-        </button>
+        </ChatLink>
+    )
+}
+
+/** A web link: a drag over it selects its words instead of dragging the address away (d05e93fc). */
+function WebLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+    return (
+        <a
+            className={className}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            draggable={false}
+            onClick={(event) => {
+                if (endsADrag()) event.preventDefault()
+            }}
+        >
+            {children}
+        </a>
     )
 }
 
@@ -85,9 +136,9 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                         // agents often put an address in backticks: it stays code to the eye, and opens
                         if (interactive && /^https?:\/\/\S+$/i.test(node.value)) {
                             return (
-                                <a key={key} className="chat-md-code-link" href={node.value} target="_blank" rel="noopener noreferrer">
+                                <WebLink key={key} className="chat-md-code-link" href={node.value}>
                                     <code>{node.value}</code>
-                                </a>
+                                </WebLink>
                             )
                         }
                         return <code key={key}>{node.value}</code>
@@ -118,15 +169,15 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                         if (interactive && actions?.openSessionLink && parseSessionLink(node.href)) {
                             const open = actions.openSessionLink
                             return (
-                                <button key={key} type="button" className="chat-file-link" title="Show this session" data-testid="chat-session-link" onClick={() => open(node.href)}>
+                                <ChatLink key={key} title="Show this session" testId="chat-session-link" onOpen={() => open(node.href)}>
                                     <Inline nodes={node.children} interactive={false} />
-                                </button>
+                                </ChatLink>
                             )
                         }
                         return interactive ? (
-                            <a key={key} href={node.href} target="_blank" rel="noopener noreferrer">
+                            <WebLink key={key} href={node.href}>
                                 <Inline nodes={node.children} interactive={false} />
-                            </a>
+                            </WebLink>
                         ) : (
                             <Inline key={key} nodes={node.children} interactive={false} />
                         )
@@ -134,9 +185,9 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                     case 'file':
                         if (interactive && actions?.canOpenPaths) {
                             return (
-                                <button key={key} type="button" className="chat-file-link" title={`Open ${node.path}`} data-testid="chat-file-link" onClick={() => actions.openPath(node.path)}>
+                                <ChatLink key={key} title={`Open ${node.path}`} testId="chat-file-link" onOpen={() => actions.openPath(node.path)}>
                                     <Inline nodes={node.children} interactive={false} />
-                                </button>
+                                </ChatLink>
                             )
                         }
                         return (

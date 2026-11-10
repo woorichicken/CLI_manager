@@ -661,11 +661,20 @@ export class ControlApiService {
      * false throws `revoked` and nothing more goes (F02).
      */
     async typeForChat(sessionId: string, text: string, allowed?: () => boolean): Promise<boolean> {
-        return this.typeAndSubmit(sessionId, { text, submit: true }, allowed)
+        // the person sees the screen: the stricter question test, as ConversationService's own check
+        return this.typeAndSubmit(sessionId, { text, submit: true }, allowed, (id) => this.deps.mirror.asksQuestion(id))
     }
 
-    /** Returns false only when the text is provably still sitting unsubmitted in the input box. */
-    private async typeAndSubmit(sessionId: string, input: SendInputInput, allowed?: () => boolean): Promise<boolean> {
+    /**
+     * Returns false only when the text is provably still sitting unsubmitted in the input box.
+     * `asks`: what counts as a question that refuses text — the API's showsAwaitingInput unless the Chat says.
+     */
+    private async typeAndSubmit(
+        sessionId: string,
+        input: SendInputInput,
+        allowed?: () => boolean,
+        asks: (id: string) => boolean = (id) => this.deps.mirror.showsAwaitingInput(id)
+    ): Promise<boolean> {
         const stillAllowed = (): void => {
             if (allowed && !allowed()) throw new ControlApiError(401, 'revoked', 'This device was disconnected from the Mac.')
         }
@@ -688,7 +697,7 @@ export class ControlApiService {
 
         if (input.text !== undefined && !input.force) {
             await this.deps.mirror.flush(sessionId)
-            if (this.deps.mirror.showsAwaitingInput(sessionId)) {
+            if (asks(sessionId)) {
                 throw new ControlApiError(
                     409,
                     'awaiting_input',

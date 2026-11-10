@@ -370,12 +370,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ))}
                     </nav>
                 )}
-                {lastSaid && lastAbove && (
-                    <button type="button" className="chat-pinned-last" data-testid="chat-pinned-last" title="Go to your last message" onClick={() => jumpTo(lastSaid.index)}>
-                        <CornerRightUp size={12} aria-hidden="true" />
-                        <span className="chat-pinned-last-text">{lastSaid.words}</span>
-                    </button>
-                )}
+                {lastSaid && lastAbove && <PinnedLastMessage key={lastSaid.index} words={lastSaid.words} onGo={() => jumpTo(lastSaid.index)} />}
                 <div className="chat-scroll" ref={scroller} onScroll={onScroll} data-testid="chat-scroll">
                     <div className="chat-column" ref={column}>
                         {snapshot === null ? (
@@ -388,7 +383,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} onShowEarlier={() => (pinned.current = false, setLimit((current) => current + MORE_TURNS))} />
+                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onShowEarlier={() => (pinned.current = false, setLimit((current) => current + MORE_TURNS))} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -486,7 +481,45 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     )
 }
 
-function Turns({ snapshot, onShowEarlier }: { snapshot: ConversationSnapshot; onShowEarlier: () => void }) {
+/** A pinned message this many lines long, or shorter, opens where it is; a longer one goes to the message (babcdbc9). */
+const PINNED_OPEN_MAX_LINES = 8
+
+/**
+ * The person's last message over the chat once it scrolled away (edf2aef3). Cut to two lines; a click opens
+ * the rest in place when it is short enough (babcdbc9: «the box grows to show it — past N lines, go up to it»),
+ * and goes to the message when it is longer or nothing was cut.
+ */
+function PinnedLastMessage({ words, onGo }: { words: string; onGo: () => void }) {
+    const [expanded, setExpanded] = useState(false)
+    const text = useRef<HTMLSpanElement>(null)
+    const press = (): void => {
+        if (expanded) return setExpanded(false)
+        const element = text.current
+        if (!element) return onGo()
+        const line = parseFloat(getComputedStyle(element).lineHeight) || 20
+        const cut = element.scrollHeight > element.clientHeight + 1
+        const lines = Math.round(element.scrollHeight / line)
+        if (cut && lines <= PINNED_OPEN_MAX_LINES) setExpanded(true)
+        else onGo()
+    }
+    return (
+        <div className="chat-pinned-last" data-testid="chat-pinned-last" data-expanded={expanded ? 'true' : 'false'}>
+            <button type="button" className="chat-pinned-last-toggle" data-testid="chat-pinned-last-toggle" title={expanded ? 'Fold it' : 'Show your last message'} aria-expanded={expanded} onClick={press}>
+                <CornerRightUp size={12} aria-hidden="true" />
+                <span className="chat-pinned-last-text" data-testid="chat-pinned-last-text" ref={text}>
+                    {words}
+                </span>
+            </button>
+            {expanded && (
+                <button type="button" className="chat-pinned-last-go" data-testid="chat-pinned-last-go" title="Go to your last message" onClick={onGo}>
+                    Go to message
+                </button>
+            )}
+        </div>
+    )
+}
+
+function Turns({ snapshot, foldWork, onShowEarlier }: { snapshot: ConversationSnapshot; foldWork: boolean; onShowEarlier: () => void }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
     return (
@@ -515,6 +548,7 @@ function Turns({ snapshot, onShowEarlier }: { snapshot: ConversationSnapshot; on
                     working={snapshot.working}
                     waiting={snapshot.prompt !== null}
                     agent={agent}
+                    foldWork={foldWork}
                 />
             ))}
         </>

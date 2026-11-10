@@ -170,11 +170,25 @@ const codexSessionLocator = new CodexSessionLocator(undefined, {
     isClaimed: (id) => ((store.get('workspaces') as Workspace[] | undefined) ?? []).some((w) => w.sessions.some((s) => s.cliSessionId === id))
 })
 const codexCaptureStops = new Map<string, () => void>()
+/**
+ * Sessions running a Codex that has written no rollout yet — Codex writes it with the first message,
+ * and the app finds the conversation by that file. Until then the Chat shows «no conversation yet» and
+ * takes that first message (chat-gap-1109 finding: no Chat button before it). In memory only: what is
+ * stored stays the found conversation (`cliToolName` + `cliSessionId`, set together).
+ */
+const codexAwaitingFirstMessage = new Set<string>()
+function setCodexAwaitingFirstMessage(id: string, waiting: boolean): void {
+    if (waiting === codexAwaitingFirstMessage.has(id)) return
+    if (waiting) codexAwaitingFirstMessage.add(id)
+    else codexAwaitingFirstMessage.delete(id)
+    broadcast('agent-pending', { sessionId: id, agent: waiting ? 'codex' : null })
+}
 const pendingSessionRestores = new Set<string>()
 let forgetClaudeSession = (_id: string): void => {}
 function stopCodexCapture(id: string): void {
     codexCaptureStops.get(id)?.()
     codexCaptureStops.delete(id)
+    setCodexAwaitingFirstMessage(id, false)
 }
 
 /**
@@ -452,7 +466,10 @@ const conversationService = new ConversationService({
         const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
         for (const workspace of workspaces) {
             const session = workspace.sessions?.find((s) => s.id === id)
-            if (session) return { cwd: session.cwd || workspace.path, cliSessionId: session.cliSessionId, cliToolName: session.cliToolName }
+            if (session) {
+                const cliToolName = session.cliToolName ?? (codexAwaitingFirstMessage.has(id) ? 'codex' : undefined)
+                return { cwd: session.cwd || workspace.path, cliSessionId: session.cliSessionId, cliToolName }
+            }
         }
         return null
     },
@@ -1402,8 +1419,11 @@ app.whenReady().then(async () => {
             codexCaptureStops.delete(terminalId)
             console.log(`[codex-session] ${terminalId} → ${cliSessionId}`)
             persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'codex', baseCommand })
+            setCodexAwaitingFirstMessage(terminalId, false)
         }, { terminalId, shellPid })
         codexCaptureStops.set(terminalId, stop)
+        // the Chat is there from the start; its first message makes the rollout this watch finds
+        setCodexAwaitingFirstMessage(terminalId, true)
     }
     cliSessionTracker.onCodexStarted = startCodexCapture
     const resumeChecks = new Map<string, symbol>()

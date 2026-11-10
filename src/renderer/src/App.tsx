@@ -17,7 +17,7 @@ import { SessionBreadcrumb } from './components/SessionBreadcrumb'
 import { SessionViewToggle } from './components/SessionViewToggle'
 import { SessionChatSlot } from './components/SessionChatSlot'
 import { ChatFilePreview } from './components/ChatFilePreview'
-import { isAgentSession } from './utils/agentSession'
+import { isAgentSession, setAgentPending, useAgentPendingVersion } from './utils/agentSession'
 import { getSessionViewMode, setSessionViewMode } from './hooks/useSessionViewMode'
 import { sendChatCommand } from './components/ChatView/chatContext'
 import { HandoffNoticeToast } from './components/ChatView/HandoffNoticeToast'
@@ -155,6 +155,10 @@ function App() {
         })
         return cleanup
     }, [])
+
+    // A Codex waiting for its first message has a Chat too (its conversation file comes with that message)
+    useAgentPendingVersion()
+    useEffect(() => window.api.onAgentPending(({ sessionId, agent }) => setAgentPending(sessionId, agent)), [])
 
     useEffect(() => window.api.onSessionRestoreBlocked(({ sessionId, message }) => showHandoffNotice(sessionId, message)), [])
 
