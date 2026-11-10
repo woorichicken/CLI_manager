@@ -78,7 +78,16 @@ test('T122 the turn-end line, the recap and the background count show in the cha
         await page.waitForTimeout(800)
         await page.screenshot({ path: path.join(process.env.T122_SHOTS, `a0ba-chat-${process.env.T122_LABEL ?? 'run'}.png`) })
     }
-    await expect(view.getByTestId('chat-turn-done')).toHaveText(/^Took 29s · done \d{1,2}:\d{2}/)
+    // the time follows the Mac's region (as every time in the chat): the expected words are made in the
+    // app's own window the way ChatTurn's clockTime makes them, from the record's timestamp — «2:14 PM»
+    // in English, «오후 2:14» in Korean (v1.32 preflight ran with ko_KR and failed on a hand-written pattern)
+    const doneAt = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line)).find((entry) => entry.subtype === 'turn_duration').timestamp as string
+    const doneTime = await page.evaluate((ts) => {
+        const date = new Date(ts)
+        const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        return date.toDateString() === new Date().toDateString() ? time : `${date.toLocaleDateString([], { month: 'numeric', day: 'numeric' })} ${time}`
+    }, doneAt)
+    await expect(view.getByTestId('chat-turn-done')).toHaveText(`Took 29s · done ${doneTime}`)
     await expect(view.getByTestId('chat-recap')).toHaveText(`※ recap ${RECAP}`)
     await expect(view.getByTestId('chat-background-chip')).toHaveText('1 shell · 1 agent')
     // the table in the answer is a table, as before
