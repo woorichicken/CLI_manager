@@ -81,6 +81,10 @@ export interface ConversationTurn {
     /** Last recorded assistant activity, never the next user's timestamp. */
     end_ts?: string
     parts: ConversationPart[]
+    /** Claude's turn-end record (`turn_duration`): when the turn finished and how long it took */
+    done?: { at: string; ms: number }
+    /** Claude's idle recap (`away_summary`) written after this answer */
+    recap?: string
 }
 
 export type ConversationAgent = 'claude' | 'codex'
@@ -164,6 +168,11 @@ export interface ConversationMeta {
      * shows one, else what the last prompt recorded (`permissionMode`); Codex: its turn_context.
      */
     mode?: string | null
+    /**
+     * What runs in the background, as Claude's row under its input box counts it (`· 1 shell · ← 2 agents`).
+     * Screen only — the records do not keep a running count (fb-1110 a0ba98c4). Absent: the row shows none.
+     */
+    background?: { shells: number; agents: number }
 }
 
 /** A message sent from the chat while the agent worked, waiting for the turn to end. */

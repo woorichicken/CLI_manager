@@ -459,3 +459,8 @@ button.chat-attachment-chip:hover { background: rgba(255, 255, 255, 0.16); }
 .chat-fork-notice[data-state="rejected"] svg { color: #fca5a5; }
 .chat-fork-notice button { color: #94a3b8; flex-shrink: 0; }
 .chat-fork-notice .chat-fork-show { color: #93c5fd; text-decoration: underline; }
+
+/* Claude's turn-end line and idle recap (fb-1110 a0ba98c4): quiet, under the answer */
+.chat-turn-done { margin-top: 6px; font-size: 0.78em; color: var(--chat-dim); }
+.chat-recap { margin-top: 6px; font-size: 0.86em; font-style: italic; color: var(--chat-dim); line-height: 1.5; }
+.chat-recap-label { font-style: normal; font-weight: 600; margin-right: 4px; }

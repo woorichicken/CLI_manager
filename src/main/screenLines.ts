@@ -70,6 +70,32 @@ export function screenAgentMode(rows: string[]): string | null {
     return null
 }
 
+/** `· 1 shell`, `· 3 shells`, `← 1 agent`, `2 agents` on Claude's rows under its input box (2.1.319–2.1.322, captured). */
+const BACKGROUND_SHELLS = /(?:^|[·\s])(\d+)\s+shells?\b/
+const BACKGROUND_AGENTS = /(?:^|[·←\s])(\d+)\s+(?:background\s+)?agents?\b/
+
+/**
+ * Background shells and agents the screen counts, or null when it counts none. Only under the last input
+ * box rule, like the mode: «1 shell» in the conversation above is words (fb-1110 a0ba98c4).
+ */
+export function screenBackground(rows: string[]): { shells: number; agents: number } | null {
+    let start = -1
+    for (let row = rows.length - 1; row >= 0; row--) {
+        if (isInputBoxRule(rows[row].trim())) {
+            start = row
+            break
+        }
+    }
+    if (start < 0) return null
+    let shells = 0
+    let agents = 0
+    for (const row of rows.slice(start + 1)) {
+        shells = Math.max(shells, Number(BACKGROUND_SHELLS.exec(row)?.[1] ?? 0))
+        agents = Math.max(agents, Number(BACKGROUND_AGENTS.exec(row)?.[1] ?? 0))
+    }
+    return shells > 0 || agents > 0 ? { shells, agents } : null
+}
+
 /** Long enough for a sentence; the dialog truncates further to fit. */
 const MAX_LAST_LINE_LENGTH = 200
 

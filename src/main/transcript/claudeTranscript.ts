@@ -433,6 +433,8 @@ export interface TranscriptEntry {
   /** "updates": Claude Code shows the entry's thinking text as a progress message, not as reasoning */
   thinkingDisplay?: unknown;
   message?: { role?: string; content?: unknown; stop_reason?: unknown };
+  /** a `turn_duration` entry: how long the turn took */
+  durationMs?: unknown;
   attachment?: { type?: unknown; prompt?: unknown; commandMode?: unknown; origin?: { kind?: unknown } };
 }
 
@@ -551,6 +553,17 @@ function claudeTranscriptParser(options: ClaudeTranscriptOptions, state: ClaudeP
     return turn;
   };
 
+  /** The answer a turn-end record belongs to: the last agent turn, past notices written after it; none
+   *  when a person's prompt came after it. */
+  const answerBefore = (): ConversationTurn | undefined => {
+    for (let at = turns.length - 1; at >= 0; at--) {
+      const turn = turns[at];
+      if (turn.role === "assistant") return turn;
+      if (!turn.parts.every((part) => part.kind === "notice" || part.kind === "task_result")) return undefined;
+    }
+    return undefined;
+  };
+
   /** the last human prompt and the entry it hangs from: a send Claude Code cancelled before
    *  any reply is re-sent as a sibling of it, and its own screen shows only the re-send */
   const pushPrompt = (turn: ConversationTurn, entry: TranscriptEntry): void => {
@@ -606,6 +619,22 @@ function claudeTranscriptParser(options: ClaudeTranscriptOptions, state: ClaudeP
       const output = localCommandOutput(entry.content);
       const at = noticeAt();
       if (output.length > 0 && !saidByOtherKind(turns[at - 1], output, entry.timestamp ?? null, "local-command")) turns.splice(at, 0, { role: "user", ts: entry.timestamp ?? null, parts: [{ kind: "notice", text: output, source: "local-command" }] });
+      return;
+    }
+
+    // The turn-end line (`✻ Crunched for 29s · done 2:14 PM`) and the idle recap (`※ recap: …`) are
+    // records too, written after the answer: they hang on it, so the turn's shape does not change
+    // (fb-1110 a0ba98c4 — the chat showed neither).
+    if (entry.type === "system" && entry.subtype === "turn_duration") {
+      const answer = answerBefore();
+      const ms = typeof entry.durationMs === "number" ? entry.durationMs : Number.NaN;
+      if (answer && Number.isFinite(ms) && ms >= 0 && entry.timestamp) answer.done = { at: entry.timestamp, ms };
+      return;
+    }
+    if (entry.type === "system" && entry.subtype === "away_summary") {
+      const text = typeof entry.content === "string" ? capNotice(stripTerminalControls(entry.content).trim()) : "";
+      const answer = answerBefore();
+      if (answer && text.length > 0) answer.recap = text;
       return;
     }
 

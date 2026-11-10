@@ -5,7 +5,7 @@ import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
 import { endedOnAnswer } from './workBlocks'
 import { appendDraft, Composer, type ComposerHandle } from './Composer'
-import { ArtifactsChip, ContextChip, ModeChip, ModelChip, PlanChip } from './ComposerChips'
+import { ArtifactsChip, BackgroundChip, ContextChip, ModeChip, ModelChip, PlanChip } from './ComposerChips'
 import { ImageLightbox } from './ChatImages'
 import { PromptCard } from './PromptCard'
 import { QueuedMessages } from './QueuedMessages'
@@ -507,6 +507,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                     <PlanChip items={todos} />
                                     <ArtifactsChip links={artifacts} onOpen={(url) => transport.openLink(url)} />
                                     <ModeChip agent={agent} meta={snapshot?.meta ?? null} />
+                                    <BackgroundChip meta={snapshot?.meta ?? null} />
                                     <span className="chat-status-spacer" />
                                     <ModelChip agent={agent} meta={snapshot?.meta ?? null} working={working} onCommand={(text) => void sendText(text)} />
                                     <ContextChip meta={snapshot?.meta ?? null} canCompact={!working && !prompt} onCompact={() => void sendText('/compact')} />

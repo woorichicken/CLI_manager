@@ -17,7 +17,7 @@ import type {
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
 // the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
 import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatView/chatMentions'
-import { isBusyRow, screenAgentMode } from './screenLines'
+import { isBusyRow, screenAgentMode, screenBackground } from './screenLines'
 import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 import type { AliasResolver } from '../shared/agentCommand'
@@ -184,6 +184,8 @@ interface Watched {
     working: boolean
     /** the mode the screen shows under the input box; null: it shows none */
     screenMode: string | null
+    /** background shells and agents the screen counts (screenBackground), or null */
+    background?: { shells: number; agents: number } | null
     prompt: PromptMenu | null
     queue: QueueItem[]
     sending: boolean
@@ -307,7 +309,8 @@ export class ConversationService {
             if (read === null) return { ...base, agent, unavailable: 'not-found', turns: [], totalTurns: 0, truncated: false }
             const turns = read.turns.slice(-Math.max(1, Math.min(limit, 2000)))
             // the screen follows shift+tab at once; the record only names the mode of the last prompt
-            const meta = agent === 'claude' && entry.screenMode ? { ...(read.meta ?? { model: null, effort: null }), mode: entry.screenMode } : read.meta
+            const screenMeta = agent === 'claude' ? { ...(entry.screenMode ? { mode: entry.screenMode } : {}), ...(entry.background ? { background: entry.background } : {}) } : {}
+            const meta = Object.keys(screenMeta).length > 0 ? { ...(read.meta ?? { model: null, effort: null }), ...screenMeta } : read.meta
             return { ...base, agent, turns, totalTurns: read.turns.length, truncated: read.truncated, meta }
         } catch (error) {
             console.error('[conversation] read failed', sessionId, error)
@@ -935,6 +938,7 @@ export class ConversationService {
         const screen = this.deps.mirror.screen(sessionId)
         entry.working = screen.some(isBusyRow)
         entry.screenMode = screenAgentMode(screen)
+        entry.background = screenBackground(screen)
         entry.prompt = entry.working ? null : readPrompt(screen, agentOf(this.deps.session(sessionId)) ?? 'claude')
         // any read can be the one a view gets (getConversation reads too): a change it sees is announced
         // here, or the next poll compares two equal states and the view keeps a card already answered
@@ -944,7 +948,7 @@ export class ConversationService {
 
     /** Bumps the revision when what views show (conversation id, working, mode, menu, queue) changed. */
     private noteState(sessionId: string, entry: Watched): void {
-        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
+        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.background ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
         if (key === entry.lastKey) return
         entry.lastKey = key
         this.bump(sessionId, entry)
