@@ -175,6 +175,32 @@ export interface ConversationMeta {
     background?: { shells: number; agents: number }
 }
 
+/**
+ * One background command or subagent of a Claude session, read from its transcript (ovis BackgroundTasks:
+ * `transcript/backgroundTasks.ts`). `lost`: the transcript never said it ended, but Claude's own count
+ * under its input box no longer holds it.
+ */
+export interface BackgroundTask {
+    id: string
+    kind: 'shell' | 'agent'
+    /** a command's description (else the command), a subagent's description (else its type) */
+    title: string
+    /** the subagent's type (`Explore`, `general-purpose`); null for a command */
+    agent: string | null
+    status: 'running' | 'completed' | 'failed' | 'cancelled' | 'lost'
+    startedAt: string | null
+    endedAt: string | null
+}
+
+/** What the background chip's list shows: running first (oldest first), then what ended in the last day. */
+export interface BackgroundTaskList {
+    tasks: BackgroundTask[]
+    /** running that Claude counts but the transcript does not show yet (a call just made) */
+    moreRunning: number
+    /** the Mac's clock, so a phone counts elapsed time on it */
+    serverTime: string
+}
+
 /** A message sent from the chat while the agent worked, waiting for the turn to end. */
 export interface QueuedMessage {
     id: string
@@ -421,6 +447,8 @@ export interface ChatTransport {
     getToolOutput(sessionId: string, ref: string): Promise<string | null>
     /** The `/` commands the session's agent offers. */
     listCommands(sessionId: string): Promise<ChatCommand[]>
+    /** The background commands and subagents the session runs, for the chip's list (ovis BackgroundTasks). */
+    listBackgroundTasks(sessionId: string): Promise<BackgroundTaskList>
     /** Files under the session's folder whose name or path matches, as paths relative to it. */
     searchFiles(sessionId: string, query: string): Promise<string[]>
     /** Shows a file the chat names (absolute, or relative to the session's folder), at a line when given. */

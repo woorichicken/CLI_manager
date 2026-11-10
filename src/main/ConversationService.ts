@@ -1,4 +1,5 @@
 import type {
+    BackgroundTaskList,
     ChatCommand,
     ChatForkRequest,
     ChatForkResult,
@@ -20,6 +21,7 @@ import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatVi
 import { isBusyRow, screenAgentMode, screenBackground } from './screenLines'
 import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
+import { BackgroundTaskReader, settleBackground } from './transcript/backgroundTasks'
 import type { AliasResolver } from '../shared/agentCommand'
 import { forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName } from './chatFork'
 
@@ -218,6 +220,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 export class ConversationService {
     private readonly watched = new Map<string, Watched>()
+    private readonly backgroundReader = new BackgroundTaskReader()
     /**
      * One lane per session for everything that writes keys (sends, Send now, the queue, card
      * answers, Stop): the next waits until the last is typed, and checks the screen again then.
@@ -668,6 +671,26 @@ export class ConversationService {
         } finally {
             this.dropIfIdle(sessionId, entry)
         }
+    }
+
+    /**
+     * The background commands and subagents of a Claude session, for the chip's list (ovis BackgroundTasks).
+     * Read from its transcript as it grows; the screen's count settles what still runs (settleBackground).
+     */
+    async listBackgroundTasks(sessionId: string): Promise<BackgroundTaskList> {
+        const now = Date.now()
+        const empty: BackgroundTaskList = { tasks: [], moreRunning: 0, serverTime: new Date(now).toISOString() }
+        const info = this.deps.session(sessionId)
+        if (!info?.cliSessionId || agentOf(info) !== 'claude') return empty
+        const entry = this.entry(sessionId)
+        await this.refreshScreen(sessionId, entry)
+        const files = this.deps.reader.locate('claude', info.cliSessionId, info.cwd)
+        this.dropIfIdle(sessionId, entry)
+        // the session's own file holds its subagents' folder; an older file of the thread does not
+        const parentPath = files.find((file) => file.endsWith(`${info.cliSessionId}.jsonl`)) ?? files[files.length - 1]
+        if (!parentPath) return { ...empty, moreRunning: (entry.background?.shells ?? 0) + (entry.background?.agents ?? 0) }
+        const settled = settleBackground(this.backgroundReader.read(parentPath, now), entry.background ?? null, !entry.working)
+        return { ...empty, ...settled }
     }
 
     /** The `/` commands the session's agent offers in its folder. */

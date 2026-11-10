@@ -10,7 +10,7 @@ import { TodoList } from './WorkBlock'
  * BackgroundTasks plan chip · Artifacts). Each opens a small panel above it.
  */
 
-function Popover({ open, onClose, children, align = 'start', testId }: { open: boolean; onClose: () => void; children: ReactNode; align?: 'start' | 'end'; testId?: string }) {
+export function Popover({ open, onClose, children, align = 'start', testId }: { open: boolean; onClose: () => void; children: ReactNode; align?: 'start' | 'end'; testId?: string }) {
     const box = useRef<HTMLDivElement>(null)
     useEffect(() => {
         if (!open) return
@@ -168,20 +168,6 @@ export function ModeChip({ agent, meta }: { agent: ConversationAgent | null; met
  * What runs in the background — `1 shell · 2 agents`, read from the row under Claude's input box (fb-1110
  * a0ba98c4: the terminal showed it, the chat did not). Words only: the terminal's ↓ manages them.
  */
-export function BackgroundChip({ meta }: { meta: ConversationMeta | null }) {
-    const background = meta?.background
-    if (!background) return null
-    const words = [
-        background.shells > 0 ? `${background.shells} ${background.shells === 1 ? 'shell' : 'shells'}` : null,
-        background.agents > 0 ? `${background.agents} ${background.agents === 1 ? 'agent' : 'agents'}` : null
-    ].filter(Boolean).join(' · ')
-    return (
-        <span className="chat-meta-chip chat-background-chip" data-testid="chat-background-chip" title={`Running in the background: ${words} — ↓ in the terminal manages them`}>
-            {words}
-        </span>
-    )
-}
-
 /** How full the context is: a share when the window is known (Codex), the tokens otherwise (Claude). */
 export function ContextChip({ meta, canCompact, onCompact }: { meta: ConversationMeta | null; canCompact: boolean; onCompact: () => void }) {
     const [open, setOpen] = useState(false)
