@@ -36,6 +36,14 @@ import { forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName } from 
  */
 
 const POLL_MS = 700
+/**
+ * How long a session nobody watches keeps what was read (the parsed transcript, the revision). A phone asks
+ * for the conversation before its socket subscribes: dropped at once, the subscription started over — the
+ * transcript read from the start again and a «changed» sent for nothing, so the phone fetched the whole
+ * conversation twice on every open (fb-1110 91e1b27e · 1e556f10: 2 requests × 822 KB on a 16 MB transcript).
+ * Coming back to a session within it is no first read either.
+ */
+const IDLE_KEEP_MS = 30_000
 /** Text sent while the agent works waits for this much quiet after the turn ends. */
 const QUEUE_QUIET_MS = 1500
 const MAX_TEXT_LENGTH = MAX_CHAT_TEXT_LENGTH
@@ -163,6 +171,8 @@ export interface ConversationServiceDeps {
     resolveAlias?: AliasResolver
     /** Opens the fork's session (ControlApiService.openFork). Absent: Fork is refused. */
     openFork?(input: ForkOpenInput): Promise<ForkOpenResult>
+    /** Tests shrink it; the app uses IDLE_KEEP_MS. */
+    idleKeepMs?: number
 }
 
 interface Watched {
@@ -179,6 +189,8 @@ interface Watched {
     sending: boolean
     /** the last queued message typed that only the terminal can show (ConversationSnapshot.terminalOpened) */
     terminalOpened: { id: string; command: string } | null
+    /** set while nobody watches: lets the entry go when it fires (dropIfIdle) */
+    idleTimer?: NodeJS.Timeout
 }
 
 /**
@@ -228,7 +240,10 @@ export class ConversationService {
     constructor(private readonly deps: ConversationServiceDeps) {}
 
     subscribe(sessionId: string): void {
-        this.entry(sessionId).subscribers += 1
+        const entry = this.entry(sessionId)
+        entry.subscribers += 1
+        if (entry.idleTimer) clearTimeout(entry.idleTimer)
+        entry.idleTimer = undefined
         this.ensureTimer()
     }
 
@@ -256,6 +271,8 @@ export class ConversationService {
 
     /** The session closed: forget it, queued text included. */
     forget(sessionId: string): void {
+        const idleTimer = this.watched.get(sessionId)?.idleTimer
+        if (idleTimer) clearTimeout(idleTimer)
         this.watched.delete(sessionId)
         this.lastAnswer.delete(sessionId)
         this.wholeOutputPaths.delete(sessionId)
@@ -877,11 +894,22 @@ export class ConversationService {
         return entry
     }
 
+    /** Lets go of a session nobody watches — after IDLE_KEEP_MS, if nobody came back for it by then. */
     private dropIfIdle(sessionId: string, entry: Watched): void {
-        if (entry.subscribers > 0 || entry.queue.length > 0 || entry.sending) return
-        this.watched.delete(sessionId)
-        this.deps.reader.forget(sessionId)
-        if (this.watched.size === 0) this.stopTimer()
+        if (!this.idle(entry)) return
+        if (entry.idleTimer) clearTimeout(entry.idleTimer)
+        entry.idleTimer = setTimeout(() => {
+            entry.idleTimer = undefined
+            if (this.watched.get(sessionId) !== entry || !this.idle(entry)) return
+            this.watched.delete(sessionId)
+            this.deps.reader.forget(sessionId)
+            if (this.watched.size === 0) this.stopTimer()
+        }, this.deps.idleKeepMs ?? IDLE_KEEP_MS)
+        entry.idleTimer.unref?.()
+    }
+
+    private idle(entry: Watched): boolean {
+        return entry.subscribers === 0 && entry.queue.length === 0 && !entry.sending
     }
 
     private bump(sessionId: string, entry: Watched): void {
