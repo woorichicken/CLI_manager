@@ -13,14 +13,6 @@ roadmap and not a wishlist: every entry names a path and a trigger that makes it
 
 Any session may append to `## Open
 
-### Chat — 백그라운드 작업을 개수가 아니라 목록으로(ovis 방식)
-- Discovered: 2026-11-10 fb-1110 a0ba98c4. 이번에는 화면 입력 상자 아래 줄의 개수만 칩으로 냈다(`screenBackground`).
-- Evidence: ovis 는 기록에서 셸(`backgroundTaskId` 가 있는 Bash 결과 → task-notification·TaskStop 으로 끝)과 서브에이전트(`<session>/subagents/agent-*.meta.json`)를 모아 상태·경과·토큰 목록과 상세를 보인다(`refs/ovis server/claude-subagents.ts:5-42`, `src/components/BackgroundTasks.tsx:186-251`). 우리는 하위 에이전트 기록을 이미 읽는다(`src/main/transcript/subagents.ts`).
-- Why deferred: 이번 요청은 「수가 보이게」였다. 목록은 새 패널이라 기획이 필요하다.
-- Trigger: 칩을 눌러 무엇이 도는지 보고 싶다는 말이 나올 때.
-- Fix direction: 칩 → 팝오버 목록(셸 명령 설명·에이전트 이름·경과), 끝난 것은 접기. 폰은 같은 부품.
-- Owner: 없음
-
 ### 폰 Chat — 바뀌면 바뀐 만큼만(ETag·304, ovis 방식)
 - Discovered: 2026-11-10 fb-1110 91e1b27e · 1e556f10. 첫 쪽은 3회차에 고쳤다(사람 결정 11-10) — 폰은 최근 20턴(`PHONE_CHAT_TURN_PAGE`)만 읽고 「Show earlier」로 20턴씩 더(T123). 16MB 사본 T118: Wi-Fi 0.22→0.14초, LTE 중계 0.51→0.28초, 전송 130→36KB.
 - Evidence: 남은 몫은 턴이 바뀔 때마다 첫 쪽 창 전체를 다시 받는 것(지금 36KB)과 렌더 ~0.06초(폰 CPU 4배 감속). ovis 는 `If-None-Match` 로 안 바뀌면 304·클라이언트 캐시로 먼저 그림(`refs/ovis` `server/pane-routes.ts:289`, `src/lib/api.ts:584`).
