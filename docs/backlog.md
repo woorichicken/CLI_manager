@@ -70,6 +70,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `scripts/release.cjs --check` — main CI 가 빨간 채로 릴리즈해도 아무도 모른다
+- Discovered: 2026-11-11 회고(PR #117). main CI 는 08-16 부터 11-11 까지 한 번도 끝까지 못 갔고(취소·실패), 그사이 v1.31·v1.32 는 로컬 `--skip-tests` 로 나갔다. 프리플라이트에 CI 상태를 보는 칸이 없어 석 달 동안 아무도 몰랐다.
+- Evidence: `gh run list --branch main --limit 3` — 42857459382 failure(8653ea9) · 42942657150 cancelled(63a918f) · 42950644250 success(7535eff, #117 머지 뒤 처음).
+- 제안: `--check` 가 `gh run list --branch main --commit <HEAD> --json conclusion` 을 읽어 success 가 아니면 경고 한 줄(막지는 않는다 — 오프라인·gh 미인증이면 「확인 못 함」으로).
+- Why deferred: 제품 스크립트 변경이라 사람 승인이 필요하다. CI 는 지금 초록이다.
+- Trigger: 다음 릴리즈 `--check` 를 돌리기 전, 또는 main CI 가 다시 빨개질 때.
+- Owner: Maintainer
+
 ### 폰 Chat — 맨 위로 스크롤하면 앞 턴 자동 불러오기
 - Discovered: 2026-11-11, 폰 첫 쪽 20턴(T123) 뒤 후속으로 나온 안. 사람 결정 11-11: 보류.
 - Evidence: 지금은 맨 위의 「Show earlier」 버튼을 눌러야 20턴씩 더 붙는다(`src/renderer/src/components/ChatView/index.tsx:157` `showEarlier`). 읽던 줄 유지는 손으로 한다(Safari 에 스크롤 앵커가 없다).
