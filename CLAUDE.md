@@ -351,6 +351,8 @@ AI가 셸에 명령을 입력할 수 있는 유일한 경로. 변경 시 반드�
 
 `.github/workflows/ci.yml`이 모든 push/PR에서 typecheck → build → 시크릿 스캔 → 위생 검사 →
 테스트를 돌린다. macOS 러너를 쓴다(node-pty 네이티브 빌드 + 실제 Electron 구동이 필요).
+설치 뒤 `electron-builder install-app-deps` 단계를 빼지 않는다 — 없으면 node-pty 가 Node ABI(127)로 남아
+main 이 로드 중 죽고 앱 구동 시험마다 `electron.launch` 가 180초를 기다려 job 이 25분에 취소된다(08-16 부터 11-11 PR #117 까지 한 번도 끝까지 못 갔다).
 
 `t2`·`t3`는 gitignore된 녹화 fixture에 의존해 CI에서 제외돼 있다 —
 [`docs/found-defects.md`](docs/found-defects.md) 참고. 스위트가 green인 척하지 않으려고
