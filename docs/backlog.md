@@ -125,6 +125,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 스크립트 수정이라 문서 변경과 따로 승인받아야 한다. 또 어떤 제보가 이번 릴리즈 몫인지 스크립트가 알 방법부터 정해야 한다.
 - Trigger: 다음 릴리즈에서 제보 닫기가 또 빠졌을 때.
 
+### `scripts/release.cjs` — 업데이트를 바뀐 만큼만 받게 `*.zip.blockmap` 도 올리기
+- Discovered: 2026-11-11 「안드로이드 OTA 처럼 작은 업데이트가 되나」 질문을 조사하며. 사람 결정: 「일단, 백로그로만 넣어줘」.
+- Evidence: electron-updater 는 직전 판 zip 의 blockmap 과 새 판 blockmap 을 비교해 바뀐 블록만 받는다(differential download). 그런데 `scripts/release.cjs` `verifyArtifacts` 의 `expected` 목록(dmg 2 · zip 2 · `latest-mac.yml`)만 `publish` 가 `gh release create` 에 넘겨서 blockmap 은 GitHub 릴리즈에 없다 — 그래서 업데이트마다 zip 전체를 받는다. 설치 단계(`quitAndInstall` → 앱 종료)는 이것과 무관하게 그대로다.
+- Why deferred: 릴리즈 스크립트 수정이라 문서 변경과 따로 승인받아야 하고, 한 번 올린 뒤에야 **다음** 판부터 효과가 난다(첫 판은 비교할 옛 blockmap 이 없다).
+- Trigger: 다음 릴리즈를 준비할 때, 또는 업데이트 용량·시간에 대한 제보가 나올 때.
+- Fix direction: `expected` 에 `cli-manager-${version}-{arm64,x64}.zip.blockmap` 을 더한다(없으면 fail). 효과는 두 판을 올린 뒤 업데이트 로그의 다운로드 바이트로 잰다. 앱을 끄지 않고 세션을 살리는 쪽은 아래 데몬 항목이다.
+- Owner: 없음
+
 ### 데몬을 앱과 분리 — 앱을 꺼도 세션이 사는 구조(Paseo 방식)
 - Discovered: 2026-11-06 폰 기능 기획 세션에서 Paseo(`getpaseo/paseo`)와 비교하며. 사람 결정: 「파세오 - 데몬 관련해서는 일단 백로그로」.
 - Evidence: 지금은 앱 main 프로세스가 세션을 쥔다(`src/main/TerminalManager.ts` 의 node-pty, 폰 서버 `src/main/phone/PhoneServer.ts`). 그래서 앱을 끄면 세션과 폰 연결이 같이 끝난다. Paseo 는 데몬이 에이전트를 쥐고 데스크톱·모바일·웹이 클라이언트로 붙는다.
