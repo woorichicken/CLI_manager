@@ -376,7 +376,10 @@ test.describe('T7 agent integration', () => {
                 const dbg = (window as unknown as { __termDebug?: { text: (id: string) => string } }).__termDebug
                 return dbg?.text('sess-a') ?? ''
             })
-            expect(text).toContain('existing.ts:2')
+            // Rows are joined with '\n' and right-trimmed, so a soft wrap splits the line. On a CI
+            // runner the prompt alone is ~90 columns (`runner@<uuid-host> <dir> %`) and the wrap
+            // landed inside "existing.ts" — drop row breaks before looking for it.
+            expect(text.replace(/\n/g, '')).toContain('existing.ts:2')
         } finally {
             await close(ctx)
             fs.rmSync(repo, { recursive: true, force: true })
