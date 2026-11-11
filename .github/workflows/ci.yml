@@ -40,6 +40,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # pnpm install builds node-pty against Node's ABI (127); Electron needs 140.
+      # Without this every app-launching test hangs in electron.launch for 3 minutes.
+      - name: Rebuild native modules for Electron
+        run: pnpm exec electron-builder install-app-deps
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -71,9 +76,12 @@ jobs:
       # Two terminal tests replay a recording that is gitignored, so they cannot
       # run here. See docs/found-defects.md — until that is resolved this step
       # deliberately excludes them rather than pretending the suite is green.
+      # --max-failures: when the app cannot start, each test waits 3 minutes in
+      # electron.launch, so the job hits timeout-minutes and is cancelled before the
+      # list reporter prints any error. Stopping early lets the errors reach the log.
       - name: Terminal + agent tests
         run: >
-          npx playwright test
+          npx playwright test --max-failures=3
           tests/terminal/loop-counter.spec.ts
           tests/terminal/t1-data-loss.spec.ts
           tests/terminal/t4-resize-storm.spec.ts
@@ -84,8 +92,9 @@ jobs:
           tests/terminal/t9-agent-modules.spec.ts
           tests/terminal/t31-feedback-gate.spec.ts
 
+      # !success() rather than failure(): a cancelled job (timeout) uploads too.
       - name: Upload failure artifacts
-        if: failure()
+        if: ${{ !success() }}
         uses: actions/upload-artifact@v4
         with:
           name: test-results

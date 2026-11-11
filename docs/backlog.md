@@ -70,6 +70,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 폰 Chat — 맨 위로 스크롤하면 앞 턴 자동 불러오기
+- Discovered: 2026-11-11, 폰 첫 쪽 20턴(T123) 뒤 후속으로 나온 안. 사람 결정 11-11: 보류.
+- Evidence: 지금은 맨 위의 「Show earlier」 버튼을 눌러야 20턴씩 더 붙는다(`src/renderer/src/components/ChatView/index.tsx:157` `showEarlier`). 읽던 줄 유지는 손으로 한다(Safari 에 스크롤 앵커가 없다).
+- Why deferred: 사람이 버튼으로 두기로 정했다.
+- Trigger: 사람이 다시 요청할 때.
+- Fix direction: 맨 위 근처에서 `showEarlier` 를 부르는 관찰자(IntersectionObserver) — 같은 `earlierAnchor` 로 줄 유지, T123 에 자동 불러오기 판정 추가.
+- Owner: 없음
+
 ### 음성 지휘(herdr-voice형)·질문에 말로 답(Hark형)
 - Discovered: 2026-11-08 Orca·herdr 보이스 모드 비교 뒤 사람 결정: 「orca 형으로 하고 herdr 는 백로그로」. Chat 받아쓰기(Orca형)는 같은 날 들어갔다(`src/main/Dictation.ts`).
 - Evidence: herdr-voice 는 실시간 음성 AI(Grok·OpenAI·Gemini)가 `list_agents`·`start_agent`·`read_pane` 같은 도구로 세션을 부린다. Hark 는 막힌 에이전트의 질문을 스피커로 묻고 답을 키로 넣는다. 우리 쪽 재료는 이미 있다 — Control API·MCP(세션 열기·입력·대기·화면 읽기), 질문 대기 감지(`SessionScreenStatus.ts`), 질문 카드(`promptScreen.ts`, 보내기 직전 같은 메뉴 재확인), 인박스, 폰 푸시.
@@ -316,17 +324,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 실패 때 화면(확인 상자 여부)과 `hasRunningProcess` 값을 남긴다 → 원인이 상자면 시험 모드에서 확인을 건너뛰는 길, 빗나간 클릭이면 「hover → 버튼 보임 대기 → 클릭 → 행 사라짐」 재시도. 여러 시험(T26·T40·T45·T52)의 사이드바 삭제를 공용 도우미로 묶는 것은 사람 컨펌.
 - Owner: 없음
 
-### CI `Terminal + agent tests` — 앱을 띄우는 테스트가 CI 에서 전부 3분 타임아웃
-- Discovered: 2026-10-06, simple-git 4 업그레이드 PR CI
-- Why deferred: 로컬에서는 전체 123건이 통과한다(2026-10-06 릴리즈 preflight). CI 러너 환경 문제라 별도 조사가 필요하다.
-- Trigger: CI 를 다시 머지 게이트로 쓰려 할 때. 그 전까지 CI 초록은 typecheck·build·audit 까지만 뜻한다.
-- Evidence: run 37429282637 — 유닛(`loop-counter`) 8건만 통과, 그 뒤 t1·t4·t5·t6·t7 이 각각 3.0m 로 실패하다 job `timeout-minutes: 25` 로 취소.
-  2026-10-03 main(v1.12.2 전후) 두 run 도 같은 단계에서 cancelled — simple-git 변경 이전부터다.
-  2026-10-17 main(v1.14.0) run 39038509159 와 2026-10-21 PR #34 재실행 run 39451565054 도 같은 모양 — t1·t31·t4·t5 가 각 3.0m 실패 후 25분에 취소.
-  설치 단계의 `@vscode/ripgrep` 403 은 PR #35 가 고쳤다 — 그 뒤 CI 를 막는 건 이 항목뿐이다.
-- Fix direction: 실패 아티팩트(스크린샷·main 로그)를 받아 앱 구동 단계에서 막히는지 본다. node-pty 를 Electron ABI 로 다시 빌드하는 `electron-builder install-app-deps` 단계가 CI 에 있는지부터 확인.
-- Owner: 없음
-
 ### `src/renderer/src/components/TerminalView.tsx` — macOS 에서 Option 이 Meta 로 동작하지 않는다
 - Discovered: 2026-10-06, 단축키·터미널 키 충돌 점검 중
 - Why deferred: Ctrl 충돌 수정과 별개 동작이고, 켜면 Option 으로 특수문자(₩·€ 등)를 치던 사용자의 입력이 바뀐다.
@@ -397,7 +394,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 이번 범위(사용자 보고 4건) 밖이고, 고치는 방법이 두 갈래라 선택이 필요하다 —
   postinstall이 `electron-builder install-app-deps`를 직접 부르게 할지(설치가 매번 느려진다),
   아니면 SKIP을 경고로 올리고 문서로 안내할지.
-- Trigger: 새 머신·새 워크트리에서 `pnpm test:term`을 돌려야 할 때. 또는 CI가 캐시 없이 도는 날.
+- Trigger: 새 머신·새 워크트리에서 `pnpm test:term`을 돌려야 할 때. (CI 는 2026-11-11 PR #117 부터 `ci.yml` 이 install-app-deps 를 직접 돈다.)
 - Evidence: `pnpm install --frozen-lockfile` 직후 Electron이 뜨자마자 죽는다 —
   `Cannot find module '../build/Debug/pty.node'` (node-pty가 Node ABI로 빌드돼 있다). postinstall은
   `[node-pty] SKIP: missing prebuilds dir .../prebuilds/darwin-arm64`만 남기고 성공으로 끝난다
@@ -440,17 +437,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   (발견 파일에서 url·token 을 읽고 REST 만 호출, 종료 코드로 질문 대기/회수/시간 초과 구분).
 - Evidence: `docs/architecture/control-api.md`「MCP 없이 쓰기」의 curl 예제는 토큰을 발견
   파일에서 꺼내는 준비 과정을 매번 요구한다.
-### `.github/workflows/ci.yml` — main CI가 2026-08-18 이후 한 번도 끝까지 가지 못했다
-- Discovered: 2026-09-12, v1.8.0 배포 후 CI 결과를 확인하다가
-- Why deferred: 원인이 macOS 러너에서의 테스트 소요 시간인지 특정 스펙의 행(hang)인지 가르려면
-  CI 로그를 스펙 단위로 봐야 하고, 이번 범위 밖이다.
-- Trigger: CI를 머지·릴리즈 판단 근거로 쓰기 전. 지금은 "CI 통과"라는 신호가 존재하지 않는다.
-- Evidence: `timeout-minutes: 25`. run 34663545892(8ce09a1)의 verify 잡이 01:01:50 → 01:27:09에
-  `Terminal + agent tests` 단계에서 cancelled. b15daa3·6ac2a85·94f17f4도 cancelled, 591ff51은 failure.
-  로컬에서는 같은 스위트가 수 분(86건)에 끝난다. `concurrency: cancel-in-progress: true`도 있어
-  연속 push 시 앞 실행이 취소되는 것과 타임아웃 취소가 목록에서 구분되지 않는다.
-- Owner: Maintainer
-
 ### `scripts/release.cjs` — 프리플라이트 테스트가 간헐적으로 실패하는데 원인을 못 잡았다
 - Discovered: 2026-09-23, v1.9.0 배포 중 두 번
 - Why deferred: 실패가 재현되지 않았고(직접 돌린 전체 스위트는 87건 통과), 배포를 멈추고 추적할
@@ -461,28 +447,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   `pnpm test:term` 은 87 passed (3.7m). 세 번째 `--check` 도 87 passed.
 - 2026-10-29 v1.22.0 사전 점검(부하 15~21 · 스왑 49~56GB, 배치 밖 dev 서버·Docker): 1회차 T19-4 「text sent right after Escape arrives whole」 · 2회차 T1 「single visible terminal keeps seq output contiguous」(`last` 228478 / 300000 — `SEQ-DONE` 를 본 뒤에도 화면이 덜 따라옴) 각 1건 실패, 둘 다 단독 3/3 통과(T1 은 gap 0), 3회차 340 passed 로 공개. 로그 `/tmp/climanager-release-122-build-try1.log` · `-try2.log` · `/tmp/climanager-release-122-t19.log` · `-t1.log`. 바꾼 곳과 무관한 시험이 부하 높을 때만 하나씩 걸린다 — 한 회차에 한 건이면 단독 재실행 후 다시 빌드가 지금 절차.
 - 2026-11-01 v1.24.0(스왑 49~51G · 부하 49): 세 회차가 매번 다른 시험에서 멈췄다 — 1회차 5건(T2 · T22 · T30 · T64 · T71, 367 passed) · 2회차 T19-4 · T26(370) · 3회차 T26 · T40(370). 기준판 bede9e5 에서도 T22 · T30 이 실패해 회귀가 아니었고, 실패한 시험은 모두 다른 회차 전체 실행에서 통과했다. 그래서 4회차는 두 시험 단독 6/6 확인 뒤 `--build --skip-tests` 로 공개했다(typecheck · build 는 그대로 돎). 로그 `/tmp/climanager-release-124-build-1.log` · `-2.log` · `/tmp/climanager-release-124-build.log` · `-build4.log`. 「한 회차에 한 건」 절차가 부하 높은 날은 세 회차를 먹는다 — 시험 실패만 따로 다시 돌리는 옵션(`--retry-failed`)이 있으면 회차마다 30분을 아낀다.
-- Owner: Maintainer
-
-### `.github/workflows/ci.yml` — 설치 단계 403 은 지나갔고, 지금은 터미널 테스트 시간 초과로 취소된다
-- Discovered: 2026-10-01, PR #16 의 CI 를 확인하다가
-- Why deferred: 접근 규칙 변경과 무관하고, 위 "main CI 가 끝까지 가지 못했다" 항목과 원인이 같은지부터 갈라야 한다.
-- Trigger: CI 를 머지 판단 근거로 쓰기 전
-- Evidence: run 36729620173 의 verify 잡이 59초 만에 `Install dependencies` 에서 끝났다.
-  `.../node_modules/@vscode/ripgrep postinstall: Failed` → `ELIFECYCLE Command failed with exit code 1`.
-  스택이 HTTP 응답 처리(`ClientRequest`·`TLSSocket`)라 바이너리 다운로드 실패로 보인다(GitHub API 요청 한도 가능성 — 미확인).
-  같은 날 main 의 실행도 failure 다.
-  2026-09-30 PR #15 에서도 같은 단계 실패 — 로그상 응답이 **`Request failed: 403`**(재시도 5회). 열린 dependabot PR
-  `bump @vscode/ripgrep from 1.17.0 to 1.18.0` 이 다운로드 경로를 바꿨는지 먼저 본다(미확인).
-  **2026-10-01 갱신(PR #18·#19)**: 설치 단계는 **통과**했다(403 재현 안 됨 — 간헐적이었던 것으로 보인다).
-  대신 위 "main CI 가 끝까지 가지 못했다" 항목과 같은 모양으로 끝난다: `loop-counter` 8건(Electron 없음)만 통과하고
-  앱을 띄우는 T1·T4·T5·T6·T7 이 각 1~3분 시간 초과로 연속 ✘ → job 25분 제한에서 cancelled
-  (run 36819460593·36819462264). main 의 run 36803562450(10-01 01:57)·36734434387(09-30)도 같은 단계·같은 순서로
-  cancelled. 그래서 두 PR 은 근거 코멘트를 남기고 머지했고, 릴리즈는 로컬 `pnpm test:term` 전체를 게이트로 썼다.
-  가설(미확인): 설치 로그에 node-pty 가 Node ABI 로 빌드된다(`SOLINK_MODULE(target) Release/pty.node`) — 로컬 새 워크트리에서
-  `electron-builder install-app-deps` 없이 앱 구동 테스트가 전부 죽는 것과 같은 원인일 수 있다. CI 에 그 단계를 넣고 1회 돌려 가른다.
-  덧붙여 앱이 안 뜨는 테스트가 3분씩 기다려 25분을 다 쓰므로, 첫 구동 실패에서 빨리 끝내는 장치가 있으면 원인이 로그에 바로 남는다.
-  **2026-10-09 갱신(PR #26)**: 403 이 다시 났다 — run 37801999243 이 `Install dependencies` 에서
-  `@vscode/ripgrep postinstall: Error: Request failed: 403`(재시도 반복)으로 실패, 그 뒤 단계는 전부 skipped.
 - Owner: Maintainer
 
 ### 개선안 — 여러 AI 세션의 상태 변화를 한 번에 기다리는 `watch`
