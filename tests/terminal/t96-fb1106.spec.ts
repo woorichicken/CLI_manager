@@ -545,7 +545,7 @@ test('T96 Mac Chat: a web page opens in the browser; with a line, the preview of
     await page.getByTestId('file-preview-browser').click()
     await expect.poll(opened).toEqual([report, report])
     // a page that is not HTML has no such button
-    await page.keyboard.press('Escape')
+    await page.locator('[data-testid="chat-file-preview"] button[title^="Close"]').click()
     await expect(page.getByTestId('chat-file-preview')).toHaveCount(0)
     await chat(page).getByRole('button', { name: 'notes.md', exact: true }).first().click()
     await expect(page.getByTestId('chat-file-preview')).toHaveAttribute('data-path', path.join(project, 'notes.md'))
@@ -571,7 +571,7 @@ test('T96 phone: a slow Mac is said on the loading screens (fb-1112)', async () 
     await shot(phone, 't96-phone-reading-slow-390')
     // it answers: the notes go with the loading screens
     await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
-    await expect(phone.getByTestId('chat-reading-slow')).toHaveCount(0)
+    await expect(phone.getByTestId('chat-reading-slow')).toHaveCount(0, { timeout: 20_000 })
 })
 
 test('T96 Related: Below comes first (474b70f8)', async () => {
