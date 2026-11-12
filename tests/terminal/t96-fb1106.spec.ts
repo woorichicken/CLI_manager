@@ -574,6 +574,33 @@ test('T96 phone: a slow Mac is said on the loading screens (fb-1112)', async () 
     await expect(phone.getByTestId('chat-reading-slow')).toHaveCount(0, { timeout: 20_000 })
 })
 
+test('T96 Mac: Tailscale switched off is said on the badge and in Settings › Phone (fb-1112)', async () => {
+    test.setTimeout(120_000)
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t96-ts-'))
+    const statusFile = path.join(folder, 'tailscale-status.json')
+    // the state this Mac was in when the phone stopped connecting: signed in, named, switched off
+    fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Stopped', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: [] }, User: { '42': { LoginName: OWNER } } }))
+    result = await launchAppWithWorkspaces([{ id: 'w-ts', name: 'TS', path: folder, sessions: [{ id: 't96-ts', name: 'TS shell' }] }], {
+        settings: { phone: { enabled: true, port: PORT } },
+        env: { CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile }
+    })
+    const { app, page } = result
+    await resizeMainWindow(app, 1280, 800)
+    await expect(page.getByTestId('phone-badge-tailscale-off')).toHaveText('Phone on · Tailscale off', { timeout: 15_000 })
+    expect((await page.evaluate(() => window.api.getPhoneState())).tailscale.stopped).toBe(true)
+    await page.locator('[title^="Settings"]').first().click()
+    await page.getByTestId('settings-category-phone').click()
+    await expect(page.getByTestId('phone-tailscale-stopped')).toBeVisible()
+    await shot(page, 't96-tailscale-off-1280')
+    // switched on again: Settings opening reads it fresh, and the badge counts phones again
+    fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Running', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: ['100.100.1.1'] }, User: { '42': { LoginName: OWNER } } }))
+    // Settings › Phone reads Tailscale fresh each time it opens: leave the page and come back
+    await page.getByTestId('settings-category-terminal').click()
+    await page.getByTestId('settings-category-phone').click()
+    await expect(page.getByTestId('phone-tailscale-stopped')).toHaveCount(0, { timeout: 10_000 })
+    await expect(page.getByTestId('phone-badge')).toContainText('connected')
+})
+
 test('T96 Related: Below comes first (474b70f8)', async () => {
     test.setTimeout(120_000)
     const CHIEF = 't96-rel-chief'

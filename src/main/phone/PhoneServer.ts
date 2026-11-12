@@ -37,6 +37,12 @@ const COOKIE = 'climanager_phone'
 const COOKIE_MAX_AGE = 400 * 24 * 60 * 60
 /** a phone that fetched within this long counts as connected */
 const CONNECTED_WINDOW_MS = 60_000
+/**
+ * While on, Tailscale is read again this often: switched off, no phone request comes to say so, and
+ * Settings and the sidebar badge should (fb-1112 — the phone stopped connecting, the Mac said nothing).
+ * One `tailscale status --json` a minute.
+ */
+const TAILSCALE_RECHECK_MS = 60_000
 
 const TYPES: Record<string, string> = {
     '.html': 'text/html; charset=utf-8',
@@ -102,6 +108,7 @@ export class PhoneServer {
     private boundPort: number | null = null
     private lastError: string | undefined
     private enabled = false
+    private tailscaleTimer: NodeJS.Timeout | null = null
     private allowedAssets: Set<string> | null = null
     /** who fetched lately or has a socket open, for "n connected" and Settings' list */
     private readonly connections = new PhoneConnections(CONNECTED_WINDOW_MS)
@@ -149,6 +156,13 @@ export class PhoneServer {
             this.deps.statusPoller.start()
             // who the owner is: read now so the first phone does not wait for it
             void this.deps.tailscale.read(true).then(() => this.deps.onStateChange())
+            if (this.tailscaleTimer) clearInterval(this.tailscaleTimer)
+            this.tailscaleTimer = setInterval(() => {
+                const before = this.deps.tailscale.peek()?.stopped
+                void this.deps.tailscale.read(true).then((info) => {
+                    if (info.stopped !== before) this.deps.onStateChange()
+                })
+            }, TAILSCALE_RECHECK_MS)
         } catch (error) {
             this.lastError = error instanceof Error ? error.message : String(error)
             this.enabled = false
@@ -161,6 +175,8 @@ export class PhoneServer {
     /** Closes the server and every phone connection. */
     async stop(): Promise<void> {
         this.enabled = false
+        if (this.tailscaleTimer) clearInterval(this.tailscaleTimer)
+        this.tailscaleTimer = null
         this.deps.statusPoller.stop()
         for (const socket of this.sockets) socket.ws.terminate()
         this.sockets.clear()
@@ -190,7 +206,7 @@ export class PhoneServer {
             port,
             localUrl: port ? `http://127.0.0.1:${port}/` : null,
             ...(this.lastError ? { error: this.lastError } : {}),
-            tailscale: { found: ts?.found ?? false, owner: ts?.owner ?? null, dnsName },
+            tailscale: { found: ts?.found ?? false, owner: ts?.owner ?? null, dnsName, stopped: ts?.stopped ?? false },
             phoneUrl: dnsName ? `https://${dnsName}/` : null,
             serveCommand: `tailscale serve --bg --https=443 ${target}`,
             serveOffCommand: 'tailscale serve --https=443 off',
@@ -208,7 +224,12 @@ export class PhoneServer {
 
     /** Re-read Tailscale (Settings opening), then the state. */
     async refresh(): Promise<PhoneState> {
-        if (this.server) await this.deps.tailscale.read(true)
+        if (this.server) {
+            const before = this.deps.tailscale.peek()?.stopped
+            const info = await this.deps.tailscale.read(true)
+            // the sidebar badge hears it too, not only the Settings page that asked
+            if (info.stopped !== before) this.deps.onStateChange()
+        }
         return this.state()
     }
 

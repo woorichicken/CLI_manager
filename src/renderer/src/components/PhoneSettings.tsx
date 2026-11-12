@@ -152,6 +152,12 @@ export function PhoneSettings({ onEnabledChange }: { onEnabledChange: (enabled: 
 
                     <div>
                         <p className="text-sm text-gray-300">2. Open it on the phone</p>
+                        {state.tailscale.stopped && (
+                            <p className="text-xs text-amber-400/90 mt-1" data-testid="phone-tailscale-stopped">
+                                Tailscale is switched off on this Mac, so no phone can reach it. Turn it on from the Tailscale menu
+                                (Connect), or run <code>tailscale up</code>.
+                            </p>
+                        )}
                         {state.phoneUrl ? (
                             <div className="flex items-center gap-4 mt-2">
                                 <Qr text={state.phoneUrl} />

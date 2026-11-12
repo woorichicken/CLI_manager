@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
-import { parseTailscaleDnsName, parseTailscaleOwner } from './phoneAccess'
+import { parseTailscaleDnsName, parseTailscaleOwner, parseTailscaleStopped } from './phoneAccess'
 
 /**
  * What Tailscale on this Mac says about itself — read only: `tailscale status --json`.
@@ -15,6 +15,8 @@ export interface TailscaleInfo {
     found: boolean
     owner: string | null
     dnsName: string | null
+    /** installed but switched off: phones cannot reach the Mac (the cause of «why can't my phone connect?») */
+    stopped: boolean
 }
 
 const CACHE_MS = 5 * 60_000
@@ -77,7 +79,7 @@ export class TailscaleStatus {
                 if (json) break
             }
         }
-        const info: TailscaleInfo = { found: json !== null, owner: parseTailscaleOwner(json), dnsName: parseTailscaleDnsName(json) }
+        const info: TailscaleInfo = { found: json !== null, owner: parseTailscaleOwner(json), dnsName: parseTailscaleDnsName(json), stopped: parseTailscaleStopped(json) }
         this.cached = { at: Date.now(), info }
         return info
     }

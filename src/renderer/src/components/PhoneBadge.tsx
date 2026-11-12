@@ -35,7 +35,11 @@ export function PhoneBadge({ onOpenSettings }: { onOpenSettings: () => void }) {
         >
             <Smartphone size={13} className="shrink-0 text-emerald-400" />
             <button type="button" className="flex-1 min-w-0 truncate text-left hover:underline" onClick={onOpenSettings} title="Settings › Phone">
-                Phone on · {connected} connected
+                {state.tailscale.stopped ? (
+                    <span className="text-amber-300" data-testid="phone-badge-tailscale-off">Phone on · Tailscale off</span>
+                ) : (
+                    <>Phone on · {connected} connected</>
+                )}
             </button>
             <button
                 type="button"

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { decidePhoneAccess, hostAllowed, isTailnetAddress, parseTailscaleDnsName, parseTailscaleOwner, sameOrigin, type PhoneAccessInput } from '../../src/main/phone/phoneAccess'
+import { decidePhoneAccess, hostAllowed, isTailnetAddress, parseTailscaleDnsName, parseTailscaleOwner, parseTailscaleStopped, sameOrigin, type PhoneAccessInput } from '../../src/main/phone/phoneAccess'
 import { PAIRING_CODE_ATTEMPTS, PAIRING_CODE_TTL_MS, PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhonePush } from '../../src/main/phone/PhonePush'
 import { maskSnapshot } from '../../src/main/phone/phoneApi'
@@ -93,6 +93,19 @@ test.describe('T75 phone access table', () => {
         expect(parseTailscaleOwner('not json')).toBeNull()
         expect(parseTailscaleOwner(null)).toBeNull()
         expect(parseTailscaleDnsName(status({ UserID: 42 }))).toBe('mac.tail1234.ts.net')
+    })
+
+    test('switched off is told apart from running (fb-1112)', () => {
+        const withState = (state?: string) => JSON.stringify({ ...(state ? { BackendState: state } : {}), Self: { DNSName: 'mac.tail1234.ts.net.', UserID: 42 }, User: { '42': { LoginName: OWNER } } })
+        expect(parseTailscaleStopped(withState('Running'))).toBe(false)
+        // off: the name and the login still read — that is why the Mac said nothing
+        expect(parseTailscaleStopped(withState('Stopped'))).toBe(true)
+        expect(parseTailscaleDnsName(withState('Stopped'))).toBe('mac.tail1234.ts.net')
+        expect(parseTailscaleStopped(withState('NeedsLogin'))).toBe(true)
+        // an older CLI without the field, no Tailscale, not JSON: not called stopped
+        expect(parseTailscaleStopped(withState())).toBe(false)
+        expect(parseTailscaleStopped(null)).toBe(false)
+        expect(parseTailscaleStopped('not json')).toBe(false)
     })
 })
 

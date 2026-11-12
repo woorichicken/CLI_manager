@@ -143,6 +143,21 @@ export function parseTailscaleOwner(statusJson: string | null): string | null {
 }
 
 /** This Mac's MagicDNS name (`mac.tailnet.ts.net`), for the address Settings shows. */
+/**
+ * Tailscale is installed and signed in but switched off (`BackendState: Stopped`, or NeedsLogin…):
+ * no phone can reach this Mac, while the name and the login still read fine. A missing state is
+ * not called stopped — an older CLI may not print it.
+ */
+export function parseTailscaleStopped(statusJson: string | null): boolean {
+    if (!statusJson) return false
+    try {
+        const state = (JSON.parse(statusJson) as { BackendState?: unknown }).BackendState
+        return typeof state === 'string' && state !== 'Running'
+    } catch {
+        return false
+    }
+}
+
 export function parseTailscaleDnsName(statusJson: string | null): string | null {
     if (!statusJson) return null
     try {
