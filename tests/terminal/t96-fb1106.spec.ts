@@ -668,7 +668,7 @@ test('T96 phone: a quick reply goes once when the Mac answers slowly (b17fa869)'
     const terminalTab = (await phone.getByTestId('phone-lens-terminal').boundingBox())!
     expect(Math.abs(chatTab.width - terminalTab.width), 'Chat and Terminal are as wide as each other').toBeLessThanOrEqual(1)
     expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll').toBe(true)
-    // a busy Mac: every send answers after 2.5 s. Counted in the page, before anything reaches main
+    // a busy Mac: every send answers after 4 s. Counted in the page, before anything reaches main
     await phone.evaluate(() => {
         const w = window as unknown as { __sends: string[]; fetch: typeof fetch }
         w.__sends = []
@@ -677,7 +677,7 @@ test('T96 phone: a quick reply goes once when the Mac answers slowly (b17fa869)'
             const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
             if (/\/send$/.test(url) && init?.method === 'POST') {
                 w.__sends.push(String(init.body))
-                await new Promise((resolve) => setTimeout(resolve, 2_500))
+                await new Promise((resolve) => setTimeout(resolve, 4_000))
             }
             return original(input, init)
         }
@@ -685,8 +685,6 @@ test('T96 phone: a quick reply goes once when the Mac answers slowly (b17fa869)'
     const chip = phone.getByTestId('chat-quick-replies').getByRole('button', { name: PHRASES[1], exact: true })
     const chipSelector = `[data-testid="chat-quick-replies"] button[title="Send “${PHRASES[1]}”"]`
     await tap(cdp, phone, chipSelector)
-    await expect(chip).toHaveAttribute('data-sending', 'true')
-    await shot(phone, 't96-phone-quick-sending-390')
     // the thumb comes down again (and on the other chip) while the first is on its way
     const box = (await chip.boundingBox())!
     for (let i = 0; i < 3; i++) {
@@ -695,7 +693,10 @@ test('T96 phone: a quick reply goes once when the Mac answers slowly (b17fa869)'
         await phone.waitForTimeout(150)
     }
     await phone.getByTestId('chat-quick-replies').getByRole('button', { name: PHRASES[0], exact: true }).click({ force: true }).catch(() => undefined)
-    await expect.poll(() => phone.evaluate(() => (window as unknown as { __sends: string[] }).__sends.length), { timeout: 2_000 }).toBe(1)
+    expect(await phone.evaluate(() => (window as unknown as { __sends: string[] }).__sends.length), 'one tap went, the others waited').toBe(1)
+    // still on its way: the tapped chip says so
+    await expect(chip).toHaveAttribute('data-sending', 'true')
+    await shot(phone, 't96-phone-quick-sending-390')
     // answered: the chips take taps again
     await expect(chip).not.toHaveAttribute('data-sending', 'true', { timeout: 10_000 })
     await expect(chip).toBeEnabled()
