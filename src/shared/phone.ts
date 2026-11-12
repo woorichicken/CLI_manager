@@ -63,6 +63,19 @@ export interface PhoneSession {
     /** the All sessions folder it sits in */
     sessionFolderId?: string
     pinned?: boolean
+    /** how many memo pages hold something; absent when the memo is empty (84188aa0) */
+    memoPages?: number
+}
+
+/** POST /api/phone/rename/<sessionId> — the name the Mac kept (trimmed, at most 80 characters) */
+export interface PhoneRenameResponse {
+    name: string
+}
+
+/** GET /api/phone/memo/<sessionId> — the session's memo pad, first page first, read-only (84188aa0) */
+export interface PhoneMemoResponse {
+    /** always at least one; lines go through maskSecrets as every text leaving the Mac does */
+    pages: string[]
 }
 
 /**
@@ -316,5 +329,9 @@ export const PHONE_API = {
     /** POST: one HTTP request of the feedback widget, sent by main's FeedbackRelay */
     feedbackRelay: '/api/phone/feedback/relay',
     /** GET `?session=<id>`: the terminal a report is about, as the desktop widget gets it over IPC */
-    feedbackTerminal: '/api/phone/feedback/terminal'
+    feedbackTerminal: '/api/phone/feedback/terminal',
+    /** GET `/api/phone/memo/<sessionId>`: the session's memo pages */
+    memo: '/api/phone/memo',
+    /** POST `/api/phone/rename/<sessionId>` `{ name }`: the sidebar name (drive devices) */
+    rename: '/api/phone/rename'
 } as const

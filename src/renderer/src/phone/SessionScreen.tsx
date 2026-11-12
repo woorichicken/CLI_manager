@@ -1,12 +1,14 @@
 import { PHONE_CHAT_TURN_PAGE, type ChatPreferences } from '../../../shared/conversation'
 import { carryDraft } from '../components/ChatView/draftHandoff'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Menu, MessageSquareText, TerminalSquare } from 'lucide-react'
+import { Menu, MessageSquareText, StickyNote, TerminalSquare } from 'lucide-react'
 import type { PhoneRole, PhoneSession } from '../../../shared/phone'
 import { ChatView } from '../components/ChatView'
 import { createPhoneChatTransport } from './phoneChatTransport'
 import { PhoneDocPanel } from './PhoneDocPanel'
 import { PhoneFilePanel, type PhoneFileTarget } from './PhoneFilePanel'
+import { PhoneMemoPanel } from './PhoneMemoPanel'
+import { PhoneRenameBar } from './PhoneRenameBar'
 import { PhoneTerminal } from './PhoneTerminal'
 
 /**
@@ -90,6 +92,20 @@ export function SessionScreen({
     }, [fileOpen])
     // an alert or a session link moved the page on: this session's file does not come back with it
     useEffect(() => setFile(null), [session.id])
+    // the memo pad (84188aa0): over the view, closed when the page moves to another session
+    const [memoOpen, setMemoOpen] = useState(false)
+    useEffect(() => setMemoOpen(false), [session.id])
+    // renaming (0a4bdfff, drive devices): the name the Mac kept shows until the list brings it
+    const [renaming, setRenaming] = useState(false)
+    const [keptName, setKeptName] = useState<string | null>(null)
+    useEffect(() => {
+        setRenaming(false)
+        setKeptName(null)
+    }, [session.id])
+    useEffect(() => {
+        if (keptName !== null && session.name === keptName) setKeptName(null)
+    }, [session.name, keptName])
+    const shownName = keptName ?? session.name
     const transport = useMemo(() => createPhoneChatTransport(undefined, openFile), [openFile])
     const chatAvailable = session.agent !== null
     const view: SessionLens = chatAvailable ? lens : 'terminal'
@@ -114,7 +130,13 @@ export function SessionScreen({
                 )}
                 <span className={`phone-dot phone-dot-${session.state}`} aria-hidden="true" />
                 <span className="phone-header-title" data-testid="phone-session-title">
-                    {session.name}
+                    {role === 'drive' ? (
+                        <button type="button" className="phone-title-button" title="Rename this session" data-testid="phone-session-rename" onClick={() => setRenaming(true)}>
+                            {shownName}
+                        </button>
+                    ) : (
+                        shownName
+                    )}
                     {offline && (
                         <span className="phone-header-offline" data-testid="phone-header-offline">
                             {' '}· Reconnecting…
@@ -126,6 +148,18 @@ export function SessionScreen({
                         </span>
                     )}
                 </span>
+                {session.memoPages !== undefined && (
+                    <button
+                        type="button"
+                        className="phone-icon-button phone-memo-button"
+                        aria-label={`Memo, ${session.memoPages} ${session.memoPages === 1 ? 'page' : 'pages'}`}
+                        aria-pressed={memoOpen}
+                        data-testid="phone-memo-button"
+                        onClick={() => setMemoOpen((open) => !open)}
+                    >
+                        <StickyNote size={16} />
+                    </button>
+                )}
                 {chatAvailable && (
                     <div className="phone-seg phone-lens" role="group" aria-label="Chat or terminal">
                         <button type="button" aria-pressed={view === 'chat'} data-testid="phone-lens-chat" onClick={() => switchLens('chat')}>
@@ -138,6 +172,18 @@ export function SessionScreen({
                 )}
             </header>
             <div className="phone-session-body">
+                {memoOpen && <PhoneMemoPanel sessionId={session.id} onClose={() => setMemoOpen(false)} />}
+                {renaming && (
+                    <PhoneRenameBar
+                        sessionId={session.id}
+                        name={shownName}
+                        onCancel={() => setRenaming(false)}
+                        onDone={(kept) => {
+                            setKeptName(kept)
+                            setRenaming(false)
+                        }}
+                    />
+                )}
                 {view === 'chat' ? (
                     <ChatView
                         sessionId={session.id}
