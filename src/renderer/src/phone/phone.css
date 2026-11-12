@@ -930,3 +930,54 @@ body.phone-body #root {
     top: calc(56px + env(safe-area-inset-top));
     bottom: auto;
 }
+
+/* --- memo pad, read-only (84188aa0): over the chat or terminal, under the header --- */
+.phone-memo {
+    position: absolute;
+    inset: 0;
+    /* over the chat (z-45), as the Mac's memo is (z-46); under the file panel (z-65) */
+    z-index: 46;
+    display: flex;
+    flex-direction: column;
+    background: #0f0f14;
+}
+.phone-memo-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px 4px 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+.phone-memo-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-white);
+}
+.phone-memo-page {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.phone-memo-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    font-size: 15px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text-white);
+}
+.phone-memo-body a {
+    color: rgb(96, 165, 250);
+    text-decoration: underline;
+}
+.phone-memo-empty {
+    color: var(--text-secondary);
+}
+.phone-memo-button[aria-pressed='true'] {
+    background: rgba(59, 130, 246, 0.25);
+    color: var(--text-white);
+}

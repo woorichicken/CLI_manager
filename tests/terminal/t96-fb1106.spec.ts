@@ -705,6 +705,56 @@ test('T96 phone: a quick reply goes once when the Mac answers slowly (b17fa869)'
     expect(JSON.parse(sends[0]).text).toBe(PHRASES[1])
 })
 
+test('T96 phone: the session memo shows on the phone, read-only (84188aa0)', async () => {
+    test.setTimeout(150_000)
+    const { app, page, base } = await launch()
+    // built at run time: the secret scan reads test files too
+    const key = ['sk', 'ant', 'api03', 'T96memoKEYabcdefghijklmnopqrstuvwxyz0123456789'].join('-')
+    await page.evaluate(
+        ({ id, key }) => window.api.updateSessionMemo('w-t96', id, 'Page one\n다음 할 일 https://example.com/docs/guide', ['', `Third page\nANTHROPIC_API_KEY=${key}`]),
+        { id: OTHER, key }
+    )
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${OTHER}&view=chat`, 't96-memo')
+    await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
+    await shot(phone, 't96-phone-memo-closed-390')
+    // only a session with a memo gets the button: two pages hold something
+    const listed = await phone.evaluate(async () => (await (await fetch('/api/phone/sessions')).json()).sessions as Array<{ id: string; memoPages?: number }>)
+    expect(listed.find((s) => s.id === 't96-other')?.memoPages).toBe(2)
+    expect(listed.find((s) => s.id === 't96-claude')?.memoPages).toBeUndefined()
+    await expect(phone.getByTestId('phone-memo-button')).toBeVisible()
+    await tap(cdp, phone, '[data-testid="phone-memo-button"]')
+    const panel = phone.getByTestId('phone-memo-panel')
+    await expect(panel).toBeVisible()
+    await expect(phone.getByTestId('phone-memo-page')).toHaveText('1 / 3')
+    await expect(phone.getByTestId('phone-memo-text')).toContainText('Page one')
+    await expect(phone.getByTestId('phone-memo-link')).toHaveAttribute('href', 'https://example.com/docs/guide')
+    await shot(phone, 't96-phone-memo-open-390')
+    // the panel covers the chat under the header, inside the screen
+    const box = (await panel.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(391)
+    // drawn on top: a visible element under the chat (z-45) passes toBeVisible, so ask what the finger would hit
+    const onTop = await phone.evaluate(() => {
+        const r = document.querySelector('[data-testid="phone-memo-panel"]')!.getBoundingClientRect()
+        return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('[data-testid="phone-memo-panel"]') !== null
+    })
+    expect(onTop, 'the memo is over the chat').toBe(true)
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll').toBe(true)
+    await tap(cdp, phone, '[data-testid="phone-memo-next"]')
+    await expect(phone.getByTestId('phone-memo-page')).toHaveText('2 / 3')
+    await expect(phone.getByTestId('phone-memo-text')).toHaveText('This page is empty.')
+    await tap(cdp, phone, '[data-testid="phone-memo-next"]')
+    await expect(phone.getByTestId('phone-memo-text')).toContainText('Third page')
+    // what leaves the Mac is masked, as the chat is
+    await expect(phone.getByTestId('phone-memo-text')).not.toContainText(key)
+    await tap(cdp, phone, '[data-testid="phone-memo-next"]')
+    await expect(phone.getByTestId('phone-memo-page')).toHaveText('1 / 3')
+    await tap(cdp, phone, '[data-testid="phone-memo-close"]')
+    await expect(panel).toHaveCount(0)
+    await expect(phone.getByTestId('chat-composer')).toBeVisible()
+    expect(await phone.evaluate(async () => (await fetch('/api/phone/memo/no-such-session')).status)).toBe(404)
+})
+
 test('T96 phone: my last message on top follows the Mac until the phone chooses (edf2aef3)', async () => {
     test.setTimeout(150_000)
     const { app, base } = await launch({ pinLastMessage: true })

@@ -17,7 +17,7 @@ import type {
 } from '../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../shared/conversation'
 import type { PhoneSessionsResponse } from '../../shared/phone'
-import { PHONE_API } from '../../shared/phone'
+import { PHONE_API, type PhoneMemoResponse } from '../../shared/phone'
 import type { PhoneAccess } from './phoneAccess'
 import type { PhoneDevices } from './PhoneDevices'
 import type { PhoneDock } from './phoneDock'
@@ -81,6 +81,8 @@ export interface PhoneApiDeps {
      * (ovis composer.ts:273,335,632 re-authorize between async steps).
      */
     stillAllowed(): boolean
+    /** the session's memo pages, first page first (at least one); null for no such session. Absent: no memo route */
+    readMemo?(sessionId: string): string[] | null
     /** absent: no file routes (phoneFiles.ts) */
     files?: PhoneFilesDeps
     /** a file on its way to a device: stopped if the device is disconnected */
@@ -142,6 +144,20 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
     }
     if (path === PHONE_API.pushTest && method === 'POST') {
         send(res, 200, await deps.push.test())
+        return
+    }
+
+    // The memo pad, read-only (84188aa0). A view-only device reads it too, as it reads the chat.
+    const memo = /^\/api\/phone\/memo\/([^/]+)$/.exec(path)
+    if (memo && method === 'GET' && deps.readMemo) {
+        const pages = deps.readMemo(decodeURIComponent(memo[1]))
+        if (!deps.stillAllowed()) return refuseRevoked(res)
+        if (!pages) {
+            send(res, 404, { error: 'unknown_session' })
+            return
+        }
+        const body: PhoneMemoResponse = { pages: pages.map((page) => page.split('\n').map((line) => deps.maskLine(line)).join('\n')) }
+        send(res, 200, body)
         return
     }
 
