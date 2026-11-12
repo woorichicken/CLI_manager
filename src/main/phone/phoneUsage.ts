@@ -134,10 +134,12 @@ export class AgentSwapReader {
 export function runAgentSwapInLoginShell(shell = process.env.SHELL || '/bin/zsh', timeoutMs = AGENT_SWAP_TIMEOUT_MS): AgentSwapRun {
     return () =>
         new Promise((resolve, reject) => {
-            execFile(shell, ['-l', '-c', 'command -v aswap >/dev/null 2>&1 || exit 127; exec aswap list --json'], { timeout: timeoutMs, maxBuffer: AGENT_SWAP_MAX_BYTES, killSignal: 'SIGKILL' }, (error, stdout) => {
+            const child = execFile(shell, ['-l', '-c', 'command -v aswap >/dev/null 2>&1 || exit 127; exec aswap list --json'], { timeout: timeoutMs, maxBuffer: AGENT_SWAP_MAX_BYTES, killSignal: 'SIGKILL' }, (error, stdout) => {
                 if (error) reject(error)
                 else resolve(stdout)
             })
+            // nothing to type: a command that reads stdin ends now instead of waiting out the timeout
+            child.stdin?.end()
         })
 }
 

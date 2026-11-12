@@ -244,7 +244,10 @@ export function PhoneApp() {
         setDrawer(false)
         // on a wide screen the list stays tappable under an open panel: a second entry would make ✕ take two presses
         if (readRoute().dockPanel) return
-        window.history.pushState(DOCK_PANEL_ENTRY, '', addressWithDockPanel(true))
+        setUsageOpen(false)
+        // over the usage view, the Dock takes its entry's place: ✕ then returns to where usage was opened
+        if (window.history.state === USAGE_ENTRY) window.history.replaceState(DOCK_PANEL_ENTRY, '', addressWithDockPanel(true))
+        else window.history.pushState(DOCK_PANEL_ENTRY, '', addressWithDockPanel(true))
         setRoute(readRoute())
     }, [])
 
@@ -301,6 +304,8 @@ export function PhoneApp() {
 
     const openUsage = useCallback(() => {
         setDrawer(false)
+        // on a wide screen the list stays tappable under the view: a second entry would make ✕ take two presses
+        if (window.history.state === USAGE_ENTRY) return
         window.history.pushState(USAGE_ENTRY, '', window.location.href)
         setUsageOpen(true)
     }, [])
@@ -311,7 +316,10 @@ export function PhoneApp() {
     }, [])
     useEffect(() => {
         if (!usageOpen) return
-        const pop = (): void => setUsageOpen(false)
+        // Back onto the usage entry itself (from a page opened over it) keeps the view open
+        const pop = (): void => {
+            if (window.history.state !== USAGE_ENTRY) setUsageOpen(false)
+        }
         window.addEventListener('popstate', pop)
         return () => window.removeEventListener('popstate', pop)
     }, [usageOpen])
@@ -336,7 +344,10 @@ export function PhoneApp() {
     const lens: SessionLens = route.view ?? (session ? rememberedLens(session.id) : null) ?? 'chat'
     const open = (next: PhoneSession): void => {
         setDrawer(false)
-        navigate(next.id, next.agent ? rememberedLens(next.id) ?? 'chat' : 'terminal')
+        // a session tapped under the usage view (wide screen): it replaces the view and its history entry
+        const overUsage = usageOpen && window.history.state === USAGE_ENTRY
+        setUsageOpen(false)
+        navigate(next.id, next.agent ? rememberedLens(next.id) ?? 'chat' : 'terminal', overUsage)
     }
     // A session link in the chat (b2020233): the phone shows one session, so the first one the link names
     // that this list holds. Refs are full ids or their first 8+ characters, as on the Mac (sessionLink.ts).

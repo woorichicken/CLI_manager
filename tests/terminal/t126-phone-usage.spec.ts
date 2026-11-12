@@ -144,6 +144,27 @@ test.describe('T126 units', () => {
         fs.rmSync(dir, { recursive: true, force: true })
     })
 
+    test("the real command line in a real login sh: aswap on PATH is run, none is exit 127 (review)", async () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 't126-home-'))
+        const bin = path.join(home, 'bin')
+        fs.mkdirSync(bin)
+        const saved = { PATH: process.env.PATH, HOME: process.env.HOME, ENV: process.env.ENV }
+        try {
+            // a home with no profile of the user's; macOS /etc/profile keeps PATH's own entries after the system ones
+            process.env.HOME = home
+            delete process.env.ENV
+            process.env.PATH = `/usr/bin:/bin:${bin}`
+            await expect(runAgentSwapInLoginShell('/bin/sh')()).rejects.toMatchObject({ code: 127 })
+            fs.writeFileSync(path.join(bin, 'aswap'), `#!/bin/sh\n[ "$1 $2" = "list --json" ] || exit 3\ncat <<'JSON'\n${JSON.stringify(swapList())}\nJSON\n`, { mode: 0o755 })
+            expect(parseAgentSwapList(await runAgentSwapInLoginShell('/bin/sh')(), NOW)!.accounts).toHaveLength(2)
+        } finally {
+            process.env.PATH = saved.PATH
+            process.env.HOME = saved.HOME
+            if (saved.ENV !== undefined) process.env.ENV = saved.ENV
+            fs.rmSync(home, { recursive: true, force: true })
+        }
+    })
+
     test("the app's own reading in the phone's shape", () => {
         const app = appUsageForPhone({
             claude: { fiveHour: { usedPercent: 30, resetsAt: Math.floor((NOW + HOUR) / 1000), windowMinutes: 300, label: '5h' }, updatedAt: NOW },
