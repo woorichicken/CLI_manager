@@ -76,6 +76,8 @@ function seedTranscript(file: string): void {
     }
     say('user', LONG_MESSAGE)
     say('assistant', 'Read it. The file is `notes.md` — see notes.md.')
+    say('user', '보고서는?')
+    say('assistant', 'The page is `report.html` — its title is at `report.html:3`.')
     say('user', '이 표는 어디에서 왔나요?')
     say('assistant', Array.from({ length: 70 }, (_, i) => `The answer goes on, line ${i + 1}.\n`).join('\n'))
     fs.writeFileSync(file, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n')
@@ -93,6 +95,7 @@ async function launch(chat: Record<string, unknown> = {}, config: Record<string,
     const project = path.join(home, 'project')
     fs.mkdirSync(project, { recursive: true })
     fs.writeFileSync(path.join(project, 'notes.md'), '# Notes\n')
+    fs.writeFileSync(path.join(project, 'report.html'), '<!doctype html>\n<html>\n<head><title>T96 report</title></head>\n<body><h1>Report</h1></body>\n</html>\n')
     const statusFile = path.join(home, 'tailscale-status.json')
     fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Running', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: ['100.100.1.1'] }, User: { '42': { LoginName: OWNER } } }))
     const claudeDir = path.join(home, 'claude')
@@ -513,6 +516,91 @@ test('T96 Mac Chat: a named path opens in the preview, or in the Mac\'s app with
         await expect.poll(() => app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened)).toEqual([path.join(project, 'notes.md')])
         await expect(page.getByTestId('chat-file-preview')).toHaveCount(0)
     })
+})
+
+test('T96 Mac Chat: a web page opens in the browser; with a line, the preview offers the browser (90043d9d)', async () => {
+    test.setTimeout(120_000)
+    const { app, page, project } = await launch()
+    await app.evaluate(({ shell }) => {
+        const opened: string[] = []
+        ;(globalThis as unknown as { __opened: string[] }).__opened = opened
+        shell.openPath = async (target: string) => {
+            opened.push(target)
+            return ''
+        }
+    })
+    const opened = (): Promise<string[]> => app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened)
+    const report = path.join(project, 'report.html')
+    await openMacChat(page)
+    const pageLink = chat(page).getByRole('button', { name: 'report.html', exact: true }).first()
+    await pageLink.scrollIntoViewIfNeeded()
+    await pageLink.click()
+    await expect.poll(opened).toEqual([report])
+    await expect(page.getByTestId('chat-file-preview')).toHaveCount(0)
+    // a line is a place in the source: the preview, with the browser one click away
+    await chat(page).getByRole('button', { name: /report\.html:3/ }).first().click()
+    // the wrapper only carries the path (the modal is fixed): what is seen is the modal's own button and text
+    await expect(page.getByTestId('chat-file-preview')).toHaveAttribute('data-path', report)
+    await expect(page.getByTestId('file-preview-browser')).toBeVisible()
+    await expect(page.getByTestId('chat-file-preview')).toContainText('T96 report')
+    await shot(page, 't96-html-preview-1280')
+    await page.getByTestId('file-preview-browser').click()
+    await expect.poll(opened).toEqual([report, report])
+    // a page that is not HTML has no such button
+    await page.locator('[data-testid="chat-file-preview"] button[title^="Close"]').click()
+    await expect(page.getByTestId('chat-file-preview')).toHaveCount(0)
+    await chat(page).getByRole('button', { name: 'notes.md', exact: true }).first().click()
+    await expect(page.getByTestId('chat-file-preview')).toHaveAttribute('data-path', path.join(project, 'notes.md'))
+    await expect(page.getByTestId('file-preview-browser')).toHaveCount(0)
+})
+
+test('T96 phone: a slow Mac is said on the loading screens (fb-1112)', async () => {
+    test.setTimeout(150_000)
+    const { app, base } = await launch()
+    // a busy Mac: who-am-I and the conversation answer after 6 s (Electron holds the request until the callback)
+    await app.evaluate(({ session }) => {
+        session.fromPartition('t96-slow').webRequest.onBeforeRequest({ urls: ['*://*/api/phone/me', '*://*/api/phone/chat/*/conversation*'] }, (_details, callback) => {
+            setTimeout(() => callback({}), 6_000)
+        })
+    })
+    const { phone } = await openPhone(app, `${base}/?session=${OTHER}&view=chat`, 't96-slow')
+    await expect(phone.getByTestId('phone-connecting')).toBeVisible()
+    await expect(phone.getByTestId('phone-connecting-slow')).toHaveCount(0)
+    await expect(phone.getByTestId('phone-connecting-slow')).toBeVisible({ timeout: 6_000 })
+    await shot(phone, 't96-phone-connecting-slow-390')
+    await expect(phone.getByTestId('chat-reading')).toBeVisible({ timeout: 10_000 })
+    await expect(phone.getByTestId('chat-reading-slow')).toBeVisible({ timeout: 6_000 })
+    await shot(phone, 't96-phone-reading-slow-390')
+    // it answers: the notes go with the loading screens
+    await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
+    await expect(phone.getByTestId('chat-reading-slow')).toHaveCount(0, { timeout: 20_000 })
+})
+
+test('T96 Mac: Tailscale switched off is said on the badge and in Settings › Phone (fb-1112)', async () => {
+    test.setTimeout(120_000)
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t96-ts-'))
+    const statusFile = path.join(folder, 'tailscale-status.json')
+    // the state this Mac was in when the phone stopped connecting: signed in, named, switched off
+    fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Stopped', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: [] }, User: { '42': { LoginName: OWNER } } }))
+    result = await launchAppWithWorkspaces([{ id: 'w-ts', name: 'TS', path: folder, sessions: [{ id: 't96-ts', name: 'TS shell' }] }], {
+        settings: { phone: { enabled: true, port: PORT } },
+        env: { CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile }
+    })
+    const { app, page } = result
+    await resizeMainWindow(app, 1280, 800)
+    await expect(page.getByTestId('phone-badge-tailscale-off')).toHaveText('Phone on · Tailscale off', { timeout: 15_000 })
+    expect((await page.evaluate(() => window.api.getPhoneState())).tailscale.stopped).toBe(true)
+    await page.locator('[title^="Settings"]').first().click()
+    await page.getByTestId('settings-category-phone').click()
+    await expect(page.getByTestId('phone-tailscale-stopped')).toBeVisible()
+    await shot(page, 't96-tailscale-off-1280')
+    // switched on again: Settings opening reads it fresh, and the badge counts phones again
+    fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Running', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: ['100.100.1.1'] }, User: { '42': { LoginName: OWNER } } }))
+    // Settings › Phone reads Tailscale fresh each time it opens: leave the page and come back
+    await page.getByTestId('settings-category-terminal').click()
+    await page.getByTestId('settings-category-phone').click()
+    await expect(page.getByTestId('phone-tailscale-stopped')).toHaveCount(0, { timeout: 10_000 })
+    await expect(page.getByTestId('phone-badge')).toContainText('connected')
 })
 
 test('T96 Related: Below comes first (474b70f8)', async () => {

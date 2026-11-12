@@ -1166,6 +1166,8 @@ export interface PhoneState {
         owner: string | null
         /** MagicDNS name, e.g. mac.tailnet.ts.net */
         dnsName: string | null
+        /** installed and signed in but switched off: no phone reaches this Mac until it is turned on */
+        stopped: boolean
     }
     /** https://<dnsName>/ once serve forwards to the port; null without a MagicDNS name */
     phoneUrl: string | null

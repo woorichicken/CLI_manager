@@ -12,6 +12,13 @@ export const SYSTEM_TYPES: ReadonlySet<string> = new Set([
     'zip', 'gz', 'tgz', 'dmg', 'pkg', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'key', 'pages', 'numbers', 'hwp', 'hwpx', 'psd', 'ai', 'sketch', 'fig'
 ])
 
+/**
+ * A web page: the Mac opens it in the default browser (Chrome for most), drawn as a page with its own
+ * pictures and scripts — the app's preview would only show its source (90043d9d). A line asked for
+ * (`report.html:42`) is a place in the source: that still opens the preview.
+ */
+export const BROWSER_PAGE_EXTENSIONS: ReadonlySet<string> = new Set(['html', 'htm'])
+
 /** The extension of a path's last name, lower case, without the dot ('' when it has none). */
 export function fileExtension(path: string): string {
     const name = path.slice(path.lastIndexOf('/') + 1)
