@@ -441,9 +441,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 <div className="chat-scroll" ref={scroller} onScroll={onScroll} data-testid="chat-scroll">
                     <div className="chat-column" ref={column}>
                         {snapshot === null ? (
-                            <div className="chat-empty">
-                                <Loader2 size={16} className="animate-spin" /> Reading the conversation…
-                            </div>
+                            <ReadingConversation />
                         ) : snapshot.unavailable === 'not-found' && snapshot.agent !== null ? (
                             // a new Claude session writes its file with the first message: nothing is wrong yet
                             <NoTurnsYet missingFile onOpenTerminal={() => onOpenTerminal()} />
@@ -566,6 +564,31 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
 }
 
 /** A pinned message this many lines long, or shorter, opens where it is; a longer one goes to the message (babcdbc9). */
+/** a read the Mac answers in a blink; past this the person is told why it waits (fb-1112) */
+const SLOW_READ_MS = 4_000
+
+/**
+ * The first read of a conversation. A Mac busy with other work (builds, many agents) answers late; the
+ * phone over a slow link later still — after SLOW_READ_MS the screen says so instead of only spinning.
+ */
+function ReadingConversation() {
+    const [slow, setSlow] = useState(false)
+    useEffect(() => {
+        const timer = window.setTimeout(() => setSlow(true), SLOW_READ_MS)
+        return () => window.clearTimeout(timer)
+    }, [])
+    return (
+        <div className="chat-empty" data-testid="chat-reading">
+            <Loader2 size={16} className="animate-spin" /> Reading the conversation…
+            {slow && (
+                <p className="chat-reading-slow" data-testid="chat-reading-slow">
+                    Taking longer than usual — the Mac may be busy with other work.
+                </p>
+            )}
+        </div>
+    )
+}
+
 const PINNED_OPEN_MAX_LINES = 8
 
 /**

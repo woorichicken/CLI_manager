@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { X, FileText, Loader2, AlertCircle, ExternalLink, Image } from 'lucide-react'
+import { X, FileText, Loader2, AlertCircle, ExternalLink, Globe, Image } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { IMAGE_EXTENSIONS } from '../../../shared/fileKinds'
+import { BROWSER_PAGE_EXTENSIONS, IMAGE_EXTENSIONS, fileExtension } from '../../../shared/fileKinds'
 import { Markdown } from './ChatView/markdown/Markdown'
 import './ChatView/chat.css'
 
@@ -97,6 +97,8 @@ const getLanguageFromPath = (filePath: string): string => {
 export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onOpenInEditor, renderMarkdown = false }: FilePreviewProps) {
     const [content, setContent] = useState<string>('')
     const markdown = renderMarkdown && MARKDOWN_NAME.test(filePath)
+    // the preview shows a page's source; the browser draws it (90043d9d)
+    const webPage = BROWSER_PAGE_EXTENSIONS.has(fileExtension(filePath))
     // a line asked for is a place in the source: the drawn words have no line numbers
     const [source, setSource] = useState(!markdown || line !== undefined)
     useEffect(() => setSource(!markdown || line !== undefined), [filePath, line, markdown])
@@ -238,6 +240,17 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                                     Source
                                 </button>
                             </div>
+                        )}
+                        {webPage && (
+                            <button
+                                type="button"
+                                data-testid="file-preview-browser"
+                                onClick={() => void window.api.openChatPath(filePath)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+                                title="Open in browser — see it as a page"
+                            >
+                                <Globe size={12} /> Browser
+                            </button>
                         )}
                         {onOpenInEditor && (
                             <button

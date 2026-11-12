@@ -88,9 +88,19 @@ function useWide(): boolean {
 const AWAY_MS = 5_000
 /** «Refreshing…» stays at least this long — a blink would not be read. */
 const REFRESH_MIN_MS = 600
+/** connecting usually takes a blink; past this the screen says the Mac may be busy (fb-1112) */
+const SLOW_CONNECT_MS = 4_000
 
 export function PhoneApp() {
     const [me, setMe] = useState<PhoneMe | null>(null)
+    // still connecting after a while: say the Mac may be busy rather than only waiting (fb-1112)
+    const [connectSlow, setConnectSlow] = useState(false)
+    const connected = me !== null
+    useEffect(() => {
+        if (connected) return
+        const timer = window.setTimeout(() => setConnectSlow(true), SLOW_CONNECT_MS)
+        return () => window.clearTimeout(timer)
+    }, [connected])
     const [data, setData] = useState<PhoneSessionsResponse | null>(null)
     const [route, setRoute] = useState(readRoute)
     const [drawer, setDrawer] = useState(false)
@@ -307,7 +317,17 @@ export function PhoneApp() {
             </div>
         )
     }
-    if (!me) return <div className="phone-empty phone-fill">Connecting to the Mac…</div>
+    if (!me)
+        return (
+            <div className="phone-empty phone-fill" data-testid="phone-connecting">
+                <p>Connecting to the Mac…</p>
+                {connectSlow && (
+                    <p className="phone-unreachable-note" data-testid="phone-connecting-slow">
+                        Taking longer than usual — the Mac may be busy with other work.
+                    </p>
+                )}
+            </div>
+        )
     if (me.access === 'none') return <PairScreen reason={me.reason} onPaired={loadMe} />
 
     const session = data?.sessions.find((s) => s.id === route.sessionId) ?? null

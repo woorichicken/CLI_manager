@@ -489,3 +489,6 @@ button.chat-attachment-chip:hover { background: rgba(255, 255, 255, 0.16); }
 .chat-turn-done { margin-top: 6px; font-size: 0.78em; color: var(--chat-dim); }
 .chat-recap { margin-top: 6px; font-size: 0.86em; font-style: italic; color: var(--chat-dim); line-height: 1.5; }
 .chat-recap-label { font-style: normal; font-weight: 600; margin-right: 4px; }
+
+/* the first read is slow: why it waits (fb-1112) */
+.chat-reading-slow { margin: 0; font-size: 0.85em; color: var(--chat-dim); }
