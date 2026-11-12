@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronRight, Laptop, Layers, MessageSquareWarning } from 'lucide-react'
+import { ChevronRight, Gauge, Laptop, Layers, MessageSquareWarning } from 'lucide-react'
 import type { PhoneDockItem, PhoneMe, PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { getMe, getSessions, PhoneApiError } from './api'
 import { AlertsMenu } from './AlertsMenu'
@@ -11,6 +11,7 @@ import { PhoneDocPanel } from './PhoneDocPanel'
 import { PhoneFilePanel, type PhoneDockDocTarget, type PhoneFileTarget } from './PhoneFilePanel'
 import { openPhoneFeedback, phoneFeedbackConfigured, PhoneFeedback } from './feedback/PhoneFeedback'
 import { PhoneSettingsMenu } from './PhoneSettingsMenu'
+import { PhoneUsagePanel } from './PhoneUsagePanel'
 import { HandoffNoticeToast } from '../components/ChatView/HandoffNoticeToast'
 import { parseSessionLink } from '../utils/sessionLink'
 import { usePhoneChatSettings } from './phoneChatSettings'
@@ -94,6 +95,8 @@ export function PhoneApp() {
     const [data, setData] = useState<PhoneSessionsResponse | null>(null)
     const [route, setRoute] = useState(readRoute)
     const [drawer, setDrawer] = useState(false)
+    /** the usage view (3b4efdfc): over everything but the drawer is closed first */
+    const [usageOpen, setUsageOpen] = useState(false)
     /** what a Dock row opened, over the panel: its document, or a file that document's link led to */
     const [dockFile, setDockFile] = useState<PhoneDockDocTarget | PhoneFileTarget | null>(null)
     const [offline, setOffline] = useState(false)
@@ -403,6 +406,19 @@ export function PhoneApp() {
                             <ChevronRight size={15} className="phone-dock-entry-icon" aria-hidden="true" />
                         </button>
                     )}
+                    <button
+                        type="button"
+                        className="phone-dock-entry"
+                        data-testid="phone-usage-entry"
+                        onClick={() => {
+                            setDrawer(false)
+                            setUsageOpen(true)
+                        }}
+                    >
+                        <Gauge size={15} className="phone-dock-entry-icon" aria-hidden="true" />
+                        <span className="phone-dock-entry-label">Usage</span>
+                        <ChevronRight size={15} className="phone-dock-entry-icon" aria-hidden="true" />
+                    </button>
                     <SessionList data={data} activeId={session?.id ?? null} onOpen={open} />
                 </aside>
             )}
@@ -429,6 +445,7 @@ export function PhoneApp() {
             )}
             {wide && !session && <main className="phone-main phone-empty">Pick a session.</main>}
             {/* a view-only device gets the list alone (decision 0010): a row only shows its whole folder name */}
+            {usageOpen && <PhoneUsagePanel onClose={() => setUsageOpen(false)} />}
             {dockPanelOpen && <PhoneDockPanel onClose={closeDockPanel} onOpenSession={openDockSession} {...(me.role === 'drive' ? { onOpenDoc: openDockDoc } : {})} />}
             {dockPanelOpen && dockFile && me.role === 'drive' && ('dock' in dockFile || opensAsDocument(dockFile) ? (
                 <PhoneDocPanel

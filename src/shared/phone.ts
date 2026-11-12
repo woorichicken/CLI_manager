@@ -316,5 +316,48 @@ export const PHONE_API = {
     /** POST: one HTTP request of the feedback widget, sent by main's FeedbackRelay */
     feedbackRelay: '/api/phone/feedback/relay',
     /** GET `?session=<id>`: the terminal a report is about, as the desktop widget gets it over IPC */
-    feedbackTerminal: '/api/phone/feedback/terminal'
+    feedbackTerminal: '/api/phone/feedback/terminal',
+    /** GET: what the agents have used (3b4efdfc) — the app's own reading, and agent-swap's when it is installed */
+    usage: '/api/phone/usage'
 } as const
+
+/** One limit window. `resetsAt` is ISO-8601 (UTC). */
+export interface PhoneUsageWindow {
+    usedPercent: number
+    resetsAt: string | null
+}
+
+/** One account agent-swap keeps (`aswap list --json`). The email is shortened before it leaves the Mac. */
+export interface PhoneUsageAccount {
+    /** the alias when one is set, else the email with most of its name hidden (`ab…@example.com`) */
+    label: string
+    active: boolean
+    /** agent-swap's `usageStatus`: `ok`, `unavailable`, `token_expired`, … */
+    status: string
+    fiveHour?: PhoneUsageWindow
+    sevenDay?: PhoneUsageWindow & {
+        /** agent-swap's linear guess at 100% (ISO), weekly windows only */
+        projectedExhaustionAt?: string
+        willLastToReset?: boolean
+    }
+    /** seconds since agent-swap measured it */
+    ageSeconds?: number
+}
+
+/**
+ * GET /api/phone/usage (3b4efdfc). `app` is what this app reads itself (Claude Code's status line,
+ * Codex's session files) — every Mac has it. `agentSwap` is there only when the `aswap` command is
+ * installed and answered; read when the phone asks, kept a minute.
+ */
+export interface PhoneUsageResponse {
+    app: {
+        claude?: { fiveHour?: PhoneUsageWindow; sevenDay?: PhoneUsageWindow; updatedAt: number }
+        codex?: { weekly?: PhoneUsageWindow; updatedAt: number }
+    }
+    agentSwap: {
+        accounts: PhoneUsageAccount[]
+        codex?: { primary?: PhoneUsageWindow; secondary?: PhoneUsageWindow }
+        /** when the Mac ran `aswap list --json` (epoch ms) */
+        readAt: number
+    } | null
+}
