@@ -191,3 +191,90 @@
     color: var(--text-muted);
     white-space: nowrap;
 }
+
+/* --- usage (3b4efdfc): the Dock panel's frame, a bar per limit --- */
+.phone-usage-group {
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
+}
+.phone-usage-note {
+    padding: 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.phone-usage-bar {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 40px;
+    grid-template-areas: 'label track pct' '. reset reset';
+    align-items: center;
+    column-gap: 8px;
+    padding: 4px 12px;
+    font-size: 12px;
+}
+.phone-usage-bar-label {
+    grid-area: label;
+    color: var(--text-secondary);
+}
+.phone-usage-track {
+    grid-area: track;
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+.phone-usage-fill {
+    display: block;
+    height: 100%;
+    background: rgb(96, 165, 250);
+}
+.phone-usage-fill.is-warn {
+    background: #fbbf24;
+}
+.phone-usage-pct {
+    grid-area: pct;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+.phone-usage-reset {
+    grid-area: reset;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+.phone-usage-account {
+    padding: 6px 0;
+}
+.phone-usage-account + .phone-usage-account {
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+.phone-usage-account-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 2px 12px;
+    font-size: 13px;
+}
+.phone-usage-account-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.phone-usage-badge {
+    flex-shrink: 0;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    color: rgb(147, 197, 253);
+    background: rgba(59, 130, 246, 0.2);
+}
+.phone-usage-badge.is-dim {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
+}
+.phone-usage-warn {
+    padding: 2px 12px 0 48px;
+    font-size: 11px;
+    color: #fbbf24;
+}

@@ -17,7 +17,7 @@ import type {
 } from '../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../shared/conversation'
 import type { PhoneSessionsResponse } from '../../shared/phone'
-import { PHONE_API, type PhoneMemoResponse, type PhoneRenameResponse } from '../../shared/phone'
+import { PHONE_API, type PhoneMemoResponse, type PhoneRenameResponse, type PhoneUsageResponse } from '../../shared/phone'
 import type { PhoneAccess } from './phoneAccess'
 import type { PhoneDevices } from './PhoneDevices'
 import type { PhoneDock } from './phoneDock'
@@ -81,6 +81,8 @@ export interface PhoneApiDeps {
      * (ovis composer.ts:273,335,632 re-authorize between async steps).
      */
     stillAllowed(): boolean
+    /** the usage view (3b4efdfc). Absent: no usage route */
+    usage?(): Promise<PhoneUsageResponse>
     /** the session's memo pages, first page first (at least one); null for no such session. Absent: no memo route */
     readMemo?(sessionId: string): string[] | null
     /**
@@ -149,6 +151,14 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
     }
     if (path === PHONE_API.pushTest && method === 'POST') {
         send(res, 200, await deps.push.test())
+        return
+    }
+
+    // read-only numbers, as the chat is: a view-only device reads them too
+    if (path === PHONE_API.usage && method === 'GET' && deps.usage) {
+        const body = await deps.usage()
+        if (!deps.stillAllowed()) return refuseRevoked(res)
+        send(res, 200, body)
         return
     }
 
