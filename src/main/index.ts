@@ -33,7 +33,7 @@ import { ScrollbackStore } from './ScrollbackStore'
 import { TerminalEventLog } from './TerminalEventLog'
 import { buildFeedbackTerminalContext } from './feedbackTerminalContext'
 import { ClaudeSessionSync } from './ClaudeSessionSync'
-import { ControlApiService } from './ControlApiService'
+import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
 import { SessionFolders } from './SessionFolders'
@@ -3736,6 +3736,14 @@ app.whenReady().then(async () => {
             : process.env.CLIMANGER_TEST_USERDATA
               ? { agentSwapRun: () => Promise.reject(new Error('agent-swap is not asked in tests')) }
               : {}),
+        renameSession: (id, name) => {
+            try {
+                return controlApiService.renameSession(id, name).name
+            } catch (error) {
+                if (error instanceof ControlApiError && error.status === 404) return null
+                throw error
+            }
+        },
         hookStatus: (id) => agentStatusResolver.getStatus(id),
         broadcast,
         mask: { homeDir: os.homedir(), username: currentUsername() },

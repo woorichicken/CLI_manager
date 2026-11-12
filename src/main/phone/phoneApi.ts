@@ -17,7 +17,7 @@ import type {
 } from '../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../shared/conversation'
 import type { PhoneSessionsResponse } from '../../shared/phone'
-import { PHONE_API, type PhoneUsageResponse } from '../../shared/phone'
+import { PHONE_API, type PhoneMemoResponse, type PhoneRenameResponse, type PhoneUsageResponse } from '../../shared/phone'
 import type { PhoneAccess } from './phoneAccess'
 import type { PhoneDevices } from './PhoneDevices'
 import type { PhoneDock } from './phoneDock'
@@ -83,6 +83,13 @@ export interface PhoneApiDeps {
     stillAllowed(): boolean
     /** the usage view (3b4efdfc). Absent: no usage route */
     usage?(): Promise<PhoneUsageResponse>
+    /** the session's memo pages, first page first (at least one); null for no such session. Absent: no memo route */
+    readMemo?(sessionId: string): string[] | null
+    /**
+     * The sidebar name, as the Control API renames (0a4bdfff): the name the Mac kept, or null for no
+     * such session. Absent: no rename route.
+     */
+    renameSession?(sessionId: string, name: string): string | null
     /** absent: no file routes (phoneFiles.ts) */
     files?: PhoneFilesDeps
     /** a file on its way to a device: stopped if the device is disconnected */
@@ -152,6 +159,47 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
         const body = await deps.usage()
         if (!deps.stillAllowed()) return refuseRevoked(res)
         send(res, 200, body)
+        return
+    }
+
+    // The memo pad, read-only (84188aa0). A view-only device reads it too, as it reads the chat.
+    const memo = /^\/api\/phone\/memo\/([^/]+)$/.exec(path)
+    if (memo && method === 'GET' && deps.readMemo) {
+        const sessionId = decodedSegment(memo[1])
+        const pages = sessionId === null ? null : deps.readMemo(sessionId)
+        if (!deps.stillAllowed()) return refuseRevoked(res)
+        if (!pages) {
+            send(res, 404, { error: 'unknown_session' })
+            return
+        }
+        const body: PhoneMemoResponse = { pages: pages.map((page) => page.split('\n').map((line) => deps.maskLine(line)).join('\n')) }
+        send(res, 200, body)
+        return
+    }
+
+    // A label on the Mac's sidebar, not input to the terminal — but it changes the Mac: drive devices only
+    const rename = /^\/api\/phone\/rename\/([^/]+)$/.exec(path)
+    if (rename && method === 'POST' && deps.renameSession) {
+        if (deps.access.role !== 'drive') {
+            send(res, 403, { error: 'view_only', message: 'This device can only watch. Pair it again with "Can type" to rename.' })
+            return
+        }
+        const sessionId = decodedSegment(rename[1])
+        const body = await readJson(req)
+        if (!deps.stillAllowed()) return refuseRevoked(res)
+        const name = typeof body?.name === 'string' ? body.name.trim() : ''
+        if (!name) {
+            send(res, 400, { error: 'empty_name', message: 'A session needs a name.' })
+            return
+        }
+        const kept = sessionId === null ? null : deps.renameSession(sessionId, name)
+        if (sessionId === null || kept === null) {
+            send(res, 404, { error: 'unknown_session' })
+            return
+        }
+        deps.recordPhoneInput(sessionId, 'renamed the session')
+        const reply: PhoneRenameResponse = { name: kept }
+        send(res, 200, reply)
         return
     }
 
@@ -322,4 +370,13 @@ export function maskSnapshot(snapshot: ConversationSnapshot, maskLine: (text: st
         }))
     }
     return { ...snapshot, prompt }
+}
+
+/** A session id from the path: a broken `%` sequence names no session (404), it does not throw. */
+function decodedSegment(segment: string): string | null {
+    try {
+        return decodeURIComponent(segment)
+    } catch {
+        return null
+    }
 }
