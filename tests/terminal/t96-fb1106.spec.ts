@@ -8,6 +8,8 @@ import { checklistForAgent } from '../../src/renderer/src/utils/checklistForAgen
 import { screenAgentMode } from '../../src/main/screenLines'
 import { foldMetadata } from '../../src/main/transcript/metadata'
 import type { ChatCommand } from '../../src/shared/conversation'
+import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
+import { PhoneServer } from '../../src/main/phone/PhoneServer'
 
 /**
  * T96 — fb-1106: small settings and the feedback round, against the real app.
@@ -821,3 +823,65 @@ test('T96 phone: my last message on top follows the Mac until the phone chooses 
 function relationFor(from: string, to: string): Record<string, unknown> {
     return { from, to, kind: 'opened', at: 1 }
 }
+
+test.describe('T96 memo and rename on the phone server (84188aa0 · 0a4bdfff)', () => {
+    let server: PhoneServer
+    let base = ''
+    let devices: PhoneDevices
+    const renamed: string[] = []
+    const cookieFor = (role: 'drive' | 'watch', label: string): string => {
+        const { code } = devices.startPairing(role)
+        const paired = devices.pair(code, label)
+        if ('error' in paired) throw new Error(paired.error)
+        return `climanager_phone=${paired.token}`
+    }
+
+    test.beforeAll(async () => {
+        const data = fs.mkdtempSync(path.join(os.tmpdir(), 't96-server-'))
+        devices = new PhoneDevices(path.join(data, 'devices.json'))
+        server = new PhoneServer({
+            devices,
+            push: { forgetOwner: () => undefined, publicKey: () => 'key', keysProblem: () => null, count: () => 0, onStatus: () => undefined } as never,
+            tailscale: { read: async () => ({ found: false, owner: null, dnsName: null }), peek: () => null } as never,
+            staticDir: data,
+            onStateChange: () => undefined,
+            statusPoller: { start: () => undefined, stop: () => undefined },
+            listSessions: () => ({ sessions: [] }) as never,
+            sessionExists: (id: string) => id === 's1',
+            conversation: {} as never,
+            saveAttachment: () => ({ status: 'attached', path: '/tmp/x' }) as never,
+            maskLine: (text: string) => text,
+            recordPhoneInput: () => undefined,
+            terminals: {} as never,
+            subscribeConversation: () => () => undefined,
+            readMemo: (id: string) => (id === 's1' ? ['one', 'two'] : null),
+            renameSession: (id: string, name: string) => {
+                if (id !== 's1') return null
+                renamed.push(name)
+                return name
+            }
+        } as never)
+        const state = await server.apply({ enabled: true, port: 0 } as never)
+        base = `http://127.0.0.1:${state.port}`
+    })
+    test.afterAll(() => server.stop())
+
+    test('a view-only device reads the memo but may not rename', async () => {
+        const watch = cookieFor('watch', 'Watcher')
+        const memo = await fetch(`${base}/api/phone/memo/s1`, { headers: { cookie: watch } })
+        expect(memo.status).toBe(200)
+        expect(await memo.json()).toEqual({ pages: ['one', 'two'] })
+        const rename = await fetch(`${base}/api/phone/rename/s1`, { method: 'POST', headers: { cookie: watch, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'nope' }) })
+        expect(rename.status).toBe(403)
+        expect(((await rename.json()) as { error: string }).error).toBe('view_only')
+        expect(renamed).toEqual([])
+    })
+
+    test('a broken % in the id is an unknown session, not a server error', async () => {
+        const drive = cookieFor('drive', 'Phone')
+        expect((await fetch(`${base}/api/phone/memo/%E0%A4`, { headers: { cookie: drive } })).status).toBe(404)
+        const rename = await fetch(`${base}/api/phone/rename/%E0%A4`, { method: 'POST', headers: { cookie: drive, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'x' }) })
+        expect(rename.status).toBe(404)
+        expect(renamed).toEqual([])
+    })
+})

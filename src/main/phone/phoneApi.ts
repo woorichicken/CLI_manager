@@ -155,7 +155,8 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
     // The memo pad, read-only (84188aa0). A view-only device reads it too, as it reads the chat.
     const memo = /^\/api\/phone\/memo\/([^/]+)$/.exec(path)
     if (memo && method === 'GET' && deps.readMemo) {
-        const pages = deps.readMemo(decodeURIComponent(memo[1]))
+        const sessionId = decodedSegment(memo[1])
+        const pages = sessionId === null ? null : deps.readMemo(sessionId)
         if (!deps.stillAllowed()) return refuseRevoked(res)
         if (!pages) {
             send(res, 404, { error: 'unknown_session' })
@@ -173,7 +174,7 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
             send(res, 403, { error: 'view_only', message: 'This device can only watch. Pair it again with "Can type" to rename.' })
             return
         }
-        const sessionId = decodeURIComponent(rename[1])
+        const sessionId = decodedSegment(rename[1])
         const body = await readJson(req)
         if (!deps.stillAllowed()) return refuseRevoked(res)
         const name = typeof body?.name === 'string' ? body.name.trim() : ''
@@ -181,8 +182,8 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
             send(res, 400, { error: 'empty_name', message: 'A session needs a name.' })
             return
         }
-        const kept = deps.renameSession(sessionId, name)
-        if (kept === null) {
+        const kept = sessionId === null ? null : deps.renameSession(sessionId, name)
+        if (sessionId === null || kept === null) {
             send(res, 404, { error: 'unknown_session' })
             return
         }
@@ -359,4 +360,13 @@ export function maskSnapshot(snapshot: ConversationSnapshot, maskLine: (text: st
         }))
     }
     return { ...snapshot, prompt }
+}
+
+/** A session id from the path: a broken `%` sequence names no session (404), it does not throw. */
+function decodedSegment(segment: string): string | null {
+    try {
+        return decodeURIComponent(segment)
+    } catch {
+        return null
+    }
 }
