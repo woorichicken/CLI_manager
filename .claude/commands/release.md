@@ -54,6 +54,13 @@ disown
 - 버전 번호 (기본 patch, 기능 추가면 minor)
 - 릴리즈 노트 내용 — GitHub용 Markdown과 changelog용 JSON 두 가지
 
+## 에이전트 셸의 샌드박스 밖에서 돌린다
+
+Claude Code 의 Bash 샌드박스 안에서는 `node_modules/.bin/electron-builder` 가 시작하자마자 `Killed: 9`(137)로 죽는다 — 같은 파일을 이름만 바꾸거나
+`sh` 로 부르면 살고, 샌드박스 밖에서는 정상이다. 빌드 로그에는 `sh: line 1: … Killed: 9  electron-builder --mac` 한 줄만 남아 메모리 부족처럼 보인다
+(2026-11-13 v1.33.0: 그렇게 읽고 두 번 다시 돌렸다). `--build`·`--publish`·`post-release.cjs` 는 샌드박스를 끈 호출(`dangerouslyDisableSandbox`)로 띄운다.
+같은 날 샌드박스 안 전체 시험에서 T106·T107·T81 10건이 실패했고 따로 돌리니 52/52 통과했다 — 시험도 샌드박스 밖에서 돌려야 판정이 깨끗하다.
+
 ## 실패하면
 
 스크립트가 알아서 멈추고 되돌린다. 게시된 것이 없다는 뜻이므로 원인만 고쳐 다시 돌리면 된다.
