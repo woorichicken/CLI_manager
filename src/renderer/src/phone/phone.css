@@ -981,3 +981,47 @@ body.phone-body #root {
     background: rgba(59, 130, 246, 0.25);
     color: var(--text-white);
 }
+
+/* --- renaming the session (0a4bdfff): the title is a button; the bar sits over the top of the view --- */
+.phone-title-button {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+}
+.phone-rename {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* over the chat (45) and the memo (46) */
+    z-index: 47;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 8px 8px 12px;
+    background: #0f0f14;
+    border-bottom: 1px solid var(--border-color);
+}
+.phone-rename-input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(96, 165, 250, 0.6);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-white);
+    /* 16px: iOS zooms the page into a smaller box */
+    font-size: 16px;
+}
+.phone-rename-error {
+    flex-basis: 100%;
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: rgb(248, 113, 113);
+}

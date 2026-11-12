@@ -755,6 +755,45 @@ test('T96 phone: the session memo shows on the phone, read-only (84188aa0)', asy
     expect(await phone.evaluate(async () => (await fetch('/api/phone/memo/no-such-session')).status)).toBe(404)
 })
 
+test('T96 phone: the session is renamed from the phone, and the Mac sidebar follows (0a4bdfff)', async () => {
+    test.setTimeout(150_000)
+    const { app, page, base } = await launch()
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${OTHER}&view=chat`, 't96-rename')
+    await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
+    await expect(phone.getByTestId('phone-session-rename')).toHaveText('T96 Other')
+    // cancel leaves it as it was
+    await tap(cdp, phone, '[data-testid="phone-session-rename"]')
+    await expect(phone.getByTestId('phone-rename-input')).toHaveValue('T96 Other')
+    await expect(phone.getByTestId('phone-rename-input')).toBeFocused()
+    await phone.getByTestId('phone-rename-input').fill('not this')
+    await tap(cdp, phone, '[data-testid="phone-rename-cancel"]')
+    await expect(phone.getByTestId('phone-rename-bar')).toHaveCount(0)
+    await expect(phone.getByTestId('phone-session-rename')).toHaveText('T96 Other')
+    // rename
+    await tap(cdp, phone, '[data-testid="phone-session-rename"]')
+    await phone.getByTestId('phone-rename-input').fill('  폰에서 바꾼 이름  ')
+    const onTop = await phone.evaluate(() => {
+        const r = document.querySelector('[data-testid="phone-rename-bar"]')!.getBoundingClientRect()
+        return document.elementFromPoint(r.x + 20, r.y + r.height / 2)?.closest('[data-testid="phone-rename-bar"]') !== null
+    })
+    expect(onTop, 'the bar is over the chat').toBe(true)
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll').toBe(true)
+    await shot(phone, 't96-phone-rename-390')
+    await tap(cdp, phone, '[data-testid="phone-rename-save"]')
+    await expect(phone.getByTestId('phone-rename-bar')).toHaveCount(0)
+    await expect(phone.getByTestId('phone-session-rename')).toHaveText('폰에서 바꾼 이름')
+    // the Mac: the sidebar without a reload, and the store
+    await expect(page.getByText('폰에서 바꾼 이름', { exact: true }).first()).toBeVisible({ timeout: 10_000 })
+    const stored = await page.evaluate(async () => (await window.api.getWorkspaces()).flatMap((w: { sessions: Array<{ id: string; name: string }> }) => w.sessions).find((s) => s.id === 't96-other')?.name)
+    expect(stored).toBe('폰에서 바꾼 이름')
+    // the list says the same once it is read again
+    await expect.poll(() => phone.evaluate(async () => (await (await fetch('/api/phone/sessions')).json()).sessions.find((s: { id: string }) => s.id === 't96-other')?.name)).toBe('폰에서 바꾼 이름')
+    // refused: an empty name, a session that is not there
+    const status = (id: string, name: string) => phone.evaluate(async ({ id, name }) => (await fetch(`/api/phone/rename/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })).status, { id, name })
+    expect(await status('t96-other', '   ')).toBe(400)
+    expect(await status('no-such-session', 'x')).toBe(404)
+})
+
 test('T96 phone: my last message on top follows the Mac until the phone chooses (edf2aef3)', async () => {
     test.setTimeout(150_000)
     const { app, base } = await launch({ pinLastMessage: true })

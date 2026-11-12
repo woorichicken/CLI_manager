@@ -8,6 +8,7 @@ import { createPhoneChatTransport } from './phoneChatTransport'
 import { PhoneDocPanel } from './PhoneDocPanel'
 import { PhoneFilePanel, type PhoneFileTarget } from './PhoneFilePanel'
 import { PhoneMemoPanel } from './PhoneMemoPanel'
+import { PhoneRenameBar } from './PhoneRenameBar'
 import { PhoneTerminal } from './PhoneTerminal'
 
 /**
@@ -94,6 +95,17 @@ export function SessionScreen({
     // the memo pad (84188aa0): over the view, closed when the page moves to another session
     const [memoOpen, setMemoOpen] = useState(false)
     useEffect(() => setMemoOpen(false), [session.id])
+    // renaming (0a4bdfff, drive devices): the name the Mac kept shows until the list brings it
+    const [renaming, setRenaming] = useState(false)
+    const [keptName, setKeptName] = useState<string | null>(null)
+    useEffect(() => {
+        setRenaming(false)
+        setKeptName(null)
+    }, [session.id])
+    useEffect(() => {
+        if (keptName !== null && session.name === keptName) setKeptName(null)
+    }, [session.name, keptName])
+    const shownName = keptName ?? session.name
     const transport = useMemo(() => createPhoneChatTransport(undefined, openFile), [openFile])
     const chatAvailable = session.agent !== null
     const view: SessionLens = chatAvailable ? lens : 'terminal'
@@ -118,7 +130,13 @@ export function SessionScreen({
                 )}
                 <span className={`phone-dot phone-dot-${session.state}`} aria-hidden="true" />
                 <span className="phone-header-title" data-testid="phone-session-title">
-                    {session.name}
+                    {role === 'drive' ? (
+                        <button type="button" className="phone-title-button" title="Rename this session" data-testid="phone-session-rename" onClick={() => setRenaming(true)}>
+                            {shownName}
+                        </button>
+                    ) : (
+                        shownName
+                    )}
                     {offline && (
                         <span className="phone-header-offline" data-testid="phone-header-offline">
                             {' '}· Reconnecting…
@@ -155,6 +173,17 @@ export function SessionScreen({
             </header>
             <div className="phone-session-body">
                 {memoOpen && <PhoneMemoPanel sessionId={session.id} onClose={() => setMemoOpen(false)} />}
+                {renaming && (
+                    <PhoneRenameBar
+                        sessionId={session.id}
+                        name={shownName}
+                        onCancel={() => setRenaming(false)}
+                        onDone={(kept) => {
+                            setKeptName(kept)
+                            setRenaming(false)
+                        }}
+                    />
+                )}
                 {view === 'chat' ? (
                     <ChatView
                         sessionId={session.id}

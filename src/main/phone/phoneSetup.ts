@@ -41,6 +41,8 @@ export interface PhoneSetupDeps {
     mirror: TerminalMirror
     eventLog: TerminalEventLog
     conversation: ConversationService
+    /** the Control API's rename: the sidebar follows at once. Returns the name kept, null for no such session */
+    renameSession?(sessionId: string, name: string): string | null
     hookStatus(id: string): AgentStatusUpdate | null
     broadcast(channel: string, payload: unknown): void
     mask: MaskOptions
@@ -195,6 +197,7 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         listSessions,
         sessionExists,
         readMemo,
+        ...(deps.renameSession ? { renameSession: deps.renameSession } : {}),
         dock,
         conversation: deps.conversation,
         saveAttachment: (name, bytes) => saveChatAttachment(join(os.tmpdir(), 'climanager-chat'), name, bytes),
