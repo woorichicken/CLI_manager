@@ -8,8 +8,8 @@ import { SessionScreenStatusPoller } from '../SessionScreenStatus'
 import type { TerminalEventLog } from '../TerminalEventLog'
 import type { TerminalManager } from '../TerminalManager'
 import type { TerminalMirror } from '../TerminalMirror'
-import type { PhoneSession, PhoneSessionsResponse, PhoneSessionState } from '../../shared/phone'
-import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
+import type { PhoneSession, PhoneSessionsResponse, PhoneSessionState, PhoneUsageResponse } from '../../shared/phone'
+import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, UsageSnapshot, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
 import { DEFAULT_PHONE } from '../../shared/types'
 import { DEFAULT_QUICK_REPLIES } from '../../shared/conversation'
 // The sidebar's own ordering functions (pure, types only): the phone's list is the Mac's All
@@ -22,6 +22,7 @@ import { PhonePush } from './PhonePush'
 import { PhoneServer } from './PhoneServer'
 import { TailscaleStatus } from './tailscaleStatus'
 import { phoneQueueHooks } from './phoneQueue'
+import { AgentSwapReader, appUsageForPhone, runAgentSwapInLoginShell, type AgentSwapRun } from './phoneUsage'
 import type { PhoneFeedbackDeps } from './phoneFeedback'
 
 /**
@@ -41,6 +42,12 @@ export interface PhoneSetupDeps {
     mirror: TerminalMirror
     eventLog: TerminalEventLog
     conversation: ConversationService
+    /** the app's own usage reading (UsageTracker); absent, the usage view shows agent-swap's only */
+    usageSnapshot?(): UsageSnapshot
+    /** `aswap list --json`; tests hand a fake. Absent: the user's login shell */
+    agentSwapRun?: AgentSwapRun
+    /** the Control API's rename: the sidebar follows at once. Returns the name kept, null for no such session */
+    renameSession?(sessionId: string, name: string): string | null
     hookStatus(id: string): AgentStatusUpdate | null
     broadcast(channel: string, payload: unknown): void
     mask: MaskOptions
@@ -142,7 +149,8 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
                 state,
                 ...(state === 'waiting' && dot?.question ? { question: maskLine(dot.question) } : {}),
                 ...(folderId ? { sessionFolderId: folderId } : {}),
-                ...(session.isPinned ? { pinned: true } : {})
+                ...(session.isPinned ? { pinned: true } : {}),
+                ...(filledMemoPages(session) > 0 ? { memoPages: filledMemoPages(session) } : {})
             }
         })
         return {
@@ -151,6 +159,22 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         }
     }
     const sessionExists = (id: string): boolean => findSession(id) !== null
+    // agent-swap is asked only while a phone looks at the usage view (3b4efdfc)
+    const agentSwap = new AgentSwapReader(deps.agentSwapRun ?? runAgentSwapInLoginShell())
+    const usage = async (): Promise<PhoneUsageResponse> => ({
+        app: appUsageForPhone(deps.usageSnapshot?.() ?? {}),
+        agentSwap: await agentSwap.read()
+    })
+    // the store keeps page 1 in `memo` and the rest in `memoPages` (SessionMemo · memoPagesOf)
+    const readMemo = (id: string): string[] | null => {
+        for (const workspace of workspaces()) {
+            const session = workspace.sessions?.find((s) => s.id === id)
+            if (session) return [session.memo ?? '', ...(session.memoPages ?? [])]
+        }
+        return null
+    }
+    const filledMemoPages = (session: { memo?: string; memoPages?: string[] }): number =>
+        [session.memo ?? '', ...(session.memoPages ?? [])].filter((page) => page.trim() !== '').length
 
     const broadcastState = (): void => deps.broadcast(PHONE_STATE_CHANNEL, server.state())
     let stateTimer: NodeJS.Timeout | null = null
@@ -183,6 +207,9 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         statusPoller: poller,
         listSessions,
         sessionExists,
+        usage,
+        readMemo,
+        ...(deps.renameSession ? { renameSession: deps.renameSession } : {}),
         dock,
         conversation: deps.conversation,
         saveAttachment: (name, bytes) => saveChatAttachment(join(os.tmpdir(), 'climanager-chat'), name, bytes),

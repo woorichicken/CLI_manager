@@ -8,6 +8,8 @@ import { checklistForAgent } from '../../src/renderer/src/utils/checklistForAgen
 import { screenAgentMode } from '../../src/main/screenLines'
 import { foldMetadata } from '../../src/main/transcript/metadata'
 import type { ChatCommand } from '../../src/shared/conversation'
+import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
+import { PhoneServer } from '../../src/main/phone/PhoneServer'
 
 /**
  * T96 — fb-1106: small settings and the feedback round, against the real app.
@@ -793,6 +795,95 @@ test('T96 phone: a quick reply goes once when the Mac answers slowly (b17fa869)'
     expect(JSON.parse(sends[0]).text).toBe(PHRASES[1])
 })
 
+test('T96 phone: the session memo shows on the phone, read-only (84188aa0)', async () => {
+    test.setTimeout(150_000)
+    const { app, page, base } = await launch()
+    // built at run time: the secret scan reads test files too
+    const key = ['sk', 'ant', 'api03', 'T96memoKEYabcdefghijklmnopqrstuvwxyz0123456789'].join('-')
+    await page.evaluate(
+        ({ id, key }) => window.api.updateSessionMemo('w-t96', id, 'Page one\n다음 할 일 https://example.com/docs/guide', ['', `Third page\nANTHROPIC_API_KEY=${key}`]),
+        { id: OTHER, key }
+    )
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${OTHER}&view=chat`, 't96-memo')
+    await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
+    await shot(phone, 't96-phone-memo-closed-390')
+    // only a session with a memo gets the button: two pages hold something
+    const listed = await phone.evaluate(async () => (await (await fetch('/api/phone/sessions')).json()).sessions as Array<{ id: string; memoPages?: number }>)
+    expect(listed.find((s) => s.id === 't96-other')?.memoPages).toBe(2)
+    expect(listed.find((s) => s.id === 't96-claude')?.memoPages).toBeUndefined()
+    await expect(phone.getByTestId('phone-memo-button')).toBeVisible()
+    await tap(cdp, phone, '[data-testid="phone-memo-button"]')
+    const panel = phone.getByTestId('phone-memo-panel')
+    await expect(panel).toBeVisible()
+    await expect(phone.getByTestId('phone-memo-page')).toHaveText('1 / 3')
+    await expect(phone.getByTestId('phone-memo-text')).toContainText('Page one')
+    await expect(phone.getByTestId('phone-memo-link')).toHaveAttribute('href', 'https://example.com/docs/guide')
+    await shot(phone, 't96-phone-memo-open-390')
+    // the panel covers the chat under the header, inside the screen
+    const box = (await panel.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(391)
+    // drawn on top: a visible element under the chat (z-45) passes toBeVisible, so ask what the finger would hit
+    const onTop = await phone.evaluate(() => {
+        const r = document.querySelector('[data-testid="phone-memo-panel"]')!.getBoundingClientRect()
+        return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('[data-testid="phone-memo-panel"]') !== null
+    })
+    expect(onTop, 'the memo is over the chat').toBe(true)
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll').toBe(true)
+    await tap(cdp, phone, '[data-testid="phone-memo-next"]')
+    await expect(phone.getByTestId('phone-memo-page')).toHaveText('2 / 3')
+    await expect(phone.getByTestId('phone-memo-text')).toHaveText('This page is empty.')
+    await tap(cdp, phone, '[data-testid="phone-memo-next"]')
+    await expect(phone.getByTestId('phone-memo-text')).toContainText('Third page')
+    // what leaves the Mac is masked, as the chat is
+    await expect(phone.getByTestId('phone-memo-text')).not.toContainText(key)
+    await tap(cdp, phone, '[data-testid="phone-memo-next"]')
+    await expect(phone.getByTestId('phone-memo-page')).toHaveText('1 / 3')
+    await tap(cdp, phone, '[data-testid="phone-memo-close"]')
+    await expect(panel).toHaveCount(0)
+    await expect(phone.getByTestId('chat-composer')).toBeVisible()
+    expect(await phone.evaluate(async () => (await fetch('/api/phone/memo/no-such-session')).status)).toBe(404)
+})
+
+test('T96 phone: the session is renamed from the phone, and the Mac sidebar follows (0a4bdfff)', async () => {
+    test.setTimeout(150_000)
+    const { app, page, base } = await launch()
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${OTHER}&view=chat`, 't96-rename')
+    await expect(phone.getByTestId('chat-composer')).toBeVisible({ timeout: 15_000 })
+    await expect(phone.getByTestId('phone-session-rename')).toHaveText('T96 Other')
+    // cancel leaves it as it was
+    await tap(cdp, phone, '[data-testid="phone-session-rename"]')
+    await expect(phone.getByTestId('phone-rename-input')).toHaveValue('T96 Other')
+    await expect(phone.getByTestId('phone-rename-input')).toBeFocused()
+    await phone.getByTestId('phone-rename-input').fill('not this')
+    await tap(cdp, phone, '[data-testid="phone-rename-cancel"]')
+    await expect(phone.getByTestId('phone-rename-bar')).toHaveCount(0)
+    await expect(phone.getByTestId('phone-session-rename')).toHaveText('T96 Other')
+    // rename
+    await tap(cdp, phone, '[data-testid="phone-session-rename"]')
+    await phone.getByTestId('phone-rename-input').fill('  폰에서 바꾼 이름  ')
+    const onTop = await phone.evaluate(() => {
+        const r = document.querySelector('[data-testid="phone-rename-bar"]')!.getBoundingClientRect()
+        return document.elementFromPoint(r.x + 20, r.y + r.height / 2)?.closest('[data-testid="phone-rename-bar"]') !== null
+    })
+    expect(onTop, 'the bar is over the chat').toBe(true)
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll').toBe(true)
+    await shot(phone, 't96-phone-rename-390')
+    await tap(cdp, phone, '[data-testid="phone-rename-save"]')
+    await expect(phone.getByTestId('phone-rename-bar')).toHaveCount(0)
+    await expect(phone.getByTestId('phone-session-rename')).toHaveText('폰에서 바꾼 이름')
+    // the Mac: the sidebar without a reload, and the store
+    await expect(page.getByText('폰에서 바꾼 이름', { exact: true }).first()).toBeVisible({ timeout: 10_000 })
+    const stored = await page.evaluate(async () => (await window.api.getWorkspaces()).flatMap((w: { sessions: Array<{ id: string; name: string }> }) => w.sessions).find((s) => s.id === 't96-other')?.name)
+    expect(stored).toBe('폰에서 바꾼 이름')
+    // the list says the same once it is read again
+    await expect.poll(() => phone.evaluate(async () => (await (await fetch('/api/phone/sessions')).json()).sessions.find((s: { id: string }) => s.id === 't96-other')?.name)).toBe('폰에서 바꾼 이름')
+    // refused: an empty name, a session that is not there
+    const status = (id: string, name: string) => phone.evaluate(async ({ id, name }) => (await fetch(`/api/phone/rename/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })).status, { id, name })
+    expect(await status('t96-other', '   ')).toBe(400)
+    expect(await status('no-such-session', 'x')).toBe(404)
+})
+
 test('T96 phone: my last message on top follows the Mac until the phone chooses (edf2aef3)', async () => {
     test.setTimeout(150_000)
     const { app, base } = await launch({ pinLastMessage: true })
@@ -820,3 +911,65 @@ test('T96 phone: my last message on top follows the Mac until the phone chooses 
 function relationFor(from: string, to: string): Record<string, unknown> {
     return { from, to, kind: 'opened', at: 1 }
 }
+
+test.describe('T96 memo and rename on the phone server (84188aa0 · 0a4bdfff)', () => {
+    let server: PhoneServer
+    let base = ''
+    let devices: PhoneDevices
+    const renamed: string[] = []
+    const cookieFor = (role: 'drive' | 'watch', label: string): string => {
+        const { code } = devices.startPairing(role)
+        const paired = devices.pair(code, label)
+        if ('error' in paired) throw new Error(paired.error)
+        return `climanager_phone=${paired.token}`
+    }
+
+    test.beforeAll(async () => {
+        const data = fs.mkdtempSync(path.join(os.tmpdir(), 't96-server-'))
+        devices = new PhoneDevices(path.join(data, 'devices.json'))
+        server = new PhoneServer({
+            devices,
+            push: { forgetOwner: () => undefined, publicKey: () => 'key', keysProblem: () => null, count: () => 0, onStatus: () => undefined } as never,
+            tailscale: { read: async () => ({ found: false, owner: null, dnsName: null }), peek: () => null } as never,
+            staticDir: data,
+            onStateChange: () => undefined,
+            statusPoller: { start: () => undefined, stop: () => undefined },
+            listSessions: () => ({ sessions: [] }) as never,
+            sessionExists: (id: string) => id === 's1',
+            conversation: {} as never,
+            saveAttachment: () => ({ status: 'attached', path: '/tmp/x' }) as never,
+            maskLine: (text: string) => text,
+            recordPhoneInput: () => undefined,
+            terminals: {} as never,
+            subscribeConversation: () => () => undefined,
+            readMemo: (id: string) => (id === 's1' ? ['one', 'two'] : null),
+            renameSession: (id: string, name: string) => {
+                if (id !== 's1') return null
+                renamed.push(name)
+                return name
+            }
+        } as never)
+        const state = await server.apply({ enabled: true, port: 0 } as never)
+        base = `http://127.0.0.1:${state.port}`
+    })
+    test.afterAll(() => server.stop())
+
+    test('a view-only device reads the memo but may not rename', async () => {
+        const watch = cookieFor('watch', 'Watcher')
+        const memo = await fetch(`${base}/api/phone/memo/s1`, { headers: { cookie: watch } })
+        expect(memo.status).toBe(200)
+        expect(await memo.json()).toEqual({ pages: ['one', 'two'] })
+        const rename = await fetch(`${base}/api/phone/rename/s1`, { method: 'POST', headers: { cookie: watch, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'nope' }) })
+        expect(rename.status).toBe(403)
+        expect(((await rename.json()) as { error: string }).error).toBe('view_only')
+        expect(renamed).toEqual([])
+    })
+
+    test('a broken % in the id is an unknown session, not a server error', async () => {
+        const drive = cookieFor('drive', 'Phone')
+        expect((await fetch(`${base}/api/phone/memo/%E0%A4`, { headers: { cookie: drive } })).status).toBe(404)
+        const rename = await fetch(`${base}/api/phone/rename/%E0%A4`, { method: 'POST', headers: { cookie: drive, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'x' }) })
+        expect(rename.status).toBe(404)
+        expect(renamed).toEqual([])
+    })
+})

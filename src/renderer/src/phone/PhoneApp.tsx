@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronRight, Laptop, Layers, MessageSquareWarning } from 'lucide-react'
+import { ChevronRight, Gauge, Laptop, Layers, MessageSquareWarning } from 'lucide-react'
 import type { PhoneDockItem, PhoneMe, PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { getMe, getSessions, PhoneApiError } from './api'
 import { AlertsMenu } from './AlertsMenu'
@@ -11,6 +11,7 @@ import { PhoneDocPanel } from './PhoneDocPanel'
 import { PhoneFilePanel, type PhoneDockDocTarget, type PhoneFileTarget } from './PhoneFilePanel'
 import { openPhoneFeedback, phoneFeedbackConfigured, PhoneFeedback } from './feedback/PhoneFeedback'
 import { PhoneSettingsMenu } from './PhoneSettingsMenu'
+import { PhoneUsagePanel } from './PhoneUsagePanel'
 import { HandoffNoticeToast } from '../components/ChatView/HandoffNoticeToast'
 import { parseSessionLink } from '../utils/sessionLink'
 import { usePhoneChatSettings } from './phoneChatSettings'
@@ -40,6 +41,8 @@ const DOCK_PANEL_ENTRY = 'phone-dock-panel'
  * DOCK_PANEL_ENTRY: a page in the frame can keep Back from reaching the panel's own entry, and ✕ must not go "back" to it.
  */
 const DOCK_DOC_ENTRY = 'phone-dock-doc'
+/** The entry opening the usage view pushed (same address): Back closes the view, as it closes the Dock and a file. */
+const USAGE_ENTRY = 'phone-usage'
 
 function readRoute(): { sessionId: string | null; view: SessionLens | null; dockPanel: boolean } {
     const params = new URLSearchParams(window.location.search)
@@ -104,6 +107,8 @@ export function PhoneApp() {
     const [data, setData] = useState<PhoneSessionsResponse | null>(null)
     const [route, setRoute] = useState(readRoute)
     const [drawer, setDrawer] = useState(false)
+    /** the usage view (3b4efdfc): over everything but the drawer is closed first */
+    const [usageOpen, setUsageOpen] = useState(false)
     /** what a Dock row opened, over the panel: its document, or a file that document's link led to */
     const [dockFile, setDockFile] = useState<PhoneDockDocTarget | PhoneFileTarget | null>(null)
     const [offline, setOffline] = useState(false)
@@ -249,7 +254,10 @@ export function PhoneApp() {
         setDrawer(false)
         // on a wide screen the list stays tappable under an open panel: a second entry would make ✕ take two presses
         if (readRoute().dockPanel) return
-        window.history.pushState(DOCK_PANEL_ENTRY, '', addressWithDockPanel(true))
+        setUsageOpen(false)
+        // over the usage view, the Dock takes its entry's place: ✕ then returns to where usage was opened
+        if (window.history.state === USAGE_ENTRY) window.history.replaceState(DOCK_PANEL_ENTRY, '', addressWithDockPanel(true))
+        else window.history.pushState(DOCK_PANEL_ENTRY, '', addressWithDockPanel(true))
         setRoute(readRoute())
     }, [])
 
@@ -304,6 +312,28 @@ export function PhoneApp() {
         }
     }, [])
 
+    const openUsage = useCallback(() => {
+        setDrawer(false)
+        // on a wide screen the list stays tappable under the view: a second entry would make ✕ take two presses
+        if (window.history.state === USAGE_ENTRY) return
+        window.history.pushState(USAGE_ENTRY, '', window.location.href)
+        setUsageOpen(true)
+    }, [])
+    const closeUsage = useCallback(() => {
+        setUsageOpen(false)
+        // ✕ takes back the entry opening it pushed, so the next Back leaves the page where it was
+        if (window.history.state === USAGE_ENTRY) window.history.back()
+    }, [])
+    useEffect(() => {
+        if (!usageOpen) return
+        // Back onto the usage entry itself (from a page opened over it) keeps the view open
+        const pop = (): void => {
+            if (window.history.state !== USAGE_ENTRY) setUsageOpen(false)
+        }
+        window.addEventListener('popstate', pop)
+        return () => window.removeEventListener('popstate', pop)
+    }, [usageOpen])
+
     const closeDroplet = useCallback(() => setDroplet(null), [])
 
     if (unreachable) {
@@ -334,7 +364,10 @@ export function PhoneApp() {
     const lens: SessionLens = route.view ?? (session ? rememberedLens(session.id) : null) ?? 'chat'
     const open = (next: PhoneSession): void => {
         setDrawer(false)
-        navigate(next.id, next.agent ? rememberedLens(next.id) ?? 'chat' : 'terminal')
+        // a session tapped under the usage view (wide screen): it replaces the view and its history entry
+        const overUsage = usageOpen && window.history.state === USAGE_ENTRY
+        setUsageOpen(false)
+        navigate(next.id, next.agent ? rememberedLens(next.id) ?? 'chat' : 'terminal', overUsage)
     }
     // A session link in the chat (b2020233): the phone shows one session, so the first one the link names
     // that this list holds. Refs are full ids or their first 8+ characters, as on the Mac (sessionLink.ts).
@@ -423,6 +456,16 @@ export function PhoneApp() {
                             <ChevronRight size={15} className="phone-dock-entry-icon" aria-hidden="true" />
                         </button>
                     )}
+                    <button
+                        type="button"
+                        className="phone-dock-entry"
+                        data-testid="phone-usage-entry"
+                        onClick={openUsage}
+                    >
+                        <Gauge size={15} className="phone-dock-entry-icon" aria-hidden="true" />
+                        <span className="phone-dock-entry-label">Usage</span>
+                        <ChevronRight size={15} className="phone-dock-entry-icon" aria-hidden="true" />
+                    </button>
                     <SessionList data={data} activeId={session?.id ?? null} onOpen={open} />
                 </aside>
             )}
@@ -449,6 +492,7 @@ export function PhoneApp() {
             )}
             {wide && !session && <main className="phone-main phone-empty">Pick a session.</main>}
             {/* a view-only device gets the list alone (decision 0010): a row only shows its whole folder name */}
+            {usageOpen && <PhoneUsagePanel onClose={closeUsage} />}
             {dockPanelOpen && <PhoneDockPanel onClose={closeDockPanel} onOpenSession={openDockSession} {...(me.role === 'drive' ? { onOpenDoc: openDockDoc } : {})} />}
             {dockPanelOpen && dockFile && me.role === 'drive' && ('dock' in dockFile || opensAsDocument(dockFile) ? (
                 <PhoneDocPanel
