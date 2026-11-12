@@ -277,7 +277,19 @@ test('T126 phone: ☰ → Usage shows agent-swap accounts over the chat, read on
     await expect(phone.getByTestId('phone-usage-account')).toHaveCount(2)
     expect(fs.readFileSync(runs, 'utf8').trim().split('\n')).toHaveLength(1)
 
+    // Back closes it, as it closes the Dock — and stays on the session
+    const address = phone.url()
+    await phone.goBack()
+    await expect(panel).toHaveCount(0)
+    await expect(phone.getByTestId('phone-session')).toBeVisible()
+    expect(phone.url()).toBe(address)
+
+    // ✕ takes back its own entry: the next Back is not swallowed by an empty one
+    await tap(cdp, phone, '[data-testid="phone-menu-button"]')
+    await tap(cdp, phone, '[data-testid="phone-usage-entry"]')
+    await expect(panel).toBeVisible()
     await tap(cdp, phone, '[data-testid="phone-usage-close"]')
     await expect(panel).toHaveCount(0)
     await expect(phone.getByTestId('phone-session')).toBeVisible()
+    await expect.poll(() => phone.evaluate(() => window.history.state)).not.toBe('phone-usage')
 })

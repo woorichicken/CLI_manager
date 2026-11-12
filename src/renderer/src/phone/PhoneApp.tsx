@@ -41,6 +41,8 @@ const DOCK_PANEL_ENTRY = 'phone-dock-panel'
  * DOCK_PANEL_ENTRY: a page in the frame can keep Back from reaching the panel's own entry, and ✕ must not go "back" to it.
  */
 const DOCK_DOC_ENTRY = 'phone-dock-doc'
+/** The entry opening the usage view pushed (same address): Back closes the view, as it closes the Dock and a file. */
+const USAGE_ENTRY = 'phone-usage'
 
 function readRoute(): { sessionId: string | null; view: SessionLens | null; dockPanel: boolean } {
     const params = new URLSearchParams(window.location.search)
@@ -297,6 +299,23 @@ export function PhoneApp() {
         }
     }, [])
 
+    const openUsage = useCallback(() => {
+        setDrawer(false)
+        window.history.pushState(USAGE_ENTRY, '', window.location.href)
+        setUsageOpen(true)
+    }, [])
+    const closeUsage = useCallback(() => {
+        setUsageOpen(false)
+        // ✕ takes back the entry opening it pushed, so the next Back leaves the page where it was
+        if (window.history.state === USAGE_ENTRY) window.history.back()
+    }, [])
+    useEffect(() => {
+        if (!usageOpen) return
+        const pop = (): void => setUsageOpen(false)
+        window.addEventListener('popstate', pop)
+        return () => window.removeEventListener('popstate', pop)
+    }, [usageOpen])
+
     const closeDroplet = useCallback(() => setDroplet(null), [])
 
     if (unreachable) {
@@ -410,10 +429,7 @@ export function PhoneApp() {
                         type="button"
                         className="phone-dock-entry"
                         data-testid="phone-usage-entry"
-                        onClick={() => {
-                            setDrawer(false)
-                            setUsageOpen(true)
-                        }}
+                        onClick={openUsage}
                     >
                         <Gauge size={15} className="phone-dock-entry-icon" aria-hidden="true" />
                         <span className="phone-dock-entry-label">Usage</span>
@@ -445,7 +461,7 @@ export function PhoneApp() {
             )}
             {wide && !session && <main className="phone-main phone-empty">Pick a session.</main>}
             {/* a view-only device gets the list alone (decision 0010): a row only shows its whole folder name */}
-            {usageOpen && <PhoneUsagePanel onClose={() => setUsageOpen(false)} />}
+            {usageOpen && <PhoneUsagePanel onClose={closeUsage} />}
             {dockPanelOpen && <PhoneDockPanel onClose={closeDockPanel} onOpenSession={openDockSession} {...(me.role === 'drive' ? { onOpenDoc: openDockDoc } : {})} />}
             {dockPanelOpen && dockFile && me.role === 'drive' && ('dock' in dockFile || opensAsDocument(dockFile) ? (
                 <PhoneDocPanel
