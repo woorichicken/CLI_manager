@@ -563,7 +563,6 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     )
 }
 
-/** A pinned message this many lines long, or shorter, opens where it is; a longer one goes to the message (babcdbc9). */
 /** a read the Mac answers in a blink; past this the person is told why it waits (fb-1112) */
 const SLOW_READ_MS = 4_000
 
@@ -589,6 +588,7 @@ function ReadingConversation() {
     )
 }
 
+/** A pinned message this many lines long, or shorter, opens where it is; a longer one goes to the message (babcdbc9). */
 const PINNED_OPEN_MAX_LINES = 8
 
 /**

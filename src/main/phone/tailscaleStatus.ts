@@ -48,8 +48,13 @@ function testStatus(): string | null | undefined {
     }
 }
 
+/** Failed `tailscale status` reads in a row that keep the last good reading (3 × the 60s recheck). */
+const KEEP_ON_MISSES = 3
+
 export class TailscaleStatus {
     private cached: { at: number; info: TailscaleInfo } | null = null
+    /** failed reads in a row while a good reading is kept */
+    private misses = 0
     private inflight: Promise<TailscaleInfo> | null = null
 
     /** Cached for five minutes; `fresh` reads again (Settings opening). */
@@ -79,6 +84,13 @@ export class TailscaleStatus {
                 if (json) break
             }
         }
+        // A busy Mac can time the CLI out: one miss must not wipe the owner and address the phone's access
+        // is judged by (the 60s recheck reads often now). Keep the last good reading a few misses, then believe it.
+        if (json === null && this.cached?.info.found && this.misses < KEEP_ON_MISSES) {
+            this.misses += 1
+            return this.cached.info
+        }
+        this.misses = json === null ? this.misses : 0
         const info: TailscaleInfo = { found: json !== null, owner: parseTailscaleOwner(json), dnsName: parseTailscaleDnsName(json), stopped: parseTailscaleStopped(json) }
         this.cached = { at: Date.now(), info }
         return info

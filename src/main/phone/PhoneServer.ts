@@ -160,7 +160,7 @@ export class PhoneServer {
             this.tailscaleTimer = setInterval(() => {
                 const before = this.deps.tailscale.peek()?.stopped
                 void this.deps.tailscale.read(true).then((info) => {
-                    if (info.stopped !== before) this.deps.onStateChange()
+                    if (this.tailscaleTimer && info.stopped !== before) this.deps.onStateChange()
                 })
             }, TAILSCALE_RECHECK_MS)
         } catch (error) {

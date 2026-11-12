@@ -6,6 +6,7 @@ import { decidePhoneAccess, hostAllowed, isTailnetAddress, parseTailscaleDnsName
 import { PAIRING_CODE_ATTEMPTS, PAIRING_CODE_TTL_MS, PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhonePush } from '../../src/main/phone/PhonePush'
 import { maskSnapshot } from '../../src/main/phone/phoneApi'
+import { TailscaleStatus } from '../../src/main/phone/tailscaleStatus'
 import { controlCharacter, createKeyRepeat, isRepeatable, KEY_BAR_ITEMS, KEY_REPEAT_DELAY_MS, KEY_REPEAT_INTERVAL_MS, keyBarLabel, keySequence, type KeyRepeatClock } from '../../src/renderer/src/phone/keyBar'
 import { dropletFor, LONG_TURN_MS, nextSeen, waitingElsewhere } from '../../src/renderer/src/phone/droplets'
 import { foldRows, type FoldLine } from '../../src/renderer/src/phone/terminalFold'
@@ -93,6 +94,34 @@ test.describe('T75 phone access table', () => {
         expect(parseTailscaleOwner('not json')).toBeNull()
         expect(parseTailscaleOwner(null)).toBeNull()
         expect(parseTailscaleDnsName(status({ UserID: 42 }))).toBe('mac.tail1234.ts.net')
+    })
+
+    test('a failed read keeps the last good one three times, then believes it (fb-1112 review)', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't75-ts-'))
+        const file = path.join(dir, 'status.json')
+        fs.writeFileSync(file, JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'mac.tail1234.ts.net.', UserID: 42 }, User: { '42': { LoginName: OWNER } } }))
+        const saved = { status: process.env.CLIMANAGER_PHONE_TAILSCALE_STATUS, userData: process.env.CLIMANGER_TEST_USERDATA }
+        process.env.CLIMANAGER_PHONE_TAILSCALE_STATUS = file
+        process.env.CLIMANGER_TEST_USERDATA = dir
+        try {
+            const status = new TailscaleStatus()
+            expect((await status.read(true)).owner).toBe(OWNER)
+            // the CLI times out (a busy Mac): the owner and address stay
+            fs.rmSync(file)
+            for (let miss = 0; miss < 3; miss++) expect(await status.read(true)).toMatchObject({ found: true, owner: OWNER, dnsName: 'mac.tail1234.ts.net' })
+            // still nothing: Tailscale is gone
+            expect(await status.read(true)).toMatchObject({ found: false, owner: null })
+            // back: read fresh, and one miss is forgiven again
+            fs.writeFileSync(file, JSON.stringify({ BackendState: 'Stopped', Self: { DNSName: 'mac.tail1234.ts.net.', UserID: 42 }, User: { '42': { LoginName: OWNER } } }))
+            expect(await status.read(true)).toMatchObject({ found: true, stopped: true })
+            fs.rmSync(file)
+            expect(await status.read(true)).toMatchObject({ found: true, stopped: true })
+        } finally {
+            if (saved.status === undefined) delete process.env.CLIMANAGER_PHONE_TAILSCALE_STATUS
+            else process.env.CLIMANAGER_PHONE_TAILSCALE_STATUS = saved.status
+            if (saved.userData === undefined) delete process.env.CLIMANGER_TEST_USERDATA
+            else process.env.CLIMANGER_TEST_USERDATA = saved.userData
+        }
     })
 
     test('switched off is told apart from running (fb-1112)', () => {
