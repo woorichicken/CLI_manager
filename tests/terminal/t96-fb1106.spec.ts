@@ -658,6 +658,52 @@ test('T96 phone: the notices turn off, the dots stay; quick replies on by defaul
     })
 })
 
+test('T96 phone: a quick reply goes once when the Mac answers slowly (b17fa869)', async () => {
+    test.setTimeout(150_000)
+    const { app, base } = await launch()
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${OTHER}&view=chat`, 't96-quick-once')
+    await expect(phone.getByTestId('chat-quick-replies')).toContainText(PHRASES[1], { timeout: 15_000 })
+    // 21f4d88a: Chat and Terminal are the two halves of one switch
+    const chatTab = (await phone.getByTestId('phone-lens-chat').boundingBox())!
+    const terminalTab = (await phone.getByTestId('phone-lens-terminal').boundingBox())!
+    expect(Math.abs(chatTab.width - terminalTab.width), 'Chat and Terminal are as wide as each other').toBeLessThanOrEqual(1)
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll').toBe(true)
+    // a busy Mac: every send answers after 2.5 s. Counted in the page, before anything reaches main
+    await phone.evaluate(() => {
+        const w = window as unknown as { __sends: string[]; fetch: typeof fetch }
+        w.__sends = []
+        const original = w.fetch.bind(window)
+        w.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+            if (/\/send$/.test(url) && init?.method === 'POST') {
+                w.__sends.push(String(init.body))
+                await new Promise((resolve) => setTimeout(resolve, 2_500))
+            }
+            return original(input, init)
+        }
+    })
+    const chip = phone.getByTestId('chat-quick-replies').getByRole('button', { name: PHRASES[1], exact: true })
+    const chipSelector = `[data-testid="chat-quick-replies"] button[title="Send “${PHRASES[1]}”"]`
+    await tap(cdp, phone, chipSelector)
+    await expect(chip).toHaveAttribute('data-sending', 'true')
+    await shot(phone, 't96-phone-quick-sending-390')
+    // the thumb comes down again (and on the other chip) while the first is on its way
+    const box = (await chip.boundingBox())!
+    for (let i = 0; i < 3; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] })
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+        await phone.waitForTimeout(150)
+    }
+    await phone.getByTestId('chat-quick-replies').getByRole('button', { name: PHRASES[0], exact: true }).click({ force: true }).catch(() => undefined)
+    await expect.poll(() => phone.evaluate(() => (window as unknown as { __sends: string[] }).__sends.length), { timeout: 2_000 }).toBe(1)
+    // answered: the chips take taps again
+    await expect(chip).not.toHaveAttribute('data-sending', 'true', { timeout: 10_000 })
+    await expect(chip).toBeEnabled()
+    const sends = await phone.evaluate(() => (window as unknown as { __sends: string[] }).__sends)
+    expect(sends).toHaveLength(1)
+    expect(JSON.parse(sends[0]).text).toBe(PHRASES[1])
+})
+
 test('T96 phone: my last message on top follows the Mac until the phone chooses (edf2aef3)', async () => {
     test.setTimeout(150_000)
     const { app, base } = await launch({ pinLastMessage: true })

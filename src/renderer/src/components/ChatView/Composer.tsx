@@ -112,6 +112,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const [caret, setCaret] = useState(0)
     /** messages on their way into the terminal */
     const [sending, setSending] = useState(0)
+    /**
+     * the quick reply on its way (b17fa869). A busy Mac or a slow link takes seconds to answer, and
+     * the chip stays under the thumb: a second tap sent the same reply twice. The ref stops a tap in
+     * the same frame, the state shows which chip is going.
+     */
+    const [quickInFlight, setQuickInFlight] = useState<string | null>(null)
+    const quickInFlightRef = useRef<string | null>(null)
     const [notice, setNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
     /** a send refused for text left in the terminal's input box, which main can clear (C-1) */
     const [busyDraft, setBusyDraft] = useState<string | null>(null)
@@ -377,6 +384,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         if (result.status === 'queued') setNotice({ tone: 'info', text: `${agentName} is working — it gets this when the turn ends.` })
     }
 
+    /** one quick reply at a time: taps on any chip wait until the Mac has answered the first */
+    const sendQuick = async (reply: string): Promise<void> => {
+        if (quickInFlightRef.current !== null) return
+        quickInFlightRef.current = reply
+        setQuickInFlight(reply)
+        try {
+            await send(reply)
+        } finally {
+            quickInFlightRef.current = null
+            setQuickInFlight(null)
+        }
+    }
+
     const stop = async (): Promise<void> => {
         const refused = await onInterrupt()
         setNotice(refused ? { tone: 'error', text: refused } : null)
@@ -533,9 +553,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }}
         >
             {showQuick && (
-                <div className="chat-quick" role="group" aria-label="Quick replies" data-testid="chat-quick-replies">
+                <div className="chat-quick" role="group" aria-label="Quick replies" data-testid="chat-quick-replies" aria-busy={quickInFlight !== null}>
                     {quickReplies.map((reply) => (
-                        <button key={reply} type="button" className="chat-quick-reply" title={`Send “${reply}”`} onClick={() => void send(reply)}>
+                        <button
+                            key={reply}
+                            type="button"
+                            className={`chat-quick-reply${quickInFlight === reply ? ' is-sending' : ''}`}
+                            title={quickInFlight === reply ? 'Sending…' : `Send “${reply}”`}
+                            disabled={quickInFlight !== null}
+                            data-sending={quickInFlight === reply ? 'true' : undefined}
+                            onClick={() => void sendQuick(reply)}
+                        >
+                            {quickInFlight === reply && <Loader2 size={11} className="animate-spin chat-quick-spin" aria-hidden="true" />}
                             {reply}
                         </button>
                     ))}

@@ -247,6 +247,11 @@
 .chat-quick { display: flex; gap: 6px; flex-wrap: wrap; }
 .chat-quick-reply { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--chat-line); font-size: 0.82em; color: var(--chat-dim); }
 .chat-quick-reply:hover { color: var(--chat-fg); border-color: rgba(96, 165, 250, 0.6); }
+/* one reply on its way: the tapped chip says so, the others wait (b17fa869) */
+.chat-quick-reply:disabled { opacity: 0.45; cursor: default; }
+.chat-quick-reply.is-sending { opacity: 1; color: var(--chat-fg); border-color: rgba(96, 165, 250, 0.6); display: inline-flex; align-items: center; gap: 4px; }
+.chat-quick-reply:disabled:hover { color: var(--chat-dim); border-color: var(--chat-line); }
+.chat-quick-reply.is-sending:hover { color: var(--chat-fg); border-color: rgba(96, 165, 250, 0.6); }
 .chat-complete {
     position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); z-index: 30; max-height: 260px; overflow-y: auto;
     background: var(--chat-bg); border: 1px solid var(--chat-line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35); padding: 4px;
