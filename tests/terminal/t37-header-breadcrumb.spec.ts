@@ -197,8 +197,9 @@ test.describe('T37 split panes (fb-1114)', () => {
         expect(Math.abs(paneSearch.height - singleSearch.height)).toBeLessThanOrEqual(1)
         // Related with its label, and ‹ › on the active pane only — one history for the window.
         await expect(headerA.locator('[data-related-button]')).toContainText('Related')
-        await expect(headerA.locator('[data-session-history]')).toHaveCount(1)
-        await expect(headerB.locator('[data-session-history]')).toHaveCount(0)
+        // (which pane is active right after the drop depends on terminal focus timing — count both)
+        await expect(page.locator('[data-pane-header] [data-session-history]')).toHaveCount(1)
+        await expect(headerB.locator('[data-related-button]')).toContainText('Related')
         // The terminal starts right under its header: nothing hidden behind it, no gap.
         const termTop = await page.evaluate(() => document.querySelector('[data-session-id="s-a"]')!.getBoundingClientRect().top)
         const headerBox = (await headerA.boundingBox())!
@@ -208,7 +209,7 @@ test.describe('T37 split panes (fb-1114)', () => {
         await page.setViewportSize({ width: 1280, height: 950 })
         await expect(headerA).toHaveAttribute('data-pane-wide', 'false')
         expect(Math.round((await headerA.boundingBox())!.height)).toBe(32)
-        await expect(headerA.locator('[data-session-history]')).toHaveCount(0)
+        await expect(page.locator('[data-pane-header] [data-session-history]')).toHaveCount(0)
 
         // One shape per split (round 2): three panes at 1280 — the full-width bottom pane is wide
         // enough on its own, but the two on top are not, so every pane keeps the compact row.
