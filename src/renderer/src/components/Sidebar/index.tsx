@@ -17,6 +17,8 @@ import { SidebarSessionTree } from './SidebarSessionTree'
 import { sessionForestFor, wouldMakeLoop, handParentsInTheWay } from '../../utils/relatedSessions'
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
+import { isOrderHeldFor, setAllSessionsListElement } from '../../utils/allSessionsNav'
+import { useDragAutoScroll } from '../../utils/dragAutoScroll'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
@@ -253,8 +255,9 @@ export function Sidebar({
             pointerInSessionListRef.current = false
             return
         }
-        if (!pointerInSessionListRef.current) refreshRecentIds()
-    }, [allSessionListShown, refreshRecentIds])
+        // Cmd+[ / ] walks the rows as they stand (dc11b60f): the session it selected keeps its place.
+        if (!pointerInSessionListRef.current && !isOrderHeldFor(activeSessionId ?? null)) refreshRecentIds()
+    }, [allSessionListShown, refreshRecentIds, activeSessionId])
 
     const { anyExpanded, toggleCollapseAll } = useSidebarCollapseAll({
         workspaces,
@@ -272,6 +275,13 @@ export function Sidebar({
     // dragged id from context, since dragover cannot read the drag's data.
     const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
     const { text: dropNotice, show: showDropNotice } = useDropNotice()
+    // The list a dragged row scrolls when held near its top or bottom (0edb46cc): whichever view is shown.
+    const sessionListScrollRef = useRef<HTMLDivElement | null>(null)
+    useDragAutoScroll(draggingSessionId !== null, sessionListScrollRef)
+    const allSessionsListRef = useCallback((element: HTMLDivElement | null) => {
+        sessionListScrollRef.current = element
+        setAllSessionsListElement(element)
+    }, [])
     const sessionNameRef = useRef<(id: string) => string>(() => '')
     sessionNameRef.current = (id: string) => {
         for (const workspace of workspaces) {
@@ -1210,6 +1220,7 @@ export function Sidebar({
                     <>
                     <div
                         data-testid="sidebar-all-sessions"
+                        ref={allSessionsListRef}
                         className="flex-1 overflow-y-auto p-2"
                         onKeyDown={(e) => {
                             // Only reaches here from a focused check box or button in the list;
@@ -1274,7 +1285,7 @@ export function Sidebar({
                     )}
                     </>
                 ) : (
-                <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+                <div ref={sessionListScrollRef} data-testid="sidebar-workspace-list" className="flex-1 overflow-y-auto p-2 space-y-0.5">
                     {/* Home workspace first */}
                     {homeWorkspace && (
                         <WorkspaceItem
