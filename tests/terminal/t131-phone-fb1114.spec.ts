@@ -8,7 +8,7 @@ import { createLongPress, LONG_PRESS_MS } from '../../src/renderer/src/phone/lon
 import type { FoldCell, FoldLine } from '../../src/renderer/src/phone/terminalFold'
 
 /**
- * T127 — fb-1114, the phone (CDP touch 390×844, scale 3, let in as the Mac's owner).
+ * T131 — fb-1114, the phone (CDP touch 390×844, scale 3, let in as the Mac's owner).
  *
  *  3f59e735 the top of the phone terminal was empty: the Mac's screen, fitted to the phone's width, is
  *  shorter than the room and sits at the bottom. The rows of history just above it now fill that room —
@@ -19,19 +19,19 @@ import type { FoldCell, FoldLine } from '../../src/renderer/src/phone/terminalFo
  *  still opens, a moving finger is a scroll, the click that ends the press does not hit ✓/✕, a
  *  view-only device gets no editor. No delete.
  *
- * T127_SHOTS=<dir> + T127_LABEL save captures before the checks; T127_BEFORE=1 only takes them (the
+ * T131_SHOTS=<dir> + T131_LABEL save captures before the checks; T131_BEFORE=1 only takes them (the
  * old code: the review's «before» column).
  */
 
-const BEFORE = process.env.T127_BEFORE === '1'
-const LABEL = process.env.T127_LABEL ?? 'run'
-const SHELL = 't127-shell'
-const FRESH = 't127-fresh'
-const OTHER = 't127-other'
-const OWNER = 'owner-t127@example.com'
-const PORT = 47927
+const BEFORE = process.env.T131_BEFORE === '1'
+const LABEL = process.env.T131_LABEL ?? 'run'
+const SHELL = 't131-shell'
+const FRESH = 't131-fresh'
+const OTHER = 't131-other'
+const OWNER = 'owner-t131@example.com'
+const PORT = 47931
 const HISTORY_LINES = 300
-const NEW_NAME = 'T127 폰 목록에서 바꾼 이름'
+const NEW_NAME = 'T131 폰 목록에서 바꾼 이름'
 
 let result: LaunchResult | null = null
 test.afterEach(async () => {
@@ -46,7 +46,7 @@ test.afterEach(async () => {
 })
 
 async function shot(page: Page, name: string): Promise<void> {
-    const dir = process.env.T127_SHOTS
+    const dir = process.env.T131_SHOTS
     if (!dir) return
     fs.mkdirSync(dir, { recursive: true })
     await page.waitForTimeout(400)
@@ -105,17 +105,17 @@ async function press(cdp: CDPSession, page: Page, at: { x: number; y: number }, 
 
 const tap = async (cdp: CDPSession, page: Page, selector: string): Promise<void> => press(cdp, page, await centre(page, selector), 60)
 
-/** the number in «T127 history N» on the grid's first row and on the history's last row */
+/** the number in «T131 history N» on the grid's first row and on the history's last row */
 async function rowNumbers(phone: Page): Promise<{ gridFirst: number; historyLast: number | null; historyRows: number }> {
     return phone.evaluate(() => {
-        const number = (text: string | null | undefined): number => Number(/T127 history (\d+)/.exec(text ?? '')?.[1] ?? NaN)
+        const number = (text: string | null | undefined): number => Number(/T131 history (\d+)/.exec(text ?? '')?.[1] ?? NaN)
         const grid = document.querySelector('[data-testid="phone-terminal-host"] .xterm-rows')?.firstElementChild?.textContent
         const rows = document.querySelectorAll('[data-testid="phone-terminal-history"] .phone-term-history-row')
         return { gridFirst: number(grid), historyLast: rows.length ? number(rows[rows.length - 1].textContent) : null, historyRows: rows.length }
     })
 }
 
-test.describe('T127 units', () => {
+test.describe('T131 units', () => {
     test('historyRowCount: whole rows of the room the screen leaves, no more than the history holds', () => {
         // a 43-row screen 731px tall at 0.486: 355px of 760 — 405px spare = 23 rows of 8.26px... at most the history
         expect(historyRowCount(760, 731, 43, 0.486, 1000)).toBe(Math.floor((760 - 731 * 0.486) / ((731 / 43) * 0.486)))
@@ -192,13 +192,13 @@ test.describe('T127 units', () => {
 })
 
 async function launch(): Promise<{ app: ElectronApplication; page: Page; base: string }> {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t127-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t131-'))
     const project = path.join(home, 'project')
     fs.mkdirSync(project, { recursive: true })
     const statusFile = path.join(home, 'tailscale-status.json')
     fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Running', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: ['100.100.1.1'] }, User: { '42': { LoginName: OWNER } } }))
     result = await launchAppWithWorkspaces(
-        [{ id: 'w-t127', name: 'T127 project', path: project, sessions: [{ id: SHELL, name: 'T127 Shell' }, { id: FRESH, name: 'T127 Fresh' }, { id: OTHER, name: 'T127 Other' }] }],
+        [{ id: 'w-t131', name: 'T131 project', path: project, sessions: [{ id: SHELL, name: 'T131 Shell' }, { id: FRESH, name: 'T131 Fresh' }, { id: OTHER, name: 'T131 Other' }] }],
         { settings: { phone: { enabled: true, port: PORT } }, env: { CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile } }
     )
     const { app, page } = result
@@ -208,18 +208,18 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; base: s
     return { app, page, base: `http://127.0.0.1:${state.port}` }
 }
 
-test('T127 phone terminal: the room above the screen shows the history, not an empty top (3f59e735)', async () => {
+test('T131 phone terminal: the room above the screen shows the history, not an empty top (3f59e735)', async () => {
     test.setTimeout(180_000)
     const { app, page, base } = await launch()
     await page.locator(`[data-session-item="${SHELL}"]`).first().click()
     await page.waitForTimeout(800)
-    await writeToTerminal(page, SHELL, `seq -f 'T127 history %g' 1 ${HISTORY_LINES}\r`)
-    await waitForBufferText(page, SHELL, `T127 history ${HISTORY_LINES}`, 20_000)
+    await writeToTerminal(page, SHELL, `seq -f 'T131 history %g' 1 ${HISTORY_LINES}\r`)
+    await waitForBufferText(page, SHELL, `T131 history ${HISTORY_LINES}`, 20_000)
     // what the Mac did to its ptys before any phone came: the phone adds nothing to it
     const mac = { shell: await ptyState(page, SHELL), fresh: await ptyState(page, FRESH) }
     expect(mac.shell.size).not.toBeNull()
 
-    const { phone, cdp } = await openPhone(app, `${base}/?session=${SHELL}&view=terminal`, 't127-term')
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${SHELL}&view=terminal`, 't131-term')
     await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })
     await phone.waitForTimeout(800)
     await shot(phone, 'A-terminal-390')
@@ -264,7 +264,11 @@ test('T127 phone terminal: the room above the screen shows the history, not an e
         await expect.poll(async () => (await rowNumbers(phone)).gridFirst).toBe(numbers.gridFirst)
 
         // zoomed past the room: the screen fills it, no history drawn
-        for (let i = 0; i < 4; i++) await tap(cdp, phone, '[data-testid="phone-terminal-zoom-in"]')
+        for (let i = 0; i < 8; i++) {
+            if (await phone.getByTestId('phone-terminal-scroller').evaluate((el) => el.querySelector('.phone-term-sizer')!.getBoundingClientRect().height >= el.clientHeight)) break
+            await tap(cdp, phone, '[data-testid="phone-terminal-zoom-in"]')
+            await phone.waitForTimeout(150)
+        }
         await expect(history).toHaveCount(0)
         await tap(cdp, phone, '[data-testid="phone-terminal-fit"]')
         await expect(history).toBeVisible()
@@ -285,10 +289,10 @@ test('T127 phone terminal: the room above the screen shows the history, not an e
     }
 })
 
-test('T127 phone list: a held press renames the session in place, the Mac sidebar follows (ebf8dec6)', async () => {
+test('T131 phone list: a held press renames the session in place, the Mac sidebar follows (ebf8dec6)', async () => {
     test.setTimeout(180_000)
     const { app, page, base } = await launch()
-    const { phone, cdp } = await openPhone(app, `${base}/?session=${SHELL}&view=terminal`, 't127-list')
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${SHELL}&view=terminal`, 't131-list')
     await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })
     await tap(cdp, phone, '[data-testid="phone-menu-button"]')
     const otherRow = `[data-testid="phone-session-row"][data-session-id="${OTHER}"]`
@@ -301,9 +305,9 @@ test('T127 phone list: a held press renames the session in place, the Mac sideba
     if (BEFORE) return
     const editor = phone.locator(`[data-testid="phone-row-rename"][data-session-id="${OTHER}"]`)
     await expect(editor).toBeVisible()
-    await expect(phone.getByTestId('phone-rename-input')).toHaveValue('T127 Other')
+    await expect(phone.getByTestId('phone-rename-input')).toHaveValue('T131 Other')
     await expect(phone.getByTestId('phone-rename-input')).toBeFocused()
-    await expect(phone.getByTestId('phone-session-title')).toHaveText('T127 Shell')
+    await expect(phone.getByTestId('phone-session-title')).toHaveText('T131 Shell')
     expect(new URL(phone.url()).searchParams.get('session')).toBe(SHELL)
     await phone.waitForTimeout(900)
     await expect(editor, 'still open after the press: its click was eaten').toBeVisible()
@@ -324,12 +328,12 @@ test('T127 phone list: a held press renames the session in place, the Mac sideba
     // ✕ leaves it as it was
     const shellRow = `[data-testid="phone-session-row"][data-session-id="${SHELL}"]`
     await press(cdp, phone, await centre(phone, shellRow), 800)
-    await expect(phone.getByTestId('phone-rename-input')).toHaveValue('T127 Shell')
+    await expect(phone.getByTestId('phone-rename-input')).toHaveValue('T131 Shell')
     await phone.waitForTimeout(900)
     await phone.getByTestId('phone-rename-input').fill('not this')
     await tap(cdp, phone, '[data-testid="phone-rename-cancel"]')
     await expect(phone.getByTestId('phone-row-rename')).toHaveCount(0)
-    await expect(phone.locator(shellRow)).toContainText('T127 Shell')
+    await expect(phone.locator(shellRow)).toContainText('T131 Shell')
 
     // a finger that moves is a scroll: no editor
     await press(cdp, phone, await centre(phone, otherRow), 800, 40)
@@ -346,7 +350,7 @@ test('T127 phone list: a held press renames the session in place, the Mac sideba
     await page.getByTestId('settings-category-phone').click()
     await page.getByTestId('phone-pair-watch').click()
     const watchCode = (await page.getByTestId('phone-pair-code-mac').textContent())!.replace(/\D/g, '')
-    const watcher = await openPhone(app, `${base}/?session=${SHELL}&view=terminal`, 't127-watch', false)
+    const watcher = await openPhone(app, `${base}/?session=${SHELL}&view=terminal`, 't131-watch', false)
     await watcher.phone.getByTestId('phone-pair-code').fill(watchCode)
     await watcher.phone.getByTestId('phone-pair-submit').click()
     await expect(watcher.phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })

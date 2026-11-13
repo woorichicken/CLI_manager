@@ -16,21 +16,39 @@ const STATE_TEXT: Partial<Record<PhoneSession['state'], string>> = {
     exited: 'Exited'
 }
 
-/** the click that ends a long press lands where the editor now is: eat it, or it hits ✓ or ✕ */
-const EAT_CLICK_MS = 800
+/**
+ * The finger that held a row lifts over the editor that replaced it: the browser's tap after it
+ * (touchend → mousedown → click) would take the focus off the name box or hit ✓/✕. Cancel that
+ * lift's touchend (no mouse events follow it), and eat a mousedown/click that comes anyway — until
+ * a moment after the lift, however long the finger was held.
+ */
+const AFTER_LIFT_MS = 600
+const AT_MOST_MS = 15_000
 
-function eatNextClick(): void {
-    const eat = (event: MouseEvent): void => {
+function swallowPressEnd(): void {
+    let timer = 0
+    const block = (event: Event): void => {
         event.preventDefault()
         event.stopPropagation()
-        done()
+        if (event.type === 'click') done()
+    }
+    const lifted = (event: Event): void => {
+        if (event.type === 'touchend' && event.cancelable) event.preventDefault()
+        window.clearTimeout(timer)
+        timer = window.setTimeout(done, AFTER_LIFT_MS)
     }
     const done = (): void => {
-        document.removeEventListener('click', eat, true)
         window.clearTimeout(timer)
+        document.removeEventListener('touchend', lifted, true)
+        document.removeEventListener('pointerup', lifted, true)
+        document.removeEventListener('mousedown', block, true)
+        document.removeEventListener('click', block, true)
     }
-    document.addEventListener('click', eat, true)
-    const timer = window.setTimeout(done, EAT_CLICK_MS)
+    document.addEventListener('touchend', lifted, { capture: true, passive: false })
+    document.addEventListener('pointerup', lifted, true)
+    document.addEventListener('mousedown', block, true)
+    document.addEventListener('click', block, true)
+    timer = window.setTimeout(done, AT_MOST_MS)
 }
 
 export function SessionRow({
@@ -59,7 +77,7 @@ export function SessionRow({
             createLongPress(() => {
                 const { session: current, canRename: may, onRename: rename } = actions.current
                 if (!may) return
-                eatNextClick()
+                swallowPressEnd()
                 try {
                     navigator.vibrate?.(10)
                 } catch {
@@ -106,7 +124,8 @@ export function SessionRow({
                 event.preventDefault()
                 if (!canRename) return
                 press.cancel()
-                eatNextClick()
+                // a held finger (Android raises this for a long press) still has its lift to come; a mouse's is over
+                if ((event.nativeEvent as PointerEvent).pointerType === 'touch') swallowPressEnd()
                 onRename(session)
             }}
             onClick={() => {
