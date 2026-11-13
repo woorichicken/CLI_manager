@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage, Tray, Menu, Notification, webContents } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage, Tray, Menu, Notification, webContents, powerMonitor } from 'electron'
 import path, { join } from 'path'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -40,6 +40,9 @@ import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
 import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText } from './ChecklistStore'
+import { CronStore } from './CronStore'
+import { CronService } from './CronService'
+import { CRON_CHANNELS, CronInput } from '../shared/autocron'
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
 import { TranscriptReader } from './TranscriptReader'
 import { ConversationService } from './ConversationService'
@@ -431,8 +434,55 @@ const controlApiService = new ControlApiService({
         phone?.forgetSession(sessionId)
     }
 })
+// ---------------------------------------------------------------------------
+// Autocron (Loop window › Autocron tab, Control API /v1/crons): jobs CLI Manager starts on a
+// schedule — a new agent session, or a prompt typed into a promoted /loop. See CronService.
+// ---------------------------------------------------------------------------
+const sendCronState = (): void => {
+    if (loopWindow && !loopWindow.isDestroyed()) loopWindow.webContents.send(CRON_CHANNELS.update_broadcast, cronService.state())
+}
+const cronStore = new CronStore(store, () => sendCronState())
+const cronService: CronService = new CronService({
+    store: cronStore,
+    openSession: async (input) => {
+        const result = await controlApiService.openSession({ ...input, focus: false, client: 'autocron' })
+        return { sessionId: result.session.id, terminalStarted: result.terminalStarted, promptSent: result.promptSent, note: result.note }
+    },
+    loops: () => loopManager.getState(),
+    writeInput: (terminalId, data) => terminalManager.writeInput(terminalId, data),
+    hasTerminal: (terminalId) => terminalManager.hasTerminal(terminalId),
+    // New sessions are spawned by the main window's renderer, so it has to exist (hidden is fine).
+    ensureMainWindow: async () => {
+        if (mainWindow && !mainWindow.isDestroyed()) return
+        createWindow()
+        const window = mainWindow as BrowserWindow | null
+        if (window) await new Promise<void>((resolve) => window.webContents.once('did-finish-load', () => resolve()))
+    },
+    notify: (title, body) => {
+        if (isTestHeadless || !Notification.isSupported()) return
+        new Notification({ title, body }).show()
+    },
+    focusSession: (sessionId) => {
+        if (loopManager.getState().sessions.some((s) => s.terminalId === sessionId)) {
+            createLoopWindow()
+            return true
+        }
+        try {
+            controlApiService.focusSession(sessionId, 'autocron')
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.show()
+                mainWindow.focus()
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+})
+
 const controlApiServer = new ControlApiServer({
     service: controlApiService,
+    crons: cronService,
     store,
     appVersion: app.getVersion()
 })
@@ -1326,6 +1376,38 @@ app.whenReady().then(async () => {
         }
         return false
     })
+
+    // ============================================
+    // Autocron IPC Handlers (Loop window › Autocron tab)
+    // ============================================
+
+    const cronResult = <T>(fn: () => T): IPCResult<T> => {
+        try {
+            return { success: true, data: fn() }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    }
+    ipcMain.handle(CRON_CHANNELS.list, () => cronResult(() => cronService.state()))
+    ipcMain.handle(CRON_CHANNELS.create, (_, input: CronInput) => cronResult(() => {
+        const made = cronService.create(input, 'app')
+        if (!made.ok) throw new Error(made.message)
+        return made.cron
+    }))
+    ipcMain.handle(CRON_CHANNELS.update, (_, { id, input }: { id: string; input: CronInput }) => cronResult(() => {
+        const updated = cronService.update(id, input)
+        if (!updated.ok) throw new Error(updated.message)
+        return updated.cron
+    }))
+    ipcMain.handle(CRON_CHANNELS.remove, (_, { id }: { id: string }) => cronResult(() => cronService.remove(id)))
+    ipcMain.handle(CRON_CHANNELS.run, async (_, { id }: { id: string }) => {
+        try {
+            return { success: true, data: await cronService.runNow(id) }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
+    ipcMain.handle(CRON_CHANNELS.openSession, (_, { sessionId }: { sessionId: string }) => cronResult(() => cronService.openSession(sessionId)))
 
     // ============================================
     // Loop Dashboard IPC Handlers
@@ -3762,6 +3844,15 @@ app.whenReady().then(async () => {
 
     createWindow()
 
+    // Autocron: a tick every 30 s, and one right after the Mac wakes — that is when runs
+    // missed while asleep are caught up (or marked missed) per each job's setting.
+    // The first tick waits for the main window: new sessions are spawned by its renderer.
+    const firstWindow = mainWindow as BrowserWindow | null
+    if (firstWindow) firstWindow.webContents.once('did-finish-load', () => cronService.start())
+    else cronService.start()
+    powerMonitor.on('resume', () => void cronService.tick())
+    powerMonitor.on('unlock-screen', () => void cronService.tick())
+
     app.on('activate', function () {
         // On macOS it's common to re-create a window in the app when the
         // dock icon is clicked and there are no other windows open.
@@ -3789,6 +3880,7 @@ app.on('window-all-closed', () => {
 
 // Remove the discovery file so tools do not try a server that is gone.
 app.on('will-quit', () => {
+    cronService.stop()
     void controlApiServer.stop()
     void phone?.server.stop()
     terminalMirror.disposeAll()

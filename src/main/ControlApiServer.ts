@@ -6,6 +6,8 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { CALLER_SESSION_HEADER, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API } from '../shared/types'
 import { ControlApiError, ControlApiService } from './ControlApiService'
+import type { CronService } from './CronService'
+import type { CronInput } from '../shared/autocron'
 import { handleMcpBody } from './controlApiMcp'
 
 /**
@@ -103,6 +105,8 @@ function optionalBoolean(body: Record<string, unknown>, key: string): boolean | 
 export interface ControlApiServerOptions {
     /** Started/stopped with the server, so mirroring costs nothing while it is off. */
     service: ControlApiService
+    /** Autocron — `/v1/crons`. Absent in setups without a scheduler (the routes answer 404). */
+    crons?: CronService
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     store: any
     appVersion: string
@@ -538,7 +542,43 @@ export class ControlApiServer {
             })),
             route('DELETE', '/v1/checklists/:checklist/items/:item', ({ params }) => ({
                 checklist: service.removeChecklistItem(params.checklist, params.item)
-            }))
+            })),
+            ...this.cronRoutes()
+        ]
+    }
+
+    /**
+     * Autocron: the same jobs the Loop window's Autocron tab shows. A job is named by id or name.
+     * Edits are POST to the job (like checklists); pause/resume are shorthands for `enabled`.
+     */
+    private cronRoutes(): Route[] {
+        const crons = (): CronService => {
+            if (!this.options.crons) throw new ControlApiError(404, 'not_found', 'Autocron is not available in this build.')
+            return this.options.crons
+        }
+        const job = (ref: string) => {
+            const found = crons().get(decodeURIComponent(ref))
+            if (!found) throw new ControlApiError(404, 'cron_not_found', `No autocron job "${decodeURIComponent(ref)}".`)
+            return found
+        }
+        const checked = <T>(result: ({ ok: true } & T) | { ok: false; message: string }): T => {
+            if (!result.ok) throw new ControlApiError(400, 'bad_request', result.message)
+            return result
+        }
+        const input = (body: Record<string, unknown>): CronInput => ({
+            name: body.name, schedule: body.schedule, mode: body.mode, agent: body.agent, template: body.template,
+            cwd: body.cwd, loopProjectId: body.loopProjectId, prompt: body.prompt, missed: body.missed, enabled: body.enabled
+        })
+        return [
+            route('GET', '/v1/crons', () => crons().state()),
+            route('POST', '/v1/crons', ({ body, client }) => created({ cron: checked(crons().create(input(body), client)).cron })),
+            route('GET', '/v1/crons/:cron', ({ params }) => ({ cron: job(params.cron) })),
+            route('POST', '/v1/crons/:cron', ({ params, body }) => ({ cron: checked(crons().update(job(params.cron).id, input(body))).cron })),
+            route('DELETE', '/v1/crons/:cron', ({ params }) => ({ removed: crons().remove(job(params.cron).id) })),
+            route('GET', '/v1/crons/:cron/runs', ({ params }) => ({ runs: crons().runs(job(params.cron).id) ?? [] })),
+            route('POST', '/v1/crons/:cron/run', async ({ params }) => ({ run: await crons().runNow(job(params.cron).id) })),
+            route('POST', '/v1/crons/:cron/pause', ({ params }) => ({ cron: checked(crons().update(job(params.cron).id, { enabled: false })).cron })),
+            route('POST', '/v1/crons/:cron/resume', ({ params }) => ({ cron: checked(crons().update(job(params.cron).id, { enabled: true })).cron }))
         ]
     }
 }
