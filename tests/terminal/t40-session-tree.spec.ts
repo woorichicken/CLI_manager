@@ -226,4 +226,58 @@ test.describe('T40 session tree', () => {
         await resizeMainWindow(app, 390, 800)
         if (shots) { await page.waitForTimeout(2200); await page.screenshot({ path: path.join(shots, 'relations-only-390.png') }) }
     })
+
+    test('T40 Copy for agent copies the related sessions with how an agent reaches them (df23dbd0)', async () => {
+        ctx = await launch()
+        const { page, app } = ctx
+        await resizeMainWindow(app, 1280, 800)
+        const shots = process.env.RELATED_SESSIONS_SHOTS
+        if (shots) fs.mkdirSync(shots, { recursive: true })
+        await activateSession(page, LEAD_A_NAME)
+        await button(page, LEAD_A).click()
+        await expect(rowIn(page, 'down', WORKER)).toBeVisible()
+        // Before any assertion on the new button, so an old build leaves its "before" picture too.
+        if (shots) { await page.waitForTimeout(500); await page.screenshot({ path: path.join(shots, 'copy-agent-1280.png') }) }
+
+        const copyButton = dialog(page).locator('[data-related-copy-agent]')
+        const clipboardText = (): Promise<string> => app.evaluate(({ clipboard }) => clipboard.readText())
+        const saved = await clipboardText()
+        try {
+            await copyButton.click()
+            await expect(copyButton).toHaveText('Copied')
+            const all = await clipboardText()
+            expect(all.split('\n')[0]).toBe(`Sessions related to "${LEAD_A_NAME}" (id ${LEAD_A}) in CLI Manager`)
+            for (const id of [WORKER, HELPER, CHIEF, LEAD_B, LEAD_C]) expect(all).toContain(`id ${id}`)
+            // Each session under the part of the tree it sits in, below first like the dialog.
+            const below = all.indexOf('Below this session')
+            const above = all.indexOf('Above this session')
+            const beside = all.indexOf('Beside this session')
+            expect(below).toBeGreaterThanOrEqual(0)
+            expect(below < all.indexOf(`id ${WORKER}`) && all.indexOf(`id ${WORKER}`) < above).toBe(true)
+            expect(above < all.indexOf(`id ${CHIEF}`) && all.indexOf(`id ${CHIEF}`) < beside).toBe(true)
+            expect(beside < all.indexOf(`id ${LEAD_B}`)).toBe(true)
+            expect(all).toContain('read_output')
+            expect(all).toContain('send_input')
+
+            // Ticked rows narrow it to those sessions.
+            await dialog(page).locator(`[data-related-select="${LEAD_B}"]`).click()
+            await copyButton.click()
+            await expect.poll(clipboardText).not.toBe(all)
+            const picked = await clipboardText()
+            expect(picked).toContain(`id ${LEAD_B}`)
+            for (const id of [WORKER, HELPER, CHIEF, LEAD_C]) expect(picked).not.toContain(`id ${id}`)
+            expect(picked).not.toContain('Below this session')
+        } finally {
+            await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved)
+        }
+
+        // A narrow window keeps the button inside the dialog.
+        await resizeMainWindow(app, 390, 800)
+        await page.waitForTimeout(500)
+        const panel = (await dialog(page).boundingBox())!
+        const box = (await copyButton.boundingBox())!
+        expect(box.x).toBeGreaterThanOrEqual(panel.x)
+        expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 1)
+        if (shots) { await page.waitForTimeout(1500); await page.screenshot({ path: path.join(shots, 'copy-agent-390.png') }) }
+    })
 })
