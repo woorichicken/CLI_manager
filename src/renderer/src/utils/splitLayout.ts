@@ -50,6 +50,13 @@ export function splitPaneWidth(areaWidth: number, count: number, index: number):
     return half
 }
 
-export function isWidePane(areaWidth: number, count: number, index: number): boolean {
-    return areaWidth > 0 && splitPaneWidth(areaWidth, count, index) >= WIDE_PANE_HEADER_MIN_PX
+/**
+ * One header shape for the whole split: the wide row only when every pane is wide enough. Deciding
+ * per pane mixed two shapes on one screen (1280, three panes: compact on top, wide below), which is
+ * the very difference report 08343040 complained about. So the narrowest pane decides.
+ */
+export function splitHeadersWide(areaWidth: number, count: number): boolean {
+    if (areaWidth <= 0 || count < 1) return false
+    const narrowest = Math.min(...Array.from({ length: count }, (_, index) => splitPaneWidth(areaWidth, count, index)))
+    return narrowest >= WIDE_PANE_HEADER_MIN_PX
 }

@@ -45,7 +45,7 @@ import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
-import { splitAfterDrop, SPLIT_DIVIDER_PX, isWidePane, PANE_HEADER_WIDE_PX, PANE_HEADER_COMPACT_PX } from './utils/splitLayout'
+import { splitAfterDrop, SPLIT_DIVIDER_PX, splitHeadersWide, PANE_HEADER_WIDE_PX, PANE_HEADER_COMPACT_PX } from './utils/splitLayout'
 import { SplitDividers } from './components/SplitDividers'
 
 /** Let the window settle before spending anything on a network check. */
@@ -1817,7 +1817,7 @@ function App() {
                                                     onReorder={handleSplitReorder}
                                                     relatedCount={relatedCountBySession.get(sessionId) ?? 0}
                                                     onOpenRelated={setRelatedDialogSessionId}
-                                                    wide={isWidePane(splitAreaWidth, splitLayout.sessionIds.length, index)}
+                                                    wide={splitHeadersWide(splitAreaWidth, splitLayout.sessionIds.length)}
                                                     fontSize={settings.fontSize}
                                                     history={index === activeSplitIndex ? sessionHistory : undefined}
                                                     parents={parentSessionsOf(sessionRelations, sessionId, workspaces)}
@@ -1874,7 +1874,7 @@ function App() {
                                 // `gap-px` the header grid above uses, so headers and terminals line up
                                 // (report a81cd0ce asked for no space between panes).
                                 const gap = SPLIT_DIVIDER_PX
-                                const headerHeight = isWidePane(splitAreaWidth, count, idx) ? PANE_HEADER_WIDE_PX : PANE_HEADER_COMPACT_PX
+                                const headerHeight = splitHeadersWide(splitAreaWidth, count) ? PANE_HEADER_WIDE_PX : PANE_HEADER_COMPACT_PX
                                 const bottomPadding = 0 // single view has none either
 
                                 // Use top/bottom for vertical positioning (responsive to parent height)

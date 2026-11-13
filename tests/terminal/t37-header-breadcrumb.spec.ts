@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { launchAppWithWorkspaces, closeApp, LaunchResult } from './helpers'
 import { buildSessionBreadcrumb } from '../../src/renderer/src/utils/sessionBreadcrumb'
-import { splitAfterDrop } from '../../src/renderer/src/utils/splitLayout'
+import { splitAfterDrop, splitHeadersWide } from '../../src/renderer/src/utils/splitLayout'
 import type { TerminalSession, Workspace, WorkspaceFolder } from '../../src/shared/types'
 
 /**
@@ -210,13 +210,30 @@ test.describe('T37 split panes (fb-1114)', () => {
         expect(Math.round((await headerA.boundingBox())!.height)).toBe(32)
         await expect(headerA.locator('[data-session-history]')).toHaveCount(0)
 
-        // Three panes at 1280: the full-width bottom pane is wide, the two on top are not.
+        // One shape per split (round 2): three panes at 1280 — the full-width bottom pane is wide
+        // enough on its own, but the two on top are not, so every pane keeps the compact row.
         await dropIntoSplit(page, 's-c')
-        await expect(page.locator('[data-pane-header="s-c"]')).toHaveAttribute('data-pane-wide', 'true')
-        await expect(headerA).toHaveAttribute('data-pane-wide', 'false')
+        const shapes = () => page.locator('[data-pane-header]').evaluateAll(els => els.map(el => el.getAttribute('data-pane-wide')))
+        await expect.poll(shapes).toEqual(['false', 'false', 'false'])
+        const heights = () => page.locator('[data-pane-header]').evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().height)))
+        expect(await heights()).toEqual([32, 32, 32])
         const cTop = await page.evaluate(() => document.querySelector('[data-session-id="s-c"]')!.getBoundingClientRect().top)
         const cHeader = (await page.locator('[data-pane-header="s-c"]').boundingBox())!
         expect(Math.abs(cTop - (cHeader.y + cHeader.height))).toBeLessThanOrEqual(1)
+
+        // Three panes at 1800: every pane is wide, so every pane gets the wide row.
+        await page.setViewportSize({ width: 1800, height: 950 })
+        await expect.poll(shapes).toEqual(['true', 'true', 'true'])
+        expect(await heights()).toEqual([40, 40, 40])
+    })
+
+    test('the header shape is decided for the whole split by its narrowest pane', () => {
+        // 1001 wide: two halves of 500 — compact, even though a 3-pane bottom row would be 1001.
+        expect(splitHeadersWide(1001, 3)).toBe(false)
+        expect(splitHeadersWide(1001, 1)).toBe(true)
+        expect(splitHeadersWide(1281, 2)).toBe(true) // halves of 640
+        expect(splitHeadersWide(1279, 4)).toBe(false)
+        expect(splitHeadersWide(0, 2)).toBe(false)
     })
 })
 
