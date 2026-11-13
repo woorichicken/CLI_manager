@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
+import { CRON_CHANNELS, CronInput, CronRun, CronState, CronView } from '../shared/autocron'
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatForkRequest, ChatForkResult, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
@@ -73,6 +74,19 @@ const api = {
         const handler = (_event: Electron.IpcRendererEvent, payload: LoopUpdatePayload) => callback(payload)
         ipcRenderer.on(LOOP_CHANNELS.update, handler)
         return () => ipcRenderer.removeListener(LOOP_CHANNELS.update, handler)
+    },
+
+    // Autocron (Loop window › Autocron tab)
+    listCrons: (): Promise<IPCResult<CronState>> => ipcRenderer.invoke(CRON_CHANNELS.list),
+    createCron: (input: CronInput): Promise<IPCResult<CronView>> => ipcRenderer.invoke(CRON_CHANNELS.create, input),
+    updateCron: (id: string, input: CronInput): Promise<IPCResult<CronView>> => ipcRenderer.invoke(CRON_CHANNELS.update, { id, input }),
+    removeCron: (id: string): Promise<IPCResult<boolean>> => ipcRenderer.invoke(CRON_CHANNELS.remove, { id }),
+    runCron: (id: string): Promise<IPCResult<CronRun>> => ipcRenderer.invoke(CRON_CHANNELS.run, { id }),
+    openCronSession: (sessionId: string): Promise<IPCResult<boolean>> => ipcRenderer.invoke(CRON_CHANNELS.openSession, { sessionId }),
+    onCronState: (callback: (state: CronState) => void): (() => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, state: CronState) => callback(state)
+        ipcRenderer.on(CRON_CHANNELS.update_broadcast, handler)
+        return () => ipcRenderer.removeListener(CRON_CHANNELS.update_broadcast, handler)
     },
 
     // Git

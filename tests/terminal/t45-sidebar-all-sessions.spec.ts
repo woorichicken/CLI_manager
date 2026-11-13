@@ -194,6 +194,40 @@ test.describe('T45 sidebar all sessions', () => {
         await expect.poll(() => listOrder(page)).toEqual(['s-w1', 's-b1', 's-a1', 's-a2'])
     })
 
+    test('Cmd+] and Cmd+[ walk the rows on screen, across workspaces, and leave the list order alone (dc11b60f)', async () => {
+        ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
+        const { page } = ctx
+        await activateSession(page, 'T45A1')
+        await activateSession(page, 'T45B1')
+        await activateSession(page, 'T45W1')
+        await page.getByTestId('sidebar-view-toggle').click()
+        const shown = ['s-w1', 's-b1', 's-a1', 's-a2']
+        await expect.poll(() => listOrder(page)).toEqual(shown)
+        await expect.poll(() => visibleTerminal(page)).toBe('s-w1')
+
+        // Down the list: W1 is alone in its worktree, so the old per-workspace step stayed on it.
+        for (const next of ['s-b1', 's-a1', 's-a2', 's-w1']) {
+            await page.keyboard.press('Meta+BracketRight')
+            await expect.poll(() => visibleTerminal(page)).toBe(next)
+            // The list did not jump the selected row to the top under the user.
+            expect(await listOrder(page)).toEqual(shown)
+        }
+        // Up from the first row wraps to the last.
+        await page.keyboard.press('Meta+BracketLeft')
+        await expect.poll(() => visibleTerminal(page)).toBe('s-a2')
+        await page.keyboard.press('Meta+BracketLeft')
+        await expect.poll(() => visibleTerminal(page)).toBe('s-a1')
+        expect(await listOrder(page)).toEqual(shown)
+
+        // Back in the folder view the step is the workspace's own order again (T26).
+        await page.getByTestId('sidebar-view-toggle').click()
+        await expect(page.getByTestId('sidebar-all-sessions')).toHaveCount(0)
+        await page.keyboard.press('Meta+BracketRight')
+        await expect.poll(() => visibleTerminal(page)).toBe('s-a2')
+        await page.keyboard.press('Meta+BracketRight')
+        await expect.poll(() => visibleTerminal(page)).toBe('s-a1')
+    })
+
     test('Pin to Top keeps a session above the recently viewed ones and is saved', async () => {
         ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
         const { page } = ctx
