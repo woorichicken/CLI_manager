@@ -166,9 +166,13 @@ export class CronStore {
         const checked = checkCronInput(input, before)
         if (!checked.ok) return checked
         const job: CronJob = { ...before, ...checked.job, updatedAt: now }
-        // mode switch drops the other mode's fields (checkCronInput only returns the current mode's)
-        if (job.mode === 'new') delete job.loopProjectId
-        else { delete job.agent; delete job.template; delete job.cwd }
+        // checkCronInput returns only the fields the job keeps, so anything else from `before` goes:
+        // the other mode's fields, and the agent or template the form switched away from.
+        if (job.mode === 'new') {
+            delete job.loopProjectId
+            if (!checked.job.agent) delete job.agent
+            if (!checked.job.template) delete job.template
+        } else { delete job.agent; delete job.template; delete job.cwd }
         const next = [...all]
         next[index] = job
         this.store.set(CRONS_KEY, next)

@@ -557,8 +557,9 @@ export class ControlApiServer {
             return this.options.crons
         }
         const job = (ref: string) => {
-            const found = crons().get(decodeURIComponent(ref))
-            if (!found) throw new ControlApiError(404, 'cron_not_found', `No autocron job "${decodeURIComponent(ref)}".`)
+            // the router already decoded path parameters — decoding again reads `foo%20bar` as `foo bar`
+            const found = crons().get(ref)
+            if (!found) throw new ControlApiError(404, 'cron_not_found', `No autocron job "${ref}".`)
             return found
         }
         const checked = <T>(result: ({ ok: true } & T) | { ok: false; message: string }): T => {

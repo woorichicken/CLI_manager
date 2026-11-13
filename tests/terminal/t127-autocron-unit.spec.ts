@@ -38,6 +38,9 @@ test.describe('T127 autocron', () => {
             return r.ok ? '' : r.message
         }
         expect(bad('0 8 * *')).toContain('five fields')
+        // inherited object keys are not aliases (Codex review: they threw instead of a message)
+        expect(bad('constructor')).toContain('five fields')
+        expect(bad('__proto__')).toContain('five fields')
         expect(bad('60 8 * * *')).toContain('minute')
         expect(bad('0 24 * * *')).toContain('hour')
         expect(bad('0 8 * 13 *')).toContain('month')
@@ -134,6 +137,32 @@ test.describe('T127 autocron', () => {
             expect(edited.job.agent).toBeUndefined()
             expect(edited.job.cwd).toBeUndefined()
         }
+
+        // the form switching Template → Command drops the template (it kept it and ran it)
+        const t = store.create({ ...base, name: 'y', cwd: '/tmp', template: 'T' }, 'app', 1000)
+        if (!t.ok) throw new Error(t.message)
+        const switched = store.update(t.job.id, { agent: 'claude', template: '' }, 2000)
+        expect(switched.ok && switched.job).toMatchObject({ agent: 'claude' })
+        if (switched.ok) expect(switched.job.template).toBeUndefined()
+        expect(store.update(t.job.id, { enabled: false }, 3000).ok).toBe(true)
+    })
+
+    test('next run moves forward through the night clocks go back (America/New_York 2026-11-01)', () => {
+        const savedTz = process.env.TZ
+        process.env.TZ = 'America/New_York'
+        try {
+            const every = schedule('* * * * *')
+            // 01:30 EST, the second 01:30 of the night (06:30 UTC)
+            const after = Date.UTC(2026, 10, 1, 6, 30)
+            expect(nextRun(every, after)).toBe(after + MIN)
+            // two real hours, 120 minutes — none twice, none skipped
+            expect(runsBetween(every, Date.UTC(2026, 10, 1, 5, 0), Date.UTC(2026, 10, 1, 7, 0)).total).toBe(120)
+            // a daily 03:00 still lands on local 03:00 (08:00 UTC after the change)
+            expect(nextRun(schedule('0 3 * * *'), Date.UTC(2026, 10, 1, 5, 0))).toBe(Date.UTC(2026, 10, 1, 8, 0))
+        } finally {
+            if (savedTz === undefined) delete process.env.TZ
+            else process.env.TZ = savedTz
+        }
     })
 
     test('store: switching on or changing the schedule restarts the bookmark; runs are capped', () => {
@@ -176,6 +205,7 @@ test.describe('T127 autocron', () => {
             loops: () => loops,
             writeInput: (id, data) => (written.push([id, data]), id === 'term1'),
             hasTerminal: (id) => id === 'term1',
+            loopRefusal: async () => null,
             ensureMainWindow: async () => {},
             notify: (title) => void notes.push(title),
             focusSession: (id) => id.startsWith('s'),
@@ -223,23 +253,38 @@ test.describe('T127 autocron', () => {
             sessions: [{ id: 'ls1', loopProjectId: 'lp1', terminalId: 'term1', cliToolName: 'claude', status: 'ready', loopCount: 0, lastLoopAt: null, startedAt: 0 }]
         }
         const written: Array<[string, string]> = []
+        let refusal: string | null = null
         const service = new CronService({
             store: new CronStore(fakeStore()),
             openSession: async () => { throw new Error('should not open') },
             loops: () => loops,
             writeInput: (id, data) => (written.push([id, data]), id === 'term1'),
             hasTerminal: (id) => id === 'term1',
+            loopRefusal: async () => refusal,
             ensureMainWindow: async () => {},
             notify: () => {},
             focusSession: () => true,
             now: () => now,
-            sleep: async () => {}
+            sleep: () => new Promise((r) => setTimeout(r, 5))
         })
         const made = service.create({ name: 'Nudge', schedule: '*/30 * * * *', mode: 'attach', loopProjectId: 'lp1', prompt: 'next step\nplease' }, 'api')
         if (!made.ok) throw new Error(made.message)
         const run = await service.runNow(made.cron.id)
         expect(run).toMatchObject({ status: 'started', sessionId: 'term1' })
         expect(written).toEqual([['term1', 'next step please'], ['term1', '\r']])
+
+        // a question on screen, or only the shell left: nothing is typed, the run fails with why
+        written.length = 0
+        refusal = 'the loop is showing a question or menu'
+        expect(await service.runNow(made.cron.id)).toMatchObject({ status: 'failed', note: refusal })
+        expect(written).toEqual([])
+        refusal = null
+
+        // two jobs on the same loop at once: each text is followed by its own Enter, never «AB↵↵»
+        const other = service.create({ name: 'Nudge 2', schedule: '*/30 * * * *', mode: 'attach', loopProjectId: 'lp1', prompt: 'B' }, 'api')
+        if (!other.ok) throw new Error(other.message)
+        await Promise.all([service.runNow(made.cron.id), service.runNow(other.cron.id)])
+        expect(written).toEqual([['term1', 'next step please'], ['term1', '\r'], ['term1', 'B'], ['term1', '\r']])
 
         loops.sessions[0] = { ...loops.sessions[0], terminalId: 'gone' }
         expect(await service.runNow(made.cron.id)).toMatchObject({ status: 'failed' })

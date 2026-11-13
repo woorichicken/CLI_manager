@@ -451,6 +451,18 @@ const cronService: CronService = new CronService({
     loops: () => loopManager.getState(),
     writeInput: (terminalId, data) => terminalManager.writeInput(terminalId, data),
     hasTerminal: (terminalId) => terminalManager.hasTerminal(terminalId),
+    loopRefusal: async (terminalId) => {
+        if (terminalMirror.hasExited(terminalId)) return 'the shell in the loop terminal has exited'
+        // null = the shell itself is in front; 'unknown' (ps could not answer) is let through
+        if ((await terminalManager.foregroundProgram(terminalId)) === null) {
+            return 'the agent in the loop has exited — only the shell is left, so the prompt was not typed'
+        }
+        await terminalMirror.flush(terminalId)
+        if (terminalMirror.showsAwaitingInput(terminalId)) {
+            return 'the loop is showing a question or menu, where Enter would pick the highlighted option — answer it in the Loop window'
+        }
+        return null
+    },
     // New sessions are spawned by the main window's renderer, so it has to exist (hidden is fine).
     ensureMainWindow: async () => {
         if (mainWindow && !mainWindow.isDestroyed()) return

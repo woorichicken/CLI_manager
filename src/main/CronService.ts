@@ -23,6 +23,12 @@ export interface CronServiceDeps {
     /** Writes to a terminal; false when it is not running. */
     writeInput(terminalId: string, data: string): boolean
     hasTerminal(terminalId: string): boolean
+    /**
+     * Whether a prompt may be typed into the loop now — null when it may, else why not: only the
+     * shell is left (the agent exited), or the screen shows a question where Enter would pick the
+     * highlighted option (the Control API's input guard, CLAUDE.md «Control API» 3).
+     */
+    loopRefusal(terminalId: string): Promise<string | null>
     /** Brings the main window up so a new session's terminal can start (it is spawned by the window). */
     ensureMainWindow(): Promise<void>
     /** A system notification for «notify» misses and failures. */
@@ -44,6 +50,8 @@ export interface CronServiceDeps {
 export class CronService {
     private timer: ReturnType<typeof setInterval> | null = null
     private readonly inFlight = new Set<string>()
+    /** Typing into one loop terminal, one job at a time: text, pause, Enter must not interleave. */
+    private readonly terminalQueue = new Map<string, Promise<unknown>>()
     private ticking: Promise<void> | null = null
 
     constructor(private readonly deps: CronServiceDeps) {}
@@ -158,11 +166,27 @@ export class CronService {
         if (!session || !this.deps.hasTerminal(session.terminalId)) {
             return { status: 'failed', note: `the loop in "${project.name}" is not running — open it in the Loop window` }
         }
-        const text = job.prompt.replace(/\r?\n/g, ' ')
-        if (!this.deps.writeInput(session.terminalId, text)) return { status: 'failed', note: 'the loop terminal is gone' }
-        await (this.deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(ATTACH_ENTER_DELAY_MS)
-        this.deps.writeInput(session.terminalId, '\r')
-        return { status: 'started', sessionId: session.terminalId }
+        const terminalId = session.terminalId
+        return this.oneAtATime<Pick<CronRun, 'status' | 'sessionId' | 'note'>>(terminalId, async () => {
+            // asked inside the queue: the job before this one may have just opened a question
+            const refusal = await this.deps.loopRefusal(terminalId)
+            if (refusal) return { status: 'failed', sessionId: terminalId, note: refusal }
+            const text = job.prompt.replace(/\r?\n/g, ' ')
+            if (!this.deps.writeInput(terminalId, text)) return { status: 'failed', note: 'the loop terminal is gone' }
+            await (this.deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(ATTACH_ENTER_DELAY_MS)
+            this.deps.writeInput(terminalId, '\r')
+            return { status: 'started', sessionId: terminalId }
+        })
+    }
+
+    private oneAtATime<T>(terminalId: string, work: () => Promise<T>): Promise<T> {
+        const previous = this.terminalQueue.get(terminalId) ?? Promise.resolve()
+        const next = previous.catch(() => undefined).then(work)
+        this.terminalQueue.set(terminalId, next)
+        void next.finally(() => {
+            if (this.terminalQueue.get(terminalId) === next) this.terminalQueue.delete(terminalId)
+        }).catch(() => undefined)
+        return next
     }
 
     // ------------------------------------------------------------------

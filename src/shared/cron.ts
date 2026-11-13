@@ -23,13 +23,13 @@ export interface CronSchedule {
 
 export type ParsedCron = { ok: true; schedule: CronSchedule } | { ok: false; message: string }
 
-const ALIASES: Record<string, string> = {
+const ALIASES: ReadonlyMap<string, string> = new Map(Object.entries({
     '@hourly': '0 * * * *',
     '@daily': '0 0 * * *',
     '@midnight': '0 0 * * *',
     '@weekly': '0 0 * * 0',
     '@monthly': '0 0 1 * *'
-}
+}))
 
 interface FieldSpec {
     name: string
@@ -80,7 +80,8 @@ function parseField(text: string, spec: FieldSpec): Set<number> | string {
 
 /** Reads a schedule. The message names the field that is wrong, for the form and the API. */
 export function parseCron(expression: string): ParsedCron {
-    const text = (ALIASES[expression.trim().toLowerCase()] ?? expression).trim()
+    // a Map, not an object lookup: `constructor` or `__proto__` must read as a bad schedule, not an inherited value
+    const text = (ALIASES.get(expression.trim().toLowerCase()) ?? expression).trim()
     const parts = text.split(/\s+/)
     if (parts.length !== 5) {
         return { ok: false, message: 'schedule needs five fields: minute hour day-of-month month day-of-week' }
@@ -116,32 +117,30 @@ function dayMatches(s: CronSchedule, date: Date): boolean {
 /**
  * The first matching minute strictly after `after` (ms), or null when nothing matches
  * within five years. Jumps a month / day / hour at a time instead of walking minutes.
+ *
+ * Moves on the timestamp, never by setting local fields back: on the night clocks go back an
+ * hour, `setMinutes` on the second 01:30 lands on the first one, an hour in the past, and the
+ * scheduler would catch the same minute up again at every tick.
  */
 export function nextRun(s: CronSchedule, after: number): number | null {
-    const d = new Date(after)
-    d.setSeconds(0, 0)
-    d.setMinutes(d.getMinutes() + 1)
     const limit = after + SEARCH_LIMIT_DAYS * 24 * 60 * MINUTE_MS
-    while (d.getTime() <= limit) {
+    let t = Math.floor(after / MINUTE_MS) * MINUTE_MS + MINUTE_MS
+    // Each jump must land later than t; a local-midnight jump that does not (a zone whose clock
+    // goes back at midnight) falls back to one minute.
+    const forward = (candidate: number): number => (candidate > t ? candidate : t + MINUTE_MS)
+    while (t <= limit) {
+        const d = new Date(t)
         if (!s.months.has(d.getMonth() + 1)) {
-            d.setMonth(d.getMonth() + 1, 1)
-            d.setHours(0, 0, 0, 0)
-            continue
+            t = forward(new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime())
+        } else if (!dayMatches(s, d)) {
+            t = forward(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime())
+        } else if (!s.hours.has(d.getHours())) {
+            t += (60 - d.getMinutes()) * MINUTE_MS
+        } else if (!s.minutes.has(d.getMinutes())) {
+            t += MINUTE_MS
+        } else {
+            return t
         }
-        if (!dayMatches(s, d)) {
-            d.setDate(d.getDate() + 1)
-            d.setHours(0, 0, 0, 0)
-            continue
-        }
-        if (!s.hours.has(d.getHours())) {
-            d.setHours(d.getHours() + 1, 0, 0, 0)
-            continue
-        }
-        if (!s.minutes.has(d.getMinutes())) {
-            d.setMinutes(d.getMinutes() + 1, 0, 0)
-            continue
-        }
-        return d.getTime()
     }
     return null
 }

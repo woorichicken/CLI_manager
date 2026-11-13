@@ -137,6 +137,12 @@ test.describe('T128 autocron', () => {
         expect(made.status).toBe(201)
         expect(made.json.cron).toMatchObject({ createdBy: 't128', missed: { policy: 'notify', withinMinutes: 360 } })
 
+        // names are decoded once: «100% report» is found, «foo%20bar» is not read as «foo bar»
+        expect((await api('POST', '/v1/crons', { name: '100% report', schedule: '@daily', agent: 'claude', cwd: jobFolder, prompt: 'p' })).status).toBe(201)
+        expect((await api('GET', `/v1/crons/${encodeURIComponent('100% report')}`)).json.cron.name).toBe('100% report')
+        expect((await api('GET', `/v1/crons/${encodeURIComponent('T128%20ui')}`)).status).toBe(404)
+        expect((await api('DELETE', `/v1/crons/${encodeURIComponent('100% report')}`)).json.removed).toBe(true)
+
         const paused = await api('POST', '/v1/crons/T128%20ui/pause')
         expect(paused.json.cron.enabled).toBe(false)
         await expect(loop.getByTestId('autocron-toggle')).toContainText('Resume')
