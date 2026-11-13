@@ -221,7 +221,7 @@
 .chat-thread-anchor { display: flex; width: 100%; margin-top: 8px; }
 .chat-thread-chip { max-width: 100%; white-space: normal; text-align: left; }
 .chat-thread-chip svg { flex-shrink: 0; }
-.chat-thread-session { align-items: flex-start; flex-direction: column; gap: 2px; }
+.chat-menu-item.chat-thread-session { align-items: flex-start; flex-direction: column; gap: 2px; }
 .chat-thread-name { overflow-wrap: anywhere; }
 .chat-popover {
     position: absolute; bottom: calc(100% + 6px); z-index: 30; min-width: 220px; max-width: min(340px, 86vw); max-height: 320px; overflow-y: auto;

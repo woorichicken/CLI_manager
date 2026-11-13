@@ -236,6 +236,19 @@ test('T117 Mac: one click opens a thread behind this reply; chips navigate and t
         await expect(row).toContainText('T117 Claude · fork')
         await expect(row).toContainText(/working|waiting|idle/i)
         await expect(row).toContainText(/ago|now/)
+        const textOffsets = await row.evaluate((element) => {
+            const left = element.getBoundingClientRect().left
+            return Array.from(element.querySelectorAll('.chat-thread-name, .chat-menu-note')).map((text) => {
+                const range = document.createRange()
+                range.selectNodeContents(text)
+                return range.getBoundingClientRect().left - left
+            })
+        })
+        expect(textOffsets).toHaveLength(2)
+        for (const offset of textOffsets) {
+            expect(offset).toBeGreaterThanOrEqual(0)
+            expect(offset).toBeLessThanOrEqual(12)
+        }
     }
     // The opening notice must not cover even the bottom-right edge of the last choice.
     const lastChoice = list.getByTestId('chat-thread-session').last()
