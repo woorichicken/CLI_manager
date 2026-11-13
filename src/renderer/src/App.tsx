@@ -45,7 +45,7 @@ import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
-import { splitAfterDrop, SPLIT_DIVIDER_PX } from './utils/splitLayout'
+import { splitAfterDrop, SPLIT_DIVIDER_PX, isWidePane, PANE_HEADER_WIDE_PX, PANE_HEADER_COMPACT_PX } from './utils/splitLayout'
 import { SplitDividers } from './components/SplitDividers'
 
 /** Let the window settle before spending anything on a network check. */
@@ -110,6 +110,18 @@ function App() {
     // The session the user is looking at: the focused split pane, else the active tab. One place reports it
     // for the recently viewed order (sidebar All sessions, Related sort); main skips a repeat of the id already in front.
     const viewedSessionId = splitLayout ? splitLayout.sessionIds[activeSplitIndex] ?? null : activeSession?.id ?? null
+    // Width of the terminal area, so a split pane wide enough can carry the single-view header (report 08343040).
+    const [splitAreaWidth, setSplitAreaWidth] = useState(0)
+    const splitAreaObserver = useRef<ResizeObserver | null>(null)
+    const splitAreaRef = React.useCallback((el: HTMLDivElement | null) => {
+        splitAreaObserver.current?.disconnect()
+        splitAreaObserver.current = null
+        if (!el) return
+        setSplitAreaWidth(el.clientWidth)
+        const observer = new ResizeObserver(() => setSplitAreaWidth(el.clientWidth))
+        observer.observe(el)
+        splitAreaObserver.current = observer
+    }, [])
     useEffect(() => {
         if (viewedSessionId) void window.api.pushRecentSession(viewedSessionId)
     }, [viewedSessionId])
@@ -606,9 +618,9 @@ function App() {
         : undefined
     const activeAiControl = activeLiveSession?.aiControl
 
-    // Single view only: a split view shows several sessions at once and has no one place in a history.
+    // One history for the window: in split view it follows the active pane, whose header shows ‹ › when wide.
     const sessionHistory = useSessionHistory(
-        splitLayout ? undefined : activeSession?.id,
+        viewedSessionId ?? undefined,
         id => workspaces.some(w => w.sessions?.some(s => s.id === id))
     )
     const activeParents = useMemo(
@@ -1712,6 +1724,7 @@ function App() {
                 <div className="flex-1 pt-4 px-4 pb-0 flex flex-col overflow-hidden min-h-0">
                     {/* Terminal container with relative positioning for absolute children */}
                     <div
+                        ref={splitAreaRef}
                         className="flex-1 relative overflow-hidden"
                         onDragOver={handleTerminalAreaDragOver}
                         onDragLeave={handleTerminalAreaDragLeave}
@@ -1804,6 +1817,11 @@ function App() {
                                                     onReorder={handleSplitReorder}
                                                     relatedCount={relatedCountBySession.get(sessionId) ?? 0}
                                                     onOpenRelated={setRelatedDialogSessionId}
+                                                    wide={isWidePane(splitAreaWidth, splitLayout.sessionIds.length, index)}
+                                                    fontSize={settings.fontSize}
+                                                    history={index === activeSplitIndex ? sessionHistory : undefined}
+                                                    parents={parentSessionsOf(sessionRelations, sessionId, workspaces)}
+                                                    onShowSession={id => showSessions([id])}
                                                 />
                                             </div>
                                             {/* Terminal placeholder - clicks pass through to terminal below */}
@@ -1856,7 +1874,7 @@ function App() {
                                 // `gap-px` the header grid above uses, so headers and terminals line up
                                 // (report a81cd0ce asked for no space between panes).
                                 const gap = SPLIT_DIVIDER_PX
-                                const headerHeight = 32 // h-8 = 32px
+                                const headerHeight = isWidePane(splitAreaWidth, count, idx) ? PANE_HEADER_WIDE_PX : PANE_HEADER_COMPACT_PX
                                 const bottomPadding = 0 // single view has none either
 
                                 // Use top/bottom for vertical positioning (responsive to parent height)

@@ -176,6 +176,48 @@ test.describe('T37 split panes (fb-1114)', () => {
         expect(area.bottom - c.bottom).toBeLessThanOrEqual(0.5)
         await expect(page.locator('[data-split-divider="horizontal"]')).toHaveCount(1)
     })
+
+    test('a wide pane gets the single-view header row, a narrow one keeps the compact row (report 08343040)', async () => {
+        const page = await launchSplit(['s-a', 's-b', 's-c'])
+        await page.setViewportSize({ width: 1800, height: 950 })
+        await page.locator('[data-session-item="s-a"]').click()
+        const single = page.locator('div.flex-1.glass-panel > div.draggable')
+        const singleHeight = (await single.boundingBox())!.height
+        const singleSearch = (await single.locator('button[title^="Search Files"]').boundingBox())!
+
+        await dropIntoSplit(page, 's-b')
+        const headerA = page.locator('[data-pane-header="s-a"]')
+        const headerB = page.locator('[data-pane-header="s-b"]')
+        await expect(headerA).toHaveAttribute('data-pane-wide', 'true')
+        await expect(headerB).toHaveAttribute('data-pane-wide', 'true')
+        // Same height and the same button size as the header over a single terminal.
+        expect(Math.abs((await headerA.boundingBox())!.height - singleHeight)).toBeLessThanOrEqual(1)
+        const paneSearch = (await headerA.locator('button[title="Search Files"]').boundingBox())!
+        expect(Math.abs(paneSearch.width - singleSearch.width)).toBeLessThanOrEqual(1)
+        expect(Math.abs(paneSearch.height - singleSearch.height)).toBeLessThanOrEqual(1)
+        // Related with its label, and ‹ › on the active pane only — one history for the window.
+        await expect(headerA.locator('[data-related-button]')).toContainText('Related')
+        await expect(headerA.locator('[data-session-history]')).toHaveCount(1)
+        await expect(headerB.locator('[data-session-history]')).toHaveCount(0)
+        // The terminal starts right under its header: nothing hidden behind it, no gap.
+        const termTop = await page.evaluate(() => document.querySelector('[data-session-id="s-a"]')!.getBoundingClientRect().top)
+        const headerBox = (await headerA.boundingBox())!
+        expect(Math.abs(termTop - (headerBox.y + headerBox.height))).toBeLessThanOrEqual(1)
+
+        // Narrow window: half-width panes go back to the compact row.
+        await page.setViewportSize({ width: 1280, height: 950 })
+        await expect(headerA).toHaveAttribute('data-pane-wide', 'false')
+        expect(Math.round((await headerA.boundingBox())!.height)).toBe(32)
+        await expect(headerA.locator('[data-session-history]')).toHaveCount(0)
+
+        // Three panes at 1280: the full-width bottom pane is wide, the two on top are not.
+        await dropIntoSplit(page, 's-c')
+        await expect(page.locator('[data-pane-header="s-c"]')).toHaveAttribute('data-pane-wide', 'true')
+        await expect(headerA).toHaveAttribute('data-pane-wide', 'false')
+        const cTop = await page.evaluate(() => document.querySelector('[data-session-id="s-c"]')!.getBoundingClientRect().top)
+        const cHeader = (await page.locator('[data-pane-header="s-c"]').boundingBox())!
+        expect(Math.abs(cTop - (cHeader.y + cHeader.height))).toBeLessThanOrEqual(1)
+    })
 })
 
 test.describe('T37 header breadcrumb', () => {
