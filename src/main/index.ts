@@ -36,7 +36,7 @@ import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
-import { chatThreadsFor } from './chatThreads'
+import { chatThreadParentIds, chatThreadsFor, pollChatThreadChanges } from './chatThreads'
 import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
@@ -378,16 +378,24 @@ async function saveHistoryBeforeQuit(): Promise<void> {
 
 // Installed when the IPC handlers are ready; relation changes also refresh open thread chips immediately.
 let refreshChatThreadSubscriptions = (): void => {}
+let anchoredChatParents = new Set<string>()
 const sessionRelations = new SessionRelations(store, (visible) => {
+    anchoredChatParents = chatThreadParentIds(visible)
     broadcast(SESSION_RELATIONS_CHANNEL, visible)
     refreshChatThreadSubscriptions()
 })
-const readChatThreads = (parentId: string): ChatThread[] => chatThreadsFor(
+anchoredChatParents = chatThreadParentIds(sessionRelations.list())
+const chatThreadSources = {
+    relations: () => sessionRelations.list(),
+    sessions: () => (store.get('workspaces') as Workspace[]).flatMap((workspace) => workspace.sessions),
+    screen: terminalMirror
+}
+const readChatThreads = (parentId: string): ChatThread[] => anchoredChatParents.has(parentId) ? chatThreadsFor(
     parentId,
-    sessionRelations.list(),
-    (store.get('workspaces') as Workspace[]).flatMap((workspace) => workspace.sessions),
+    chatThreadSources.relations(),
+    chatThreadSources.sessions(),
     terminalMirror
-)
+) : []
 const sessionFolders = new SessionFolders(store)
 const recentSessions = new RecentSessions(store)
 /** sessionsInSidebarOrder as the renderer last computed it; null until the window has drawn its sidebar */
@@ -3572,21 +3580,17 @@ app.whenReady().then(async () => {
     // Thread chips watch their children even when the optional sidebar status dots are off.
     // Only parents with an open Chat view are polled, and only changed rows trigger a read in the renderer.
     const threadSubscriptions = new Map<number, Map<string, number>>()
-    const threadSnapshots = new Map<string, string>()
+    let threadSnapshots = new Map<string, string>()
     let threadTimer: ReturnType<typeof setInterval> | null = null
     const refreshThreads = (): void => {
         const parents = new Set([...threadSubscriptions.values()].flatMap((subs) => [...subs.keys()]))
-        for (const id of threadSnapshots.keys()) {
-            if (!parents.has(id)) threadSnapshots.delete(id)
-        }
         if (parents.size === 0 && threadTimer) {
             clearInterval(threadTimer)
             threadTimer = null
         }
-        for (const sessionId of parents) {
-            const next = JSON.stringify(readChatThreads(sessionId))
-            if (threadSnapshots.get(sessionId) === next) continue
-            threadSnapshots.set(sessionId, next)
+        const tick = pollChatThreadChanges(parents, anchoredChatParents, threadSnapshots, chatThreadSources)
+        threadSnapshots = tick.snapshots
+        for (const sessionId of tick.changed) {
             for (const [owner, subs] of threadSubscriptions) {
                 if (!subs.has(sessionId)) continue
                 const target = webContents.fromId(owner)

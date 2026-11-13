@@ -14,6 +14,7 @@ import { useConversation } from './useConversation'
 import { useElapsed } from './WorkBlock'
 import { ChatActionsContext, onChatCommand, type ChatActions, type GalleryImage } from './chatContext'
 import { ForkDialog, ForkNotice, type ForkProgress, type ForkTarget } from './ForkDialog'
+import { groupThreadsByTurn, threadsForTurn, type ThreadGroups } from './threadGroups'
 import { artifactLinks, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
 import './chat.css'
 
@@ -664,6 +665,12 @@ function PinnedLastMessage({ words, onGo }: { words: string; onGo: () => void })
 function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThread }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
+    const previousGroups = useRef<ThreadGroups>(new Map())
+    const threadGroups = useMemo(() => {
+        const groups = groupThreadsByTurn(threads, previousGroups.current)
+        previousGroups.current = groups
+        return groups
+    }, [threads])
     return (
         <>
             {(snapshot.truncated || hidden > 0) && (
@@ -692,7 +699,7 @@ function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThrea
                     agent={agent}
                     foldWork={foldWork}
                     onFork={onFork}
-                    threads={threads.filter((thread) => thread.turnTs === turn.ts && (thread.turnIndex === undefined || thread.turnIndex === hidden + index))}
+                    threads={threadsForTurn(threadGroups, turn.ts, hidden + index)}
                     onOpenThread={onOpenThread}
                 />
             ))}
