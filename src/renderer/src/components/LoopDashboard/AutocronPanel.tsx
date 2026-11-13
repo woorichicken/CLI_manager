@@ -49,6 +49,15 @@ function formatWhen(ms: number | null | undefined): string {
     return sameDay ? `Today ${time}` : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`
 }
 
+/** The grey line beside a run: how it was triggered, what was folded in, and the note — joined with « · ». */
+function runDetail(run: CronRun): string {
+    return [
+        run.trigger === 'manual' ? 'manual' : run.trigger === 'caught-up' ? `late, ran at ${formatWhen(run.at)}` : '',
+        run.missedCount > 0 ? `${run.missedCount} earlier folded in` : '',
+        run.note ?? ''
+    ].filter(Boolean).join(' · ')
+}
+
 function RunStatus({ run }: { run: CronRun | null }) {
     if (!run) return <span className="text-gray-600">never ran</span>
     const color = run.status === 'started' ? 'text-green-400' : run.status === 'missed' ? 'text-amber-400' : 'text-red-400'
@@ -108,7 +117,8 @@ function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
     }
 
     const label = 'block text-[11px] uppercase tracking-wide text-gray-500 mb-1'
-    const field = 'w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-purple-400/60'
+    const box = 'bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-purple-400/60'
+    const field = `w-full ${box}`
 
     return (
         <div className="flex-1 overflow-y-auto p-5" data-testid="autocron-form">
@@ -141,7 +151,7 @@ function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
                         <div>
                             <span className={label}>Agent</span>
                             <div className="flex gap-2">
-                                <select className={`${field} w-36`} value={agentKind} onChange={(e) => setAgentKind(e.target.value as 'command' | 'template')}>
+                                <select className={`${box} w-36 shrink-0`} value={agentKind} onChange={(e) => setAgentKind(e.target.value as 'command' | 'template')}>
                                     <option value="command">Command</option>
                                     <option value="template">Template</option>
                                 </select>
@@ -197,7 +207,7 @@ function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
                 <div>
                     <span className={label}>When</span>
                     <div className="flex gap-2">
-                        <select className={`${field} w-44`} value={PRESETS.find((p) => p.schedule === schedule)?.schedule ?? ''} onChange={(e) => e.target.value && setSchedule(e.target.value)}>
+                        <select className={`${box} w-44 shrink-0`} value={PRESETS.find((p) => p.schedule === schedule)?.schedule ?? ''} onChange={(e) => e.target.value && setSchedule(e.target.value)}>
                             <option value="">Custom</option>
                             {PRESETS.map((p) => (
                                 <option key={p.schedule} value={p.schedule}>{p.label}</option>
@@ -219,7 +229,7 @@ function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
                         {policy === 'once' && (
                             <>
                                 <span className="text-xs text-gray-500 whitespace-nowrap">if within</span>
-                                <input className={`${field} w-16`} type="number" min={1} max={168} value={withinHours} onChange={(e) => setWithinHours(e.target.value)} />
+                                <input className={`${box} w-16 shrink-0`} type="number" min={1} max={168} value={withinHours} onChange={(e) => setWithinHours(e.target.value)} />
                                 <span className="text-xs text-gray-500">h</span>
                             </>
                         )}
@@ -300,11 +310,7 @@ function CronDetail({ cron, runs, onEdit }: { cron: CronView; runs: CronRun[]; o
                             <tr key={run.id} className="border-t border-white/5">
                                 <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap">{formatWhen(run.plannedAt)}</td>
                                 <td className="py-1.5 pr-3 whitespace-nowrap"><RunStatus run={run} /></td>
-                                <td className="py-1.5 pr-3 text-gray-500">
-                                    {run.trigger === 'manual' ? 'manual' : run.trigger === 'caught-up' ? `late, ran at ${formatWhen(run.at)}` : ''}
-                                    {run.missedCount > 0 ? ` · ${run.missedCount} earlier folded in` : ''}
-                                    {run.note ? ` · ${run.note}` : ''}
-                                </td>
+                                <td className="py-1.5 pr-3 text-gray-500">{runDetail(run)}</td>
                                 <td className="py-1.5 text-right">
                                     {run.sessionId && (
                                         <button className="inline-flex items-center gap-1 text-purple-300 hover:text-purple-200" onClick={() => open(run.sessionId!)} data-testid="autocron-open-session">
