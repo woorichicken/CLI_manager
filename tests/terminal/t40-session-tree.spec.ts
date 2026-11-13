@@ -274,7 +274,7 @@ test.describe('T40 session tree', () => {
         // A narrow window keeps the button inside the dialog.
         await resizeMainWindow(app, 390, 800)
         await page.waitForTimeout(500)
-        const panel = (await dialog(page).locator('.glass-panel').boundingBox())!
+        const panel = (await dialog(page).boundingBox())!
         const box = (await copyButton.boundingBox())!
         expect(box.x).toBeGreaterThanOrEqual(panel.x)
         expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 1)
