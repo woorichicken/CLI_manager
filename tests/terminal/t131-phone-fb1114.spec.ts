@@ -19,6 +19,9 @@ import type { FoldCell, FoldLine } from '../../src/renderer/src/phone/terminalFo
  *  still opens, a moving finger is a scroll, the click that ends the press does not hit ✓/✕, a
  *  view-only device gets no editor. No delete.
  *
+ * fb-1114 C: the bundled font arriving after the snapshot changes xterm's cell size; xterm 6.0.0's scroll
+ *  area kept the fallback's rows and a drag up did nothing (clamped past the bottom) — `keepViewportInSync`.
+ *
  * T131_SHOTS=<dir> + T131_LABEL save captures before the checks; T131_BEFORE=1 only takes them (the
  * old code: the review's «before» column).
  */
@@ -32,6 +35,9 @@ const OWNER = 'owner-t131@example.com'
 const PORT = 47931
 const HISTORY_LINES = 300
 const NEW_NAME = 'T131 폰 목록에서 바꾼 이름'
+/** long enough for the snapshot to land first even on a loaded machine */
+const FONT_DELAY_MS = 3_000
+const FONT_FACE = '13px "CLIM Phone Mono"'
 
 let result: LaunchResult | null = null
 test.afterEach(async () => {
@@ -60,7 +66,7 @@ async function ptyState(page: Page, id: string): Promise<{ size: { cols: number;
 }
 
 /** a 390×844 touch phone; `owner` lets it in as `tailscale serve` does, otherwise it meets the pairing screen */
-async function openPhone(app: ElectronApplication, url: string, partition: string, owner = true): Promise<{ phone: Page; cdp: CDPSession }> {
+async function openPhone(app: ElectronApplication, url: string, partition: string, owner = true, fontDelayMs = 0): Promise<{ phone: Page; cdp: CDPSession }> {
     const opened = app.waitForEvent('window')
     await app.evaluate(({ BrowserWindow, session }, o) => {
         const jar = session.fromPartition(o.partition)
@@ -69,9 +75,11 @@ async function openPhone(app: ElectronApplication, url: string, partition: strin
                 callback({ requestHeaders: { ...details.requestHeaders, 'Tailscale-User-Login': o.owner, 'X-Forwarded-For': '100.101.102.103' } })
             })
         }
+        // a slow phone: the bundled font comes in after the terminal's snapshot
+        if (o.fontDelayMs) jar.webRequest.onBeforeRequest({ urls: ['*://*/*.woff2'] }, (_details, callback) => setTimeout(() => callback({}), o.fontDelayMs))
         const win = new BrowserWindow({ width: 390, height: 844, useContentSize: true, show: false, webPreferences: { partition: o.partition, backgroundThrottling: false } })
         void win.loadURL(o.url)
-    }, { url, partition, owner: owner ? OWNER : '' })
+    }, { url, partition, owner: owner ? OWNER : '', fontDelayMs })
     const phone = await opened
     await phone.waitForLoadState('domcontentloaded')
     const cdp = await phone.context().newCDPSession(phone)
@@ -287,6 +295,34 @@ test('T131 phone terminal: the room above the screen shows the history, not an e
             expect(after.resized, id).toBe(before.resized)
         }
     }
+})
+
+test('T131 phone terminal: the bundled font arriving after the snapshot still lets a drag scroll (fb-1114 C)', async () => {
+    test.setTimeout(180_000)
+    const { app, page, base } = await launch()
+    await page.locator(`[data-session-item="${SHELL}"]`).first().click()
+    await page.waitForTimeout(800)
+    await writeToTerminal(page, SHELL, `seq -f 'T131 history %g' 1 ${HISTORY_LINES}\r`)
+    await waitForBufferText(page, SHELL, `T131 history ${HISTORY_LINES}`, 20_000)
+
+    const { phone, cdp } = await openPhone(app, `${base}/?session=${SHELL}&view=terminal`, 't131-late-font', true, FONT_DELAY_MS)
+    await expect(phone.getByTestId('phone-terminal')).toHaveAttribute('data-status', 'live', { timeout: 15_000 })
+    // the race this case is about: the terminal is live, drawn with the fallback, the font still on its way
+    expect(await phone.evaluate((face) => document.fonts.check(face), FONT_FACE), 'the snapshot came before the font').toBe(false)
+    await expect.poll(() => phone.evaluate((face) => document.fonts.check(face), FONT_FACE), { timeout: FONT_DELAY_MS + 10_000 }).toBe(true)
+    await phone.waitForTimeout(600) // the family switch, xterm's new measure and a frame
+    if (BEFORE) return
+
+    const start = (await rowNumbers(phone)).gridFirst
+    expect(start, 'the grid shows the history').toBeGreaterThan(HISTORY_LINES / 2)
+    const scroller = (await phone.getByTestId('phone-terminal-scroller').boundingBox())!
+    await press(cdp, phone, { x: scroller.x + scroller.width / 2, y: scroller.y + scroller.height * 0.6 }, 300, 160)
+    await expect.poll(async () => (await rowNumbers(phone)).gridFirst, { timeout: 3_000 }).toBeLessThan(start)
+    // Page up goes a whole screen (rows - 1), not a stretch measured in the fallback's rows
+    const dragged = (await rowNumbers(phone)).gridFirst
+    const rows = (await ptyState(page, SHELL)).size!.rows
+    await tap(cdp, phone, '[aria-label="Page up"]')
+    await expect.poll(async () => (await rowNumbers(phone)).gridFirst, { timeout: 3_000 }).toBe(dragged - (rows - 1))
 })
 
 test('T131 phone list: a held press renames the session in place, the Mac sidebar follows (ebf8dec6)', async () => {
