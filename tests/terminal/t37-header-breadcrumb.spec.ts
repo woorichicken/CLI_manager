@@ -201,9 +201,13 @@ test.describe('T37 split panes (fb-1114)', () => {
         await expect(page.locator('[data-pane-header] [data-session-history]')).toHaveCount(1)
         await expect(headerB.locator('[data-related-button]')).toContainText('Related')
         // The terminal starts right under its header: nothing hidden behind it, no gap.
-        const termTop = await page.evaluate(() => document.querySelector('[data-session-id="s-a"]')!.getBoundingClientRect().top)
-        const headerBox = (await headerA.boundingBox())!
-        expect(Math.abs(termTop - (headerBox.y + headerBox.height))).toBeLessThanOrEqual(1)
+        // Read both in one frame: the main header above animates its height when split view opens,
+        // so two separate reads can straddle a frame of that animation.
+        const underHeader = (id: string) => page.evaluate((sid) => {
+            const header = document.querySelector(`[data-pane-header="${sid}"]`)!.getBoundingClientRect()
+            return Math.abs(document.querySelector(`[data-session-id="${sid}"]`)!.getBoundingClientRect().top - header.bottom)
+        }, id)
+        await expect.poll(() => underHeader('s-a')).toBeLessThanOrEqual(0.5)
 
         // Narrow window: half-width panes go back to the compact row.
         await page.setViewportSize({ width: 1280, height: 950 })
@@ -218,9 +222,7 @@ test.describe('T37 split panes (fb-1114)', () => {
         await expect.poll(shapes).toEqual(['false', 'false', 'false'])
         const heights = () => page.locator('[data-pane-header]').evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().height)))
         expect(await heights()).toEqual([32, 32, 32])
-        const cTop = await page.evaluate(() => document.querySelector('[data-session-id="s-c"]')!.getBoundingClientRect().top)
-        const cHeader = (await page.locator('[data-pane-header="s-c"]').boundingBox())!
-        expect(Math.abs(cTop - (cHeader.y + cHeader.height))).toBeLessThanOrEqual(1)
+        await expect.poll(() => underHeader('s-c')).toBeLessThanOrEqual(0.5)
 
         // Three panes at 1800: every pane is wide, so every pane gets the wide row.
         await page.setViewportSize({ width: 1800, height: 950 })
