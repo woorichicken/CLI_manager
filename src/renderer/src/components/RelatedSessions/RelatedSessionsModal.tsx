@@ -264,8 +264,9 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                 </div>
 
                 {visibleIds.length > 0 && (
-                    <div className="flex items-center gap-2 px-4 py-2 border-t border-white/10">
-                        <span className="text-[11px] text-gray-500">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2 border-t border-white/10">
+                        {/* A narrow window gives the hint its own line instead of a thin column beside the buttons. */}
+                        <span className="text-[11px] text-gray-500 basis-full min-[560px]:basis-auto min-[560px]:flex-1 min-w-0">
                             {liveSelection.length === 0
                                 ? `Click a session to go there, or tick up to ${MAX_PICKED} to see them beside this one.`
                                 : `${liveSelection.length} of ${MAX_PICKED} selected — opens beside this session`}
