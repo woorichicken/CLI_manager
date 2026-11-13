@@ -313,6 +313,16 @@ export type InterruptResult =
  */
 export type ChatForkScope = 'whole' | 'excerpt'
 
+/** A fork tied to one answer; main supplies the live screen state and activity time. */
+export interface ChatThread {
+    childId: string
+    name: string
+    turnTs: string | null
+    turnIndex?: number
+    status: 'working' | 'waiting' | 'idle'
+    lastActivityAt: number
+}
+
 export interface ChatForkRequest {
     /**
      * the reply's place among all the conversation's turns (0 = the first of `totalTurns`). Absent (the
@@ -457,6 +467,9 @@ export interface ChatTransport {
     openLink(url: string): void
     /** «Fork into a new session» from one reply (ChatForkRequest). Absent: no Fork button. */
     fork?(sessionId: string, request: ChatForkRequest): Promise<ChatForkResult>
+    /** Threads anchored to this session's answers. Absent on transports without thread chips. */
+    getThreads?(sessionId: string): Promise<ChatThread[]>
+    subscribeThreads?(sessionId: string, onChange: () => void): () => void
     /** Speech to text into the message box (the Mac app). Absent: no mic button — a phone has its keyboard's. */
     dictation?: ChatDictation
 }

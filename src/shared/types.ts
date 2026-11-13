@@ -997,6 +997,12 @@ export interface FeedbackTerminalContext {
  */
 export type SessionRelationKind = 'opened' | 'connected' | 'manual'
 
+/** The parent reply a fork was opened from; older relations have no anchor. */
+export interface SessionRelationAnchor {
+    turnTs: string | null
+    turnIndex?: number
+}
+
 /**
  * Two sessions shown in each other's Related sessions dialog. At most one per
  * pair of sessions, whichever direction. Persisted (unlike the orchestrator
@@ -1008,6 +1014,8 @@ export interface SessionRelation {
     kind: SessionRelationKind
     /** Epoch ms it was recorded. */
     at: number
+    /** Present on a conversation fork: the reply in `from` that opened `to`. */
+    anchor?: SessionRelationAnchor
     /**
      * The user removed it from the list. Kept so the next API call from the
      * same agent does not put it straight back; adding it by hand clears it.

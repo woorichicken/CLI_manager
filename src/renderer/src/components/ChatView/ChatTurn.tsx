@@ -1,11 +1,12 @@
 import { memo, useRef, useState } from 'react'
 import { Check, Copy, FileText, GitFork } from 'lucide-react'
-import type { ConversationAgent, ConversationTurn } from '../../../../shared/conversation'
+import type { ChatThread, ConversationAgent, ConversationTurn } from '../../../../shared/conversation'
 import { Markdown } from './markdown/Markdown'
 import { UserParts } from './TurnParts'
 import { WorkBlock } from './WorkBlock'
 import { isLiveWorkTurn, turnSegments, workBlockStartsOpen } from './workBlocks'
 import { formatElapsed } from './chatLib'
+import { ThreadChip } from './ThreadChip'
 
 const AGENT_NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
 const COPIED_MS = 1500
@@ -28,7 +29,9 @@ export const ChatTurn = memo(function ChatTurn({
     agent,
     index,
     foldWork = true,
-    onFork
+    onFork,
+    threads,
+    onOpenThread
 }: {
     turn: ConversationTurn
     last: boolean
@@ -40,8 +43,10 @@ export const ChatTurn = memo(function ChatTurn({
     index: number
     /** Settings › Terminal › Chat view «Collapse work» (default on): every block starts folded */
     foldWork?: boolean
-    /** «Fork into a new session» from this reply (its place among the turns shown); absent: no button */
-    onFork?: (index: number) => void
+    /** Reply in thread; Shift opens the existing fork options. */
+    onFork?: (index: number, options: boolean) => void
+    threads?: ChatThread[]
+    onOpenThread?: (childId: string) => void
 }) {
     if (turn.role === 'user') {
         return (
@@ -66,11 +71,11 @@ export const ChatTurn = memo(function ChatTurn({
                         <button
                             type="button"
                             data-testid="chat-fork"
-                            title="Fork into a new session"
-                            aria-label="Fork into a new session"
+                            title="Reply in thread (Shift+click for options)"
+                            aria-label="Reply in thread"
                             // the keyboard stays where it was (the message box): the dialog gives it back there on close
                             onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => onFork(index)}
+                            onClick={(event) => onFork(index, event.shiftKey)}
                         >
                             <GitFork size={12} />
                         </button>
@@ -111,6 +116,7 @@ export const ChatTurn = memo(function ChatTurn({
                     <span className="chat-recap-label">※ recap</span> {turn.recap}
                 </div>
             )}
+            {threads && threads.length > 0 && onOpenThread && <ThreadChip threads={threads} onOpen={onOpenThread} />}
         </div>
     )
 })

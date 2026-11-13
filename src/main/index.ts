@@ -36,6 +36,7 @@ import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
+import { chatThreadsFor } from './chatThreads'
 import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
@@ -45,7 +46,7 @@ import { TranscriptReader } from './TranscriptReader'
 import { ConversationService } from './ConversationService'
 import { createChatCommandLister } from './chatCommands'
 import { saveChatAttachment } from './chatAttachments'
-import type { ChatForkRequest, ChatForkResult, PromptAnswer } from '../shared/conversation'
+import type { ChatForkRequest, ChatForkResult, ChatThread, PromptAnswer } from '../shared/conversation'
 import { MAX_CHAT_TEXT_LENGTH } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import { FeedbackModeState } from './feedbackMode'
@@ -375,7 +376,18 @@ async function saveHistoryBeforeQuit(): Promise<void> {
     ])
 }
 
-const sessionRelations = new SessionRelations(store, (visible) => broadcast(SESSION_RELATIONS_CHANNEL, visible))
+// Installed when the IPC handlers are ready; relation changes also refresh open thread chips immediately.
+let refreshChatThreadSubscriptions = (): void => {}
+const sessionRelations = new SessionRelations(store, (visible) => {
+    broadcast(SESSION_RELATIONS_CHANNEL, visible)
+    refreshChatThreadSubscriptions()
+})
+const readChatThreads = (parentId: string): ChatThread[] => chatThreadsFor(
+    parentId,
+    sessionRelations.list(),
+    (store.get('workspaces') as Workspace[]).flatMap((workspace) => workspace.sessions),
+    terminalMirror
+)
 const sessionFolders = new SessionFolders(store)
 const recentSessions = new RecentSessions(store)
 /** sessionsInSidebarOrder as the renderer last computed it; null until the window has drawn its sidebar */
@@ -3557,6 +3569,74 @@ app.whenReady().then(async () => {
     setInterval(pruneDictationLog, 24 * 60 * 60 * 1000).unref()
     // Chat view (ConversationService). A window's subscriptions end with it.
     const chatSubscriptions = new Map<number, Map<string, number>>()
+    // Thread chips watch their children even when the optional sidebar status dots are off.
+    // Only parents with an open Chat view are polled, and only changed rows trigger a read in the renderer.
+    const threadSubscriptions = new Map<number, Map<string, number>>()
+    const threadSnapshots = new Map<string, string>()
+    let threadTimer: ReturnType<typeof setInterval> | null = null
+    const refreshThreads = (): void => {
+        const parents = new Set([...threadSubscriptions.values()].flatMap((subs) => [...subs.keys()]))
+        for (const id of threadSnapshots.keys()) {
+            if (!parents.has(id)) threadSnapshots.delete(id)
+        }
+        if (parents.size === 0 && threadTimer) {
+            clearInterval(threadTimer)
+            threadTimer = null
+        }
+        for (const sessionId of parents) {
+            const next = JSON.stringify(readChatThreads(sessionId))
+            if (threadSnapshots.get(sessionId) === next) continue
+            threadSnapshots.set(sessionId, next)
+            for (const [owner, subs] of threadSubscriptions) {
+                if (!subs.has(sessionId)) continue
+                const target = webContents.fromId(owner)
+                if (target && !target.isDestroyed()) target.send('chat-threads-changed', { sessionId })
+            }
+        }
+    }
+    refreshChatThreadSubscriptions = (): void => {
+        try { refreshThreads() } catch (error) { console.warn('[chat-threads] Refresh failed:', error) }
+    }
+    ipcMain.handle('chat-threads', (_event, sessionId: unknown): ChatThread[] =>
+        typeof sessionId === 'string' ? readChatThreads(sessionId) : []
+    )
+    ipcMain.handle('chat-threads-subscribe', (event, sessionId: unknown): void => {
+        if (typeof sessionId !== 'string') return
+        const sender = event.sender
+        let subs = threadSubscriptions.get(sender.id)
+        if (!subs) {
+            subs = new Map()
+            threadSubscriptions.set(sender.id, subs)
+            const clear = (): void => {
+                sender.removeListener('destroyed', clear)
+                sender.removeListener('render-process-gone', clear)
+                sender.removeListener('did-start-navigation', navigating)
+                threadSubscriptions.delete(sender.id)
+                refreshChatThreadSubscriptions()
+            }
+            const navigating = (_event: unknown, _url: string, inPlace: boolean, mainFrame: boolean): void => {
+                if (mainFrame && !inPlace) clear()
+            }
+            sender.once('destroyed', clear)
+            sender.once('render-process-gone', clear)
+            sender.on('did-start-navigation', navigating)
+        }
+        subs.set(sessionId, (subs.get(sessionId) ?? 0) + 1)
+        if (!threadTimer) {
+            threadTimer = setInterval(refreshChatThreadSubscriptions, 1000)
+            threadTimer.unref()
+        }
+        refreshChatThreadSubscriptions()
+    })
+    ipcMain.handle('chat-threads-unsubscribe', (event, sessionId: unknown): void => {
+        if (typeof sessionId !== 'string') return
+        const subs = threadSubscriptions.get(event.sender.id)
+        const count = subs?.get(sessionId) ?? 0
+        if (!subs || count === 0) return
+        if (count === 1) subs.delete(sessionId)
+        else subs.set(sessionId, count - 1)
+        refreshChatThreadSubscriptions()
+    })
     const agentConversationReply = async (action: () => Promise<unknown>): Promise<unknown> => {
         try { return await action() } catch (error) {
             if (error instanceof AgentConversationError) return { error: { code: error.code, message: error.message, ...error.details } }

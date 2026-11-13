@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon } from 'lucide-react'
-import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
+import type { ChatCommand, ChatForkRequest, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
 import { endedOnAnswer } from './workBlocks'
@@ -124,7 +124,34 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     /** the reply the Fork dialog is open on, and where the keyboard was before it opened */
     const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
     const [forkProgress, setForkProgress] = useState<ForkProgress | null>(null)
+    const [threads, setThreads] = useState<ChatThread[]>([])
+    const refreshThreads = useRef<(() => void) | null>(null)
     const forkReturnFocus = useRef<HTMLElement | null>(null)
+    useEffect(() => {
+        setThreads([])
+        if (!transport.getThreads) return
+        let alive = true
+        let revision = 0
+        const load = (): void => {
+            const requested = ++revision
+            void transport.getThreads!(sessionId).then((next) => {
+                if (alive && revision === requested) setThreads(next)
+            }).catch(() => {
+                if (alive && revision === requested) setThreads([])
+            })
+        }
+        refreshThreads.current = load
+        const off = transport.subscribeThreads?.(sessionId, load)
+        load()
+        return () => {
+            alive = false
+            refreshThreads.current = null
+            off?.()
+        }
+    }, [sessionId, transport])
+    const openThread = useCallback((childId: string): void => {
+        onSessionLink?.(`climanager://session/${childId}`)
+    }, [onSessionLink])
     const [railRoom, setRailRoom] = useState(false)
     /** the person's last message has scrolled off the top (edf2aef3) */
     const [lastAbove, setLastAbove] = useState(false)
@@ -334,13 +361,27 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     // stable across snapshots, so the memoized turns do not redraw for it
     const snapshotRef = useRef(snapshot)
     snapshotRef.current = snapshot
-    const forkFromTurn = useCallback((index: number): void => {
+    const submitFork = useCallback((request: ChatForkRequest): void => {
+        if (!transport.fork) return
+        const id = ++forkSequence
+        setForkProgress({ id, state: 'opening' })
+        void transport.fork(sessionId, request)
+            .catch((error): { status: 'rejected'; reason: 'failed'; message: string } => ({ status: 'rejected', reason: 'failed', message: error instanceof Error ? error.message : String(error) }))
+            .then((result) => {
+                setForkProgress((current) => (current?.id === id ? { id, state: 'done', result } : current))
+                refreshThreads.current?.()
+            })
+    }, [sessionId, transport])
+    const forkFromTurn = useCallback((index: number, options: boolean): void => {
         const current = snapshotRef.current
         const turn = current?.turns[index]
         if (!current || !turn) return
-        forkReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-        setForkTarget({ turnIndex: current.totalTurns - current.turns.length + index, turnTs: turn.ts })
-    }, [])
+        const target = { turnIndex: current.totalTurns - current.turns.length + index, turnTs: turn.ts }
+        if (touch || options) {
+            forkReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+            setForkTarget(target)
+        } else submitFork({ ...target, scope: 'whole', message: '', quote: false })
+    }, [submitFork, touch])
     const openFork = transport.fork && !readOnly ? forkFromTurn : undefined
     // closing the dialog gives the keyboard back to where it was (the message box, its caret and draft untouched)
     const closeFork = useCallback((): void => {
@@ -353,15 +394,9 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         (choice: { scope: 'whole' | 'excerpt'; message: string; quote: boolean }): void => {
             const target = forkTarget
             closeFork()
-            if (!target || !transport.fork) return
-            const id = ++forkSequence
-            setForkProgress({ id, state: 'opening' })
-            void transport
-                .fork(sessionId, { ...target, ...choice })
-                .catch((error): { status: 'rejected'; reason: 'failed'; message: string } => ({ status: 'rejected', reason: 'failed', message: error instanceof Error ? error.message : String(error) }))
-                .then((result) => setForkProgress((current) => (current?.id === id ? { id, state: 'done', result } : current)))
+            if (target) submitFork({ ...target, ...choice })
         },
-        [closeFork, forkTarget, sessionId, transport]
+        [closeFork, forkTarget, submitFork]
     )
     const dismissFork = useCallback(() => setForkProgress(null), [])
 
@@ -448,7 +483,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} />
+                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={onSessionLink ? openThread : undefined} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -626,7 +661,7 @@ function PinnedLastMessage({ words, onGo }: { words: string; onGo: () => void })
     )
 }
 
-function Turns({ snapshot, foldWork, onFork, onShowEarlier }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number) => void; onShowEarlier: () => void }) {
+function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThread }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
     return (
@@ -657,6 +692,8 @@ function Turns({ snapshot, foldWork, onFork, onShowEarlier }: { snapshot: Conver
                     agent={agent}
                     foldWork={foldWork}
                     onFork={onFork}
+                    threads={threads.filter((thread) => thread.turnTs === turn.ts && (thread.turnIndex === undefined || thread.turnIndex === hidden + index))}
+                    onOpenThread={onOpenThread}
                 />
             ))}
         </>
