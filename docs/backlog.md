@@ -71,6 +71,22 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 데스크톱 터미널 — 글꼴 크기만 바뀌면 xterm 스크롤 영역이 옛 줄 높이로 남을 수 있다
+- Discovered: 2026-11-14 fb-1114 세션 C. 폰에서 번들 글꼴이 스냅샷보다 늦게 오면 xterm 6.0.0 Viewport 가 스크롤 영역(줄 높이 × 줄 수)을 다시 재지 않아 끌기·`scrollLines` 가 안 먹었다(셸이 다시 출력할 때까지). 폰은 `src/renderer/src/phone/xtermViewportSync.ts`(렌더러 dimension 변경 → `_viewport.queueSync()`)로 고쳤다(PR #127).
+- Evidence: 실패 회차 내부값 Viewport `height 645 / scrollHeight 4575`(=15px×43·305줄) 인데 렌더러 cell 13px — 보고 `~/Downloads/_batches/fb-1114/reports/C.md`.
+- 제안: 데스크톱 `TerminalView` 도 같은 Viewport 를 쓴다. 줌(Cmd+±)·글꼴 설정 변경처럼 버퍼 resize 없이 셀 크기만 바뀌는 경로가 있는지 보고, 있으면 같은 `keepViewportInSync` 를 연결(공용 모듈로 옮김 — 컨펌 대상).
+- Why deferred: 이번 제보 범위 밖이고 데스크톱에서 재현을 아직 못 했다.
+- Trigger: 데스크톱에서 「줌 뒤 스크롤이 안 된다」 제보, 또는 xterm 업그레이드 때.
+- Owner: Maintainer
+
+### CI — pull_request 실행이 러너를 못 받고 15분 만에 취소된다
+- Discovered: 2026-11-14 fb-1114. PR #127 두 번·#128 한 번, 단계 0개 실행·`runner_name` 빈 값으로 15분 뒤 cancelled(timeout-minutes 25 보다 짧다). 같은 커밋의 push 실행은 통과. rerun 으로 넘어갔다.
+- Evidence: `gh api repos/woorichicken/CLI_manager/actions/jobs/132014364211` · `…/132023831866` — started 16:27:47Z → completed 16:42:48Z, steps [].
+- 제안: 다시 나면 `concurrency` 그룹(`ci-${{ github.ref }}` — push 와 pull_request 의 ref 가 달라 서로 안 끊는다)과 macOS 러너 대기 제한을 본다. push·PR 이 같은 커밋을 두 번 도는 것 자체를 줄이는 안도.
+- Why deferred: 재실행으로 풀렸고 원인이 GitHub 쪽 러너 대기일 수 있다.
+- Trigger: 같은 취소가 한 주에 두 번 더.
+- Owner: Maintainer
+
 ### `scripts/release.cjs --check` — main CI 가 빨간 채로 릴리즈해도 아무도 모른다
 - Discovered: 2026-11-11 회고(PR #117). main CI 는 08-16 부터 11-11 까지 한 번도 끝까지 못 갔고(취소·실패), 그사이 v1.31·v1.32 는 로컬 `--skip-tests` 로 나갔다. 프리플라이트에 CI 상태를 보는 칸이 없어 석 달 동안 아무도 몰랐다.
 - Evidence: `gh run list --branch main --limit 3` — 42857459382 failure(8653ea9) · 42942657150 cancelled(63a918f) · 42950644250 success(7535eff, #117 머지 뒤 처음).
