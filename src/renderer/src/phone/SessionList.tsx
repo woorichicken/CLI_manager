@@ -1,14 +1,16 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { Folder, MessageSquareText, Pin, Search, TerminalSquare, X } from 'lucide-react'
+import { Folder, Search, X } from 'lucide-react'
 import type { PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { listLines, searchLines } from './sessionListLines'
+import { SessionRow } from './SessionRow'
 
 /**
  * The sessions on the Mac, read only, as one list in the Mac's own order: the sidebar's
  * «All sessions» (List) top to bottom. main orders it with the sidebar's functions, so this
  * only draws it — it never sorts. Like the Mac it marks where each session folder starts and
  * puts a line under the pinned sessions; each row carries its workspace's name. A dot says
- * working (blue) or waiting for you (amber, with the question). No create, delete or rename.
+ * working (blue) or waiting for you (amber, with the question). A press held on a row renames it
+ * (SessionRow, ebf8dec6); no create or delete.
  */
 
 /**
@@ -17,21 +19,22 @@ import { listLines, searchLines } from './sessionListLines'
  */
 let savedScrollTop = 0
 
-const STATE_TEXT: Partial<Record<PhoneSession['state'], string>> = {
-    working: 'Working…',
-    stopped: 'Not running',
-    exited: 'Exited'
-}
-
 export function SessionList({
     data,
     activeId,
-    onOpen
+    canRename = false,
+    onOpen,
+    onRenamed
 }: {
     data: PhoneSessionsResponse | null
     activeId: string | null
+    /** this device may type (drive): a held press renames */
+    canRename?: boolean
     onOpen: (session: PhoneSession) => void
+    /** the Mac kept this name — shown at once, before the next list poll */
+    onRenamed?: (id: string, name: string) => void
 }) {
+    const [renamingId, setRenamingId] = useState<string | null>(null)
     const waiting = data?.sessions.filter((s) => s.state === 'waiting').length ?? 0
     // a search over the list (1b92a570): the head's magnifier opens a box; empty box = the whole list
     const [searching, setSearching] = useState(false)
@@ -119,35 +122,21 @@ export function SessionList({
                     )
                 }
                 if (line.kind === 'divider') return <div key={line.key} role="separator" className="phone-list-divider" data-testid="phone-pinned-divider" />
-                const session = line.session
-                const stateText = STATE_TEXT[session.state]
                 return (
-                    <button
-                            key={line.key}
-                            type="button"
-                            className="phone-row"
-                            data-testid="phone-session-row"
-                            data-session-id={session.id}
-                            data-state={session.state}
-                            aria-current={session.id === activeId ? 'true' : undefined}
-                            onClick={() => onOpen(session)}
-                        >
-                            <span className={`phone-dot phone-dot-${session.state}`} aria-hidden="true" />
-                            {session.agent ? <MessageSquareText size={14} className="phone-row-icon" /> : <TerminalSquare size={14} className="phone-row-icon" />}
-                            <span className="phone-row-text">
-                                <span className="phone-row-name">
-                                    {session.pinned && <Pin size={11} className="phone-row-pin" />}
-                                    {session.name}
-                                </span>
-                                <span className="phone-row-meta">
-                                    <span className="phone-row-workspace" data-testid="phone-row-workspace">{session.workspaceName}</span>
-                                    {stateText && <span className="phone-row-sub"> · {stateText}</span>}
-                                </span>
-                                {session.state === 'waiting' && (
-                                    <span className="phone-row-question" data-testid="phone-row-question">{session.question ?? 'Waiting for you'}</span>
-                                )}
-                            </span>
-                        </button>
+                    <SessionRow
+                        key={line.key}
+                        session={line.session}
+                        active={line.session.id === activeId}
+                        renaming={line.session.id === renamingId}
+                        canRename={canRename}
+                        onOpen={onOpen}
+                        onRename={(session) => setRenamingId(session.id)}
+                        onRenamed={(session, kept) => {
+                            setRenamingId(null)
+                            onRenamed?.(session.id, kept)
+                        }}
+                        onCancelRename={() => setRenamingId(null)}
+                    />
                 )
             })}
         </nav>

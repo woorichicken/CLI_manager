@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import type { PhoneRole, PhoneTerminalClientMessage, PhoneTerminalServerMessage } from '../../../shared/phone'
 import { PHONE_API } from '../../../shared/phone'
 import { socketUrl } from './api'
+import { keepViewportInSync } from './xtermViewportSync'
 
 /**
  * One phone view of a Mac terminal: xterm.js drawn at the Mac pty's size, fed by the
@@ -117,7 +118,8 @@ export function usePhoneTerminal(sessionId: string, host: React.RefObject<HTMLDi
                 for (const listener of listeners.current) listener()
             })
         }
-        const watchers = [term.onWriteParsed(changed), term.onScroll(changed), term.onResize(changed)]
+        // the bundled font changes the cell size after the snapshot: the scroll area must follow, or a drag can't scroll
+        const watchers = [term.onWriteParsed(changed), term.onScroll(changed), term.onResize(changed), keepViewportInSync(term)]
 
         let stopped = false
         let retry: number | null = null

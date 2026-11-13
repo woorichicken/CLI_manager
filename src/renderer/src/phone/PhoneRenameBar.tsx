@@ -7,11 +7,24 @@ import { PhoneApiError, postJson } from './api'
 const MAX_NAME_LENGTH = 80
 
 /**
- * Renames the session from the phone (0a4bdfff): a bar under the header, the name in a box.
+ * Renames the session from the phone (0a4bdfff): a bar under the header, the name in a box —
+ * or, `inline`, in the session list's row a long press opened (ebf8dec6).
  * The Mac renames it as the Control API does, so the sidebar follows at once; the bar hands back the
  * name the Mac kept, shown until the list catches up.
  */
-export function PhoneRenameBar({ sessionId, name, onDone, onCancel }: { sessionId: string; name: string; onDone: (kept: string) => void; onCancel: () => void }) {
+export function PhoneRenameBar({
+    sessionId,
+    name,
+    inline = false,
+    onDone,
+    onCancel
+}: {
+    sessionId: string
+    name: string
+    inline?: boolean
+    onDone: (kept: string) => void
+    onCancel: () => void
+}) {
     const [draft, setDraft] = useState(name)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -42,7 +55,7 @@ export function PhoneRenameBar({ sessionId, name, onDone, onCancel }: { sessionI
 
     return (
         <form
-            className="phone-rename"
+            className={inline ? 'phone-rename phone-rename-inline' : 'phone-rename'}
             data-testid="phone-rename-bar"
             onSubmit={(event) => {
                 event.preventDefault()
