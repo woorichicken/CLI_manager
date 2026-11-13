@@ -13,6 +13,7 @@ import {
     TerminalTemplate,
 } from '../../../shared/types'
 import { hasPrimaryModifier, hasTerminalOnlyModifier } from '../utils/platform'
+import { holdOrderFor, stepInOrder, visibleAllSessionsOrder } from '../utils/allSessionsNav'
 
 interface UseKeyboardShortcutsConfig {
     settings: UserSettings
@@ -159,14 +160,28 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
     }, [splitLayout, activeSplitIndex, onSetActiveSplitIndex])
 
     const navigateSession = useCallback((direction: 1 | -1) => {
-        if (!activeWorkspace || activeWorkspace.sessions.length === 0) {
-            console.log('[Shortcuts] navigateTab: no active workspace or no sessions')
-            return
-        }
-
         // In split view, delegate to split pane navigation
         if (splitLayout && splitLayout.sessionIds.length > 0) {
             navigateSplitPane(direction)
+            return
+        }
+
+        // Sidebar in All sessions: the row above or below on screen, not the workspace's own
+        // order (dc11b60f). Off that view (folders, search results) the list is not registered.
+        const visibleOrder = visibleAllSessionsOrder()
+        if (visibleOrder) {
+            const targetId = stepInOrder(visibleOrder, activeSession?.id ?? null, direction)
+            const owner = targetId ? workspacesInSidebarOrder.find(w => w.sessions.some(s => s.id === targetId)) : undefined
+            const target = owner?.sessions.find(s => s.id === targetId)
+            if (owner && target) {
+                holdOrderFor(target.id)
+                onSelectSession(owner, target)
+                return
+            }
+        }
+
+        if (!activeWorkspace || activeWorkspace.sessions.length === 0) {
+            console.log('[Shortcuts] navigateTab: no active workspace or no sessions')
             return
         }
 
@@ -179,7 +194,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
             : (currentIndex + direction + sessions.length) % sessions.length
         console.log(`[Shortcuts] navigateTab: ${currentIndex} → ${nextIndex} (${sessions[nextIndex]?.name})`)
         onSelectSession(activeWorkspace, sessions[nextIndex])
-    }, [activeWorkspace, activeSession, splitLayout, onSelectSession, navigateSplitPane])
+    }, [activeWorkspace, activeSession, splitLayout, workspacesInSidebarOrder, onSelectSession, navigateSplitPane])
 
     const navigateWorkspace = useCallback((direction: 1 | -1) => {
         const workspacesWithSessions = workspacesInSidebarOrder.filter(w => w.sessions.length > 0)
