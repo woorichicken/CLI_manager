@@ -203,6 +203,9 @@ export class CronStore {
 
     addRun(run: Omit<CronRun, 'id'>): CronRun {
         const record: CronRun = { id: randomUUID(), ...run }
+        // The job was removed while this run was starting: its records went with it, so this one
+        // would be an orphan row in the run list that no job owns.
+        if (!this.list().some((j) => j.id === run.cronId)) return record
         this.store.set(CRON_RUNS_KEY, [record, ...this.runs()].slice(0, CRON_RUNS_MAX))
         this.onChange()
         return record

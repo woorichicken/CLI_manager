@@ -71,6 +71,20 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 자율 크론 — 같은 이름 작업을 막지 않아 이름으로 부르면 첫 것만 잡힌다
+- Discovered: 2026-11-14 T129 작성 중 실측 — `POST /v1/crons` 에 같은 이름 `Dup` 두 번이 둘 다 201.
+- Evidence: `CronStore.create` 는 이름 중복을 보지 않고, `CronStore.get(ref)` 는 이름이 같으면 목록의 첫 작업을 돌려준다. `/v1/crons/<이름>/run`·`pause`·`DELETE` 가 사람이 뜻한 것과 다른 작업에 갈 수 있다.
+- Trigger: 이름으로 크론을 부르는 MCP 도구·`clim` 명령을 만들 때(자율 크론 다음 단계).
+- Fix direction: 만들기·이름 바꾸기에서 대소문자 무시 중복을 400 으로 거절하거나, 이름이 둘 이상 맞으면 409 로 id 를 쓰라고 답한다.
+- Owner: 없음
+
+### Control API — 경로의 잘못된 `%` 인코딩이 500 으로 답한다
+- Discovered: 2026-11-14 T129 작성 중 실측 — `GET /v1/crons/%E0%A4%A` → 500 `{"code":"internal","message":"URI malformed"}`.
+- Evidence: `ControlApiServer` 라우터가 경로 조각마다 `decodeURIComponent` 를 부르는데 `URIError` 를 잡지 않아 맨 아래 500 으로 떨어진다. 크론만이 아니라 `:session` 등 모든 경로 변수가 같다.
+- Trigger: 클라이언트가 이름을 손으로 인코딩하는 도구(MCP·`clim`)를 붙일 때, 또는 로그에 `URI malformed` 가 보일 때.
+- Fix direction: 그 자리에서 `URIError` 를 잡아 400 `bad_path` 로 답한다.
+- Owner: 없음
+
 ### 데스크톱 터미널 — 글꼴 크기만 바뀌면 xterm 스크롤 영역이 옛 줄 높이로 남을 수 있다
 - Discovered: 2026-11-14 fb-1114 세션 C. 폰에서 번들 글꼴이 스냅샷보다 늦게 오면 xterm 6.0.0 Viewport 가 스크롤 영역(줄 높이 × 줄 수)을 다시 재지 않아 끌기·`scrollLines` 가 안 먹었다(셸이 다시 출력할 때까지). 폰은 `src/renderer/src/phone/xtermViewportSync.ts`(렌더러 dimension 변경 → `_viewport.queueSync()`)로 고쳤다(PR #127).
 - Evidence: 실패 회차 내부값 Viewport `height 645 / scrollHeight 4575`(=15px×43·305줄) 인데 렌더러 cell 13px — 보고 `~/Downloads/_batches/fb-1114/reports/C.md`.
