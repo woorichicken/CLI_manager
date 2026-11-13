@@ -123,4 +123,48 @@ test.describe('T59 drag to relate', () => {
         await expect(page.getByTestId('sidebar-drop-notice')).toHaveText('T59A2 is now under T59B1')
         await expect.poll(() => pairOf(userDataDir, 's-a2', 's-b1')).toMatchObject({ kind: 'manual' })
     })
+
+    test('a row held at the bottom or above the top of the list scrolls it (0edb46cc)', async () => {
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-t59-'))
+        dirs.push(folder)
+        const sessions = Array.from({ length: 45 }, (_, i) => ({ id: `s-${String(i).padStart(2, '0')}`, name: `T59ROW${String(i).padStart(2, '0')}` }))
+        ctx = await launchAppWithWorkspaces([{ id: 'ws-many', name: 'T59MANY', path: folder, sessions }], { settings: { showHomeWorkspace: false } })
+        const { page } = ctx
+        await page.getByTestId('sidebar-view-toggle').click()
+        const list = page.getByTestId('sidebar-all-sessions')
+        await expect(list.locator('[data-session-item="s-00"]')).toBeVisible()
+        const scrollTop = (): Promise<number> => list.evaluate(el => el.scrollTop)
+        const overflow = await list.evaluate(el => el.scrollHeight - el.clientHeight)
+        expect(overflow).toBeGreaterThan(200)
+        expect(await scrollTop()).toBe(0)
+        const box = (await list.boundingBox())!
+
+        // Hold a row a few px above the list's bottom edge; small moves keep dragover coming.
+        const row = (await list.locator('[data-session-item="s-02"]').boundingBox())!
+        const x = row.x + row.width / 2
+        await page.mouse.move(x, row.y + row.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(x + 6, row.y + row.height / 2 + 6, { steps: 3 })
+        const hold = async (y: number): Promise<void> => {
+            await page.mouse.move(x, y, { steps: 8 })
+            for (let i = 0; i < 12; i++) {
+                await page.mouse.move(x + (i % 2), y)
+                await page.waitForTimeout(60)
+            }
+        }
+        await hold(box.y + box.height - 8)
+        const down = await scrollTop()
+        expect(down).toBeGreaterThan(100)
+
+        // Middle of the list: no scrolling.
+        await hold(box.y + box.height / 2)
+        const resting = await scrollTop()
+        await hold(box.y + box.height / 2 + 1)
+        expect(Math.abs((await scrollTop()) - resting)).toBeLessThanOrEqual(1)
+
+        // Up past the top, over the header: scrolls back up.
+        await hold(box.y - 20)
+        expect(await scrollTop()).toBeLessThan(resting - 100)
+        await page.mouse.up()
+    })
 })

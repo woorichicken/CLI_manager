@@ -45,6 +45,8 @@ import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
+import { splitAfterDrop, SPLIT_DIVIDER_PX } from './utils/splitLayout'
+import { SplitDividers } from './components/SplitDividers'
 
 /** Let the window settle before spending anything on a network check. */
 const UPDATE_CHECK_STARTUP_DELAY_MS = 2000
@@ -700,31 +702,15 @@ function App() {
         const sessionId = e.dataTransfer.getData('application/x-session-id')
         if (!sessionId) return
 
-        // Don't add if already in split
-        if (splitLayout?.sessionIds.includes(sessionId)) return
-
-        // Max 4 terminals in split
-        if (splitLayout && splitLayout.sessionIds.length >= 4) return
-
-        if (splitLayout) {
-            // Add to existing split
-            setSplitLayout({
-                ...splitLayout,
-                sessionIds: [...splitLayout.sessionIds, sessionId],
-                sizes: undefined // Reset sizes to auto-calculate
-            })
-        } else if (activeSession) {
-            // Start new split: current active session + dropped session
-            setSplitLayout({
-                sessionIds: [activeSession.id, sessionId]
-            })
-            setActiveSession(null)
-        } else {
-            // No active session, just add to split
-            setSplitLayout({
-                sessionIds: [sessionId]
-            })
+        const result = splitAfterDrop(splitLayout?.sessionIds ?? null, activeSession?.id ?? null, sessionId)
+        if (result.kind === 'ignore') return
+        if (result.kind === 'focus') {
+            setActiveSplitIndex(result.index)
+            return
         }
+        // sizes reset: the panes are laid out again for the new count
+        setSplitLayout({ ...(splitLayout ?? {}), sessionIds: result.sessionIds, sizes: undefined })
+        if (!splitLayout) setActiveSession(null)
     }
 
     // Handle removing a session from split view
@@ -1769,7 +1755,7 @@ function App() {
 
                         {/* Split View Headers Only - z-20 to be above terminals */}
                         {splitLayout && splitLayout.sessionIds.length > 0 && (
-                            <div className={`absolute inset-0 z-20 grid gap-2 pb-2 pointer-events-none ${
+                            <div data-split-grid className={`absolute inset-0 z-20 grid gap-px pointer-events-none ${
                                 splitLayout.sessionIds.length === 2 ? 'grid-cols-2 grid-rows-1' :
                                 splitLayout.sessionIds.length === 3 ? 'grid-cols-2 grid-rows-2' :
                                 splitLayout.sessionIds.length === 4 ? 'grid-cols-2 grid-rows-2' :
@@ -1796,7 +1782,7 @@ function App() {
                                     return (
                                         <div
                                             key={sessionId}
-                                            className={`flex flex-col border border-white/10 rounded-lg overflow-hidden pointer-events-none ${gridClass}`}
+                                            className={`flex flex-col overflow-hidden pointer-events-none ${gridClass}`}
                                         >
                                             {/* Header only - clickable */}
                                             <div className="pointer-events-auto">
@@ -1825,6 +1811,7 @@ function App() {
                                         </div>
                                     )
                                 })}
+                                <SplitDividers count={splitLayout.sessionIds.length} />
                             </div>
                         )}
 
@@ -1865,10 +1852,12 @@ function App() {
                                 const count = splitLayout.sessionIds.length
                                 const idx = splitIndex
 
-                                // Calculate grid position with padding for breathing room
-                                const gap = 8 // gap between terminals (gap-2)
+                                // Panes touch: only the 1px divider line sits between them, the same
+                                // `gap-px` the header grid above uses, so headers and terminals line up
+                                // (report a81cd0ce asked for no space between panes).
+                                const gap = SPLIT_DIVIDER_PX
                                 const headerHeight = 32 // h-8 = 32px
-                                const bottomPadding = 8 // extra space at bottom
+                                const bottomPadding = 0 // single view has none either
 
                                 // Use top/bottom for vertical positioning (responsive to parent height)
                                 // Use left/right for horizontal positioning (responsive to parent width)

@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 import { mostRecentOtherSession, orderByRecent, orderForAllSessions, sessionsInSidebarOrder } from '../../src/renderer/src/utils/sessionNavigation'
 import { findMatchingSessions } from '../../src/renderer/src/components/Sidebar/SidebarSearch'
+import { holdOrderFor, isOrderHeldFor, stepInOrder } from '../../src/renderer/src/utils/allSessionsNav'
+import { dragScrollStep, DRAG_SCROLL_EDGE_PX, DRAG_SCROLL_MAX_STEP_PX } from '../../src/renderer/src/utils/dragAutoScroll'
 import type { TerminalSession, Workspace, WorkspaceFolder } from '../../src/shared/types'
 
 /**
@@ -70,5 +72,44 @@ test.describe('T47 sidebar session order', () => {
         expect(ids(findMatchingSessions(entries, ' DEPLOY '))).toEqual(['b', 'd', 'c'])
         expect(findMatchingSessions(entries, '   ')).toEqual([])
         expect(findMatchingSessions(entries, 'nope')).toEqual([])
+    })
+
+    test('Cmd+[ / ] steps through the All sessions rows and wraps (dc11b60f)', () => {
+        const order = ['a', 'b', 'c']
+        expect(stepInOrder(order, 'a', 1)).toBe('b')
+        expect(stepInOrder(order, 'c', 1)).toBe('a')
+        expect(stepInOrder(order, 'a', -1)).toBe('c')
+        expect(stepInOrder(order, 'b', -1)).toBe('a')
+        // Not on screen (collapsed folder, nothing active): from the top down, from the bottom up.
+        expect(stepInOrder(order, 'zz', 1)).toBe('a')
+        expect(stepInOrder(order, null, -1)).toBe('c')
+        expect(stepInOrder([], 'a', 1)).toBeNull()
+    })
+
+    test('a keyboard step holds the list order only while that session stays active', () => {
+        holdOrderFor('b')
+        expect(isOrderHeldFor('b')).toBe(true)
+        expect(isOrderHeldFor('b')).toBe(true)
+        // Another session became active some other way: the hold is gone for good.
+        expect(isOrderHeldFor('c')).toBe(false)
+        expect(isOrderHeldFor('b')).toBe(false)
+        expect(isOrderHeldFor(null)).toBe(false)
+    })
+
+    test('a dragged row scrolls the list only near its edges, faster closer in (0edb46cc)', () => {
+        const edge = DRAG_SCROLL_EDGE_PX
+        const max = DRAG_SCROLL_MAX_STEP_PX
+        expect(dragScrollStep(300, 100, 700)).toBe(0)
+        expect(dragScrollStep(100 + edge, 100, 700)).toBe(0)
+        expect(dragScrollStep(700 - edge, 100, 700)).toBe(0)
+        expect(dragScrollStep(100 + edge - 1, 100, 700)).toBeLessThan(0)
+        expect(dragScrollStep(700 - edge + 1, 100, 700)).toBeGreaterThan(0)
+        expect(dragScrollStep(101, 100, 700)).toBeLessThan(dragScrollStep(120, 100, 700))
+        // At or past an edge (over the header above, the badge below): full speed.
+        expect(dragScrollStep(100, 100, 700)).toBe(-max)
+        expect(dragScrollStep(40, 100, 700)).toBe(-max)
+        expect(dragScrollStep(760, 100, 700)).toBe(max)
+        // A list too short for two edge zones never scrolls.
+        expect(dragScrollStep(100, 100, 100 + edge * 2)).toBe(0)
     })
 })
