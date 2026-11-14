@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Columns2, Copy, Info, Plus, Waypoints, X } from 'lucide-react'
 import { SessionRelation, TerminalTemplate, Workspace } from '../../../../shared/types'
 import { RELATED_ORDERS, RelatedEntry, RelatedOrder, sessionTreeFor } from '../../utils/relatedSessions'
+import { RelationFilter, RelationFilterKey, storeRelationFilter, storedRelationFilter } from './RelationFilter'
 import { MAX_LINKED_SESSIONS } from '../../utils/sessionLink'
 import { relatedForAgent } from '../../utils/relatedForAgent'
 import { useSessionPeeks } from '../../hooks/useSessionPeeks'
@@ -68,6 +69,7 @@ const HELP_LINES: Array<[string, string]> = [
  */
 export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose, onShowSessions, templates, onCreateSession }: RelatedSessionsModalProps) {
     const [order, setOrder] = useState<RelatedOrder>(storedOrder)
+    const [filter, setFilter] = useState<RelationFilterKey>(storedRelationFilter)
     const [recentIds, setRecentIds] = useState<string[]>([])
     const [creating, setCreating] = useState(false)
     const [helpPinned, setHelpPinned] = useState(false)
@@ -81,6 +83,13 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
         () => [...tree.descendants, ...tree.ancestors, ...tree.siblings, ...tree.other],
         [tree]
     )
+    // Per part of the tree, for the filter chips. "All" also counts "Also related".
+    const filterCounts = useMemo(() => ({
+        all: entries.length,
+        above: tree.ancestors.length,
+        beside: tree.siblings.length,
+        below: tree.descendants.length
+    }), [entries, tree])
     const { notice, copy } = useCopyWithNotice()
     const relatedIds = useMemo(() => new Set(entries.map(entry => entry.session.id)), [entries])
     // Only the related sessions are listed — every session is one click away in the sidebar's
@@ -158,6 +167,10 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
         setCopiedForAgent(true)
         setTimeout(() => setCopiedForAgent(false), COPIED_MS)
     }
+    const changeFilter = (next: RelationFilterKey): void => {
+        setFilter(next)
+        storeRelationFilter(next)
+    }
     const changeOrder = (next: RelatedOrder): void => {
         setOrder(next)
         storeOrder(next)
@@ -225,7 +238,9 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                 </div>
 
                 {entries.length > 0 && (
-                    <div className="flex items-center px-4 py-1.5 border-b border-white/10" data-related-toolbar>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-1.5 border-b border-white/10" data-related-toolbar>
+                        {/* Where the Relations · Recent · All tabs were (reports c17aa9c4, 33f92744): which part of the tree to list. */}
+                        <RelationFilter value={filter} counts={filterCounts} onChange={changeFilter} />
                         <label className="ml-auto flex items-center gap-1.5 text-[11px] text-gray-500">
                             Sort
                             <select
@@ -260,6 +275,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                         onShow={id => show([id])}
                         onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
                         onCopyId={id => void copy(id, 'session ID')}
+                        filter={filter}
                     />
                 </div>
 
