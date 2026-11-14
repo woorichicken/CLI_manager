@@ -6,6 +6,7 @@ import { Reorder, useDragControls, AnimatePresence, motion } from 'framer-motion
 import { TerminalSession, Workspace, SessionStatus } from '../../../../shared/types'
 import { useControlApiMasters } from '../../hooks/useControlApiMasters'
 import { useSessionScreenStatus } from '../../hooks/useSessionScreenStatus'
+import { useTemplateLogo } from '../../hooks/useTemplateLogos'
 import { InboxDot } from '../Inbox/InboxDot'
 import { SESSION_DRAG_TYPE, isSessionDrag, useDropHighlight, useSessionDrop } from './sessionDrop'
 import type { TreeGuide } from '../../utils/relatedSessions'
@@ -258,6 +259,9 @@ export function SessionItem({
     const orchestrator = useControlApiMasters().masters[session.id]
     const screenStatus = useSessionScreenStatus(session.id)
     const role: SessionRole = orchestrator ? 'master' : session.aiControl ? 'ai' : 'user'
+    const templateLogo = useTemplateLogo(session.templateId)
+    // The template's logo takes the icon slot (report 8062e68c); the crown stays — it counts the
+    // sessions a master opened. An AI-driven row keeps its tooltip, and its colour still says AI.
     const roleIcon = orchestrator ? (
         <span
             className="shrink-0 flex"
@@ -265,6 +269,19 @@ export function SessionItem({
             title={`Master session — opened ${orchestrator.openedCount} AI session${orchestrator.openedCount === 1 ? '' : 's'}`}
         >
             <Crown size={14} className="text-rose-400" />
+        </span>
+    ) : templateLogo ? (
+        <span
+            className="shrink-0 flex"
+            title={session.aiControl ? `Driven by AI (${session.aiControl.client}) — right-click → Disconnect AI to take it back` : undefined}
+        >
+            <img
+                src={templateLogo}
+                alt=""
+                draggable={false}
+                data-template-logo
+                className="w-[14px] h-[14px] object-contain"
+            />
         </span>
     ) : session.aiControl ? (
         <span

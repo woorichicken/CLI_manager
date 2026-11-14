@@ -13,7 +13,7 @@ const api = {
     syncWorktreeWorkspaces: (): Promise<IPCResult<{ imported: number; removed: number; updated: number }>> =>
         ipcRenderer.invoke('sync-worktree-workspaces'),
     addWorkspace: (): Promise<IPCResult<Workspace> | null> => ipcRenderer.invoke('add-workspace'),
-    addSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string): Promise<IPCResult<TerminalSession> | null> => ipcRenderer.invoke('add-session', workspaceId, type, branchName, initialCommand, sessionName),
+    addSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string, templateId?: string): Promise<IPCResult<TerminalSession> | null> => ipcRenderer.invoke('add-session', workspaceId, type, branchName, initialCommand, sessionName, templateId),
     addWorktreeWorkspace: (parentWorkspaceId: string, branchName: string): Promise<IPCResult<Workspace>> => ipcRenderer.invoke('add-worktree-workspace', parentWorkspaceId, branchName),
     removeWorkspace: (id: string, deleteBranch?: boolean): Promise<boolean> => ipcRenderer.invoke('remove-workspace', id, deleteBranch ?? true),
     removeSession: (workspaceId: string, sessionId: string): Promise<boolean> => ipcRenderer.invoke('remove-session', workspaceId, sessionId),
