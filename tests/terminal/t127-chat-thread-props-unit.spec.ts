@@ -5,7 +5,7 @@ import { groupThreadsByTurn, threadsForTurn } from '../../src/renderer/src/compo
 const TS = '2026-11-14T10:00:00.000Z'
 const OTHER_TS = '2026-11-14T11:00:00.000Z'
 const thread = (childId: string, extra: Partial<ChatThread> = {}): ChatThread => ({
-    childId, name: `Session ${childId}`, turnTs: TS, turnIndex: 4, status: 'idle', lastActivityAt: 100, ...extra
+    childId, name: `Session ${childId}`, turnTs: TS, turnIndex: 4, forkedAt: 100, status: 'idle', lastActivityAt: 100, ...extra
 })
 
 test('T127 props: answers without threads keep the same undefined prop across thread and snapshot changes', () => {
@@ -65,4 +65,11 @@ test('T127 props: null timestamps remain distinct from empty or string timestamp
     expect(threadsForTurn(groups, null, 8)?.map((row) => row.childId)).toEqual(['null-legacy'])
     expect(threadsForTurn(groups, '', 4)?.map((row) => row.childId)).toEqual(['empty'])
     expect(threadsForTurn(groups, TS, 4)?.map((row) => row.childId)).toEqual(['dated'])
+})
+
+test('T127 props: a changed fork time invalidates a memoized answer group', () => {
+    const first = groupThreadsByTurn([thread('one')])
+    const changed = groupThreadsByTurn([thread('one', { forkedAt: 200 })], first)
+    expect(threadsForTurn(changed, TS, 4)).not.toBe(threadsForTurn(first, TS, 4))
+    expect(threadsForTurn(changed, TS, 4)?.[0].forkedAt).toBe(200)
 })

@@ -9,7 +9,7 @@ function turnKey(turnTs: string | null, turnIndex?: number): string {
 /** IPC returns new objects; equal rows should still leave a memoized answer alone. */
 function sameThread(left: ChatThread, right: ChatThread): boolean {
     return left.childId === right.childId && left.name === right.name && left.turnTs === right.turnTs &&
-        left.turnIndex === right.turnIndex && left.status === right.status && left.lastActivityAt === right.lastActivityAt
+        left.turnIndex === right.turnIndex && left.forkedAt === right.forkedAt && left.status === right.status && left.lastActivityAt === right.lastActivityAt
 }
 
 /**

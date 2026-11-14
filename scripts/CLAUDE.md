@@ -24,6 +24,7 @@ gains an outward-facing effect belongs there, documented, not here.
 | `sync-node-pty-prebuilds.cjs` | automatic | Runs on `postinstall`. Repairs `node-pty` native binaries when an install leaves wrong-arch `pty.node` / non-executable `spawn-helper`. | Rewrites files under `node_modules/node-pty/build/Release` |
 | `mock-cli/claude-mock.cjs` | manual | Generates Claude-Code-shaped terminal output (fps, history size, full-clear cadence) for the terminal tests | None |
 | `mock-cli/loop-mock.cjs` | manual | Emits burst/silence iterations so the Loop Dashboard counter can be exercised | None |
+| `mock-cli/chat-mock.cjs` | Chat tests | Interactive chat + transcript; `--copy-transcript` copies inherited timestamps/UUIDs into a unique child conversation and appends new turns | Explicit test transcript files and, with `--copy-transcript`, the supplied isolated `CLAUDE_CONFIG_DIR/sessions` registry; never defaults to the real registry |
 | `mock-cli/agent-mock.cjs` | T15 | Interactive agent TUI: bracketed paste, an "esc to interrupt" spinner, an approval question — what the AI Control API reads | None |
 | `bench-control-api.mjs` | manual | Measures what the AI Control API costs: event emit with no listener, mirror parse, wait poll, mirror memory. Takes a recording; falls back to synthetic output | None |
 | `mock-cli/record-claude.cjs` | manual | Drives a **real** CLI through a pty and records the byte stream to JSONL | Spends real API tokens; writes to `mock-cli/recordings/` |

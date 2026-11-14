@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { createPortal } from 'react-dom'
 import { MessagesSquare } from 'lucide-react'
 import type { ChatThread } from '../../../../shared/conversation'
+import { threadStatus } from './threadTurns'
 
 const TIME_REFRESH_MS = 30_000
 const STATUS_WORDS: Record<ChatThread['status'], string> = { working: 'working', waiting: 'waiting for you', idle: 'idle' }
@@ -80,6 +81,7 @@ export function ThreadChip({ threads, onOpen }: { threads: ChatThread[]; onOpen:
     }, [threads.length])
 
     const newest = Math.max(...threads.map((thread) => thread.lastActivityAt))
+    const priority = threadStatus(threads)
     const active = (['waiting', 'working'] as const).filter((state) => threads.some((thread) => thread.status === state))
     const status = active.length ? active.map((state) => STATUS_WORDS[state]).join(' · ') : STATUS_WORDS.idle
     return (
@@ -93,6 +95,7 @@ export function ThreadChip({ threads, onOpen }: { threads: ChatThread[]; onOpen:
                 onClick={() => threads.length === 1 ? onOpen(threads[0].childId) : setOpen(!open)}
             >
                 <MessagesSquare size={13} aria-hidden="true" />
+                <span className="chat-thread-status-dot" data-testid="chat-thread-status-dot" data-status={priority} aria-hidden="true" />
                 <span>{threads.length} {threads.length === 1 ? 'thread' : 'threads'} · {activityTime(newest, now)} · {status}</span>
             </button>
             {open && host && createPortal(<div className="chat-popover chat-thread-list" ref={panel} style={position} role="dialog" aria-label="Threads from this reply" data-testid="chat-thread-list">
@@ -106,7 +109,10 @@ export function ThreadChip({ threads, onOpen }: { threads: ChatThread[]; onOpen:
                             data-child-id={thread.childId}
                             onClick={() => { setOpen(false); onOpen(thread.childId) }}
                         >
-                            <span className="chat-thread-name">{thread.name}</span>
+                            <span className="chat-thread-row-heading">
+                                <span className="chat-thread-status-dot" data-testid="chat-thread-status-dot" data-status={thread.status} aria-hidden="true" />
+                                <span className="chat-thread-name">{thread.name}</span>
+                            </span>
                             <span className="chat-menu-note">{STATUS_WORDS[thread.status]} · {activityTime(thread.lastActivityAt, now)}</span>
                         </button>
                     ))}

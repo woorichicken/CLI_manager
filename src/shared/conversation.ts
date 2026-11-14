@@ -319,6 +319,8 @@ export interface ChatThread {
     name: string
     turnTs: string | null
     turnIndex?: number
+    /** Epoch ms the fork relation opened; inherited parent turns precede this time. */
+    forkedAt: number
     status: 'working' | 'waiting' | 'idle'
     lastActivityAt: number
 }

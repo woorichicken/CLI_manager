@@ -24,7 +24,7 @@ test('T127: only live outward forks with anchors belong to a reply; old and dism
         fork('two', { kind: 'manual' })
     ]
     expect(chatThreadsFor('parent', relations, sessions, screen)).toEqual([{
-        childId: 'one', name: 'Session one', turnTs: TS, turnIndex: 0, status: 'idle', lastActivityAt: 100
+        childId: 'one', name: 'Session one', turnTs: TS, turnIndex: 0, forkedAt: 100, status: 'idle', lastActivityAt: 100
     }])
     expect(chatThreadsFor('missing-parent', relations, sessions, screen)).toEqual([])
 })
@@ -49,6 +49,7 @@ test('T127: last child output supplies activity and sorting; a quiet new fork us
         lastOutputAt: (id) => id === 'one' ? 500 : id === 'three' ? 200 : 0
     })
     expect(rows.map((row) => [row.childId, row.lastActivityAt])).toEqual([['one', 500], ['two', 300], ['three', 200]])
+    expect(rows.map((row) => [row.childId, row.forkedAt])).toEqual([['one', 100], ['two', 300], ['three', 100]])
     expect(rows[2]).not.toHaveProperty('turnIndex')
 })
 

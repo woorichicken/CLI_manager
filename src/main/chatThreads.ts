@@ -63,6 +63,7 @@ export function chatThreadsFor(parentId: string, relations: SessionRelation[], s
             name: child.name,
             turnTs: relation.anchor.turnTs,
             ...(relation.anchor.turnIndex === undefined ? {} : { turnIndex: relation.anchor.turnIndex }),
+            forkedAt: relation.at,
             status: state.question !== null ? 'waiting' : state.busy ? 'working' : 'idle',
             lastActivityAt: screen.lastOutputAt(child.id) || relation.at
         }]

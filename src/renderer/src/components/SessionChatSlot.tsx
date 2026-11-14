@@ -57,6 +57,11 @@ export function SessionChatSlot({
             fontSize={fontSize}
             preferences={preferences}
             onSessionLink={onSessionLink}
+            onOpenSessionTerminal={(childId, command) => {
+                setSessionViewMode(childId, 'terminal')
+                if (command) setSessionPeek(childId, command)
+                onSessionLink?.(`climanager://session/${childId}`)
+            }}
             onOpenTerminal={(command) => {
                 setSessionViewMode(sessionId, 'terminal')
                 if (command) setSessionPeek(sessionId, command)

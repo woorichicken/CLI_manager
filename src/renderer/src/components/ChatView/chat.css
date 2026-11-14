@@ -29,9 +29,35 @@
     z-index: 45;
     display: flex;
     flex-direction: column;
+    container-type: inline-size;
+    container-name: chat-layout;
     background: var(--chat-bg);
     color: var(--chat-fg);
     line-height: 1.55;
+}
+.chat-main { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.chat-view.has-thread { flex-direction: row; }
+.chat-thread-panel {
+    position: relative; display: flex; flex-direction: column; flex: 0 0 clamp(340px, 40%, 520px); min-width: 340px; max-width: 520px; min-height: 0;
+    border-left: 1px solid var(--chat-line); background: var(--chat-bg); z-index: 31; outline: none;
+}
+.chat-thread-panel-header { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; row-gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--chat-line); }
+.chat-thread-panel-title { grid-column: 1 / -1; padding-right: 84px; display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.88em; font-weight: 600; }
+.chat-thread-panel-title svg { flex-shrink: 0; color: var(--chat-dim); }
+.chat-thread-panel-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.chat-thread-panel-actions { grid-row: 2; grid-column: 2; display: flex; align-items: center; gap: 5px; }
+.chat-thread-panel-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border-radius: 5px; color: var(--chat-dim); }
+.chat-thread-panel-actions button:hover { color: var(--chat-fg); background: var(--chat-soft); }
+.chat-thread-open-session { padding: 4px 5px; font-size: 0.72em; white-space: nowrap; }
+.chat-thread-panel-close { position: absolute; top: 8px; right: 8px; padding: 5px; }
+.chat-thread-panel-status { grid-row: 2; grid-column: 1; display: flex; align-items: center; gap: 7px; color: var(--chat-dim); font-size: 0.76em; }
+.chat-thread-quote { padding: 10px 12px; border-bottom: 1px solid var(--chat-line); font-size: 0.8em; }
+.chat-thread-quote-label { color: var(--chat-faint); margin-bottom: 5px; }
+.chat-thread-quote blockquote { margin: 0; padding-left: 9px; border-left: 2px solid var(--chat-line); color: var(--chat-dim); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-thread-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
+.chat-thread-body > .chat-view[data-thread-embedded] { inset: 0; }
+@container chat-layout (max-width: 759px) {
+    .chat-thread-panel { position: absolute; inset: 0; width: 100%; min-width: 0; max-width: none; border-left: none; z-index: 33; }
 }
 :root.light .chat-view {
     --chat-soft: rgba(0, 0, 0, 0.04);
@@ -76,6 +102,7 @@
 .chat-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 /* room for the session memo button (top right) */
 .chat-scroll > .chat-column { padding-top: 40px; }
+.chat-view[data-thread-embedded] .chat-scroll > .chat-column { padding-top: 16px; }
 .chat-column { max-width: 860px; margin: 0 auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 14px; }
 .chat-bottom { border-top: 1px solid var(--chat-line); flex-shrink: 0; }
 .chat-bottom .chat-column { padding-top: 10px; padding-bottom: 12px; gap: 10px; }
@@ -222,6 +249,12 @@
 .chat-thread-chip { max-width: 100%; white-space: normal; text-align: left; }
 .chat-thread-chip svg { flex-shrink: 0; }
 .chat-menu-item.chat-thread-session { align-items: flex-start; flex-direction: column; gap: 2px; }
+.chat-thread-status-dot { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: transparent; border: 1px solid var(--text-tertiary); }
+.chat-thread-status-dot[data-status="working"] { background: #3b82f6; border-color: #3b82f6; }
+.chat-thread-status-dot[data-status="waiting"] { background: #f59e0b; border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2); }
+.chat-thread-row-heading { display: flex; align-items: flex-start; gap: 7px; width: 100%; min-width: 0; }
+.chat-thread-row-heading .chat-thread-status-dot { margin-top: 5px; }
+.chat-thread-session > .chat-menu-note { padding-left: 15px; }
 .chat-thread-name { overflow-wrap: anywhere; }
 .chat-popover {
     position: absolute; bottom: calc(100% + 6px); z-index: 30; min-width: 220px; max-width: min(340px, 86vw); max-height: 320px; overflow-y: auto;
