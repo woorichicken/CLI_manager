@@ -71,6 +71,28 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 세션 상태 — 「끝났는데 아직 안 봄」을 따로 표시하기(herdr `Done`)
+- Discovered: 2026-11-14 탐구 세션(Whosup·herdr 비교) 뒤 사람 결정: 「일단 백로그로」.
+- Evidence: 우리 상태는 `SessionStatus` = `idle | running | ready | error` 와 `awaitingInput` 뿐이다(`src/shared/types.ts:9`, `Sidebar/SessionItem.tsx`). 일이 끝난 세션은 사람이 봤든 안 봤든 같은 `ready` 라, 세션이 20~30개면 끝난 뒤 방치된 칸이 「쉬는 중」에 섞인다. herdr(`herdrdev/herdr` ee5bfb5)는 `app/api_helpers.rs` `pane_agent_status(state, seen)` 에서 Idle 이면서 `seen=false` 면 `Done`, 봤으면 `Idle` 로 나눈다(API `AgentStatus` = Idle·Working·Blocked·Done·Unknown).
+- Trigger: 여러 세션을 돌리다 끝난 세션을 놓쳤다는 말이 나올 때, 또는 아래 「보드 보기」를 시작할 때(그 전제다).
+- Fix direction: `running → ready` 전이 때 세션에 `unseenSince` 를 찍고, 그 세션을 선택(포커스)하면 지운다. 사이드바 점·Control API `state` 에 `done` 을 더한다. 재시작 뒤 유지 여부는 따로 정한다.
+- Owner: 없음
+
+### 세션 상태 판정 — 화면 규칙을 에이전트별 파일로 빼고 앱 배포 없이 갱신(herdr manifest)
+- Discovered: 2026-11-14 같은 탐구 세션.
+- Evidence: 우리 판정 문구(「esc to interrupt」, 「Enter to confirm · Esc to cancel」 등)는 코드 안에 있다(`promptScreen.ts`·`SessionScreenStatus.ts`·`TerminalMirror.ts`) — Claude·Codex 화면 문구가 바뀌면 릴리스가 필요하다. herdr 는 `src/detect/manifests/*.toml`(22개, 규칙 143개)에 영역(`bottom_non_empty_lines(N)`·`after_last_horizontal_rule`·`osc_title`)·우선순위·정규식을 두고, `manifest_update.rs` 가 `https://herdr.dev/agent-detection/index.toml`(엔진 버전 3, 256KB 상한)에서 받아 갱신한다. 대화 기록 보기 화면은 `transcript_viewer` 규칙으로 상태 갱신을 건너뛴다.
+- Why deferred: 원격 갱신은 서명·버전 고정·실패 시 내장 규칙으로 되돌림을 새로 정해야 한다.
+- Trigger: CLI 업데이트로 문구가 바뀌어 상태 오판 제보가 한 달에 두 번 이상 올 때.
+- Fix direction: 먼저 규칙을 앱 안 JSON 으로만 빼서(원격 없음) 시험을 규칙 표로 돌린다. 원격 갱신은 그다음 결정 기록과 함께.
+- Owner: 없음
+
+### 보드 보기 — 세션 전부를 카드 한 장에, 「다음 볼 칸」 한 줄(Whosup)
+- Discovered: 2026-11-14 같은 탐구 세션. Whosup(`fivetaku/whosup`, MIT, herdr 0.9+ 플러그인, `127.0.0.1:4790`)을 읽었다.
+- Evidence: Whosup 은 herdr 상태를 3초마다 모아 카드 보드로 보여 주고, 「다음 볼 칸」 한 줄 · 오래 기다린 순 정렬 · 15분 재알림(최대 4회) · 「봤음」 30분 숨김 · 재부팅 뒤 `--resume` · 누르면 그 칸으로 이동(`pane.focus`)을 한다. 우리는 사이드바 목록과 인박스뿐이다.
+- Trigger: 위 「끝났는데 아직 안 봄」이 들어간 뒤, 또는 세션 20개 이상을 한 화면에서 보고 싶다는 말이 나올 때.
+- Fix direction: 새 창 대신 메인 창의 보기 하나로. 정렬 기준은 `awaitingInput` > 안 본 끝남 > 일하는 중, 같은 칸 안에서는 기다린 시간 순.
+- Owner: 없음
+
 ### Control API — 경로의 잘못된 `%` 인코딩이 500 으로 답한다
 - Discovered: 2026-11-14 T129 작성 중 실측 — `GET /v1/crons/%E0%A4%A` → 500 `{"code":"internal","message":"URI malformed"}`.
 - Evidence: `ControlApiServer` 라우터가 경로 조각마다 `decodeURIComponent` 를 부르는데 `URIError` 를 잡지 않아 맨 아래 500 으로 떨어진다. 크론만이 아니라 `:session` 등 모든 경로 변수가 같다.
@@ -399,6 +421,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: `AgentStatusResolver.ts`의 `SOURCE_RANK`에 `osc: 2` 자리가 있으나 이 소스로
   `applyObservedStatus`를 호출하는 코드가 없다 — `grep -rn "'osc'" src/`의 결과는
   `src/shared/types.ts`의 타입 선언과 주석 2줄뿐이다.
+- 2026-11-14 참고 추가: herdr 도 Claude 창 제목의 스피너(Braille·반원 글자)를 「일하는 중」 규칙 `osc_title_working` 으로 쓴다(`src/detect/manifests/claude.toml`). 우리의 1.5초 출력 기준(`DEFAULT_QUIET_MS`)보다 덜 흔들린다.
 
 ### `src/main/TerminalManager.ts` + `AgentStatusResolver.ts` — pane 단위 식별자가 없어 이벤트를 cwd로 추측한다
 - Discovered: 2026-08-16, Orca 소스 대조 중
