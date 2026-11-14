@@ -19,6 +19,32 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 폰 입력칸에 터미널의 추천 답변(흐린 글) 보여 주기 — 제보 ba2ae0cb
+- Discovered: 2026-11-14 fb-1114b 끝 보고. 제보 ba2ae0cb-e427-4b5d-afca-00e4e20c4753(폰): Claude 입력 상자에 흐리게 뜨는 다음 프롬프트 추천을 폰 Chat 입력칸에도 보여 달라.
+- Evidence: 화면 쪽 판정은 이미 있다 — 추천 문구 분리(T19 「흐린 추천 문구 분리」·T88 반전 커서 뒤 회색 = 추천). 폰 Chat 입력칸(`ChatView`)은 그 값을 받지 않는다.
+- Why deferred: 사람 결정 2026-11-14 「급한 건 아니어서 릴리즈 먼저」.
+- Trigger: 다음 CLImanger 피드백 회차.
+- Owner: 없음
+
+### Related 버튼 숫자와 창 안 「All N」이 다름
+- Discovered: 2026-11-14 fb-1114b(33f92744 Related 거르개) 팀장 보고.
+- Evidence: 헤더 Related 버튼은 직접 이어진 세션 수(`data-related-count`), 창 거르개의 All 은 나무 전체 줄 수(위·옆·아래 + Also related, `RelationFilter.tsx`). 팀장 시드(T137)에서 같은 세션이 서로 다른 수를 보인다.
+- Why deferred: 둘 다 뜻은 맞다. 팀장 추천은 그대로 두기, 사람 결정 2026-11-14 급하지 않음.
+- Trigger: 숫자가 다르다는 제보가 오거나 Related 버튼을 다시 만질 때 — 그때 버튼에 툴팁(「N directly related」)을 붙이는 것부터.
+- Owner: 없음
+
+### Chat 웹 문서 → Artifact Dock 을 실제 Chrome 으로 눌러 보기 — 제보 fc98b340
+- Discovered: 2026-11-14 fb-1114b #136.
+- Evidence: T140 은 가짜 Dock 소켓(`ARTIFACT_DOCK_SOCKET`)으로만 본다. 실제 Chrome + Artifact Dock 확장에서 Chat 의 `.html` 경로를 눌러 「열렸다 닫힘」이 사라졌는지는 안 눌러 봤다.
+- Trigger: 이 수정이 든 릴리즈를 설치한 뒤 첫 Chat 사용 — `.html` 경로를 눌러 탭이 하나 열리고 남는지 본다. 안 되면 fc98b340 을 다시 연다.
+- Owner: 없음
+
+### 빠른 답 색을 밝은 테마에서 재기 — 제보 93bd4834
+- Discovered: 2026-11-14 fb-1114b #139.
+- Evidence: T135 의 대비 4.5 검사는 어두운 테마(300 색)만 잰다. 밝은 테마 칩 색·대비는 재지 않았다.
+- Trigger: 밝은 테마를 쓰는 사람이 칩 글씨가 안 보인다고 하거나, 테마 색을 손볼 때. T135 에 밝은 테마 한 벌을 더하면 된다.
+- Owner: 없음
+
 ### 폰 Chat — 바뀌면 바뀐 만큼만(ETag·304, ovis 방식)
 - Discovered: 2026-11-10 fb-1110 91e1b27e · 1e556f10. 첫 쪽은 3회차에 고쳤다(사람 결정 11-10) — 폰은 최근 20턴(`PHONE_CHAT_TURN_PAGE`)만 읽고 「Show earlier」로 20턴씩 더(T123). 16MB 사본 T118: Wi-Fi 0.22→0.14초, LTE 중계 0.51→0.28초, 전송 130→36KB.
 - Evidence: 남은 몫은 턴이 바뀔 때마다 첫 쪽 창 전체를 다시 받는 것(지금 36KB)과 렌더 ~0.06초(폰 CPU 4배 감속). ovis 는 `If-None-Match` 로 안 바뀌면 304·클라이언트 캐시로 먼저 그림(`refs/ovis` `server/pane-routes.ts:289`, `src/lib/api.ts:584`).
