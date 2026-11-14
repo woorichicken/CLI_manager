@@ -1097,8 +1097,8 @@ function App() {
         }, 300)
     }
 
-    const handleAddSession = async (workspaceId: string, type: 'regular' | 'worktree' = 'regular', branchName?: string, initialCommand?: string, sessionName?: string): Promise<TerminalSession | undefined> => {
-        const result = await window.api.addSession(workspaceId, type, branchName, initialCommand, sessionName)
+    const handleAddSession = async (workspaceId: string, type: 'regular' | 'worktree' = 'regular', branchName?: string, initialCommand?: string, sessionName?: string, templateId?: string): Promise<TerminalSession | undefined> => {
+        const result = await window.api.addSession(workspaceId, type, branchName, initialCommand, sessionName, templateId)
         if (!result) return undefined
 
         if (result.success && result.data) {
@@ -1203,7 +1203,7 @@ function App() {
         },
         onToggleChecklists: () => setChecklistsOpen(open => !open),
         onAddSession: (workspaceId, template) => {
-            handleAddSession(workspaceId, 'regular', undefined, template?.command, template?.name)
+            handleAddSession(workspaceId, 'regular', undefined, template?.command, template?.name, template?.id)
         },
         onCloseSession: handleCloseSession,
         onClearSession: handleClearSession,
@@ -2113,7 +2113,7 @@ function App() {
                     onShowSessions={showSessions}
                     templates={customTemplates}
                     onCreateSession={async (workspaceId, template, name) =>
-                        (await handleAddSession(workspaceId, 'regular', undefined, template.command, name || template.name))?.id
+                        (await handleAddSession(workspaceId, 'regular', undefined, template.command, name || template.name, template.id))?.id
                     }
                 />
             )}

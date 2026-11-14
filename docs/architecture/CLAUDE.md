@@ -308,6 +308,7 @@ User Action (Renderer)
           cliToolName?: string,       // 'claude' (resume: <cmd> --resume <id>) · 'codex' (resume: <cmd> resume <id>)
           cliCommand?: string,        // What started it (`cldy`) — resume repeats this, not `claude`
           sessionFolderId?: string,   // All sessions view folder it also sits in (SessionFolders); a missing folder = none
+          templateId?: string,        // Template it was opened from — sidebar row shows that template's logo (after 1.33.0; sessions opened before have none)
           aiControl?: { client: string, since: number }  // Mark: an AI works in this session (Control API)
         }
       ],
@@ -318,7 +319,7 @@ User Action (Renderer)
     }
   ],
   playgroundPath: string,
-  customTemplates: TerminalTemplate[],
+  customTemplates: TerminalTemplate[],  // each may carry logo?: 32×32 PNG data URL (picked PNG/SVG shrunk in the renderer, utils/templateLogo.ts)
   settings: UserSettings,           // settings.controlApi = { enabled, port }
   controlApiToken?: string,         // Kept outside settings so a stale save-settings cannot rotate it
   sessionFolders?: [                // All sessions view folders (SessionFolders) — membership is on the session

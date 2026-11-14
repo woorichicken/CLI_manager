@@ -93,13 +93,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: 새 창 대신 메인 창의 보기 하나로. 정렬 기준은 `awaitingInput` > 안 본 끝남 > 일하는 중, 같은 칸 안에서는 기다린 시간 순.
 - Owner: 없음
 
-### Control API — 경로의 잘못된 `%` 인코딩이 500 으로 답한다
-- Discovered: 2026-11-14 T129 작성 중 실측 — `GET /v1/crons/%E0%A4%A` → 500 `{"code":"internal","message":"URI malformed"}`.
-- Evidence: `ControlApiServer` 라우터가 경로 조각마다 `decodeURIComponent` 를 부르는데 `URIError` 를 잡지 않아 맨 아래 500 으로 떨어진다. 크론만이 아니라 `:session` 등 모든 경로 변수가 같다.
-- Trigger: 클라이언트가 이름을 손으로 인코딩하는 도구(MCP·`clim`)를 붙일 때, 또는 로그에 `URI malformed` 가 보일 때.
-- Fix direction: 그 자리에서 `URIError` 를 잡아 400 `bad_path` 로 답한다.
-- Owner: 없음
-
 ### 데스크톱 터미널 — 글꼴 크기만 바뀌면 xterm 스크롤 영역이 옛 줄 높이로 남을 수 있다
 - Discovered: 2026-11-14 fb-1114 세션 C. 폰에서 번들 글꼴이 스냅샷보다 늦게 오면 xterm 6.0.0 Viewport 가 스크롤 영역(줄 높이 × 줄 수)을 다시 재지 않아 끌기·`scrollLines` 가 안 먹었다(셸이 다시 출력할 때까지). 폰은 `src/renderer/src/phone/xtermViewportSync.ts`(렌더러 dimension 변경 → `_viewport.queueSync()`)로 고쳤다(PR #127).
 - Evidence: 실패 회차 내부값 Viewport `height 645 / scrollHeight 4575`(=15px×43·305줄) 인데 렌더러 cell 13px — 보고 `~/Downloads/_batches/fb-1114/reports/C.md`.
@@ -154,15 +147,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 넣는 방식이 정해지지 않았고, 에이전트 훅 경로를 건드린다.
 - Trigger: 폰에서 받은 답이 표·긴 줄로 읽기 어렵다는 말이 다시 나올 때, 또는 사람이 시작하자고 할 때.
 - Fix direction(제안, 미정): 글에 머리말을 박으면 기록·말풍선에 남는다. 앱이 세션별 마지막 입력 출처를 파일에 적고 `UserPromptSubmit` 훅이 그 값을 보이지 않는 문맥으로 넣는 쪽을 먼저 본다. 스풀·훅 불변식(앱이 꺼져도 멈추지 않음)을 지킨다. Codex 는 훅 경로가 달라 따로 본다.
-- Owner: 없음
-
-### T1 `6 terminals flooding` — 대기 조건이 명령 줄의 `SEQ-DONE` 과 출력의 `SEQ-DONE` 을 구분 못 한다
-- Discovered: 2026-11-07 v1.27.0 `--build` 1회차, 전체 시험에서 이 1건만 실패(1 failed · 1011 passed).
-- Evidence: `tests/terminal/t1-data-loss.spec.ts:70` 이 입력하는 명령 줄에 `echo SEQ-DONE-…` 글이 들어 있고 `:75` 가 같은 글을 기다린다. 출력이 끝나기 전에 통과할 수 있다. 실패 때 `last` 275024 · 269697 · 265076(기대 300000), 나머지 3개는 300000, 6개 모두 gap 0 · discard 0. 10회 반복은 머지판 `a51ef6a` 트리·v1.26.1 모두 10/10 통과, 재빌드 전체 시험도 통과. v1.26.1 뒤 `src` 에 터미널 경로 변경 없음. v1.22.0 의 단일 터미널 시험도 같은 모양이었다(`last` 228478).
-- 한계: 원인은 유력하나 미증명이다. 위 근거는 데이터 유실이 없다는 증명이 아니다.
-- Why deferred: 릴리즈 중이었고 이번 범위가 아니다.
-- Trigger: 사전 점검에서 T1 이 다시 실패할 때, 또는 터미널 출력 경로를 만질 때.
-- Fix direction: 명령 줄에 없는 글을 기다린다(예: `echo SEQ-DONE-$((1+1))` 처럼 셸이 계산한 값). 그 뒤에도 `last` 가 모자라면 그때는 진짜 유실로 본다. 단일 터미널 시험(`:29`)도 같은 모양이라 함께 고친다.
 - Owner: 없음
 
 ### Muse Code Chat 지원
@@ -225,14 +209,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 총괄 지시로 이번 범위는 1·2·3·14.
 - Trigger: 다음 Chat 안정화 회차, 또는 복원 직후 「input line already has text」 제보.
 - Fix direction: 4~13 은 report 「추천 순서」대로(8·9 먼저). 구분선은 판정에서 `Restored from previous session` 을 빼거나 구분선 모양을 라벨 선과 다르게.
-- Owner: 없음
-
-### 폰 페이지 — Chrome 이 「페이지를 번역하시겠습니까?」를 매번 띄운다
-- Discovered: 2026-11-05 phone-fixes 갤럭시 캡처 — localhost:8765 와 Tailscale 주소 모두, 출발어 영어 · 도착어 한국어.
-- Evidence: 리뷰 캡처 `fixes/phone-fixes/shots/a-before-galaxy.png` 등 상단 풍선. 화면 위를 덮어 지목·캡처를 가린다.
-- Why deferred: 이번 범위 밖(phone.html 머리말).
-- Trigger: 폰 화면 다음 회차.
-- Fix direction: `phone.html` 에 `<meta name="google" content="notranslate">` 또는 `translate="no"`. 실제 대화 글은 사람이 번역하고 싶을 수 있어 범위를 고른다.
 - Owner: 없음
 
 ### E2E 전체 실행 — 회차마다 다른 1~2건이 흔들린다(부하·동시 앱)
@@ -601,14 +577,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   미리 재도 「어느 칸에 보일지」를 레이아웃보다 먼저 알아야 해서 위험 대비 이득이 작다. ③ 시험 공백은 그대로(T41 에 가드·분할·`existed` 경우 없음).
 - Trigger (갱신): 분할 화면에 처음 띄운 세션에서 표가 끊긴다는 제보(폭 변경 계열)가 오면 ②부터.
 - Owner: Human Review
-
-### `tests/terminal/helpers.ts` — `closeApp` 이 닫기 실패를 삼키고 시험 앱을 남긴다
-- Discovered: 2026-10-23 day-1023, 렌더링 묶음 실행 중 T1 시험 앱이 CPU 100% 로 7분 남아 playwright 가 멈췄다(재현 안 됨, `kill -9` 로 정리).
-- Evidence: `closeApp()` 은 `app.close()` 의 예외를 무시하고 userData 만 지운다 — 프로세스가 살아 있는지 보지 않는다.
-- Why deferred: 재현이 안 됐고 시험 하네스 변경이다.
-- Trigger: 시험 묶음이 끝나지 않거나 남은 Electron 프로세스가 다시 보일 때.
-- Fix direction: 닫기 실패·시간 초과 때 `app.process()` 의 pid 를 죽이고, 남은 프로세스를 로그로 남긴다.
-- Owner: 없음
 
 ### `tests/terminal/helpers.ts` — 첫 시드 작업 영역이 닫힌 폴더 안이면 앱 구동이 30초 시간 초과
 - Discovered: 2026-10-23 day-1023, T45 를 쓰다가(4건 시간 초과).

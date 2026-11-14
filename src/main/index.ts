@@ -5,7 +5,7 @@ import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import logoIcon from '../../resources/logo-final.png?asset'
 import Store from 'electron-store'
-import { AppConfig, Workspace, TerminalSession, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest, HookIntegrationSettings, UsageAlertSettings, UsageSnapshot, HookInstallState, AgentStatusUpdate, DEFAULT_HOOK_INTEGRATION, DEFAULT_USAGE_ALERTS, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
+import { AppConfig, Workspace, TerminalSession, TerminalTemplate, UserSettings, IPCResult, WorkspaceFolder, LOOP_CHANNELS, LoopDetectionConfig, LoopState, LoopSession, PromoteToLoopRequest, OpenLoopTerminalRequest, RestartLoopRequest, RemoveLoopProjectRequest, HookIntegrationSettings, UsageAlertSettings, UsageSnapshot, HookInstallState, AgentStatusUpdate, DEFAULT_HOOK_INTEGRATION, DEFAULT_USAGE_ALERTS, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 import { simpleGit } from 'simple-git'
 import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs'
@@ -61,6 +61,9 @@ import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
 import { DictationService } from './Dictation'
 import { DictationLog } from './DictationLog'
+import { openInDock } from './dockOpen'
+import { dockLocation } from './phone/phoneDock'
+import { BROWSER_PAGE_EXTENSIONS } from '../shared/fileKinds'
 
 // Set app name for development mode
 app.setName('CLI Manager')
@@ -1738,7 +1741,7 @@ app.whenReady().then(async () => {
         return { success: true, data: newWorkspace }
     })
 
-    ipcMain.handle('add-session', async (_, workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string): Promise<IPCResult<TerminalSession> | null> => {
+    ipcMain.handle('add-session', async (_, workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string, templateId?: string): Promise<IPCResult<TerminalSession> | null> => {
         const workspaces = store.get('workspaces') as Workspace[]
         const workspace = workspaces.find((w: Workspace) => w.id === workspaceId)
 
@@ -1750,12 +1753,18 @@ app.whenReady().then(async () => {
             return null
         }
 
+        // Only a template that exists is remembered — the Related dialog's "plain terminal" choice
+        // has an id of its own that is not a template.
+        const templates = (store.get('customTemplates') as TerminalTemplate[] | undefined) ?? []
+        const knownTemplateId = typeof templateId === 'string' && templates.some(t => t.id === templateId) ? templateId : undefined
+
         const newSession: TerminalSession = {
             id: uuidv4(),
             name: sessionName || 'Terminal',
             cwd: workspace.path,
             type,
-            initialCommand
+            initialCommand,
+            ...(knownTemplateId ? { templateId: knownTemplateId } : {})
         }
 
         workspace.sessions.push(newSession)
@@ -3847,8 +3856,14 @@ app.whenReady().then(async () => {
         saveChatAttachment(path.join(os.tmpdir(), 'climanager-chat'), typeof name === 'string' ? name : 'pasted', bytes)
     )
     // A file the chat names that the preview cannot show (a PDF, a video): the Mac's own app for it.
-    ipcMain.handle('chat-open-path', async (_e, target: unknown): Promise<{ success: boolean; error?: string }> => {
+    ipcMain.handle('chat-open-path', async (_e, target: unknown, sessionId?: unknown): Promise<{ success: boolean; error?: string }> => {
         if (typeof target !== 'string' || !path.isAbsolute(target) || !existsSync(target)) return { success: false, error: 'File not found' }
+        // A web page goes through Artifact Dock when it is there: Chrome's new tab would be closed as a duplicate (fc98b340).
+        const extension = path.extname(target).slice(1).toLowerCase()
+        if (BROWSER_PAGE_EXTENSIONS.has(extension)) {
+            const { socketPath } = dockLocation(process.env, process.platform, os.homedir())
+            if ((await openInDock(socketPath, target, typeof sessionId === 'string' ? sessionId : undefined)) === 'opened') return { success: true }
+        }
         const error = await shell.openPath(target)
         return error ? { success: false, error } : { success: true }
     })
