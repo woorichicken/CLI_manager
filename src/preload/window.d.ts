@@ -288,7 +288,7 @@ declare global {
             listChatCommands: (sessionId: string) => Promise<ChatCommand[]>
             listChatBackgroundTasks: (sessionId: string) => Promise<BackgroundTaskList>
             saveChatAttachment: (name: string, bytes: Uint8Array) => Promise<AttachResult>
-            openChatPath: (target: string) => Promise<{ success: boolean; error?: string }>
+            openChatPath: (target: string, sessionId?: string) => Promise<{ success: boolean; error?: string }>
             dictationStatus: () => Promise<DictationStatus>
             startDictation: (context?: DictationStartContext) => Promise<DictationStartResult>
             stopDictation: (id: number) => Promise<void>
