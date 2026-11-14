@@ -6,7 +6,7 @@ import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, L
 import type { SessionRelation } from '../../src/shared/types'
 
 /**
- * T135 — The Related dialog's All · Above · Beside · Below filter (report 33f92744).
+ * T137 — The Related dialog's All · Above · Beside · Below filter (report 33f92744).
  *
  * Seeded like T40: a chief opened three leads, lead A opened a worker, the worker
  * opened a helper. From lead A the tree has the chief above, leads B and C beside,
@@ -16,19 +16,19 @@ import type { SessionRelation } from '../../src/shared/types'
  * 390 the filter and Sort stay inside the dialog. Judged in the DOM.
  */
 
-const CHIEF = 't135-chief-4000-8000-000000000001'
-const LEAD_A = 't135-leada-4000-8000-000000000002'
-const LEAD_B = 't135-leadb-4000-8000-000000000003'
-const LEAD_C = 't135-leadc-4000-8000-000000000004'
-const WORKER = 't135-workr-4000-8000-000000000005'
-const HELPER = 't135-helpr-4000-8000-000000000006'
+const CHIEF = 't137-chief-4000-8000-000000000001'
+const LEAD_A = 't137-leada-4000-8000-000000000002'
+const LEAD_B = 't137-leadb-4000-8000-000000000003'
+const LEAD_C = 't137-leadc-4000-8000-000000000004'
+const WORKER = 't137-workr-4000-8000-000000000005'
+const HELPER = 't137-helpr-4000-8000-000000000006'
 const NAMES: Record<string, string> = {
-    [CHIEF]: 'AI: t135 chief',
-    [LEAD_A]: 'AI: t135 lead A',
-    [LEAD_B]: 'AI: t135 lead B',
-    [LEAD_C]: 'AI: t135 lead C',
-    [WORKER]: 'AI: t135 worker',
-    [HELPER]: 'AI: t135 helper'
+    [CHIEF]: 'AI: t137 chief',
+    [LEAD_A]: 'AI: t137 lead A',
+    [LEAD_B]: 'AI: t137 lead B',
+    [LEAD_C]: 'AI: t137 lead C',
+    [WORKER]: 'AI: t137 worker',
+    [HELPER]: 'AI: t137 helper'
 }
 
 const RELATIONS: SessionRelation[] = [
@@ -47,7 +47,7 @@ const EXPECTED: Record<string, string[]> = {
     below: [WORKER, HELPER]
 }
 
-test.describe('T135 Related filter (33f92744)', () => {
+test.describe('T137 Related filter (33f92744)', () => {
     let ctx: LaunchResult | undefined
     const temps: string[] = []
 
@@ -58,11 +58,11 @@ test.describe('T135 Related filter (33f92744)', () => {
     })
 
     async function launch(): Promise<LaunchResult> {
-        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t135-ws-'))
-        const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t135-home-'))
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t137-ws-'))
+        const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t137-home-'))
         temps.push(folder, homeDir)
         return launchAppWithWorkspaces(
-            [{ id: 'ws-t135', name: 'T135 project', path: folder, sessions: Object.keys(NAMES).map(id => ({ id, name: NAMES[id] })) }],
+            [{ id: 'ws-t137', name: 'T137 project', path: folder, sessions: Object.keys(NAMES).map(id => ({ id, name: NAMES[id] })) }],
             { config: { sessionRelations: RELATIONS }, env: { CLIMANAGER_HOME: homeDir } }
         )
     }
@@ -73,11 +73,16 @@ test.describe('T135 Related filter (33f92744)', () => {
     const listedIds = (p: Page) => dialog(p).locator('[data-related-row]').evaluateAll(rows =>
         rows.map(row => row.getAttribute('data-related-row') ?? '').sort())
     const shotsDir = (): string | undefined => {
-        const shots = process.env.T135_SHOTS
+        const shots = process.env.T137_SHOTS
         if (shots) fs.mkdirSync(shots, { recursive: true })
         return shots
     }
-    const label = (): string => process.env.T135_LABEL ?? 'after'
+    const label = (): string => process.env.T137_LABEL ?? 'after'
+    // The chips fade their colours (transition-colors, 150ms): a shot right after a click shows the old one lit.
+    const settledShot = async (p: Page, options: { path: string }): Promise<void> => {
+        await p.waitForTimeout(400)
+        await p.screenshot(options)
+    }
 
     async function openDialog(p: Page, id: string): Promise<void> {
         await activateSession(p, NAMES[id])
@@ -86,7 +91,7 @@ test.describe('T135 Related filter (33f92744)', () => {
         await expect(dialog(p).locator('[data-related-row]').first()).toBeVisible()
     }
 
-    test('T135 each filter lists only its part; remembered; keys; header count unchanged', async () => {
+    test('T137 each filter lists only its part; remembered; keys; header count unchanged', async () => {
         ctx = await launch()
         const { page } = ctx
         await resizeMainWindow(ctx.app, 1280, 800)
@@ -94,7 +99,7 @@ test.describe('T135 Related filter (33f92744)', () => {
         await activateSession(page, NAMES[LEAD_A])
         const headerCount = await button(page, LEAD_A).getAttribute('data-related-count')
         await openDialog(page, LEAD_A)
-        if (shots) await page.screenshot({ path: path.join(shots, `related-all-1280-${label()}.png`) })
+        if (shots) await settledShot(page, { path: path.join(shots, `related-all-1280-${label()}.png`) })
 
         // Default is All: the tree as it was.
         await expect(dialog(page).locator('[data-related-filter]')).toHaveAttribute('data-related-filter', 'all')
@@ -109,7 +114,7 @@ test.describe('T135 Related filter (33f92744)', () => {
             const sections = await dialog(page).locator('[data-related-tree]').evaluateAll(els => els.map(el => el.getAttribute('data-related-tree')))
             expect(sections).toEqual([tree])
             await expect(option(page, key)).toContainText(String(EXPECTED[key].length))
-            if (shots) await page.screenshot({ path: path.join(shots, `related-${key}-1280-${label()}.png`) })
+            if (shots) await settledShot(page, { path: path.join(shots, `related-${key}-1280-${label()}.png`) })
         }
         // Below keeps the helper indented under the worker.
         await expect(dialog(page).locator(`[data-related-tree="down"] [data-related-row="${HELPER}"]`)).toBeVisible()
@@ -137,7 +142,7 @@ test.describe('T135 Related filter (33f92744)', () => {
         await expect(option(page, 'below')).toHaveAttribute('aria-checked', 'true')
     })
 
-    test('T135 a filter with nothing in it says so', async () => {
+    test('T137 a filter with nothing in it says so', async () => {
         ctx = await launch()
         const { page } = ctx
         await openDialog(page, CHIEF)
@@ -145,20 +150,20 @@ test.describe('T135 Related filter (33f92744)', () => {
         await expect(dialog(page).locator('[data-related-filter-empty="above"]')).toBeVisible()
         await expect(dialog(page).locator('[data-related-row]')).toHaveCount(0)
         const shots = shotsDir()
-        if (shots) await page.screenshot({ path: path.join(shots, `related-empty-1280-${label()}.png`) })
+        if (shots) await settledShot(page, { path: path.join(shots, `related-empty-1280-${label()}.png`) })
         // Back to All, the chief's leads are there again.
         await option(page, 'all').click()
         await expect(dialog(page).locator('[data-related-filter-empty]')).toHaveCount(0)
         await expect(dialog(page).locator(`[data-related-row="${LEAD_A}"]`)).toBeVisible()
     })
 
-    test('T135 narrow window keeps the filter and Sort inside the dialog', async () => {
+    test('T137 narrow window keeps the filter and Sort inside the dialog', async () => {
         ctx = await launch()
         const { page } = ctx
         await resizeMainWindow(ctx.app, 390, 800)
         const shots = shotsDir()
         await openDialog(page, LEAD_A)
-        if (shots) await page.screenshot({ path: path.join(shots, `related-all-390-${label()}.png`) })
+        if (shots) await settledShot(page, { path: path.join(shots, `related-all-390-${label()}.png`) })
         const panel = await dialog(page).boundingBox()
         expect(panel).not.toBeNull()
         for (const selector of ['[data-related-filter-option="all"]', '[data-related-filter-option="below"]', '[data-related-order]']) {
@@ -169,6 +174,6 @@ test.describe('T135 Related filter (33f92744)', () => {
         }
         await option(page, 'below').click()
         await expect.poll(() => listedIds(page)).toEqual([...EXPECTED.below].sort())
-        if (shots) await page.screenshot({ path: path.join(shots, `related-below-390-${label()}.png`) })
+        if (shots) await settledShot(page, { path: path.join(shots, `related-below-390-${label()}.png`) })
     })
 })
