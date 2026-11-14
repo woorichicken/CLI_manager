@@ -11,6 +11,17 @@ const SWATCH: Record<QuickReplyColor, string> = {
     teal: '#14b8a6'
 }
 
+/** The reply's text in its colour, as the chat chip shows it on the dark chat (chat.css 300 tints) — the dialog is dark. */
+const TEXT: Record<QuickReplyColor, string> = {
+    blue: '#93c5fd',
+    green: '#86efac',
+    amber: '#fcd34d',
+    red: '#fca5a5',
+    purple: '#d8b4fe',
+    pink: '#f9a8d4',
+    teal: '#5eead4'
+}
+
 interface QuickReplyColorsProps {
     replies: string[]
     colors: Record<string, QuickReplyColor> | undefined
@@ -40,7 +51,7 @@ export function QuickReplyColors({ replies, colors, onChange }: QuickReplyColors
                     <div key={reply} className="flex items-center gap-3" data-testid={`quick-reply-color-${index}`}>
                         <span
                             className="flex-1 min-w-0 truncate text-xs"
-                            style={current ? { color: SWATCH[current] } : undefined}
+                            style={current ? { color: TEXT[current] } : undefined}
                             title={reply}
                         >
                             {reply}
