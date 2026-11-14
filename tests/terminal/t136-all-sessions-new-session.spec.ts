@@ -6,7 +6,7 @@ import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, L
 import type { SessionRelation, Workspace } from '../../src/shared/types'
 
 /**
- * T134 — "New session" in the sidebar's All sessions view (report c63a93c0).
+ * T136 — "New session" in the sidebar's All sessions view (report c63a93c0).
  *
  * All sessions has a toolbar row (List · Tree on the left, New session on the
  * right) that opens the same small dialog the Related dialog uses: project,
@@ -17,17 +17,17 @@ import type { SessionRelation, Workspace } from '../../src/shared/types'
  * Judged in the DOM, config.json and the terminal buffer.
  */
 
-const FIRST = 't134-first-4000-8000-000000000001'
-const SECOND = 't134-secnd-4000-8000-000000000002'
-const OTHER = 't134-other-4000-8000-000000000003'
+const FIRST = 't136-first-4000-8000-000000000001'
+const SECOND = 't136-secnd-4000-8000-000000000002'
+const OTHER = 't136-other-4000-8000-000000000003'
 const NAMES: Record<string, string> = {
     [FIRST]: 'first shell',
     [SECOND]: 'second shell',
     [OTHER]: 'other shell'
 }
-const TEMPLATE = { id: 't134-echo', name: 'T134 echo', icon: 'terminal', description: 'prints a marker', command: 'echo T134-TEMPLATE-RAN' }
+const TEMPLATE = { id: 't136-echo', name: 'T136 echo', icon: 'terminal', description: 'prints a marker', command: 'echo T136-TEMPLATE-RAN' }
 
-test.describe('T134 All sessions New session (c63a93c0)', () => {
+test.describe('T136 All sessions New session (c63a93c0)', () => {
     let ctx: LaunchResult | undefined
     const temps: string[] = []
 
@@ -38,15 +38,15 @@ test.describe('T134 All sessions New session (c63a93c0)', () => {
     })
 
     async function launch(): Promise<LaunchResult> {
-        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t134-ws-'))
-        const other = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t134-other-'))
-        const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t134-home-'))
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t136-ws-'))
+        const other = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t136-other-'))
+        const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t136-home-'))
         temps.push(folder, other, homeDir)
         const session = (id: string) => ({ id, name: NAMES[id] })
         return launchAppWithWorkspaces(
             [
-                { id: 'ws-t134', name: 'T134 project', path: folder, sessions: [session(FIRST), session(SECOND)] },
-                { id: 'ws-t134-other', name: 'T134 other project', path: other, sessions: [session(OTHER)] }
+                { id: 'ws-t136', name: 'T136 project', path: folder, sessions: [session(FIRST), session(SECOND)] },
+                { id: 'ws-t136-other', name: 'T136 other project', path: other, sessions: [session(OTHER)] }
             ],
             { env: { CLIMANAGER_HOME: homeDir }, customTemplates: [TEMPLATE] }
         )
@@ -57,13 +57,13 @@ test.describe('T134 All sessions New session (c63a93c0)', () => {
     const configOnDisk = (userDataDir: string) =>
         JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf8')) as { workspaces: Workspace[]; sessionRelations?: SessionRelation[] }
     const shotsDir = (): string | undefined => {
-        const shots = process.env.T134_SHOTS
+        const shots = process.env.T136_SHOTS
         if (shots) fs.mkdirSync(shots, { recursive: true })
         return shots
     }
-    const label = (): string => process.env.T134_LABEL ?? 'after'
+    const label = (): string => process.env.T136_LABEL ?? 'after'
 
-    test('T134 New session from All sessions: dialog, created, listed, unrelated', async () => {
+    test('T136 New session from All sessions: dialog, created, listed, unrelated', async () => {
         ctx = await launch()
         const { page } = ctx
         const shots = shotsDir()
@@ -89,7 +89,7 @@ test.describe('T134 All sessions New session (c63a93c0)', () => {
         await newButton(page).click()
         await expect(form(page)).toBeVisible()
         // Starts in the project of the session on screen.
-        await expect(form(page).locator('[data-related-new-workspace]')).toHaveValue('ws-t134')
+        await expect(form(page).locator('[data-related-new-workspace]')).toHaveValue('ws-t136')
         await expect(form(page).locator('[data-related-new-name]')).toBeFocused()
 
         // Esc leaves without making anything.
@@ -98,23 +98,23 @@ test.describe('T134 All sessions New session (c63a93c0)', () => {
         expect(sessionCount()).toBe(countBefore)
 
         await newButton(page).click()
-        await form(page).locator('[data-related-new-workspace]').selectOption('ws-t134-other')
+        await form(page).locator('[data-related-new-workspace]').selectOption('ws-t136-other')
         await form(page).locator('[data-related-new-template]').selectOption(TEMPLATE.id)
-        await form(page).locator('[data-related-new-name]').fill('T134 created')
+        await form(page).locator('[data-related-new-name]').fill('T136 created')
         if (shots) await page.screenshot({ path: path.join(shots, `new-session-dialog-1280-${label()}.png`) })
         await form(page).locator('[data-related-new-create]').click()
         await expect(form(page)).toHaveCount(0)
 
         let createdId = ''
         await expect.poll(() => {
-            const otherWs = configOnDisk(ctx!.userDataDir).workspaces.find(w => w.id === 'ws-t134-other')
-            createdId = otherWs?.sessions.find(s => s.name === 'T134 created')?.id ?? ''
+            const otherWs = configOnDisk(ctx!.userDataDir).workspaces.find(w => w.id === 'ws-t136-other')
+            createdId = otherWs?.sessions.find(s => s.name === 'T136 created')?.id ?? ''
             return createdId
         }, { timeout: 10_000 }).not.toBe('')
 
         // On screen, running the template, and in the All sessions list (still the All view).
         await expect(page.locator(`[data-related-button="${createdId}"]`)).toBeVisible()
-        await expect.poll(() => termText(page, createdId), { timeout: 15_000 }).toContain('T134-TEMPLATE-RAN')
+        await expect.poll(() => termText(page, createdId), { timeout: 15_000 }).toContain('T136-TEMPLATE-RAN')
         await expect(page.getByTestId('sidebar-view-toggle')).toHaveAttribute('data-state', 'all')
         await expect(page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${createdId}"]`)).toBeVisible()
         if (shots) await page.screenshot({ path: path.join(shots, `all-sessions-created-1280-${label()}.png`) })
@@ -130,7 +130,7 @@ test.describe('T134 All sessions New session (c63a93c0)', () => {
         await expect(newButton(page)).toHaveCount(0)
     })
 
-    test('T134 narrow window keeps the dialog on screen', async () => {
+    test('T136 narrow window keeps the dialog on screen', async () => {
         ctx = await launch()
         const { page } = ctx
         const shots = shotsDir()
