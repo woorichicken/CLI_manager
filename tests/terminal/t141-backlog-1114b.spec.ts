@@ -68,3 +68,18 @@ test('closeApp: an app that quits is not killed', async () => {
     await closeApp(quits, 5_000)
     expect(await exited).toBeNull()
 })
+
+test('closeApp: an app closed before (process() throws) is a no-op, as it was', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 't141-close-'))
+    const gone = {
+        app: {
+            close: () => Promise.reject(new Error('closed')),
+            process: () => {
+                throw new TypeError("Cannot read properties of undefined (reading '_object')")
+            }
+        },
+        userDataDir
+    } as unknown as LaunchResult
+    await closeApp(gone, 500)
+    expect(fs.existsSync(userDataDir)).toBe(false)
+})

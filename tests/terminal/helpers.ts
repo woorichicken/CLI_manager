@@ -225,16 +225,24 @@ const CLOSE_APP_TIMEOUT_MS = 15_000
  * (day-1023: a T1 app stayed at CPU 100% for 7 minutes and playwright stopped) — now its process is killed.
  */
 export async function closeApp(result: LaunchResult, timeoutMs = CLOSE_APP_TIMEOUT_MS): Promise<void> {
-    const child = result.app.process()
+    // an app that was already closed (a spec's afterEach reusing the last result) throws here: nothing to kill
+    let child: ReturnType<ElectronApplication['process']> | undefined
+    try {
+        child = result.app.process()
+    } catch {
+        child = undefined
+    }
     let timer: NodeJS.Timeout | undefined
     const closed = await Promise.race([
-        result.app.close().then(() => true, () => false),
+        Promise.resolve()
+            .then(() => result.app.close())
+            .then(() => true, () => false),
         new Promise<boolean>((resolve) => {
             timer = setTimeout(() => resolve(false), timeoutMs)
         })
     ])
     clearTimeout(timer)
-    if (!closed && child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+    if (!closed && child && child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
         console.warn(`[closeApp] the test app (pid ${child.pid}) did not quit; killing it`)
         child.kill('SIGKILL')
     }
