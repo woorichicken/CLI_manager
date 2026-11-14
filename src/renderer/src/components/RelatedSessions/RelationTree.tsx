@@ -78,7 +78,8 @@ export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, 
 
     const shown = filter === 'all' ? sections : sections.filter(section => section.tree === SECTION_FOR_FILTER[filter])
     // "This session" sits with the siblings, between above and beside: drawn where the Beside section is.
-    const showSelf = filter === 'all' || filter === 'beside'
+    // Under Beside it marks rows beside it, so with none there it would only sit on top of the empty note.
+    const showSelf = filter === 'all' || (filter === 'beside' && tree.siblings.length > 0)
 
     return (
         <>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Columns2, Copy, Info, Plus, Waypoints, X } from 'lucide-react'
 import { SessionRelation, TerminalTemplate, Workspace } from '../../../../shared/types'
 import { RELATED_ORDERS, RelatedEntry, RelatedOrder, sessionTreeFor } from '../../utils/relatedSessions'
-import { RelationFilter, RelationFilterKey, storeRelationFilter, storedRelationFilter } from './RelationFilter'
+import { RelationFilter, RelationFilterKey, entriesForFilter, storeRelationFilter, storedRelationFilter } from './RelationFilter'
 import { MAX_LINKED_SESSIONS } from '../../utils/sessionLink'
 import { relatedForAgent } from '../../utils/relatedForAgent'
 import { useSessionPeeks } from '../../hooks/useSessionPeeks'
@@ -109,6 +109,11 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
 
     // A selected session that closed (or was removed) cannot be opened any more.
     const liveSelection = selected.filter(id => visibleIds.includes(id))
+    // What the filter lists. Ticks on rows it hides are kept for when they show again, but the count,
+    // the limit, Open side by side and Copy for agent go by the ticks on screen (PR #141 review).
+    const shownIds = useMemo(() => entriesForFilter(tree, filter).map(entry => entry.session.id), [tree, filter])
+    const shownSelection = liveSelection.filter(id => shownIds.includes(id))
+    const hiddenPicks = liveSelection.length - shownSelection.length
 
     // Read when the order that needs it is picked, not before: it is what the user looked at up to now.
     useEffect(() => {
@@ -155,15 +160,19 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     if (!owner) return null
 
     const toggle = (id: string): void => {
-        setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id].slice(0, MAX_PICKED))
+        setSelected(prev => {
+            if (prev.includes(id)) return prev.filter(x => x !== id)
+            return prev.filter(x => shownIds.includes(x)).length >= MAX_PICKED ? prev : [...prev, id]
+        })
     }
     const show = (ids: string[]): void => {
         onShowSessions(ids)
         onClose()
     }
-    // The ticked rows when there are any, else every related session (df23dbd0).
+    // The ticked rows when there are any, else what the filter lists — every related session under All (df23dbd0).
+    const agentPicks = shownSelection.length > 0 ? shownSelection : filter === 'all' ? [] : shownIds
     const copyForAgent = async (): Promise<void> => {
-        await navigator.clipboard.writeText(relatedForAgent({ id: sessionId, name: owner.name }, tree, peeks, liveSelection))
+        await navigator.clipboard.writeText(relatedForAgent({ id: sessionId, name: owner.name }, tree, peeks, agentPicks))
         setCopiedForAgent(true)
         setTimeout(() => setCopiedForAgent(false), COPIED_MS)
     }
@@ -269,8 +278,8 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                         tree={tree}
                         ownerName={owner.name}
                         peeks={peeks}
-                        selected={liveSelection}
-                        selectionFull={liveSelection.length >= MAX_PICKED}
+                        selected={shownSelection}
+                        selectionFull={shownSelection.length >= MAX_PICKED}
                         onToggle={toggle}
                         onShow={id => show([id])}
                         onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
@@ -279,18 +288,21 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     />
                 </div>
 
-                {visibleIds.length > 0 && (
+                {shownIds.length > 0 && (
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2 border-t border-white/10">
                         {/* A narrow window gives the hint its own line instead of a thin column beside the buttons. */}
                         <span className="text-[11px] text-gray-500 basis-full min-[560px]:basis-auto min-[560px]:flex-1 min-w-0">
-                            {liveSelection.length === 0
+                            {shownSelection.length === 0
                                 ? `Click a session to go there, or tick up to ${MAX_PICKED} to see them beside this one.`
-                                : `${liveSelection.length} of ${MAX_PICKED} selected — opens beside this session`}
+                                : `${shownSelection.length} of ${MAX_PICKED} selected — opens beside this session`}
+                            {hiddenPicks > 0 && (
+                                <span className="block text-gray-600" data-related-hidden-picks>{hiddenPicks} hidden by filter</span>
+                            )}
                         </span>
                         <button
                             onClick={() => void copyForAgent()}
                             className="ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
-                            title={liveSelection.length === 0
+                            title={shownSelection.length === 0
                                 ? 'Copy these sessions with how an agent reaches them — paste it to an agent'
                                 : 'Copy the ticked sessions with how an agent reaches them — paste it to an agent'}
                             data-related-copy-agent
@@ -299,8 +311,8 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                             {copiedForAgent ? 'Copied' : 'Copy for agent'}
                         </button>
                         <button
-                            onClick={() => show([sessionId, ...liveSelection])}
-                            disabled={liveSelection.length === 0}
+                            onClick={() => show([sessionId, ...shownSelection])}
+                            disabled={shownSelection.length === 0}
                             className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded text-xs text-white bg-blue-600 hover:bg-blue-500 disabled:bg-white/5 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
                             data-related-open-split
                         >

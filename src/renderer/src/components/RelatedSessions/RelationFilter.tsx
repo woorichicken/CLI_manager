@@ -1,4 +1,5 @@
 import { useRef, type KeyboardEvent } from 'react'
+import type { RelatedEntry, SessionTree } from '../../utils/relatedSessions'
 
 /** Which part of the tree the Related dialog lists (report 33f92744). `all` is the whole tree. */
 export type RelationFilterKey = 'all' | 'above' | 'beside' | 'below'
@@ -9,6 +10,16 @@ export const RELATION_FILTERS: Array<{ key: RelationFilterKey; label: string; hi
     { key: 'beside', label: 'Beside', hint: 'Sessions under the same session as this one' },
     { key: 'below', label: 'Below', hint: 'Sessions under this one, with their own children' }
 ]
+
+/** The rows a filter lists. "Also related" sits outside the tree, so only All has it. */
+export function entriesForFilter(tree: SessionTree, filter: RelationFilterKey): RelatedEntry[] {
+    switch (filter) {
+        case 'above': return tree.ancestors
+        case 'beside': return tree.siblings
+        case 'below': return tree.descendants
+        default: return [...tree.descendants, ...tree.ancestors, ...tree.siblings, ...tree.other]
+    }
+}
 
 /** The choice is a preference, like Sort: it outlives the dialog and a restart. */
 const FILTER_STORAGE_KEY = 'climanager.related.filter'

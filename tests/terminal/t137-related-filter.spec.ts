@@ -176,4 +176,73 @@ test.describe('T137 Related filter (33f92744)', () => {
         await expect.poll(() => listedIds(page)).toEqual([...EXPECTED.below].sort())
         if (shots) await settledShot(page, { path: path.join(shots, `related-below-390-${label()}.png`) })
     })
+
+    const pick = (p: Page, id: string) => dialog(p).locator(`[data-related-select="${id}"]`)
+    // The bar's hint, read by its words so the old build is judged on behaviour, not on a missing hook.
+    const hint = (p: Page) => dialog(p)
+
+    test('T137 r2 ticks hidden by the filter do not count (PR #141 review 1)', async () => {
+        ctx = await launch()
+        const { page } = ctx
+        await openDialog(page, LEAD_A)
+        // Fill the limit (3) in All, then look at Above only.
+        for (const id of [WORKER, HELPER, LEAD_B]) await pick(page, id).check()
+        await expect(hint(page)).toContainText('3 of 3 selected')
+        await option(page, 'above').click()
+        await expect.poll(() => listedIds(page)).toEqual([CHIEF])
+        // Nothing shown is ticked: no count, Side by side off, a note for the hidden ones.
+        await expect(hint(page)).toContainText('Click a session to go there')
+        await expect(dialog(page).locator('[data-related-hidden-picks]')).toHaveText('3 hidden by filter')
+        await expect(dialog(page).locator('[data-related-open-split]')).toBeDisabled()
+        // The limit counts what is shown, so the chief can be ticked.
+        await expect(pick(page, CHIEF)).toBeEnabled()
+        await pick(page, CHIEF).check()
+        await expect(hint(page)).toContainText('1 of 3 selected')
+        // Back to All: the hidden ticks were kept.
+        await option(page, 'all').click()
+        for (const id of [WORKER, HELPER, LEAD_B, CHIEF]) await expect(pick(page, id)).toBeChecked()
+        await expect(dialog(page).locator('[data-related-hidden-picks]')).toHaveCount(0)
+    })
+
+    test('T137 r2 Copy for agent without ticks copies what the filter shows (PR #141 review 2)', async () => {
+        ctx = await launch()
+        const { page, app } = ctx
+        await openDialog(page, LEAD_A)
+        await option(page, 'below').click()
+        await expect.poll(() => listedIds(page)).toEqual([...EXPECTED.below].sort())
+        // The clipboard is the machine's, not the test's: put back what was there.
+        const saved = await app.evaluate(({ clipboard }) => clipboard.readText())
+        try {
+            await app.evaluate(({ clipboard }) => clipboard.writeText(''))
+            await dialog(page).locator('[data-related-copy-agent]').click()
+            await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain(WORKER)
+            const text = await app.evaluate(({ clipboard }) => clipboard.readText())
+            expect(text).toContain(HELPER)
+            for (const id of [CHIEF, LEAD_B, LEAD_C]) expect(text).not.toContain(id)
+            // All copies the whole tree, as before.
+            await option(page, 'all').click()
+            await app.evaluate(({ clipboard }) => clipboard.writeText(''))
+            await dialog(page).locator('[data-related-copy-agent]').click()
+            await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain(CHIEF)
+            const all = await app.evaluate(({ clipboard }) => clipboard.readText())
+            for (const id of EXPECTED.all) expect(all).toContain(id)
+        } finally {
+            await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved)
+        }
+    })
+
+    test('T137 r2 an empty Beside shows only its note, not the this-session marker (PR #141 review 3)', async () => {
+        ctx = await launch()
+        const { page } = ctx
+        // The worker is lead A's only child: nothing beside it.
+        await openDialog(page, WORKER)
+        await option(page, 'beside').click()
+        await expect(dialog(page).locator('[data-related-filter-empty="beside"]')).toBeVisible()
+        await expect(dialog(page).locator('[data-related-self]')).toHaveCount(0)
+        // With rows beside, the marker is there.
+        await page.keyboard.press('Escape')
+        await openDialog(page, LEAD_A)
+        await expect(option(page, 'beside')).toHaveAttribute('aria-checked', 'true')
+        await expect(dialog(page).locator('[data-related-self]')).toHaveCount(1)
+    })
 })
