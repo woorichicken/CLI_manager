@@ -1,4 +1,4 @@
-import { SessionRelation, SessionRelationKind } from '../shared/types'
+import { SessionRelation, SessionRelationAnchor, SessionRelationKind } from '../shared/types'
 
 export const SESSION_RELATIONS_KEY = 'sessionRelations'
 export const SESSION_RELATIONS_CHANNEL = 'session-relations'
@@ -33,8 +33,8 @@ export class SessionRelations {
     }
 
     /** `from` opened `to` through the API. `to` is brand new, so nothing can already be recorded for the pair. */
-    recordOpened(from: string, to: string, now = Date.now()): void {
-        this.put(from, to, 'opened', now)
+    recordOpened(from: string, to: string, now = Date.now(), anchor?: SessionRelationAnchor): void {
+        this.put(from, to, 'opened', now, anchor)
     }
 
     /**
@@ -61,7 +61,8 @@ export class SessionRelations {
         const next = this.all().map((r) => {
             if (!samePair(r, a, b) || r.dismissed) return r
             changed = true
-            return { ...r, dismissed: true }
+            const { anchor: _anchor, ...relation } = r
+            return { ...relation, dismissed: true }
         })
         if (changed) this.save(next)
         return changed
@@ -105,9 +106,9 @@ export class SessionRelations {
         if (next.length !== all.length) this.save(next)
     }
 
-    private put(from: string, to: string, kind: SessionRelationKind, at: number): void {
+    private put(from: string, to: string, kind: SessionRelationKind, at: number, anchor?: SessionRelationAnchor): void {
         if (from === to) return
-        this.save([...this.all().filter((r) => !samePair(r, from, to)), { from, to, kind, at }])
+        this.save([...this.all().filter((r) => !samePair(r, from, to)), { from, to, kind, at, ...(anchor ? { anchor: { ...anchor } } : {}) }])
     }
 
     private all(): SessionRelation[] {

@@ -51,6 +51,46 @@ test.describe('SessionRelations (main)', () => {
         expect(store.data[SESSION_RELATIONS_KEY]).toHaveLength(1)
     })
 
+    test('fork anchors survive a restart; older relations need no anchor', () => {
+        const store = new MemoryStore()
+        const relations = new SessionRelations(store)
+        const anchor = { turnTs: '2026-11-14T10:00:05.000Z', turnIndex: 3 }
+        relations.recordOpened('parent', 'thread', 100, anchor)
+        relations.recordOpened('parent', 'thread-without-index', 110, { turnTs: anchor.turnTs })
+        // Existing saved values keep their original shape and direction.
+        relations.recordOpened('lead', 'worker', 120)
+
+        expect(new SessionRelations(store).list()).toEqual([
+            { from: 'parent', to: 'thread', kind: 'opened', at: 100, anchor },
+            { from: 'parent', to: 'thread-without-index', kind: 'opened', at: 110, anchor: { turnTs: anchor.turnTs } },
+            { from: 'lead', to: 'worker', kind: 'opened', at: 120 }
+        ])
+    })
+
+    test('removing a fork drops its anchor and keeps the dismissal marker after restart', () => {
+        const store = new MemoryStore()
+        const relations = new SessionRelations(store)
+        relations.recordOpened('parent', 'thread', 100, { turnTs: '2026-11-14T10:00:05.000Z', turnIndex: 1 })
+        expect(relations.remove('thread', 'parent')).toBe(true)
+        expect(new SessionRelations(store).list()).toEqual([])
+        expect(store.data[SESSION_RELATIONS_KEY]).toEqual([{ from: 'parent', to: 'thread', kind: 'opened', at: 100, dismissed: true }])
+        relations.recordConnected('parent', 'thread', 200)
+        expect(relations.list()).toEqual([])
+        relations.add('parent', 'thread', 300)
+        expect(relations.list()).toEqual([{ from: 'parent', to: 'thread', kind: 'manual', at: 300 }])
+    })
+
+    for (const closed of ['parent', 'thread']) {
+        test(`closing the ${closed} drops its fork anchor from storage`, () => {
+            const store = new MemoryStore()
+            const relations = new SessionRelations(store)
+            relations.recordOpened('parent', 'thread', 100, { turnTs: '2026-11-14T10:00:05.000Z', turnIndex: 1 })
+            relations.forget(closed)
+            expect(new SessionRelations(store).list()).toEqual([])
+            expect(store.data[SESSION_RELATIONS_KEY]).toEqual([])
+        })
+    }
+
     test('a connection counts only on first contact, in either direction', () => {
         const relations = new SessionRelations(new MemoryStore())
         relations.recordConnected('lead', 'talk', 100)

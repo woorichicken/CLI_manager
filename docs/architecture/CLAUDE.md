@@ -98,6 +98,7 @@ rules stay in the root; this file is the inventory.
 #### 14. 관련 세션 (Related sessions)
 - 세션 헤더(단일 화면 오른쪽 「Related」, 분할 칸 헤더의 아이콘)에서 그 세션과 관련된 세션을 모달로 본다 — 0개여도 버튼은 보인다(손으로 추가하는 곳이라서)
 - 자동 등록: 에이전트가 `X-Caller-Session` 을 붙여 세션을 **열 때**(`opened`)와 다른 세션을 **처음 읽거나 입력할 때**(`connected`). 터미널 출력(링크 글자)으로는 등록하지 않는다
+- Fork 관계는 선택 필드 `anchor: { turnTs: string | null, turnIndex?: number }`로 부모 답 위치를 저장한다. 옛 관계는 anchor 없이 그대로 읽는다. 손으로 빼면 dismissed 표지만 남기고 anchor도 지우며, 어느 쪽이 닫혀도 관계와 함께 사라진다.
 - 손으로 추가·빼기. 뺀 쌍은 표시(`dismissed`)를 남겨 에이전트의 다음 호출이 다시 넣지 않게 하고, 손으로 다시 넣으면 풀린다
 - 모달은 **관계만** 보인다(1.20 에서 Recent·All 탭을 뺐다 — 제보 c17aa9c4 · 모든 세션 목록은 사이드바 All sessions 에 있다). 탭 자리에는 Sort 만 남고, 관계가 하나도 없으면 그 줄도 없다. 「Recently viewed」 정렬은 그대로 `getRecentSessions` 를 읽는다. 관계 나무는 `sessionTreeFor`(`relatedSessions.ts`)가 `from` 을 부모로 삼아(`opened`·`connected` 둘 다) 위(나를 연 쪽, 여러 겹 · 뿌리가 맨 위)·옆(같은 부모가 연 형제)·아래(내가 연 것, 손자까지 들여쓰기)를 한 나무로 그린다. 방향 없는 `manual` 은 나무 밖 「Added by hand」. 고리는 한 번 놓은 세션을 건너뛰어 끊고(아래 → 위 → 옆 순으로 놓음), 깊이는 `MAX_TREE_DEPTH = 6`. 중간 세션이 닫히면 그 아래는 안 보인다(알려진 한계). 구역 속성 `data-related-tree="up|side|down|manual"` 에 옛 묶음 이름 `data-related-group="toHere|side|fromHere|manual"` 을 함께 둔다 — T35 가 그걸로 본다. 줄 끝 「#」는 세션 ID 복사
 - 모달(묶음 이름은 위와 같음): 「Opened from this session」 / 「Opened this session」 / 「Added by hand」 · 상태(Working/Waiting for you/Idle — main 의 화면 사본 기준) · 마지막 줄(길면 **앞을** 잘라 끝 — 보통 지금 폴더 — 이 보인다) · 메모 · 이름이 `대화:` 로 시작하면 「Talk」 배지. 누르면 사이드바 클릭과 같게 이동. 「Open side by side」는 **지금 세션을 첫 칸**에 두고 고른 세션(최대 3)을 뒤에 — 세션 링크와 같은 경로
@@ -162,7 +163,7 @@ rules stay in the root; this file is the inventory.
   렌더러는 보낸 결과만 알린다(`useDictation` 의 `takeForSend`·`sent`·`restore`·`boxEmptied` — 세션마다 모듈 맵, 초안처럼 보기를 넘어 산다). 제보·폰·Control API 어디에도 안 실린다.
   회귀: `t106-dictation-unit`(누적) · `t114-dictation-log-unit` · `t115-dictation-log`(앱 — 가짜 헬퍼 `pause` 모드)
 
-- **Fork into a new session**(11-10, 브리프 `chat-fork-1110`): 에이전트 답 머리의 갈래 아이콘(복사 옆, 툴팁 「Fork into a new session」) → `ForkDialog.tsx`.
+- **Reply in thread**(11-14 1단계, 기존 fork 기반): 에이전트 답 머리의 갈래 아이콘(복사 옆, 툴팁 「Reply in thread (Shift+click for options)」)을 일반 클릭하면 모달 없이 Whole·첫 말 없음으로 뒤에서 연다. Shift+클릭은 기존 `ForkDialog.tsx`(Excerpt·Quote·첫 말)를 연다. 폰 터치는 기존 모달을 유지한다.
   넘길 것 = **Whole**(기본 — Claude `<저장된 시작 명령> --resume <id> --fork-session`, Codex `<…> fork <id>`, 이 답 **뒤** 대화도 같이 복사된다) 또는
   **Excerpt**(새 에이전트를 그냥 열고, 첫 말 = 이 답까지 최근 6턴의 사람 말 + 최종 답 글 — 턴당 4,000자·합 12,000자, `maskSecrets` 로 가림, AI 요약 아님).
   첫 말은 **시작 명령에 넣지 않는다** — 에이전트가 뜬 뒤 Control API 의 첫 프롬프트 길(`waitForStartup` → 질문 확인 → `typeAndSubmit`, 붙여넣기)로 친다.
@@ -170,13 +171,16 @@ rules stay in the root; this file is the inventory.
   사람의 alias·옵션·준비 줄을 지키고 옛 resume 대상은 뺀다(`chatFork.forkBaseCommand`).
   main: `ConversationService.fork` 가 그 답을 기록에서 다시 읽어 **같은 자리·같은 시각의 에이전트 턴**인지 확인(`turn_changed`) → `ControlApiService.openFork` 가
   부모의 워크스페이스·세션 폴더에 새 세션(`<이름> · fork`, `cliToolName`·`cliCommand` 는 미리, `cliSessionId` 는 없음)을 만들고 `focus: false` 로 알린 뒤
-  Related 「Opened」(부모 → 새 세션)를 남긴다. **사람의 동작이라 AI 표시·오케스트레이터 표시가 없다.** 새 대화 id 는 Claude 는 `ClaudeSessionSync`(레지스트리),
+  Related 「Opened」(부모 → 새 세션)에 검증한 답의 `anchor: { turnTs, turnIndex }`를 남긴다. REST·MCP·CLI가 턴을 생략하면 서버가 고른 마지막 답을 저장한다. **사람의 동작이라 AI 표시·오케스트레이터 표시가 없다.** 새 대화 id 는 Claude 는 `ClaudeSessionSync`(레지스트리),
   Codex `fork` 는 터미널의 시작 감지가 안 잡아서(`isInteractiveCodex` 에서 fork 는 비대화형) main 이 직접 `startCodexCapture` 를 건다. `cliSessionId` 를
   미리 넣지 않는 이유: TerminalView 는 `resumeCommand` 가 있으면 `initialCommand` 대신 그걸 친다 — 아직 없는 대화를 resume 하게 된다.
   누른 뒤 모달은 바로 닫히고 포커스는 원래 자리로(아이콘의 mousedown 이 포커스를 안 뺏는다), 아래 알림 한 줄이 결과(첫 말 들어감·안 들어간 이유·Show)를 보인다.
   폰: `POST /api/phone/chat/:id/fork`(drive 만, 철회 확인 뒤 첫 말 직전에 다시). 대화 파일이 없는 세션은 Whole 을 끄고 이유를 보인다(main 도 거절).
   AI: Control API `POST /v1/sessions/:id/fork` · MCP `fork_session` · `clim fork`(climanager-session 스킬) — 같은 `ConversationService.fork`, 답을 안 주면 마지막 답,
   새 세션에 AI 표시. MCP 안내문(`controlApiMcp.ts` INSTRUCTIONS)이 「사람이 세션을 나눠 달라고 명시적으로 말하면 fork_session」을 기본 규칙으로 싣는다 ([`control-api.md`](control-api.md) 「Forking a conversation」).
+  답 아래 스레드 칩(`ThreadChip.tsx`): 개수·가장 최근 자식 출력 시각(없으면 관계 생성 시각)·working/waiting/idle. 목록 줄 이름 앞과 칩 아이콘 옆에는 폰 목록과 같은 상태 점(working 파랑, waiting 주황·옅은 빛, idle 빈 원)이 있고 칩은 waiting을 우선한다. Mac에서 하나를 누르거나 목록에서 선택하면 부모 Chat 오른쪽에 `ThreadPanel`이 열린다. `chatThreads.ts`가 main에서 outward opened + anchor 관계만 계산하며 상태는 `TerminalMirror.screenStatus`를 재사용한다. 열린 Chat의 부모만 1초마다 확인한다(사이드바 상태 설정과 독립). 관계 변경 콜백이 anchor 있는 부모 집합을 갱신하며, 구독한 부모에 anchor 자식이 없으면 그 틱은 저장소를 읽지 않는다. 필요하면 틱당 관계·세션을 각 한 번만 읽어 모든 부모가 같이 쓴다. 알림 비교는 활동 시각을 30초 단위로 내리고 자식 ID 순으로 고정하므로 출력 순서만 바뀌어도 알림을 쏘지 않는다. 상태·이름·개수 변경은 그대로 바로 알리고, IPC 응답의 시각은 정확한 값을 유지한다. `ChatView/threadGroups.ts`는 threads 변경 때만 턴 키(시각·전역 index)별 배열을 계산·재사용하고, 없는 턴에는 안정적인 undefined를 넘겨 `ChatTurn` memo를 유지한다. 관계 변경은 즉시 알리고, 닫힘/렌더러 종료·새로고침/구독 해제 때 정리한다. `ChatTransport.getThreads`·`subscribeThreads`는 선택 메서드: 폰은 구현하지 않아 칩이 없다.
+  **2단계 오른쪽 칸**: 부모 세션·헤더·사이드바 선택을 유지하고 자식 id로 `ChatView`를 한 번 더 그린다. 머리의 이름·상태 점/글·Open as session(기존 `showSessions` 이동)·✕, 시각·전역 index로 확인한 부모 답의 첫 읽을 수 있는 문단 인용(표·코드 블록은 건너뛰고 Markdown을 평문으로, 최대 3줄·240자·넘으면 …, 코드뿐이면 (code)) 뒤에 자식 대화/입력칸(Reply in thread…)이 온다. `ChatThread.forkedAt`은 저장 관계의 `at`이며, native fork가 부모 기록을 원 timestamp/uuid로 복사하므로 `threadTurns.turnsAfterFork`가 `ts >= forkedAt` 턴만 보여 준다(시각 없음·오류는 숨김, `end_ts`로 복사분을 살리지 않음). 빈 결과는 No replies yet — write below. 자식 답이 200턴을 넘으면 Show earlier replies로 이전 쪽을 더 읽고, 복사된 부모 턴에 도달하면 이전 쪽 안내를 숨긴다. Codex 복사 모양도 fake rollout 파서 시험으로 검증한다.
+  자식도 같은 Chat 보내기·질문·대기열·Stop 경로를 쓰며 `embedded`/`forkedAt`/`placeholder` 선택 props만 추가한다. 자식은 명령 버스와 초기 입력칸 자동 포커스를 등록하지 않아 전역 Chat 단축키는 부모만 받는다. 칸 안 Esc는 먼저 안쪽 입력칸의 자동완성·선택 취소·Stop이 처리하며, 처리하지 않은 Esc만 버블 단계에서 칸을 닫는다. 자식의 터미널 보기 요청은 그 자식을 전체 세션으로 열어 처리한다. 칸 선택은 부모 세션별 모듈 메모리로 유지하며, 관계/자식이 없어지면 닫는다. 폭은 Chat 영역 40%(340–520px), Chat 영역 760px 미만은 영역 전체를 덮는 칸이다(분할 보기도 각 Chat 영역 기준). 폰에는 칩·칸이 없고 기존 Fork 모달을 유지한다.
   입력칸 전용 명령 `/split` 은 백로그. 회귀: `t116-chat-fork-unit` · `t117-chat-fork`(chat-mock `--show-args`·`--fresh-transcript`)
 
 #### 16. Phone connection (Settings › Phone)
@@ -321,7 +325,8 @@ User Action (Renderer)
     { id: string, name: string, isExpanded?: boolean, createdAt: number }
   ],
   sessionRelations?: [              // Related sessions — one record per pair, either direction
-    { from: string, to: string, kind: 'opened' | 'connected' | 'manual', at: number, dismissed?: boolean }
+    { from: string, to: string, kind: 'opened' | 'connected' | 'manual', at: number, dismissed?: boolean,
+      anchor?: { turnTs: string | null, turnIndex?: number } } // Optional fork reply; older relations have none
   ],
   inbox?: [                         // Inbox — requests sessions sent for the user's hands (InboxStore), newest first
     { id: string, sessionId: string, kind: 'login' | 'review' | 'question' | 'other', text: string, url?: string,
@@ -421,6 +426,7 @@ User Action (Renderer)
 - `chat-send(sessionId, text)` → `ChatSendResult`(`sent` · `queued` · `rejected` + 이유) · `chat-cancel-queued(sessionId)` ·
   `prompt-answer(sessionId, { signature, optionIndex | customText })` → `PromptAnswerResult`(`answered` · `rejected: prompt_changed …`)
 - Fork: `chat-fork(sessionId, ChatForkRequest{ turnIndex, turnTs, scope: 'whole'|'excerpt', message, quote })` → `ChatForkResult`(`forked` + 새 세션 id·이름·`messageSent`·`note` · `rejected: no_conversation|turn_changed|unknown_session|too_large|revoked|failed`). 별칭을 먼저 읽는다
+- Threads: `chat-threads(sessionId)` → `ChatThread[]`(`childId, name, turnTs, turnIndex?, forkedAt, status, lastActivityAt`) · `chat-threads-subscribe` / `chat-threads-unsubscribe(sessionId)` · `chat-threads-changed`(main → renderer, `{ sessionId }`, 관계·상태·활동 시각·이름 변경). 창별 구독 수를 세고 렌더러 종료 때 해제한다.
 - 2회차: `chat-discard-queued(sessionId, id)` · `chat-send-queued-now(sessionId, id)` → `ChatSendResult` · `chat-interrupt(sessionId)` → `InterruptResult` ·
   `chat-image(sessionId, ref)` → data: URL | null · `chat-tool-output(sessionId, ref)` → string | null · `chat-commands(sessionId)` → `ChatCommand[]` ·
   `chat-save-attachment(name, bytes)` → `AttachResult`(32MB) · `chat-open-path(path)` → `shell.openPath`. `@` 파일 찾기는 기존 `search-files` 를 쓴다

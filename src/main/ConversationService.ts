@@ -23,6 +23,7 @@ import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from 
 import type { TranscriptReader } from './TranscriptReader'
 import { BackgroundTaskReader, settleBackground } from './transcript/backgroundTasks'
 import type { AliasResolver } from '../shared/agentCommand'
+import type { SessionRelationAnchor } from '../shared/types'
 import { forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName } from './chatFork'
 
 /**
@@ -111,6 +112,8 @@ export interface ConversationSessionInfo {
 /** What «Fork into a new session» asks main to open (ControlApiService.openFork). */
 export interface ForkOpenInput {
     parentId: string
+    /** The verified reply in the parent's transcript, shared by every fork entry point. */
+    anchor: SessionRelationAnchor
     agent: ConversationAgent
     name: string
     /** typed into the new terminal's shell */
@@ -370,6 +373,7 @@ export class ConversationService {
         try {
             const opened = await this.deps.openFork({
                 parentId: sessionId,
+                anchor: { turnTs: turn.ts, turnIndex: index },
                 agent,
                 name,
                 command,

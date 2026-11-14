@@ -89,6 +89,9 @@ export interface ComposerProps {
     preferences: ChatPreferences
     /** a touch screen: Return is a new line (Send sends) and opening the chat leaves the keyboard down */
     touch?: boolean
+    /** Embedded thread views leave initial focus to their enclosing panel. */
+    autoFocus?: boolean
+    placeholder?: string
     onSend(text: string, options?: ChatSendOptions): Promise<ChatSendResult>
     onInterrupt(): Promise<string | null>
     /** the row under the box (model, context, plan) */
@@ -105,7 +108,7 @@ export interface ComposerProps {
  * Stop (and Esc) while the agent works, one-tap replies, the length limit, and the card's numbers.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-    { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, onSend, onInterrupt, status },
+    { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, autoFocus = true, placeholder: messagePlaceholder, onSend, onInterrupt, status },
     ref
 ) {
     const [text, setText] = useState(() => readDraft(sessionId))
@@ -145,7 +148,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // The terminal under the chat may still hold focus: keys would go to it unseen.
         // Take focus only from it (or from nothing), never from another input.
         // A touch screen: focus raises the soft keyboard over the chat the user came to read — leave it.
-        if (touch) return
+        if (touch || !autoFocus) return
         const timer = window.setTimeout(() => {
             const active = document.activeElement
             const terminal = active?.closest?.(`[data-session-id="${CSS.escape(sessionId)}"]`)
@@ -528,11 +531,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             touch
               ? 'Type a number, or tap above'
               : 'Type a number, or click above'
-          : touch
+          : messagePlaceholder ?? (touch
             ? `Message ${agentName}`
             : preferences.enterSends === false
             ? `Message ${agentName} (⌘Enter to send)`
-            : `Message ${agentName} (Enter to send)`
+            : `Message ${agentName} (Enter to send)`)
 
     return (
         <div

@@ -19,6 +19,9 @@
  *                         the saved command (T117 Fork)
  *   --fresh-transcript <file>  a start that is not a plain resume (`--fork-session`, Codex `fork`, no `--resume`) writes its
  *                         records here instead of --transcript: a fork is a new conversation, the parent's file stays as it was
+ *   --copy-transcript     a fork copies the parent's records into a unique sibling transcript, retaining their timestamps
+ *                         and UUIDs, then writes its own records there. Registers the child under the explicitly supplied
+ *                         CLAUDE_CONFIG_DIR; --fresh-transcript also receives new records only (T117 thread panel).
  *
  * Prompts:
  *   ASK       a permission question. The layout is copied from a real Claude Code 2.1.312 screen
@@ -54,6 +57,7 @@
  */
 const fs = require('fs')
 const crypto = require('crypto')
+const path = require('path')
 
 const arg = (name, fallback) => {
     const index = process.argv.indexOf(name)
@@ -61,7 +65,7 @@ const arg = (name, fallback) => {
 }
 /** the mock's own options; the rest of argv is what the app typed after the saved command */
 const OWN_VALUE_FLAGS = new Set(['--transcript', '--agent', '--work-ms', '--user-delay-ms', '--name', '--spinner', '--mode-row', '--permission-mode', '--fresh-transcript'])
-const OWN_FLAGS = new Set(['--continue', '--show-args'])
+const OWN_FLAGS = new Set(['--continue', '--show-args', '--copy-transcript'])
 const START_ARGS = []
 for (let i = 2; i < process.argv.length; i++) {
     if (OWN_VALUE_FLAGS.has(process.argv[i])) i++
@@ -70,7 +74,23 @@ for (let i = 2; i < process.argv.length; i++) {
 const FORKED = START_ARGS.includes('--fork-session') || START_ARGS[0] === 'fork'
 const PLAIN_RESUME = !FORKED && (START_ARGS.includes('--resume') || START_ARGS[0] === 'resume')
 const FRESH_TRANSCRIPT = arg('--fresh-transcript')
-const TRANSCRIPT = FRESH_TRANSCRIPT && !PLAIN_RESUME ? FRESH_TRANSCRIPT : arg('--transcript')
+const SOURCE_TRANSCRIPT = arg('--transcript')
+const COPY_CHILD = process.argv.includes('--copy-transcript') && !PLAIN_RESUME
+const SESSION_ID = COPY_CHILD ? crypto.randomUUID() : 'mock'
+const TRANSCRIPT = COPY_CHILD ? path.join(path.dirname(SOURCE_TRANSCRIPT), `${SESSION_ID}.jsonl`) : FRESH_TRANSCRIPT && !PLAIN_RESUME ? FRESH_TRANSCRIPT : SOURCE_TRANSCRIPT
+if (COPY_CHILD) {
+    // Never default to the real agent directory: the test must explicitly supply its isolated registry.
+    if (!process.env.CLAUDE_CONFIG_DIR) throw new Error('--copy-transcript requires an isolated CLAUDE_CONFIG_DIR')
+    const records = FORKED && fs.existsSync(SOURCE_TRANSCRIPT)
+        ? fs.readFileSync(SOURCE_TRANSCRIPT, 'utf8').split('\n').filter(Boolean).map((line) => ({ ...JSON.parse(line), sessionId: SESSION_ID }))
+        : []
+    fs.writeFileSync(TRANSCRIPT, records.map((entry) => JSON.stringify(entry) + '\n').join(''))
+    const registryDir = path.join(process.env.CLAUDE_CONFIG_DIR, 'sessions')
+    fs.mkdirSync(registryDir, { recursive: true })
+    const registry = path.join(registryDir, `${process.pid}.json`)
+    fs.writeFileSync(registry, JSON.stringify({ pid: process.pid, sessionId: SESSION_ID, startedAt: Date.now(), kind: 'interactive' }))
+    process.on('exit', () => { try { fs.unlinkSync(registry) } catch {} })
+}
 const AGENT = arg('--agent', 'claude')
 const WORK_MS = Number(arg('--work-ms', '1200'))
 /** how long a submitted prompt takes to reach the transcript (Claude Code writes it at once; a slow disk does not) */
@@ -98,9 +118,9 @@ let spinner = 0
 /** the open menu: { kind, options: [{label, description?, custom?}], selected, customText } */
 let menu = null
 let lastUuid = null
-if (process.argv.includes('--continue') && TRANSCRIPT && fs.existsSync(TRANSCRIPT)) {
-    const lines = fs.readFileSync(TRANSCRIPT, 'utf8').trim().split('\n')
-    lastUuid = JSON.parse(lines[lines.length - 1]).uuid ?? null
+if ((process.argv.includes('--continue') || COPY_CHILD || PLAIN_RESUME) && TRANSCRIPT && fs.existsSync(TRANSCRIPT)) {
+    const lines = fs.readFileSync(TRANSCRIPT, 'utf8').split('\n').filter(Boolean)
+    if (lines.length > 0) lastUuid = JSON.parse(lines[lines.length - 1]).uuid ?? null
 }
 /** a panel only the terminal shows (bare /model, /config), closed by Esc */
 let panel = null
@@ -113,7 +133,9 @@ const CLAUDE_NAMES = { opus: ['Opus 5.5', 'claude-opus-5-5'], sonnet: ['Sonnet 5
 
 function record(entry) {
     if (!TRANSCRIPT) return
-    fs.appendFileSync(TRANSCRIPT, JSON.stringify(entry) + '\n')
+    const line = JSON.stringify(entry) + '\n'
+    fs.appendFileSync(TRANSCRIPT, line)
+    if (COPY_CHILD && FRESH_TRANSCRIPT) fs.appendFileSync(FRESH_TRANSCRIPT, line)
 }
 function now() {
     return new Date().toISOString()
@@ -125,7 +147,7 @@ function usage() {
 }
 function claudeEntry(type, message, extra = {}) {
     const uuid = crypto.randomUUID()
-    const entry = { type, message, uuid, parentUuid: lastUuid, timestamp: now(), sessionId: 'mock', cwd: '/masked', ...extra }
+    const entry = { type, message, uuid, parentUuid: lastUuid, timestamp: now(), sessionId: SESSION_ID, cwd: '/masked', ...extra }
     lastUuid = uuid
     record(entry)
 }

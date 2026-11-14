@@ -698,7 +698,7 @@ export class ControlApiService {
         target.sessions = [...(target.sessions ?? []), session]
         this.deps.store.set('workspaces', workspaces)
         this.emit({ type: 'opened', workspaceId: workspace.id, sessionId: session.id, session, focus: false })
-        this.deps.relations.recordOpened(input.parentId, session.id)
+        this.deps.relations.recordOpened(input.parentId, session.id, Date.now(), input.anchor)
 
         const result: ForkOpenResult = { sessionId: session.id, name: session.name, messageSent: false }
         if (!(await this.waitForPty(session.id, PTY_START_TIMEOUT_MS))) {

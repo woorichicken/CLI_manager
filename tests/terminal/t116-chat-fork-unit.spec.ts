@@ -207,13 +207,14 @@ test.describe('ConversationService.fork', () => {
         const result = await service.fork('parent', request())
         expect(result).toEqual({ status: 'forked', sessionId: 'new-session', name: 'T116 parent · fork', messageSent: true })
         expect(calls).toEqual([
-            { parentId: 'parent', agent: 'claude', name: 'T116 parent · fork', command: `cldy --resume ${ID} --fork-session`, cliCommand: 'cldy', prompt: 'Branch here', watchCodex: false }
+            { parentId: 'parent', anchor: { turnTs: '2026-11-10T10:00:05.000Z', turnIndex: 1 }, agent: 'claude', name: 'T116 parent · fork', command: `cldy --resume ${ID} --fork-session`, cliCommand: 'cldy', prompt: 'Branch here', watchCodex: false }
         ])
     })
 
     test('excerpt: the agent\'s plain start command, and the turns up to that reply in the first message', async () => {
         const { service, calls } = setup()
         await service.fork('parent', request({ scope: 'excerpt' }))
+        expect(calls[0]).toMatchObject({ anchor: { turnTs: '2026-11-10T10:00:05.000Z', turnIndex: 1 } })
         const call = calls[0] as { command: string; prompt: string }
         expect(call.command).toBe('cldy')
         expect(call.prompt).toContain('first question')
@@ -227,6 +228,7 @@ test.describe('ConversationService.fork', () => {
         const result = await service.fork('parent', { scope: 'excerpt', message: 'go', quote: false }, undefined, { aiClient: 'mcp' })
         expect(result).toMatchObject({ status: 'forked' })
         const call = calls[0] as { prompt: string; aiClient?: string }
+        expect(call).toMatchObject({ anchor: { turnTs: '2026-11-10T10:01:05.000Z', turnIndex: 3 } })
         expect(call.aiClient).toBe('mcp')
         // the latest reply is the second answer: the excerpt reaches it
         expect(call.prompt).toContain('second answer')
@@ -267,6 +269,7 @@ test.describe('ConversationService.fork', () => {
         const whole = await service.fork('parent', request({ turnIndex: index, turnTs: turns[index].ts, message: '' }))
         expect(whole).toMatchObject({ status: 'forked', messageSent: false })
         expect(calls[0]).toMatchObject({ agent: 'codex', command: `codex -m gpt-6 fork ${CODEX_ID}`, cliCommand: 'codex -m gpt-6', prompt: '', watchCodex: true })
+        expect(calls[0]).toMatchObject({ anchor: { turnTs: turns[index].ts, turnIndex: index } })
         // excerpt starts a plain Codex: the app's own start detection watches it
         await service.fork('parent', request({ turnIndex: index, turnTs: turns[index].ts, scope: 'excerpt' }))
         expect(calls[1]).toMatchObject({ command: 'codex -m gpt-6', watchCodex: false })

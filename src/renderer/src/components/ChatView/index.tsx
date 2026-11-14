@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon } from 'lucide-react'
-import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
+import type { ChatCommand, ChatForkRequest, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { ChatTurn } from './ChatTurn'
 import { endedOnAnswer } from './workBlocks'
@@ -14,6 +14,10 @@ import { useConversation } from './useConversation'
 import { useElapsed } from './WorkBlock'
 import { ChatActionsContext, onChatCommand, type ChatActions, type GalleryImage } from './chatContext'
 import { ForkDialog, ForkNotice, type ForkProgress, type ForkTarget } from './ForkDialog'
+import { groupThreadsByTurn, threadsForTurn, type ThreadGroups } from './threadGroups'
+import { hasEarlierThreadReplies, replyForThread, threadQuote, turnsAfterFork } from './threadTurns'
+import { ThreadPanel } from './ThreadPanel'
+import { turnSegments } from './workBlocks'
 import { artifactLinks, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
 import './chat.css'
 
@@ -59,6 +63,12 @@ export interface ChatViewProps {
      * CHAT_TURN_LIMIT; the phone a short first page (PHONE_CHAT_TURN_PAGE — fb-1110, ovis' first page).
      */
     turnPage?: number
+    /** Only show replies written from this fork time onward; copied parent history stays hidden. */
+    forkedAt?: number
+    /** A thread uses the same chat, without a second command-bus listener or another thread panel. */
+    embedded?: boolean
+    placeholder?: string
+    onOpenSessionTerminal?: (sessionId: string, command?: string) => void
 }
 
 /** Within this many pixels of the end, new turns keep the view pinned to the bottom. */
@@ -85,6 +95,8 @@ const NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Cod
  * scroller is already gone.
  */
 const scrollMemory = new Map<string, { top: number; pinned: boolean; limit: number }>()
+/** Open thread selection belongs to its parent session and lasts until the app restarts. */
+const openThreadBySession = new Map<string, string>()
 
 /** Each session's command list, for telling which sent commands open the terminal. */
 const commandLists = new Map<string, Promise<ChatCommand[]>>()
@@ -105,11 +117,17 @@ interface SentWaiting {
 let sentSequence = 0
 let forkSequence = 0
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink, turnPage }: ChatViewProps) {
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink, turnPage, forkedAt, embedded = false, placeholder, onOpenSessionTerminal }: ChatViewProps) {
     const firstTurns = turnPage ?? CHAT_TURN_LIMIT
     const moreTurns = turnPage ?? MORE_TURNS
     const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? firstTurns)
-    const { snapshot, refresh } = useConversation(transport, sessionId, limit)
+    const { snapshot: sourceSnapshot, refresh } = useConversation(transport, sessionId, limit)
+    const snapshot = useMemo(() => {
+        if (!sourceSnapshot || forkedAt === undefined) return sourceSnapshot
+        const turns = turnsAfterFork(sourceSnapshot.turns, forkedAt)
+        return { ...sourceSnapshot, turns, totalTurns: turns.length, truncated: false }
+    }, [sourceSnapshot, forkedAt])
+    const earlierThreadReplies = sourceSnapshot !== null && forkedAt !== undefined && hasEarlierThreadReplies(sourceSnapshot, forkedAt)
     const scroller = useRef<HTMLDivElement>(null)
     const column = useRef<HTMLDivElement>(null)
     const composer = useRef<ComposerHandle>(null)
@@ -124,7 +142,50 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     /** the reply the Fork dialog is open on, and where the keyboard was before it opened */
     const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
     const [forkProgress, setForkProgress] = useState<ForkProgress | null>(null)
+    const [threads, setThreads] = useState<ChatThread[]>([])
+    const [threadsLoaded, setThreadsLoaded] = useState(false)
+    const [selectedThreadId, setSelectedThreadId] = useState<string | null>(() => openThreadBySession.get(sessionId) ?? null)
+    const refreshThreads = useRef<(() => void) | null>(null)
     const forkReturnFocus = useRef<HTMLElement | null>(null)
+    useEffect(() => {
+        setThreads([])
+        setThreadsLoaded(false)
+        if (touch || embedded || !transport.getThreads) return
+        let alive = true
+        let revision = 0
+        const load = (): void => {
+            const requested = ++revision
+            void transport.getThreads!(sessionId).then((next) => {
+                if (alive && revision === requested) {
+                    setThreads(next)
+                    setThreadsLoaded(true)
+                }
+            }).catch(() => {
+                if (alive && revision === requested) setThreads([])
+            })
+        }
+        refreshThreads.current = load
+        const off = transport.subscribeThreads?.(sessionId, load)
+        load()
+        return () => {
+            alive = false
+            refreshThreads.current = null
+            off?.()
+        }
+    }, [sessionId, transport, touch, embedded])
+    const openThread = useCallback((childId: string): void => {
+        openThreadBySession.set(sessionId, childId)
+        setSelectedThreadId(childId)
+    }, [sessionId])
+    const closeThread = useCallback((): void => {
+        openThreadBySession.delete(sessionId)
+        setSelectedThreadId(null)
+        window.setTimeout(() => composer.current?.focus(), 0)
+    }, [sessionId])
+    const selectedThread = !embedded && !touch ? threads.find((thread) => thread.childId === selectedThreadId) : undefined
+    useEffect(() => {
+        if (threadsLoaded && selectedThreadId && !selectedThread) closeThread()
+    }, [threadsLoaded, selectedThreadId, selectedThread, closeThread])
     const [railRoom, setRailRoom] = useState(false)
     /** the person's last message has scrolled off the top (edf2aef3) */
     const [lastAbove, setLastAbove] = useState(false)
@@ -146,6 +207,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         setPicked(null)
         setGallery(null)
         setForkTarget(null)
+        setSelectedThreadId(openThreadBySession.get(sessionId) ?? null)
     }, [sessionId])
 
     const restored = useRef<string | null>(null)
@@ -210,13 +272,15 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
 
     // The app's shortcuts reach this session's chat through the bus (App → sendChatCommand).
     useEffect(
-        () =>
-            onChatCommand(sessionId, (command) => {
+        () => {
+            if (embedded) return
+            return onChatCommand(sessionId, (command) => {
                 if (command === 'focus') composer.current?.focus()
                 else if (command === 'dictation') composer.current?.toggleDictation()
                 else page(command === 'pageUp' ? -1 : 1)
-            }),
-        [sessionId, page]
+            })
+        },
+        [sessionId, page, embedded]
     )
 
     // The rail needs room beside the column.
@@ -334,14 +398,28 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     // stable across snapshots, so the memoized turns do not redraw for it
     const snapshotRef = useRef(snapshot)
     snapshotRef.current = snapshot
-    const forkFromTurn = useCallback((index: number): void => {
+    const submitFork = useCallback((request: ChatForkRequest): void => {
+        if (!transport.fork) return
+        const id = ++forkSequence
+        setForkProgress({ id, state: 'opening' })
+        void transport.fork(sessionId, request)
+            .catch((error): { status: 'rejected'; reason: 'failed'; message: string } => ({ status: 'rejected', reason: 'failed', message: error instanceof Error ? error.message : String(error) }))
+            .then((result) => {
+                setForkProgress((current) => (current?.id === id ? { id, state: 'done', result } : current))
+                refreshThreads.current?.()
+            })
+    }, [sessionId, transport])
+    const forkFromTurn = useCallback((index: number, options: boolean): void => {
         const current = snapshotRef.current
         const turn = current?.turns[index]
         if (!current || !turn) return
-        forkReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-        setForkTarget({ turnIndex: current.totalTurns - current.turns.length + index, turnTs: turn.ts })
-    }, [])
-    const openFork = transport.fork && !readOnly ? forkFromTurn : undefined
+        const target = { turnIndex: current.totalTurns - current.turns.length + index, turnTs: turn.ts }
+        if (touch || options) {
+            forkReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+            setForkTarget(target)
+        } else submitFork({ ...target, scope: 'whole', message: '', quote: false })
+    }, [submitFork, touch])
+    const openFork = transport.fork && !readOnly && !embedded ? forkFromTurn : undefined
     // closing the dialog gives the keyboard back to where it was (the message box, its caret and draft untouched)
     const closeFork = useCallback((): void => {
         setForkTarget(null)
@@ -353,15 +431,9 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         (choice: { scope: 'whole' | 'excerpt'; message: string; quote: boolean }): void => {
             const target = forkTarget
             closeFork()
-            if (!target || !transport.fork) return
-            const id = ++forkSequence
-            setForkProgress({ id, state: 'opening' })
-            void transport
-                .fork(sessionId, { ...target, ...choice })
-                .catch((error): { status: 'rejected'; reason: 'failed'; message: string } => ({ status: 'rejected', reason: 'failed', message: error instanceof Error ? error.message : String(error) }))
-                .then((result) => setForkProgress((current) => (current?.id === id ? { id, state: 'done', result } : current)))
+            if (target) submitFork({ ...target, ...choice })
         },
-        [closeFork, forkTarget, sessionId, transport]
+        [closeFork, forkTarget, submitFork]
     )
     const dismissFork = useCallback(() => setForkProgress(null), [])
 
@@ -405,16 +477,25 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         pinned.current = false
         target.scrollIntoView({ block: 'start' })
     }
+    const quotedReply = useMemo(() => {
+        if (!selectedThread || !sourceSnapshot) return ''
+        const reply = replyForThread(sourceSnapshot, selectedThread)
+        if (!reply) return ''
+        return threadQuote(turnSegments(reply.parts).filter((segment) => segment.kind === 'answer')
+            .flatMap((segment) => segment.parts.map((part) => part.text)).join('\n\n'))
+    }, [selectedThread, sourceSnapshot])
 
     return (
         <ChatActionsContext.Provider value={actions}>
             <div
-                className="chat-view"
+                className={`chat-view${selectedThread ? ' has-thread' : ''}`}
                 data-testid="chat-view"
                 data-session-id={sessionId}
                 data-touch={touch ? 'true' : undefined}
+                data-thread-embedded={embedded ? 'true' : undefined}
                 style={{ fontSize: `${fontSize}px` }}
                 onKeyDownCapture={(event) => {
+                    if ((event.target as HTMLElement).closest('.chat-view') !== event.currentTarget) return
                     // plain PageUp/PageDown read the chat, even from the message box (its draft and caret stay)
                     if ((event.key === 'PageUp' || event.key === 'PageDown') && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
                         event.preventDefault()
@@ -425,11 +506,13 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                     if (event.dataTransfer.types.includes('Files')) event.preventDefault()
                 }}
                 onDrop={(event) => {
+                    if ((event.target as HTMLElement).closest('.chat-view') !== event.currentTarget) return
                     if (event.dataTransfer.files.length === 0) return
                     event.preventDefault()
                     composer.current?.addFiles(Array.from(event.dataTransfer.files))
                 }}
             >
+                <div className="chat-main">
                 {railRoom && rail.length >= RAIL_MIN && (
                     <nav className="chat-rail" aria-label="Your messages" data-testid="chat-rail">
                         {rail.slice(-RAIL_MAX).map((item) => (
@@ -442,13 +525,18 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                     <div className="chat-column" ref={column}>
                         {snapshot === null ? (
                             <ReadingConversation />
+                        ) : embedded && (snapshot.unavailable === 'not-found' || snapshot.unavailable === 'no-conversation' || (!snapshot.unavailable && snapshot.turns.length === 0)) ? (
+                            <div className="chat-empty" data-testid="chat-thread-empty">
+                                No replies yet — write below.
+                                {earlierThreadReplies && <button type="button" className="chat-link-button" data-testid="chat-show-earlier" onClick={showEarlier}>Show earlier replies</button>}
+                            </div>
                         ) : snapshot.unavailable === 'not-found' && snapshot.agent !== null ? (
                             // a new Claude session writes its file with the first message: nothing is wrong yet
                             <NoTurnsYet missingFile onOpenTerminal={() => onOpenTerminal()} />
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} />
+                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -524,6 +612,8 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                             onCancelPick={() => setPicked(null)}
                             preferences={preferences}
                             touch={touch}
+                            autoFocus={!embedded}
+                            placeholder={placeholder}
                             onSend={sendText}
                             onInterrupt={interrupt}
                             status={
@@ -557,6 +647,16 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         onShow={onSessionLink ? (id) => onSessionLink(`climanager://session/${id}`) : undefined}
                         onDismiss={dismissFork}
                     />
+                )}
+                </div>
+                {selectedThread && (
+                    <ThreadPanel thread={selectedThread} agentName={agentName} quote={quotedReply} onClose={closeThread}
+                        onOpenSession={onSessionLink ? () => onSessionLink(`climanager://session/${selectedThread.childId}`) : undefined}>
+                        <ChatView key={selectedThread.childId} sessionId={selectedThread.childId} transport={transport}
+                            onOpenTerminal={(command) => onOpenSessionTerminal ? onOpenSessionTerminal(selectedThread.childId, command) : onSessionLink?.(`climanager://session/${selectedThread.childId}`)}
+                            fontSize={fontSize} preferences={preferences} readOnly={readOnly} canOpenFiles={canOpenFiles}
+                            onSessionLink={onSessionLink} forkedAt={selectedThread.forkedAt} embedded placeholder="Reply in thread…" />
+                    </ThreadPanel>
                 )}
             </div>
         </ChatActionsContext.Provider>
@@ -626,14 +726,20 @@ function PinnedLastMessage({ words, onGo }: { words: string; onGo: () => void })
     )
 }
 
-function Turns({ snapshot, foldWork, onFork, onShowEarlier }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number) => void; onShowEarlier: () => void }) {
+function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThread, threadView, hasEarlierThreadReplies }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void; threadView?: boolean; hasEarlierThreadReplies?: boolean }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
+    const previousGroups = useRef<ThreadGroups>(new Map())
+    const threadGroups = useMemo(() => {
+        const groups = groupThreadsByTurn(threads, previousGroups.current)
+        previousGroups.current = groups
+        return groups
+    }, [threads])
     return (
         <>
-            {(snapshot.truncated || hidden > 0) && (
+            {(threadView ? hasEarlierThreadReplies : snapshot.truncated || hidden > 0) && (
                 <div className="chat-older-note" data-testid="chat-older-note">
-                    {hidden > 0 ? (
+                    {threadView ? <button type="button" className="chat-link-button" data-testid="chat-show-earlier" onClick={onShowEarlier}>Show earlier replies</button> : hidden > 0 ? (
                         <>
                             Showing the last {snapshot.turns.length} of {snapshot.totalTurns} turns.{' '}
                             <button type="button" className="chat-link-button" data-testid="chat-show-earlier" onClick={onShowEarlier}>
@@ -657,6 +763,8 @@ function Turns({ snapshot, foldWork, onFork, onShowEarlier }: { snapshot: Conver
                     agent={agent}
                     foldWork={foldWork}
                     onFork={onFork}
+                    threads={threadsForTurn(threadGroups, turn.ts, hidden + index)}
+                    onOpenThread={onOpenThread}
                 />
             ))}
         </>

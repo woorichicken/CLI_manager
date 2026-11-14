@@ -61,6 +61,17 @@ export const electronChatTransport: ChatTransport = {
     takeTerminalDraft: (sessionId) => window.api.takeTerminalDraft(sessionId),
     interrupt: (sessionId) => window.api.interruptChat(sessionId),
     fork: (sessionId, request) => window.api.forkChat(sessionId, request),
+    getThreads: (sessionId) => window.api.getChatThreads(sessionId),
+    subscribeThreads(sessionId, onChange) {
+        const off = window.api.onChatThreadsChanged((change) => {
+            if (change.sessionId === sessionId) onChange()
+        })
+        void window.api.subscribeChatThreads(sessionId)
+        return () => {
+            off()
+            void window.api.unsubscribeChatThreads(sessionId)
+        }
+    },
     answerPrompt: (sessionId, answer) => window.api.answerPrompt(sessionId, answer),
     async attachFile(_sessionId, file): Promise<AttachResult> {
         // A picked or dropped file is already on this Mac: the agent reads it where it is.

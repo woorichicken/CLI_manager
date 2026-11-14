@@ -5,15 +5,15 @@ import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText } from './helpers'
 
 /**
- * T117 — Chat «Fork into a new session» (chat-fork-1110).
+ * T117 — Chat «Reply in thread» (chat-thread-1114).
  *
  * The parent session runs chat-mock on a seeded Claude transcript. The mock prints the arguments the app
  * typed after its saved command (`--show-args`) and writes what a fork is sent to its own file
  * (`--fresh-transcript`), so the parent's transcript stays as it was.
  *
- *  - Mac: the Fork icon on a reply → the dialog → Whole: a new session in the same workspace, named
- *    «<name> · fork», started `<saved command> --resume <id> --fork-session`, its first message the
- *    person's words as written (quotes, a line break); Related «Opened» parent → child; no AI mark.
+ *  - Mac: one click opens Whole behind the parent without a dialog or first message. Anchored chips
+ *    show one or several threads, open a child Chat alongside the parent, and disappear on close.
+ *    Shift+click keeps the existing Whole / Excerpt / Quote dialog.
  *    Meanwhile the screen stays: the same session in front, the chat box keeps its draft and the focus.
  *  - Mac: Excerpt: the plain saved command, the first message = the turns up to that reply + the words.
  *  - phone: the same button and dialog over the phone page; the fork is made on the Mac.
@@ -31,6 +31,11 @@ const PORT = 47917
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
 const FIXTURES = path.join(__dirname, 'fixtures/transcripts')
 const LABEL = process.env.T117_LABEL ?? 'run'
+function lastReplyTs(): string {
+    const records = fs.readFileSync(path.join(FIXTURES, 'claude/tools.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    // This fixture has one answer turn: thinking, tools and the final text share its first timestamp.
+    return records.find((record) => record.type === 'assistant')!.timestamp
+}
 const claudeProjectSlug = (cwd: string): string => cwd.replace(/[^A-Za-z0-9]/g, '-')
 
 let result: LaunchResult | null = null
@@ -64,7 +69,7 @@ interface Launched {
     home: string
 }
 
-async function launch(): Promise<Launched> {
+async function launch(workMs = 400): Promise<Launched> {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t117-'))
     const project = path.join(home, 'project')
     fs.mkdirSync(project)
@@ -82,7 +87,7 @@ async function launch(): Promise<Launched> {
                 name: 'T117 project',
                 path: project,
                 sessions: [
-                    { id: PARENT, name: 'T117 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --fresh-transcript ${fresh} --show-args --work-ms 400` },
+                    { id: PARENT, name: 'T117 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --fresh-transcript ${fresh} --show-args --copy-transcript --work-ms ${workMs}` },
                     { id: SHELL, name: 'T117 Shell' }
                 ]
             }
@@ -106,9 +111,10 @@ interface StoredSession {
     initialCommand?: string
     cliToolName?: string
     cliCommand?: string
+    cliSessionId?: string
     aiControl?: unknown
 }
-function readConfig(): { workspaces: { id: string; sessions: StoredSession[] }[]; sessionRelations?: { from: string; to: string; kind: string }[] } {
+function readConfig(): { workspaces: { id: string; sessions: StoredSession[] }[]; sessionRelations?: { from: string; to: string; kind: string; anchor?: { turnTs: string; turnIndex?: number } }[] } {
     return JSON.parse(fs.readFileSync(path.join(result!.userDataDir, 'config.json'), 'utf8'))
 }
 const forks = (): StoredSession[] => readConfig().workspaces.flatMap((w) => w.sessions).filter((s) => s.name.endsWith(' · fork'))
@@ -131,7 +137,7 @@ function freshPrompts(file: string): string[] {
 const visibleSessions = (page: Page): Promise<string[]> =>
     page.evaluate(() => Array.from(document.querySelectorAll('[data-session-id]')).filter((el) => getComputedStyle(el).visibility === 'visible').map((el) => el.getAttribute('data-session-id') ?? ''))
 
-const macChat = (page: Page) => page.locator('[data-testid="chat-view"][data-session-id]:visible')
+const macChat = (page: Page) => page.locator('[data-testid="chat-view"][data-session-id]:not([data-thread-embedded]):visible')
 
 async function selectSession(page: Page, name: string): Promise<void> {
     await page.getByText(name, { exact: true }).first().click()
@@ -147,68 +153,180 @@ async function openParentChat(page: Page) {
     return view
 }
 
-test('T117 Mac: Whole — the agent forks the conversation in a new session behind this one; the screen stays', async () => {
+test('T117 Mac: threads open beside the parent, hide inherited turns, and send only to the child', async () => {
     test.setTimeout(180_000)
-    const { page, fresh, transcript, project } = await launch()
+    const { app, page, fresh, transcript, project } = await launch(5000)
     const view = await openParentChat(page)
     const parentBefore = fs.readFileSync(transcript, 'utf8')
-    const composer = view.getByTestId('chat-composer')
+    const composer = view.locator(':scope > .chat-main').getByTestId('chat-composer')
     await composer.fill('a draft I keep')
     await composer.focus()
-    await shot(page, 't117-1-chat')
-
-    const reply = view.locator('[data-testid="chat-turn"][data-role="assistant"]').last()
+    const parentRow = page.locator(`[data-session-item="${PARENT}"]`)
+    const selectedStyle = await parentRow.getAttribute('class')
+    const reply = view.locator('[data-testid="chat-turn"][data-role="assistant"]').first()
     await reply.hover()
-    await shot(page, 't117-1b-hover')
+    await shot(page, 't117-1-chat')
     const fork = reply.getByTestId('chat-fork')
-    await expect(fork).toHaveAttribute('title', 'Fork into a new session')
     await fork.click()
-    const dialog = page.getByTestId('chat-fork-dialog')
-    await expect(dialog).toBeVisible()
-    await expect(dialog.locator('input[type="radio"]').first()).toBeChecked()
-    await expect(dialog.getByTestId('chat-fork-message')).toBeFocused()
-    const words = 'Branch: try "plan B" — it\'s fine\nsecond line $(not run)'
-    await dialog.getByTestId('chat-fork-message').fill(words)
-    await shot(page, 't117-2-dialog')
-    await dialog.getByTestId('chat-fork-submit').click()
-    await expect(dialog).toHaveCount(0)
-
-    // the screen stays: same session, the draft and the focus where they were
+    await expect(page.getByTestId('chat-fork-dialog')).toHaveCount(0)
+    await expect(fork).toHaveAttribute('title', 'Reply in thread (Shift+click for options)')
     await expect(composer).toBeFocused()
     await expect(composer).toHaveValue('a draft I keep')
     await expect(macChat(page)).toHaveAttribute('data-session-id', PARENT)
 
     const notice = page.getByTestId('chat-fork-notice')
     await expect(notice).toHaveAttribute('data-state', 'forked', { timeout: 90_000 })
-    await expect(notice).toContainText('T117 Claude · fork')
-    await shot(page, 't117-3-forked')
-    await expect(macChat(page)).toHaveAttribute('data-session-id', PARENT)
-    await expect(composer).toHaveValue('a draft I keep')
-
-    // the new session: same workspace and folder, the person's start command, a child in Related, no AI mark
     const [child] = forks()
-    expect(child).toBeTruthy()
-    expect(readConfig().workspaces.find((w) => w.id === 'w-t117')!.sessions.map((s) => s.id)).toContain(child.id)
     expect(child.cwd).toBe(project)
     expect(child.cliToolName).toBe('claude')
     expect(child.aiControl).toBeUndefined()
     expect(child.initialCommand).toBe(`${child.cliCommand} --resume ${CLAUDE_ID} --fork-session`)
-    expect(readConfig().sessionRelations).toContainEqual(expect.objectContaining({ from: PARENT, to: child.id, kind: 'opened' }))
-    await expect(page.getByText('T117 Claude · fork', { exact: true }).first()).toBeVisible()
-
-    // what it was started with and sent: the words exactly, never in the command
     await expect.poll(() => terminalLines(page, child.id), { timeout: 30_000 }).toContain(`ARGS: --resume ${CLAUDE_ID} --fork-session`)
-    await expect.poll(() => freshPrompts(fresh), { timeout: 30_000 }).toEqual([words])
-    expect(await terminalLines(page, child.id)).toContain('ANSWER[1]: lines=2')
-    // the parent's own conversation and terminal were not touched
+    expect(freshPrompts(fresh)).toEqual([])
     expect(fs.readFileSync(transcript, 'utf8')).toBe(parentBefore)
-    expect(await terminalLines(page, PARENT)).not.toContain('ANSWER[')
+    const relation = readConfig().sessionRelations!.find((row) => row.from === PARENT && row.to === child.id)!
+    expect(relation.anchor).toEqual({ turnTs: lastReplyTs(), turnIndex: Number(await reply.getAttribute('data-turn-index')) })
+    const chip = reply.getByTestId('chat-thread-chip')
+    await expect(chip).toContainText('1 thread')
+    await chip.click()
+    const panel = page.getByTestId('chat-thread-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel).toHaveAttribute('data-session-id', child.id)
+    await expect(chip.getByTestId('chat-thread-status-dot')).toHaveAttribute('data-status', 'idle')
+    await expect(macChat(page)).toHaveAttribute('data-session-id', PARENT)
+    await expect(page.locator('[data-crumb="session"]:visible')).toHaveText('T117 Claude')
+    await expect(parentRow).toHaveAttribute('class', selectedStyle!)
+    await expect(composer).toBeVisible()
+    await expect(composer).toHaveValue('a draft I keep')
+    await expect(panel.getByTestId('chat-thread-quote')).toContainText('Here is the summary.')
+    await expect(panel.getByTestId('chat-thread-quote')).toContainText('Replying to Claude')
+    await expect(panel.getByTestId('chat-thread-quote')).not.toContainText('|')
 
-    // Show goes to the new session
-    await notice.getByTestId('chat-fork-show').click()
-    await page.waitForTimeout(600)
-    await expect.poll(() => visibleSessions(page)).toContain(child.id)
+    // The actual linked child file contains copied parent records, with the original UUID and time.
+    await expect.poll(() => forks().find((session) => session.id === child.id)?.cliSessionId, { timeout: 20_000 }).toBeTruthy()
+    const childConversation = forks().find((session) => session.id === child.id)!.cliSessionId!
+    const copiedRecords = fs.readFileSync(path.join(path.dirname(transcript), `${childConversation}.jsonl`), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    const sourceRecords = parentBefore.trim().split('\n').map((line) => JSON.parse(line))
+    expect(copiedRecords.map((record) => [record.uuid, record.timestamp])).toEqual(sourceRecords.map((record) => [record.uuid, record.timestamp]))
+    expect(copiedRecords.every((record) => record.sessionId === childConversation)).toBe(true)
+    const childChat = panel.getByTestId('chat-view')
+    await expect(panel.getByTestId('chat-thread-empty')).toBeVisible({ timeout: 20_000 })
+    await expect(childChat.getByTestId('chat-turn')).toHaveCount(0)
+    await expect(childChat).not.toContainText('Add a guard to src/a.ts')
+    await shot(page, 't117-2-thread-panel-1280')
+
+    const childComposer = panel.getByPlaceholder('Reply in thread…')
+    await childComposer.fill('Only the thread gets this')
+    await childComposer.press('Enter')
+    await expect.poll(() => terminalLines(page, child.id), { timeout: 20_000 }).toContain('ANSWER[1]: Only the thread gets this')
+    await expect(childChat).toContainText('Echo: Only the thread gets this', { timeout: 15_000 })
+    expect(await terminalLines(page, PARENT)).not.toContain('Only the thread gets this')
+    await expect(view.getByTestId('chat-scroll').first()).not.toContainText('Echo: Only the thread gets this')
+    // The composer's Escape stops the child before the enclosing panel can treat it as close.
+    await childComposer.fill('Stop this thread turn')
+    await childComposer.press('Enter')
+    await expect(childChat.getByTestId('chat-working')).toBeVisible({ timeout: 15_000 })
+    await childComposer.press('Escape')
+    await expect(panel).toBeVisible()
+    await expect.poll(() => terminalLines(page, child.id), { timeout: 15_000 }).toContain('INTERRUPTED')
+    await expect(childChat.getByTestId('chat-working')).toHaveCount(0)
+    expect(await terminalLines(page, PARENT)).not.toContain('INTERRUPTED')
+    // Completion handles Escape locally too; an unhandled idle Escape below still closes the panel.
+    await childComposer.fill('/')
+    await expect(childChat.getByTestId('chat-complete')).toBeVisible()
+    await childComposer.press('Escape')
+    await expect(childChat.getByTestId('chat-complete')).toHaveCount(0)
+    await expect(panel).toBeVisible()
+    await childComposer.fill('')
+    await childComposer.focus()
+    await page.keyboard.press('Meta+Shift+I')
+    await expect(composer).toBeFocused()
+    await expect(composer).toHaveValue('a draft I keep')
+    await panel.getByTestId('chat-thread-panel-close').click()
+    await expect(panel).toHaveCount(0)
+
+    // The parent stays usable. Its later turns will also be copied into a subsequent fork.
+    await composer.fill('Parent continues after the anchor')
+    await composer.press('Enter')
+    await expect.poll(() => terminalLines(page, PARENT), { timeout: 20_000 }).toContain('ANSWER[1]: Parent continues after the anchor')
+    await expect(view).toContainText('Echo: Parent continues after the anchor', { timeout: 15_000 })
+    await reply.hover()
+    await fork.click()
+    await expect.poll(() => forks().length).toBe(2)
+    const second = forks().find((session) => session.id !== child.id)!
+    await expect.poll(() => terminalLines(page, second.id), { timeout: 20_000 }).toContain(`ARGS: --resume ${CLAUDE_ID} --fork-session`)
+    await expect(chip).toContainText('2 threads')
+    await page.evaluate((id) => window.api.writeTerminal(id, 'ASK\r'), child.id)
+    await expect(chip).toContainText('waiting for you', { timeout: 15_000 })
+    await expect(chip.getByTestId('chat-thread-status-dot')).toHaveAttribute('data-status', 'waiting')
+    await chip.click()
+    const list = page.getByTestId('chat-thread-list')
+    await expect(list.getByTestId('chat-thread-session')).toHaveCount(2)
+    const waitingRow = list.locator(`[data-child-id="${child.id}"]`)
+    await expect(waitingRow.getByTestId('chat-thread-status-dot')).toHaveAttribute('data-status', 'waiting')
+    await expect(list.locator(`[data-child-id="${second.id}"]`).getByTestId('chat-thread-status-dot')).toHaveAttribute('data-status', 'idle')
+    for (const row of await list.getByTestId('chat-thread-session').all()) {
+        await expect(row).toContainText('T117 Claude · fork')
+        await expect(row).toContainText(/working|waiting|idle/i)
+        await expect(row).toContainText(/ago|now/)
+        const aligned = await row.evaluate((element) => {
+            const left = element.getBoundingClientRect().left
+            const textLeft = (selector: string): number => {
+                const range = document.createRange()
+                range.selectNodeContents(element.querySelector(selector)!)
+                return range.getBoundingClientRect().left
+            }
+            return {
+                headingOffset: element.querySelector('.chat-thread-row-heading')!.getBoundingClientRect().left - left,
+                textOffset: textLeft('.chat-thread-name') - left,
+                nameNoteDifference: Math.abs(textLeft('.chat-thread-name') - textLeft('.chat-menu-note'))
+            }
+        })
+        expect(aligned.headingOffset).toBeGreaterThanOrEqual(0)
+        expect(aligned.headingOffset).toBeLessThanOrEqual(12)
+        expect(aligned.textOffset).toBeLessThanOrEqual(28)
+        expect(aligned.nameNoteDifference).toBeLessThanOrEqual(1)
+    }
+    await shot(page, 't117-3-thread-list-status')
+    await list.locator(`[data-child-id="${second.id}"]`).click()
+    await expect(panel).toHaveAttribute('data-session-id', second.id)
+    await expect(macChat(page)).toHaveAttribute('data-session-id', PARENT)
+    await expect(panel.getByTestId('chat-thread-empty')).toBeVisible({ timeout: 20_000 })
+    await expect(panel.getByTestId('chat-turn')).toHaveCount(0)
+    await expect(panel).not.toContainText('Parent continues after the anchor')
+
+    // Selection is remembered per parent when another session is selected and then we return.
+    await selectSession(page, 'T117 Shell')
+    await expect(panel).toHaveCount(0)
+    await selectSession(page, 'T117 Claude')
+    await expect(panel).toHaveAttribute('data-session-id', second.id)
+    await panel.getByPlaceholder('Reply in thread…').focus()
+    await page.keyboard.press('Escape')
+    await expect(panel).toHaveCount(0)
+    await chip.click()
+    await list.locator(`[data-child-id="${second.id}"]`).click()
+    await panel.getByTestId('chat-thread-open-session').click()
+    await expect.poll(() => visibleSessions(page)).toContain(second.id)
     expect(await visibleSessions(page)).not.toContain(PARENT)
+    await selectSession(page, 'T117 Claude')
+    await expect(panel).toHaveAttribute('data-session-id', second.id)
+
+    // The narrow layout overlays the parent inside the available Chat area.
+    await resizeMainWindow(app, 390, 800)
+    const sidebar = page.locator('[title^="Close Sidebar"]').first()
+    if (await sidebar.isVisible().catch(() => false)) await sidebar.evaluate((element) => (element as HTMLElement).click())
+    const panelBox = await panel.boundingBox()
+    expect(panelBox!.x).toBeGreaterThanOrEqual(0)
+    expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(390)
+    await expect(panel.getByPlaceholder('Reply in thread…')).toBeVisible()
+    await shot(page, 't117-3b-thread-panel-390', 390)
+
+    // Closing the selected child also closes its panel; all closed children disappear from the chip.
+    await page.evaluate((id) => window.api.removeSession('w-t117', id), second.id)
+    await expect(panel).toHaveCount(0)
+    await expect(chip).toContainText('1 thread')
+    await page.evaluate((id) => window.api.removeSession('w-t117', id), child.id)
+    await expect(reply.getByTestId('chat-thread-chip')).toHaveCount(0)
 })
 
 test('T117 Mac: Excerpt — a new agent whose first message is the turns up to that reply, then the words; Esc cancels', async () => {
@@ -219,14 +337,14 @@ test('T117 Mac: Excerpt — a new agent whose first message is the turns up to t
 
     // Esc cancels: nothing is opened
     await reply.hover()
-    await reply.getByTestId('chat-fork').click()
+    await reply.getByTestId('chat-fork').click({ modifiers: ['Shift'] })
     await expect(page.getByTestId('chat-fork-dialog')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('chat-fork-dialog')).toHaveCount(0)
     expect(forks()).toEqual([])
 
     await reply.hover()
-    await reply.getByTestId('chat-fork').click()
+    await reply.getByTestId('chat-fork').click({ modifiers: ['Shift'] })
     const dialog = page.getByTestId('chat-fork-dialog')
     await dialog.getByTestId('chat-fork-scope-excerpt').click()
     await expect(dialog.getByTestId('chat-fork-quote').locator('input')).toBeDisabled()
@@ -256,7 +374,7 @@ test('T117 Mac: Excerpt — a new agent whose first message is the turns up to t
     if (await close.isVisible().catch(() => false)) await close.evaluate((element) => (element as HTMLElement).click())
     await page.waitForTimeout(400)
     await reply.hover()
-    await reply.getByTestId('chat-fork').click()
+    await reply.getByTestId('chat-fork').click({ modifiers: ['Shift'] })
     const narrow = page.getByTestId('chat-fork-dialog').locator('[role="dialog"]')
     const box = await narrow.boundingBox()
     expect(box!.x).toBeGreaterThanOrEqual(0)
@@ -325,6 +443,8 @@ test('T117 phone: the same Fork button and dialog; the new session is made on th
 test('T117 API: REST and MCP fork — the latest reply by default, an AI mark on the new session, refusals', async () => {
     test.setTimeout(180_000)
     const { page, fresh, home } = await launch()
+    const view = await openParentChat(page)
+    const reply = view.locator('[data-testid="chat-turn"][data-role="assistant"]').last()
     const discoveryPath = path.join(home, 'clim', 'control-api.json')
     await expect.poll(() => fs.existsSync(discoveryPath), { timeout: 15_000 }).toBe(true)
     const discovery = JSON.parse(fs.readFileSync(discoveryPath, 'utf8')) as { url: string; mcpUrl: string; token: string }
@@ -360,6 +480,9 @@ test('T117 API: REST and MCP fork — the latest reply by default, an AI mark on
     await expect.poll(() => terminalLines(page, first.id), { timeout: 30_000 }).toContain(`ARGS: --resume ${CLAUDE_ID} --fork-session`)
     await expect.poll(() => freshPrompts(fresh), { timeout: 30_000 }).toEqual(['API branch: only the docs'])
 
+    await expect(reply.getByTestId('chat-thread-chip')).toContainText('1 thread')
+    expect(readConfig().sessionRelations!.find((relation) => relation.to === first.id)!.anchor?.turnTs).toBe(lastReplyTs())
+
     // MCP: the tool is listed, the instructions say when to use it, an excerpt fork goes through
     const init = await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't117', version: '1' } })
     expect(init.instructions).toContain('fork_session')
@@ -384,4 +507,6 @@ test('T117 API: REST and MCP fork — the latest reply by default, an AI mark on
     expect(shell.json.error.code).toBe('no_conversation')
     expect((await api(`/v1/sessions/${PARENT}/fork`, { turnIndex: 0 })).status).toBe(409)
     expect(forks()).toHaveLength(2)
+    await expect(reply.getByTestId('chat-thread-chip')).toContainText('2 threads')
+    expect(readConfig().sessionRelations!.filter((relation) => relation.from === PARENT).map((relation) => relation.anchor?.turnTs)).toEqual([lastReplyTs(), lastReplyTs()])
 })
