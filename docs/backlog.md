@@ -77,6 +77,35 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 이름으로 크론을 부르는 MCP 도구·`clim` 명령을 만들 때(자율 크론 다음 단계).
 - Fix direction: 만들기·이름 바꾸기에서 대소문자 무시 중복을 400 으로 거절하거나, 이름이 둘 이상 맞으면 409 로 id 를 쓰라고 답한다.
 - Owner: 없음
+- 2026-11-14 다른 세션의 PR #124·#131 코드 리뷰도 같은 지적을 했다(`CronStore.get:146`, 이름으로 보낸 DELETE 가 다른 작업을 지울 수 있음).
+
+### 자율 크론 — attach 가 Enter 를 한 번만 보내고 입력칸이 비었는지 보지 않는다
+- Discovered: 2026-11-14 다른 세션의 PR #124·#131 코드 리뷰(시험은 안 돌림). 코드에서 다시 확인했다.
+- Evidence: `CronService.runAttach`(`src/main/CronService.ts:174` 근처)는 `writeInput(글)` → `ATTACH_ENTER_DELAY_MS` → `'\r'` 한 번으로 끝나고 곧장 `started` 를 기록한다. Control API 의 `typeAndSubmit` → `confirmSubmitted`(Enter 가 먹히면 다시 보냄, T19)와 Chat 의 `input_busy`(사람이 입력칸에 남긴 글이 있으면 거절, `ConversationService`)를 거치지 않는다. 그래서 사람이 쓰다 둔 글 뒤에 붙어 같이 나가거나, Enter 가 먹혔는데도 `started` 로 남고 다음 회차 글이 그 뒤에 이어 붙을 수 있다.
+- Trigger: attach 작업이 사람이 같이 쓰는 loop 에 붙을 때, 또는 실행 기록이 `started` 인데 loop 에 글만 남아 있는 것이 보일 때.
+- Fix direction: `typeAndSubmit`/`typeForChat` 경로를 재사용하고, 보내기 전에 입력칸이 비었는지 확인해 비어 있지 않으면 `failed`(사람 초안 있음)로 기록한다.
+- Owner: 없음 — 고칠지는 사용자 지시 대기
+
+### 자율 크론 — Control API 로 만든 작업이 API 를 꺼도 계속 돈다 (사람 결정 대기)
+- Discovered: 2026-11-14 다른 세션의 PR #124·#131 코드 리뷰.
+- Evidence: `/v1/crons` 로 만든 작업은 Control API 를 끈 뒤에도 스케줄러가 계속 실행한다. 작업의 agent 값은 셸에 그대로 입력되는 명령이라, 결정 [0005](decisions/0005-ai-control-api-local-http.md)·[0006](decisions/0006-control-api-reaches-every-session.md) 의 「접근을 끝내는 수단은 API 끄기」와 어긋난다.
+- Trigger: 사용자가 아래 선택지 중 하나를 고를 때. **답을 받기 전에는 고치지 않는다.**
+- Fix direction: ① API 가 만든 작업은 API 가 꺼지면 멈춘다(리뷰 추천) ② 창에서 사람이 승인해야 켜진다 ③ 지금대로 둔다.
+- Owner: 사용자 결정
+
+### 자율 크론 — 메인 창을 닫아 둔 상태에서 새 세션 작업이 돌면 창이 앞으로 뜬다
+- Discovered: 2026-11-14 다른 세션의 PR #124·#131 코드 리뷰. 코드에서 다시 확인했다.
+- Evidence: `ensureMainWindow`(`src/main/index.ts:467`)의 주석은 「hidden is fine」인데, 호출하는 `createWindow` 가 `ready-to-show` 에서 `mainWindow.show()` 를 불러(`index.ts:1013`) 창이 보이게 뜬다.
+- Trigger: 메인 창을 닫아 두고 쓰는 사람이 「크론 때 창이 갑자기 뜬다」고 말할 때.
+- Fix direction: `createWindow` 에 숨김으로 띄우는 옵션을 주고 `ensureMainWindow` 는 그걸 쓴다.
+- Owner: 없음 — 고칠지는 사용자 지시 대기
+
+### 자율 크론 — 메인 창 로드가 실패하면 스케줄러가 조용히 멈춘다
+- Discovered: 2026-11-14 다른 세션의 PR #124·#131 코드 리뷰. 코드에서 다시 확인했다.
+- Evidence: `ensureMainWindow`(`src/main/index.ts:471`)는 `did-finish-load` 만 기다린다. 로드가 실패하면(`did-fail-load`) 그 Promise 가 끝나지 않고, 스케줄러의 `ticking`(`CronService.ts:55·76`)이 그 tick 을 붙잡고 있어서 이후 tick 이 전부 같은 Promise 를 기다린다.
+- Trigger: 크론이 어느 순간부터 아무것도 안 돌고 실행 기록도 안 늘 때.
+- Fix direction: `did-fail-load` 도 받아 실패로 끝내고, 기다림에 시간 제한을 둔다.
+- Owner: 없음 — 고칠지는 사용자 지시 대기
 
 ### Control API — 경로의 잘못된 `%` 인코딩이 500 으로 답한다
 - Discovered: 2026-11-14 T129 작성 중 실측 — `GET /v1/crons/%E0%A4%A` → 500 `{"code":"internal","message":"URI malformed"}`.
