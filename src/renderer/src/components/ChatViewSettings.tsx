@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { UserSettings } from '../../../shared/types'
-import { DEFAULT_QUICK_REPLIES } from '../../../shared/conversation'
+import { DEFAULT_QUICK_REPLIES, keepQuickReplyColors } from '../../../shared/conversation'
+import { QuickReplyColors } from './QuickReplyColors'
 import { DictationLogSettings } from './DictationLogSettings'
 
 /**
@@ -82,16 +83,21 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
                                 rows={4}
                                 data-testid="chat-setting-quick-list"
                                 onChange={(event) => setRepliesText(event.target.value)}
-                                onBlur={() =>
-                                    update({
-                                        quickReplies: repliesText
-                                            .split('\n')
-                                            .map((line) => line.trim())
-                                            .filter(Boolean)
-                                            .slice(0, 8)
-                                    })
-                                }
+                                onBlur={() => {
+                                    const quickReplies = repliesText
+                                        .split('\n')
+                                        .map((line) => line.trim())
+                                        .filter(Boolean)
+                                        .slice(0, 8)
+                                    // a colour follows its reply's text, so a reply moved up keeps it and a deleted one lets it go
+                                    update({ quickReplies, quickReplyColors: keepQuickReplyColors(chat.quickReplyColors, quickReplies) })
+                                }}
                                 className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                            />
+                            <QuickReplyColors
+                                replies={replies.filter((reply) => reply.trim())}
+                                colors={chat.quickReplyColors}
+                                onChange={(quickReplyColors) => update({ quickReplyColors })}
                             />
                         </div>
                     )}

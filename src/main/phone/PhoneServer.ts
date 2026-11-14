@@ -90,6 +90,8 @@ export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' |
     feedback?: PhoneFeedbackDeps
     /** the Mac's chat quick replies (Settings › Terminal › Chat view), for the phone's own switch (847da0aa) */
     quickReplies?(): string[]
+    /** their colours, keyed by text (93bd4834) — beside the list, so an older phone page reading strings is unaffected */
+    quickReplyColors?(): Record<string, string> | undefined
     /** the person wrote their own phrases on the Mac: a phone shows them unless it was told not to */
     quickRepliesSet?(): boolean
     /** Settings › Terminal › Chat view «Keep my last message on top»: a phone follows it until it chooses */
@@ -416,6 +418,7 @@ export class PhoneServer {
             ...(access.role === 'drive' && this.deps.feedback?.enabled() ? { feedback: { appVersion: this.deps.feedback.appVersion() } } : {}),
             // a view-only device has no box to put them in
             ...(access.role === 'drive' && this.deps.quickReplies ? { quickReplies: this.deps.quickReplies() } : {}),
+            ...(access.role === 'drive' && this.quickReplyColors() ? { quickReplyColors: this.quickReplyColors() } : {}),
             ...(access.role === 'drive' && this.deps.quickRepliesSet?.() ? { quickRepliesSet: true } : {}),
             ...(this.deps.pinLastMessage?.() ? { pinLastMessage: true } : {}),
             // no Dock on this Mac: the page has no line for it at all
@@ -424,6 +427,11 @@ export class PhoneServer {
     }
 
     /** The key a page subscribes with; none when the key file is malformed (Settings › Phone says why). */
+    private quickReplyColors(): Record<string, string> | undefined {
+        const colors = this.deps.quickReplyColors?.()
+        return colors && Object.keys(colors).length > 0 ? colors : undefined
+    }
+
     private pushInfo(): { push?: { publicKey: string } } {
         try {
             return { push: { publicKey: this.deps.push.publicKey() } }

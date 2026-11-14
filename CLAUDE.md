@@ -561,6 +561,7 @@ main 이 로드 중 죽고 앱 구동 시험마다 `electron.launch` 가 180초�
   - T130 자율 크론 붙기 실제 루프 — 실제 셸·`agent-mock` 이 도는 루프 터미널: 셸만 있으면 거절 · 프롬프트에서 기다리면 글+Enter 가 들어가 한 번 답 · 질문이 떠 있으면 거절하고 「1. Yes」를 누르지 않음 · 답한 뒤 다시 들어감 · 에이전트가 끝나면 다시 거절. 보호 장치를 끈 빌드에서 실패(11-14 확인). 터미널 글은 `termText(page, id)` 전체로 읽는다 — 줄 수를 주면 48줄 화면의 빈 아래쪽만 온다
   - T132 자율 크론 리뷰 수정 유닛(11-14) — Electron 없이. 같은 이름 거절(대소문자·앞뒤 공백 무시, 만들기·이름 바꾸기, 옛 중복은 이름으로 안 잡힘) · API 가 만든 작업은 API 가 꺼지면 안 돎(창 작업은 돎, 이유 표시, 다시 켜도 밀린 것 안 함, 지금 실행도 막힘) · 붙기는 `typeIntoLoop` 결과(초안 있음·Enter 뒤에도 남음·터미널 없음)를 이유와 함께 실패로 · 창 로드 실패·시간 초과가 기다림을 끝내 다음 tick 이 돈다
   - T133 자율 크론 리뷰 수정 앱(11-14) — API 를 끈 채 시작하면 API 가 만든 작업은 안 돌고 Autocron 탭에 이유·만든 쪽이 보임(창 작업은 따라잡음) · `agent-mock --box --drop-enters 1` 루프에서 먹힌 Enter 를 다시 눌러 한 번 답 · 사람이 입력칸에 쓰다 둔 글이 있으면 아무것도 안 넣고 실패. 옛 코드에서 두 시험 다 실패, 초안 검사를 뺀 빌드에서 둘째 시험 실패(11-14 확인)
+  - T135 빠른 답 색(93bd4834) — 문자열만 저장된 옛 `quickReplies` 가 그대로 칩으로 뜨고, Settings › Terminal › Chat view 줄마다 색 고르기(green·red) → Save → config.json `quickReplyColors` 가 문구 → 색, `quickReplies` 는 문자열 그대로 · Mac Chat 칩 `data-color`·computed color(어두운 테마 300 색)·대비 4.5 이상(칩 배경을 Chat 배경에 겹쳐 계산) · 폰(CDP 390·배율 3·주인 머리말) 칩도 같은 색, `/me` 의 `quickReplies` 는 문자열·`quickReplyColors` 따로 · 재시작 뒤 유지 · 목록에서 문구를 지우면 그 색도 빠지고 옮긴 문구는 색 유지. 옛 코드에서 색 칸이 없어 실패
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - 범위·옵션 지정은 `pnpm exec playwright test tests/terminal/<spec>.spec.ts --workers=1`로 한다.
