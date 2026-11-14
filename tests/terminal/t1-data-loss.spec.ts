@@ -33,8 +33,8 @@ test.describe('T1 data loss', () => {
         await activateSession(page, 'TSESS1')
         await page.waitForTimeout(1500) // let shell prompt settle
 
-        await writeToTerminal(page, 'sess-t1-solo', 'seq 1 300000; echo SEQ-DONE-solo\n')
-        await waitForBufferText(page, 'sess-t1-solo', 'SEQ-DONE-solo', 180_000)
+        await writeToTerminal(page, 'sess-t1-solo', 'seq 1 300000; echo SEQ-DONE-$((1+1))-solo\n')
+        await waitForBufferText(page, 'sess-t1-solo', 'SEQ-DONE-2-solo', 180_000)
         await page.waitForTimeout(1000)
 
         const text = await termText(page, 'sess-t1-solo')
@@ -67,12 +67,12 @@ test.describe('T1 data loss', () => {
         await page.waitForTimeout(1500)
 
         for (const s of sessions) {
-            await writeToTerminal(page, s.id, `seq 1 300000; echo SEQ-DONE-${s.id}\n`)
+            await writeToTerminal(page, s.id, `seq 1 300000; echo SEQ-DONE-$((1+1))-${s.id}\n`)
             await page.waitForTimeout(100)
         }
 
         for (const s of sessions) {
-            await waitForBufferText(page, s.id, `SEQ-DONE-${s.id}`, 200_000)
+            await waitForBufferText(page, s.id, `SEQ-DONE-2-${s.id}`, 200_000)
         }
         await page.waitForTimeout(2000)
 

@@ -582,13 +582,15 @@ export class ControlApiService {
             }
         }
 
-        const templateName = input.template ? this.findTemplate(input.template)?.name : undefined
+        const template = input.template ? this.findTemplate(input.template) : undefined
         const session: TerminalSession = {
             id: uuidv4(),
-            name: (input.name?.trim() || templateName || 'AI Terminal').slice(0, MAX_NAME_LENGTH),
+            name: (input.name?.trim() || template?.name || 'AI Terminal').slice(0, MAX_NAME_LENGTH),
             cwd: workspace.path,
             type: 'regular',
             ...(command ? { initialCommand: command } : {}),
+            // Remembered so the sidebar row can show the template's logo (report 8062e68c).
+            ...(template ? { templateId: template.id } : {}),
             aiControl: { client: input.client, since: Date.now() },
             ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {})
         }
@@ -690,7 +692,9 @@ export class ControlApiService {
             // ClaudeSessionSync / the Codex watch find, on the person's own start command
             cliToolName: input.agent,
             cliCommand: input.cliCommand,
-            ...(parent.sessionFolderId ? { sessionFolderId: parent.sessionFolderId } : {})
+            ...(parent.sessionFolderId ? { sessionFolderId: parent.sessionFolderId } : {}),
+            // a fork runs the parent's agent on the parent's start command, so it wears the same logo
+            ...(parent.templateId ? { templateId: parent.templateId } : {})
         }
         this.deps.mirror.attach(session.id)
         const workspaces = this.workspaces()

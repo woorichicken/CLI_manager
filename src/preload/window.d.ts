@@ -14,7 +14,7 @@ declare global {
             getWorkspaces: () => Promise<Workspace[]>
             syncWorktreeWorkspaces: () => Promise<IPCResult<{ imported: number; removed: number; updated: number }>>
             addWorkspace: () => Promise<IPCResult<Workspace> | null>
-            addSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string) => Promise<IPCResult<TerminalSession> | null>
+            addSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string, templateId?: string) => Promise<IPCResult<TerminalSession> | null>
             addWorktreeWorkspace: (parentWorkspaceId: string, branchName: string) => Promise<IPCResult<Workspace>>
             removeWorkspace: (id: string, deleteBranch?: boolean) => Promise<boolean>
             removeSession: (workspaceId: string, sessionId: string) => Promise<boolean>
@@ -288,7 +288,7 @@ declare global {
             listChatCommands: (sessionId: string) => Promise<ChatCommand[]>
             listChatBackgroundTasks: (sessionId: string) => Promise<BackgroundTaskList>
             saveChatAttachment: (name: string, bytes: Uint8Array) => Promise<AttachResult>
-            openChatPath: (target: string) => Promise<{ success: boolean; error?: string }>
+            openChatPath: (target: string, sessionId?: string) => Promise<{ success: boolean; error?: string }>
             dictationStatus: () => Promise<DictationStatus>
             startDictation: (context?: DictationStartContext) => Promise<DictationStartResult>
             stopDictation: (id: number) => Promise<void>

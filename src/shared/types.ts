@@ -56,6 +56,12 @@ export interface TerminalSession {
      */
     sessionFolderId?: string
     /**
+     * The template it was opened from (its `TerminalTemplate.id`). Only sessions opened after
+     * template logos existed carry it; older ones keep their plain icon. A template deleted
+     * later leaves a dangling id, which simply draws the plain icon.
+     */
+    templateId?: string
+    /**
      * Set while an external AI works in this session through the Control API:
      * when the API opens it, or the first time the API reads, types into, waits
      * on or focuses it. A visible mark, not a permission — the API reaches every
@@ -72,6 +78,12 @@ export interface TerminalTemplate {
     description: string
     command: string
     cwd?: string
+    /**
+     * Small logo the user picked (PNG or SVG), already shrunk to a 32×32 PNG data URL so it
+     * draws sharp in the 14px sidebar slot on a 2x screen. Kept in the store itself: no path
+     * to the original file, which may move or vanish. Unset: the `icon` glyph.
+     */
+    logo?: string
 }
 
 export interface Workspace {

@@ -98,7 +98,7 @@ interface SidebarProps {
     onSelect: (workspace: Workspace, session: TerminalSession) => void
     onAddWorkspace: () => void
     onRemoveWorkspace: (id: string) => void
-    onAddSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string) => Promise<TerminalSession | undefined>
+    onAddSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string, templateId?: string) => Promise<TerminalSession | undefined>
     onAddWorktreeWorkspace: (parentWorkspaceId: string, branchName: string) => void
     onRemoveSession: (workspaceId: string, sessionId: string, skipConfirm?: boolean, landing?: SessionLanding) => Promise<void>
     onCreatePlayground: () => void
@@ -886,7 +886,7 @@ export function Sidebar({
                             if (type === 'worktree') {
                                 setShowPrompt({ workspaceId: menuOpen.workspaceId })
                             } else {
-                                onAddSession(menuOpen.workspaceId, 'regular', undefined, template?.command, template?.name)
+                                onAddSession(menuOpen.workspaceId, 'regular', undefined, template?.command, template?.name, template?.id)
                             }
                         }}
                         onTerminateAll={async () => {
@@ -955,7 +955,7 @@ export function Sidebar({
                         }
                     }}
                     onAddSession={(workspaceId, template) => {
-                        onAddSession(workspaceId, 'regular', undefined, template?.command, template?.name)
+                        onAddSession(workspaceId, 'regular', undefined, template?.command, template?.name, template?.id)
                     }}
                     onClose={() => setWorktreeMenuOpen(null)}
                     onCopy={copy}
@@ -1027,7 +1027,7 @@ export function Sidebar({
                     workspaces={newSessionWorkspaces}
                     templates={customTemplates}
                     onCreate={async (workspaceId, template, name) => {
-                        const created = await onAddSession(workspaceId, 'regular', undefined, template.command, name || template.name)
+                        const created = await onAddSession(workspaceId, 'regular', undefined, template.command, name || template.name, template.id)
                         // App resolves to nothing when main could not start it: the dialog stays and says so.
                         if (!created) return false
                         setNewSessionOpen(false)

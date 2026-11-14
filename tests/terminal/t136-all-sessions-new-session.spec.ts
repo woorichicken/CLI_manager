@@ -112,6 +112,10 @@ test.describe('T136 All sessions New session (c63a93c0)', () => {
             return createdId
         }, { timeout: 10_000 }).not.toBe('')
 
+        // The template is remembered with the session (#138), so its logo shows on the row.
+        const created = configOnDisk(ctx!.userDataDir).workspaces.flatMap(w => w.sessions).find(s => s.id === createdId)
+        expect(created?.templateId).toBe(TEMPLATE.id)
+
         // On screen, running the template, and in the All sessions list (still the All view).
         await expect(page.locator(`[data-related-button="${createdId}"]`)).toBeVisible()
         await expect.poll(() => termText(page, createdId), { timeout: 15_000 }).toContain('T136-TEMPLATE-RAN')

@@ -13,6 +13,7 @@ import { CHANGELOG_URL } from '../constants/links'
 import { FeedbackModeSetting } from './Feedback/FeedbackModeSetting'
 import { TerminalLinkSchemesSetting } from './TerminalLinkSchemesSetting'
 import { ThirdPartyNotices } from './ThirdPartyNotices'
+import { TemplateLogoField } from './TemplateLogoField'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'ready' | 'error'
 
@@ -1587,7 +1588,9 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                         <div className="flex items-start gap-2 flex-1">
                                                             <div className="flex items-center gap-1.5 text-gray-400 mt-0.5">
                                                                 <GripVertical size={12} className="text-gray-600" />
-                                                                {getTemplateIcon(template.icon)}
+                                                                {template.logo
+                                                                    ? <img src={template.logo} alt="" className="w-4 h-4 object-contain" />
+                                                                    : getTemplateIcon(template.icon)}
                                                                 <span className="text-[10px] text-gray-500 font-mono bg-white/5 px-1 rounded">
                                                                     ⌘T+{index + 1}
                                                                 </span>
@@ -2032,7 +2035,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
             {/* Template Edit Modal */}
             {editingTemplate && (
                 <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="bg-[#1e1e20] border border-white/10 rounded-lg w-[500px] shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="bg-[#1e1e20] border border-white/10 rounded-lg w-[500px] shadow-2xl" onClick={e => e.stopPropagation()} data-testid="template-edit-dialog">
                         {/* Header */}
                         <div className="flex items-center justify-between p-4 border-b border-white/10">
                             <h3 className="text-lg font-semibold text-white">
@@ -2101,6 +2104,15 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                     ))}
                                 </div>
                             </div>
+
+                            <TemplateLogoField
+                                logo={editingTemplate.logo}
+                                onChange={logo => {
+                                    // Removing deletes the key, so a template without a logo stores as before.
+                                    const { logo: _dropped, ...rest } = editingTemplate
+                                    setEditingTemplate(logo ? { ...rest, logo } : rest)
+                                }}
+                            />
                         </div>
 
                         {/* Footer */}

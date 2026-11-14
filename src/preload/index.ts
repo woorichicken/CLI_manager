@@ -13,7 +13,7 @@ const api = {
     syncWorktreeWorkspaces: (): Promise<IPCResult<{ imported: number; removed: number; updated: number }>> =>
         ipcRenderer.invoke('sync-worktree-workspaces'),
     addWorkspace: (): Promise<IPCResult<Workspace> | null> => ipcRenderer.invoke('add-workspace'),
-    addSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string): Promise<IPCResult<TerminalSession> | null> => ipcRenderer.invoke('add-session', workspaceId, type, branchName, initialCommand, sessionName),
+    addSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string, templateId?: string): Promise<IPCResult<TerminalSession> | null> => ipcRenderer.invoke('add-session', workspaceId, type, branchName, initialCommand, sessionName, templateId),
     addWorktreeWorkspace: (parentWorkspaceId: string, branchName: string): Promise<IPCResult<Workspace>> => ipcRenderer.invoke('add-worktree-workspace', parentWorkspaceId, branchName),
     removeWorkspace: (id: string, deleteBranch?: boolean): Promise<boolean> => ipcRenderer.invoke('remove-workspace', id, deleteBranch ?? true),
     removeSession: (workspaceId: string, sessionId: string): Promise<boolean> => ipcRenderer.invoke('remove-session', workspaceId, sessionId),
@@ -424,7 +424,7 @@ const api = {
     listChatCommands: (sessionId: string): Promise<ChatCommand[]> => ipcRenderer.invoke('chat-commands', sessionId),
     listChatBackgroundTasks: (sessionId: string): Promise<BackgroundTaskList> => ipcRenderer.invoke('chat-background-tasks', sessionId),
     saveChatAttachment: (name: string, bytes: Uint8Array): Promise<AttachResult> => ipcRenderer.invoke('chat-save-attachment', name, bytes),
-    openChatPath: (target: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target),
+    openChatPath: (target: string, sessionId?: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target, sessionId),
     // Chat dictation (macOS): src/main/Dictation.ts
     dictationStatus: (): Promise<DictationStatus> => ipcRenderer.invoke('dictation-status'),
     startDictation: (context?: DictationStartContext): Promise<DictationStartResult> => ipcRenderer.invoke('dictation-start', context ?? {}),
