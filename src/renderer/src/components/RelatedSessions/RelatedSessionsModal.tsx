@@ -8,7 +8,7 @@ import { useSessionPeeks } from '../../hooks/useSessionPeeks'
 import { RelationTree } from './RelationTree'
 import { CopyNotice, useCopyWithNotice } from '../Sidebar/CopyNotice'
 import { AddRelatedSession } from './AddRelatedSession'
-import { NewRelatedSession } from './NewRelatedSession'
+import { NewSessionDialog } from '../NewSessionDialog'
 
 interface RelatedSessionsModalProps {
     sessionId: string
@@ -303,12 +303,14 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                 <CopyNotice notice={notice} />
             </div>
             {creating && (
-                <NewRelatedSession
+                <NewSessionDialog
+                    source="related"
                     defaultWorkspaceId={workspaces.find(w => w.sessions?.some(s => s.id === sessionId))?.id ?? workspaces[0]?.id ?? ''}
                     workspaces={workspaces}
                     templates={templates}
                     onCreate={createSession}
                     onCancel={() => setCreating(false)}
+                    note='Opens it and lists it here under "Added by hand".'
                 />
             )}
         </div>
