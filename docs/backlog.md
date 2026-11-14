@@ -11,7 +11,13 @@ last-reviewed: 2026-09-30
 Work that was **seen in this repository**, with evidence, and deliberately left undone. Not a
 roadmap and not a wishlist: every entry names a path and a trigger that makes it actionable.
 
-Any session may append to `## Open
+Any session may append to `## Open` without running a curation skill — the session that found the
+problem is the one holding the evidence. Appending sessions do not reorder or remove other entries.
+
+Remove an entry in the same change that resolves it. If resolving it produced a durable rule, that
+rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into this file.
+
+## Open
 
 ### 폰 Chat — 바뀌면 바뀐 만큼만(ETag·304, ovis 방식)
 - Discovered: 2026-11-10 fb-1110 91e1b27e · 1e556f10. 첫 쪽은 3회차에 고쳤다(사람 결정 11-10) — 폰은 최근 20턴(`PHONE_CHAT_TURN_PAGE`)만 읽고 「Show earlier」로 20턴씩 더(T123). 16MB 사본 T118: Wi-Fi 0.22→0.14초, LTE 중계 0.51→0.28초, 전송 130→36KB.
@@ -63,13 +69,6 @@ Any session may append to `## Open
 - Fix direction: N17 뒤 옵션/원문 보존, N18 준비 구간과 마지막 도구 fallback 분리, N19 앞 구간 에이전트 재전송 차단, N20 main의 restoreSession(id)로 입력 조립 범위 축소, N16 이어짐/사용자 PROMPT2 한계 정리. 이번 커밋에서 해당 패턴과 판정은 바꾸지 않는다.
 - Owner: 기획 세션 후속.
 - 4회차 추가: 시작 명령 재입력 — initialCommand의 프롬프트가 id 없는 세션에서 다시 쳐진다(main도 같음). Enter 안내에 줄을 확인하라는 문구를 더한다. pendingSessionRestores가 안 풀리는 길(복원 전에 뷰가 닫히거나 렌더러가 재개 명령을 묻지 않음)을 정리한다.
-` without running a curation skill — the session that found the
-problem is the one holding the evidence. Appending sessions do not reorder or remove other entries.
-
-Remove an entry in the same change that resolves it. If resolving it produced a durable rule, that
-rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into this file.
-
-## Open
 
 ### 세션 상태 — 「끝났는데 아직 안 봄」을 따로 표시하기(herdr `Done`)
 - Discovered: 2026-11-14 탐구 세션(Whosup·herdr 비교) 뒤 사람 결정: 「일단 백로그로」.
