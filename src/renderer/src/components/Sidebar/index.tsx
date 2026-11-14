@@ -16,13 +16,15 @@ import { SidebarAllSessions } from './SidebarAllSessions'
 import { SidebarSessionTree } from './SidebarSessionTree'
 import { sessionForestFor, wouldMakeLoop, handParentsInTheWay } from '../../utils/relatedSessions'
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
-import { sessionsInSidebarOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
+import { sessionsInSidebarOrder, sidebarWorkspaceOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { isOrderHeldFor, setAllSessionsListElement } from '../../utils/allSessionsNav'
 import { useDragAutoScroll } from '../../utils/dragAutoScroll'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
 import { ConnectConversationDialog } from './ConnectConversationDialog'
+import { AllSessionsToolbar, type AllSessionsLayout } from './AllSessionsToolbar'
+import { NewSessionDialog } from '../NewSessionDialog'
 
 /**
  * ReorderableRow - 워크스페이스·폴더 드래그 앤 드롭을 위한 래퍼 컴포넌트
@@ -73,7 +75,6 @@ type SidebarViewMode = 'folders' | 'all'
 const VIEW_MODE_STORAGE_KEY = 'sidebar-view-mode'
 
 // List or Tree inside the All sessions view; a per-machine view choice like the view mode.
-type AllSessionsLayout = 'list' | 'tree'
 const ALL_SESSIONS_LAYOUT_STORAGE_KEY = 'sidebar-all-sessions-layout'
 
 function readSavedAllSessionsLayout(): AllSessionsLayout {
@@ -97,7 +98,7 @@ interface SidebarProps {
     onSelect: (workspace: Workspace, session: TerminalSession) => void
     onAddWorkspace: () => void
     onRemoveWorkspace: (id: string) => void
-    onAddSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string) => void
+    onAddSession: (workspaceId: string, type: 'regular' | 'worktree', branchName?: string, initialCommand?: string, sessionName?: string, templateId?: string) => Promise<TerminalSession | undefined>
     onAddWorktreeWorkspace: (parentWorkspaceId: string, branchName: string) => void
     onRemoveSession: (workspaceId: string, sessionId: string, skipConfirm?: boolean, landing?: SessionLanding) => Promise<void>
     onCreatePlayground: () => void
@@ -773,6 +774,12 @@ export function Sidebar({
         : []
 
     const allSessionEntries = sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground)
+    // All sessions' "New session" (c63a93c0) offers the projects the sidebar shows, in its order.
+    const [newSessionOpen, setNewSessionOpen] = useState(false)
+    const closeNewSession = useCallback(() => setNewSessionOpen(false), [])
+    const newSessionWorkspaces = viewMode === 'all'
+        ? sidebarWorkspaceOrder(workspaces, folders, showWorktrees, showPlayground)
+        : []
     // One sessionTreeFor per root: kept between the renders status updates cause. No recently viewed
     // order here: the tree stays put while the user clicks through it (d44191ed) — pinned roots
     // first, then sidebar order.
@@ -790,7 +797,10 @@ export function Sidebar({
     const { selected: selectedSessionIds, selection: sessionSelection, clear: clearSessionSelection } = useSessionSelection(existingSessionIds)
     // The bar lives in All sessions; leaving the view drops the pick rather than hiding it.
     useEffect(() => {
-        if (!isAllSessionsView) clearSessionSelection()
+        if (!isAllSessionsView) {
+            clearSessionSelection()
+            setNewSessionOpen(false)
+        }
     }, [isAllSessionsView, clearSessionSelection])
 
     const toggleViewMode = () => {
@@ -876,7 +886,7 @@ export function Sidebar({
                             if (type === 'worktree') {
                                 setShowPrompt({ workspaceId: menuOpen.workspaceId })
                             } else {
-                                onAddSession(menuOpen.workspaceId, 'regular', undefined, template?.command, template?.name)
+                                onAddSession(menuOpen.workspaceId, 'regular', undefined, template?.command, template?.name, template?.id)
                             }
                         }}
                         onTerminateAll={async () => {
@@ -945,7 +955,7 @@ export function Sidebar({
                         }
                     }}
                     onAddSession={(workspaceId, template) => {
-                        onAddSession(workspaceId, 'regular', undefined, template?.command, template?.name)
+                        onAddSession(workspaceId, 'regular', undefined, template?.command, template?.name, template?.id)
                     }}
                     onClose={() => setWorktreeMenuOpen(null)}
                     onCopy={copy}
@@ -1001,6 +1011,32 @@ export function Sidebar({
                     />
                 )
             })()}
+
+            {/* Drawn here, outside the All sessions list, so the list's pointer tracking does not
+                count the dialog as "pointer in the list" (see AllSessionsToolbar). A session made
+                here is related to nothing: there is no session it was started from. */}
+            {newSessionOpen && isAllSessionsView && (
+                <NewSessionDialog
+                    source="all-sessions"
+                    overlay="window"
+                    defaultWorkspaceId={
+                        newSessionWorkspaces.find(w => w.sessions?.some(session => session.id === activeSessionId))?.id
+                        ?? newSessionWorkspaces[0]?.id
+                        ?? ''
+                    }
+                    workspaces={newSessionWorkspaces}
+                    templates={customTemplates}
+                    onCreate={async (workspaceId, template, name) => {
+                        const created = await onAddSession(workspaceId, 'regular', undefined, template.command, name || template.name, template.id)
+                        // App resolves to nothing when main could not start it: the dialog stays and says so.
+                        if (!created) return false
+                        setNewSessionOpen(false)
+                        return true
+                    }}
+                    onCancel={closeNewSession}
+                    note="Opens it in the chosen project."
+                />
+            )}
 
             {conversationSessionId && <ConnectConversationDialog
                 sessionId={conversationSessionId}
@@ -1238,26 +1274,14 @@ export function Sidebar({
                             refreshRecentIds()
                         }}
                     >
-                        {showSessionTree && allSessionEntries.length > 0 && (
-                            <div className="flex items-center gap-1 px-1 pb-1.5" role="group" aria-label="All sessions layout">
-                                {(['list', 'tree'] as const).map(layout => (
-                                    <button
-                                        key={layout}
-                                        data-testid={`all-sessions-layout-${layout}`}
-                                        aria-pressed={allSessionsLayout === layout}
-                                        onClick={() => chooseAllSessionsLayout(layout)}
-                                        className={`px-2 py-0.5 rounded text-[11px] border transition-colors ${
-                                            allSessionsLayout === layout
-                                                ? 'border-blue-500/50 bg-blue-500/15 text-blue-200'
-                                                : 'border-white/10 text-gray-400 hover:bg-white/5'
-                                        }`}
-                                        title={layout === 'tree' ? 'Each session under the session that opened it' : 'Session folders, then the rest'}
-                                    >
-                                        {layout === 'tree' ? 'Tree' : 'List'}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                        <AllSessionsToolbar
+                            showLayoutSwitch={showSessionTree && allSessionEntries.length > 0}
+                            layout={allSessionsLayout}
+                            onChooseLayout={chooseAllSessionsLayout}
+                            canCreate={newSessionWorkspaces.length > 0}
+                            onNewSession={() => setNewSessionOpen(true)}
+                            newSessionOpen={newSessionOpen}
+                        />
                         {allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
                         ) : sessionForest ? (

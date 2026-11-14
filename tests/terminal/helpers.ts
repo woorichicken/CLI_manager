@@ -217,11 +217,34 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
     return { app, page, userDataDir, pageErrors, consoleErrors }
 }
 
-export async function closeApp(result: LaunchResult): Promise<void> {
+/** How long a test app gets to quit before it is killed. */
+const CLOSE_APP_TIMEOUT_MS = 15_000
+
+/**
+ * Quits the test app. A close that throws or hangs used to be swallowed and leave the app running
+ * (day-1023: a T1 app stayed at CPU 100% for 7 minutes and playwright stopped) — now its process is killed.
+ */
+export async function closeApp(result: LaunchResult, timeoutMs = CLOSE_APP_TIMEOUT_MS): Promise<void> {
+    // an app that was already closed (a spec's afterEach reusing the last result) throws here: nothing to kill
+    let child: ReturnType<ElectronApplication['process']> | undefined
     try {
-        await result.app.close()
+        child = result.app.process()
     } catch {
-        // app may already be gone
+        child = undefined
+    }
+    let timer: NodeJS.Timeout | undefined
+    const closed = await Promise.race([
+        Promise.resolve()
+            .then(() => result.app.close())
+            .then(() => true, () => false),
+        new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(false), timeoutMs)
+        })
+    ])
+    clearTimeout(timer)
+    if (!closed && child && child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+        console.warn(`[closeApp] the test app (pid ${child.pid}) did not quit; killing it`)
+        child.kill('SIGKILL')
     }
     try {
         fs.rmSync(result.userDataDir, { recursive: true, force: true })

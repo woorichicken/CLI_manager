@@ -13,10 +13,10 @@ import { BROWSER_PAGE_EXTENSIONS, SYSTEM_TYPES } from '../../../shared/fileKinds
 export function ChatFilePreview({ openInApp = true }: { openInApp?: boolean }) {
     const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
     useEffect(() => {
-        setChatFileOpener((path, line) => {
+        setChatFileOpener((path, line, sessionId) => {
             const extension = path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? ''
             const page = BROWSER_PAGE_EXTENSIONS.has(extension) && line === undefined
-            if (!openInApp || SYSTEM_TYPES.has(extension) || page) void window.api.openChatPath(path)
+            if (!openInApp || SYSTEM_TYPES.has(extension) || page) void window.api.openChatPath(path, sessionId)
             else setTarget({ path, line })
         })
         return () => setChatFileOpener(null)

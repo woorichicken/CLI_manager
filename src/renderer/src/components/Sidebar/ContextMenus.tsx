@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash, Link2 } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
-import { getTemplateIcon } from '../../constants/icons'
+import { TemplateIcon } from '../TemplateIcon'
 import { MENU_Z_INDEX } from '../../constants/styles'
 
 /**
@@ -288,8 +288,8 @@ export function WorkspaceContextMenu({
                     }}
                     title={template.description || template.command}
                 >
-                    <span className="text-gray-400 shrink-0">
-                        {getTemplateIcon(template.icon)}
+                    <span className="text-gray-400 shrink-0 flex">
+                        <TemplateIcon template={template} />
                     </span>
                     <span className="truncate">{template.name}</span>
                 </button>
@@ -539,8 +539,8 @@ export function WorktreeContextMenu({
                     title={template.description || template.command}
                     type="button"
                 >
-                    <span className="text-gray-400 shrink-0">
-                        {getTemplateIcon(template.icon)}
+                    <span className="text-gray-400 shrink-0 flex">
+                        <TemplateIcon template={template} />
                     </span>
                     <span className="truncate">{template.name}</span>
                 </button>

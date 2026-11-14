@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react'
 import { TerminalTemplate } from '../../../shared/types'
+import { publishTemplateLogos } from './useTemplateLogos'
 
 /**
  * 커스텀 터미널 템플릿을 관리하는 커스텀 훅
  */
 export function useTemplates(settingsOpen?: boolean) {
-    const [customTemplates, setCustomTemplates] = useState<TerminalTemplate[]>([])
+    const [customTemplates, setTemplatesState] = useState<TerminalTemplate[]>([])
+    // Sidebar rows read logos from a shared store; every load refreshes it.
+    const setCustomTemplates = (templates: TerminalTemplate[]) => {
+        publishTemplateLogos(templates)
+        setTemplatesState(templates)
+    }
 
     // 초기 로드
     useEffect(() => {
