@@ -77,8 +77,8 @@ export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, 
     ]
 
     const shown = filter === 'all' ? sections : sections.filter(section => section.tree === SECTION_FOR_FILTER[filter])
-    // "This session" marks where the tree turns from above to beside; Below starts at this session, so it goes there.
-    const showSelf = filter === 'all' || filter === 'above' || filter === 'beside'
+    // "This session" sits with the siblings, between above and beside: drawn where the Beside section is.
+    const showSelf = filter === 'all' || filter === 'beside'
 
     return (
         <>
