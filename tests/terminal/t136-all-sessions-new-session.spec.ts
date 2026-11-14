@@ -151,4 +151,29 @@ test.describe('T136 All sessions New session (c63a93c0)', () => {
         }
         if (shots) await page.screenshot({ path: path.join(shots, `new-session-dialog-390-${label()}.png`) })
     })
+
+    test('T136 r2 a session that fails to start keeps the dialog open and says so (PR #140 review 1)', async () => {
+        ctx = await launch()
+        const { page, app } = ctx
+        await activateSession(page, NAMES[FIRST])
+        await page.getByTestId('sidebar-view-toggle').click()
+        const sessionCount = () => configOnDisk(ctx!.userDataDir).workspaces.reduce((n, w) => n + w.sessions.length, 0)
+        const countBefore = sessionCount()
+        // main refuses: the app's add-session returns { success: false } as it does when spawning fails.
+        await app.evaluate(({ ipcMain }) => {
+            ipcMain.removeHandler('add-session')
+            ipcMain.handle('add-session', () => ({ success: false, error: 'T136 refused' }))
+        })
+        await newButton(page).click()
+        await form(page).locator('[data-related-new-name]').fill('T136 never')
+        await form(page).locator('[data-related-new-create]').click()
+        // Give the create round trip time to finish; the old build closed the dialog here.
+        await page.waitForTimeout(1000)
+        await expect(form(page)).toHaveCount(1)
+        await expect(form(page).locator('[data-new-session-error]')).toBeVisible()
+        // The typed name is still there to try again; nothing was made.
+        await expect(form(page).locator('[data-related-new-name]')).toHaveValue('T136 never')
+        expect(sessionCount()).toBe(countBefore)
+        await expect(form(page).locator('[data-related-new-create]')).toBeEnabled()
+    })
 })

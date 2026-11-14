@@ -16,7 +16,8 @@ interface NewSessionDialogProps {
     defaultWorkspaceId: string
     workspaces: Workspace[]
     templates: TerminalTemplate[]
-    onCreate: (workspaceId: string, template: TerminalTemplate, name: string) => Promise<void>
+    /** Resolves true once the session is made (the caller closes the dialog), false when it could not be. */
+    onCreate: (workspaceId: string, template: TerminalTemplate, name: string) => Promise<boolean>
     onCancel: () => void
     /** One line under the fields saying where the new session will show up. */
     note: string
@@ -41,6 +42,8 @@ export function NewSessionDialog({ defaultWorkspaceId, workspaces, templates, on
     const [templateId, setTemplateId] = useState(PLAIN_TERMINAL.id)
     const [name, setName] = useState('')
     const [creating, setCreating] = useState(false)
+    // The app reports a failed start by resolving to nothing, not by throwing: say so and keep what was typed.
+    const [failed, setFailed] = useState(false)
     const choices = [PLAIN_TERMINAL, ...templates]
     const template = choices.find(choice => choice.id === templateId) ?? PLAIN_TERMINAL
 
@@ -56,11 +59,16 @@ export function NewSessionDialog({ defaultWorkspaceId, workspaces, templates, on
     const create = async (): Promise<void> => {
         if (creating) return
         setCreating(true)
+        setFailed(false)
+        let created = false
         try {
-            await onCreate(workspaceId, template, name.trim())
+            created = await onCreate(workspaceId, template, name.trim())
+        } catch {
+            created = false
         } finally {
             setCreating(false)
         }
+        if (!created) setFailed(true)
     }
 
     const selectClass = 'min-w-0 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none focus:border-blue-500/50'
@@ -111,7 +119,9 @@ export function NewSessionDialog({ defaultWorkspaceId, workspaces, templates, on
                 />
             </div>
             <div className="flex items-center gap-2">
-                <span className="text-[11px] text-gray-500">{note}</span>
+                {failed
+                    ? <span className="text-[11px] text-red-400" role="alert" data-new-session-error>Could not start the session. Try again.</span>
+                    : <span className="text-[11px] text-gray-500">{note}</span>}
                 <button
                     onClick={onCancel}
                     className="ml-auto px-2.5 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-white/10 transition-colors"

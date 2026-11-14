@@ -163,11 +163,12 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
         storeOrder(next)
     }
     // The new session is listed with this one, then shown — the dialog has done its job.
-    const createSession = async (workspaceId: string, template: TerminalTemplate, name: string): Promise<void> => {
+    const createSession = async (workspaceId: string, template: TerminalTemplate, name: string): Promise<boolean> => {
         const newId = await onCreateSession(workspaceId, template, name)
-        if (!newId) return
+        if (!newId) return false
         await window.api.addSessionRelation(sessionId, newId)
         onClose()
+        return true
     }
 
     return (
