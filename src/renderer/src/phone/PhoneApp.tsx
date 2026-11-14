@@ -398,6 +398,7 @@ export function PhoneApp() {
         returnSendsOnTouch: chatSettings.returnSends,
         showQuickReplies: quickRepliesOn,
         quickReplies: me.quickReplies ?? [],
+        quickReplyColors: me.quickReplyColors as ChatPreferences['quickReplyColors'],
         pinLastMessage: pinLastOn
     }
 

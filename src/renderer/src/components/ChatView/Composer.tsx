@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import { AlertTriangle, ArrowUp, FileText, Loader2, Plus, Square, X } from 'lucide-react'
 import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
 import { InputBusyNote } from './InputBusyNote'
-import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH } from '../../../../shared/conversation'
+import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH, quickReplyColorOf } from '../../../../shared/conversation'
 import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands } from './chatLib'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 import { DictationButton } from './DictationButton'
@@ -511,7 +511,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }
     }
 
-    const quickReplies = (preferences.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim())
+    // once each: a list saved with the same phrase twice draws one chip (the chip is keyed by its text)
+    const quickReplies = [...new Set((preferences.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim()))]
     // also while the agent works: a tap then waits for the turn to end, as a typed message does
     const showQuick = preferences.showQuickReplies === true && !promptOptions && text === '' && attachments.length === 0 && quickReplies.length > 0
     const hint =
@@ -565,6 +566,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                             title={quickInFlight === reply ? 'Sending…' : `Send “${reply}”`}
                             disabled={quickInFlight !== null}
                             data-sending={quickInFlight === reply ? 'true' : undefined}
+                            data-color={quickReplyColorOf(preferences.quickReplyColors, reply)}
                             onClick={() => void sendQuick(reply)}
                         >
                             {quickInFlight === reply && <Loader2 size={11} className="animate-spin chat-quick-spin" aria-hidden="true" />}

@@ -27,7 +27,7 @@ export type PhoneRefusal =
 
 /** GET /api/phone/me — who this request is. */
 export type PhoneMe =
-    | { access: 'full'; role: PhoneRole; via: PhoneVia; login?: string; deviceLabel?: string; push?: PhonePushInfo; feedback?: PhoneFeedbackInfo; quickReplies?: string[]; quickRepliesSet?: boolean; pinLastMessage?: boolean; dock?: true }
+    | { access: 'full'; role: PhoneRole; via: PhoneVia; login?: string; deviceLabel?: string; push?: PhonePushInfo; feedback?: PhoneFeedbackInfo; quickReplies?: string[]; quickReplyColors?: Record<string, string>; quickRepliesSet?: boolean; pinLastMessage?: boolean; dock?: true }
     | { access: 'none'; reason: PhoneRefusal }
 
 /** `push` is absent when the Mac's alert key file is malformed: the page shows no bell. */
