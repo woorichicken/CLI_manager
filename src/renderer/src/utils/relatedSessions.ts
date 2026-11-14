@@ -26,57 +26,12 @@ export interface RelatedEntry {
     at: number
 }
 
-export interface RelatedGroups {
-    /** Sessions this one opened, or first worked in, through the Control API. */
-    fromHere: RelatedEntry[]
-    /** Sessions that opened this one, or first worked in it. */
-    toHere: RelatedEntry[]
-    /** Added by hand, from either side. */
-    manual: RelatedEntry[]
-    total: number
-}
-
 function sessionIndex(workspaces: Workspace[]): Map<string, { session: TerminalSession; workspace: Workspace }> {
     const index = new Map<string, { session: TerminalSession; workspace: Workspace }>()
     for (const workspace of workspaces) {
         for (const session of workspace.sessions ?? []) index.set(session.id, { session, workspace })
     }
     return index
-}
-
-/**
- * The related sessions of `sessionId`, grouped, newest first. A relation whose
- * other side is no longer in `workspaces` is left out — a closed session
- * disappears here at once, before main's cleanup reaches the renderer.
- */
-export function relatedSessionsFor(
-    relations: SessionRelation[],
-    sessionId: string,
-    workspaces: Workspace[]
-): RelatedGroups {
-    const index = sessionIndex(workspaces)
-    const groups: RelatedGroups = { fromHere: [], toHere: [], manual: [], total: 0 }
-    if (!index.has(sessionId)) return groups
-
-    for (const relation of relations) {
-        if (relation.dismissed) continue
-        const outgoing = relation.from === sessionId
-        if (!outgoing && relation.to !== sessionId) continue
-        const other = index.get(outgoing ? relation.to : relation.from)
-        if (!other || other.session.id === sessionId) continue
-
-        const entry: RelatedEntry = { ...other, kind: relation.kind, at: relation.at }
-        if (relation.kind === 'manual') groups.manual.push(entry)
-        else if (outgoing) groups.fromHere.push(entry)
-        else groups.toHere.push(entry)
-    }
-
-    const newestFirst = (a: RelatedEntry, b: RelatedEntry): number => b.at - a.at
-    groups.fromHere.sort(newestFirst)
-    groups.toHere.sort(newestFirst)
-    groups.manual.sort(newestFirst)
-    groups.total = groups.fromHere.length + groups.toHere.length + groups.manual.length
-    return groups
 }
 
 /** How many related sessions each session has, for the header buttons. */

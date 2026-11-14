@@ -4,8 +4,7 @@ import { lastMeaningfulLine, recapOf, screenSummary } from '../../src/main/scree
 import {
     addableSessions,
     isTalkSession,
-    relatedCounts,
-    relatedSessionsFor
+    relatedCounts
 } from '../../src/renderer/src/utils/relatedSessions'
 import type { SessionRelation, TerminalSession, Workspace } from '../../src/shared/types'
 
@@ -200,7 +199,7 @@ test.describe('SessionRelations.inherit (main)', () => {
     })
 })
 
-test.describe('relatedSessionsFor (renderer)', () => {
+test.describe('relatedCounts (renderer)', () => {
     const WORKSPACES = [
         workspace('w1', [session('lead'), session('worker'), session('talk', '대화: 설계 논의', 'ask about the API')]),
         workspace('w2', [session('site'), session('boss')])
@@ -215,29 +214,14 @@ test.describe('relatedSessionsFor (renderer)', () => {
         { from: 'worker', to: 'talk', kind: 'opened', at: 600 }
     ]
 
-    test('groups by direction and kind, newest first, skipping closed and removed ones', () => {
-        const groups = relatedSessionsFor(RELATIONS, 'lead', WORKSPACES)
-        expect(groups.fromHere.map(e => [e.session.id, e.kind])).toEqual([['talk', 'connected'], ['worker', 'opened']])
-        expect(groups.toHere.map(e => e.session.id)).toEqual(['boss'])
-        expect(groups.manual.map(e => [e.session.id, e.workspace.id])).toEqual([['site', 'w2']])
-        expect(groups.total).toBe(4)
-    })
-
-    test('the other side sees the same relation from its end', () => {
-        const groups = relatedSessionsFor(RELATIONS, 'site', WORKSPACES)
-        expect(groups.manual.map(e => e.session.id)).toEqual(['lead'])
-        expect(relatedSessionsFor(RELATIONS, 'worker', WORKSPACES).toHere.map(e => e.session.id)).toEqual(['lead'])
-    })
-
-    test('a session that is gone has nothing', () => {
-        expect(relatedSessionsFor(RELATIONS, 'closed-session', WORKSPACES).total).toBe(0)
-    })
-
-    test('counts match what the dialog lists', () => {
+    test('counts each live, kept pair once on both sides; a closed or removed one is left out', () => {
+        // the values relatedSessionsFor gave before it was removed (fb-1114b): the counts matched it in this test
         const counts = relatedCounts(RELATIONS, WORKSPACES)
-        for (const id of ['lead', 'worker', 'talk', 'site', 'boss']) {
-            expect(counts.get(id) ?? 0, id).toBe(relatedSessionsFor(RELATIONS, id, WORKSPACES).total)
+        const expected: Record<string, number> = { lead: 4, worker: 2, talk: 2, site: 1, boss: 1 }
+        for (const id of Object.keys(expected)) {
+            expect(counts.get(id) ?? 0, id).toBe(expected[id])
         }
+        expect(counts.has('closed-session')).toBe(false)
     })
 
     test('addable sessions leave out this one and the related ones, and filter by name', () => {

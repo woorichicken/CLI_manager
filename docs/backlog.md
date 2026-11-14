@@ -644,14 +644,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Fix direction: `parentSessionsOf` 가 `splitTreeRelations` 의 부모를 쓰고 버튼 글을 「위 세션」으로. T50 갱신.
 - Owner: 없음
 
-### `relatedSessionsFor` · `RelatedGroups.manual` 을 아무도 안 부른다
-- Discovered: 2026-10-29 fb-1028, PR #73 독립 리뷰.
-- Evidence: `src/renderer/src/utils/relatedSessions.ts` 의 `relatedSessionsFor` 는 export 만 있고 src 에 호출이 없다(Related 창은 `sessionTreeFor` 로 바뀜). 그 안의 `manual` 묶음은 1.22.0 의 「손 짝은 트리 안」 모델과 다르다 — 누가 다시 쓰면 손 짝이 따로 빠진다.
-- Why deferred: 이번 범위는 제보 5건이었고 지워도 동작은 같다.
-- Trigger: `relatedSessions.ts` 를 다음에 고칠 때.
-- Fix direction: 함수와 `RelatedGroups` 타입을 지우고 T34 의 해당 줄을 정리.
-- Owner: 없음
-
 ### 터미널 ⌘-클릭 링크는 한글 파일명·이미지 확장자·끊긴 경로를 잡지 않는다
 - Discovered: 2026-10-29 fb-1028, 제보 09eff960 · 85703148 작업 세션 A(`A-30-options.md`).
 - Evidence: `src/renderer/src/utils/filePathLinkProvider.ts` 정규식은 `\w`·코드 확장자만 본다 — `/private/tmp/…/1-비교표-시안.jpg` 는 링크가 아니다. 1.22.0 은 **선택**(우클릭·⌘⇧O/E·⌘C)만 고쳤다(`terminalPathSelection.ts`).
