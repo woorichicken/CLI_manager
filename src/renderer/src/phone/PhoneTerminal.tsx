@@ -5,6 +5,7 @@ import type { PhoneRole } from '../../../shared/phone'
 import { KEY_BAR_ITEMS, controlCharacter, createKeyRepeat, isRepeatable, keyBarLabel, keySequence, type KeyBarItem } from './keyBar'
 import { PhoneSecretInput } from './PhoneSecretInput'
 import { PhoneTerminalFold } from './PhoneTerminalFold'
+import { PhoneTerminalHistory } from './PhoneTerminalHistory'
 import { cursorRowsText, SECRET_PROMPT_ROWS, secretPrompt } from './secretPrompt'
 import { readWrap, saveWrap } from './terminalFold'
 import { usePhoneTerminal } from './usePhoneTerminal'
@@ -61,6 +62,8 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
     termHandle.current = term
     const [natural, setNatural] = useState<{ width: number; height: number } | null>(null)
     const [fitWidth, setFitWidth] = useState(0)
+    // the scroller's height: what the screen leaves of it above is filled with history (3f59e735)
+    const [room, setRoom] = useState(0)
     const [zoom, setZoom] = useState<number | null>(readZoom) // null: fit the width
     // «Wrap to screen» (terminalFold.ts): this phone's choice, off by default — fit stays the default view
     const [wrap, setWrap] = useState(readWrap)
@@ -105,9 +108,13 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
     useEffect(() => {
         const element = scroller.current
         if (!element) return
-        const observer = new ResizeObserver(() => setFitWidth(element.clientWidth))
+        const measure = (): void => {
+            setFitWidth(element.clientWidth)
+            setRoom(element.clientHeight)
+        }
+        const observer = new ResizeObserver(measure)
         observer.observe(element)
-        setFitWidth(element.clientWidth)
+        measure()
         return () => observer.disconnect()
     }, [])
 
@@ -296,6 +303,7 @@ export function PhoneTerminal({ sessionId, deviceRole }: { sessionId: string; de
                 data-testid="phone-terminal-scroller"
                 data-wrap={wrap ? '' : undefined}
             >
+                {!wrap && natural && term.status !== 'connecting' && <PhoneTerminalHistory term={term} natural={natural} scale={scale} room={room} />}
                 <div className="phone-term-sizer" style={natural ? { width: natural.width * scale, height: natural.height * scale } : undefined}>
                     <div ref={host} className="phone-term-host" style={{ transform: `scale(${scale})` }} data-testid="phone-terminal-host" />
                 </div>

@@ -29,7 +29,8 @@ JSON-only responses) at `/mcp` so Claude Code can use it as a tool server with o
   asked to talk to the app; if the app is closed the call fails fast (connection refused), and
   nothing else on the machine is affected. MCP clients also need a transport — a spool cannot
   answer a tool call.
-- **Closed by default at every layer.** Off until enabled in Settings > Agents; bound to
+- **Closed by default at every layer.** Off until enabled in Settings > Agents (switching it off also
+  stops Autocron jobs a client made over the API — [0006](0006-control-api-reaches-every-session.md)); bound to
   `127.0.0.1`; bearer token on every request; `Host` must be `127.0.0.1`/`localhost` (DNS
   rebinding) and any foreign `Origin` is rejected (a web page cannot drive it).
 - ~~**The API reaches only sessions it opened.**~~ Superseded by

@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { launchAppWithWorkspaces, closeApp, LaunchResult } from './helpers'
 import { buildSessionBreadcrumb } from '../../src/renderer/src/utils/sessionBreadcrumb'
+import { splitAfterDrop, splitHeadersWide } from '../../src/renderer/src/utils/splitLayout'
 import type { TerminalSession, Workspace, WorkspaceFolder } from '../../src/shared/types'
 
 /**
@@ -76,6 +77,168 @@ async function dropIntoSplit(page: Page, sessionId: string): Promise<void> {
 
 const crumbs = (page: Page, root: string) =>
     page.locator(`${root} [data-session-breadcrumb] [data-crumb]`).evaluateAll(els => els.map(el => `${el.getAttribute('data-crumb')}:${el.textContent}`))
+
+// fb-1114: the split view the breadcrumbs above live in — one pane per session, panes that touch.
+test.describe('T37 split drop rule (report d2e6adc7)', () => {
+    test('the session already on screen is not split with itself', () => {
+        expect(splitAfterDrop(null, 's-a', 's-a')).toEqual({ kind: 'ignore' })
+        expect(splitAfterDrop(null, 's-a', 's-b')).toEqual({ kind: 'layout', sessionIds: ['s-a', 's-b'] })
+        expect(splitAfterDrop(null, null, 's-b')).toEqual({ kind: 'layout', sessionIds: ['s-b'] })
+    })
+
+    test('a session already in a pane brings that pane forward instead of a second copy', () => {
+        expect(splitAfterDrop(['s-a', 's-b', 's-c'], null, 's-b')).toEqual({ kind: 'focus', index: 1 })
+        expect(splitAfterDrop(['s-a', 's-b'], null, 's-c')).toEqual({ kind: 'layout', sessionIds: ['s-a', 's-b', 's-c'] })
+        expect(splitAfterDrop(['s-a', 's-b', 's-c', 's-d'], null, 's-e')).toEqual({ kind: 'ignore' })
+    })
+})
+
+test.describe('T37 split panes (fb-1114)', () => {
+    let ctx: LaunchResult
+    let dir = ''
+
+    test.afterEach(async () => {
+        if (ctx) await closeApp(ctx)
+        if (dir) fs.rmSync(dir, { recursive: true, force: true })
+    })
+
+    async function launchSplit(ids: string[]) {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanger-t37s-'))
+        ctx = await launchAppWithWorkspaces([
+            { id: 'ws-a', name: 'T37SPLIT', path: dir, sessions: ids.map(id => ({ id, name: `T37-${id}` })) }
+        ])
+        await ctx.page.setViewportSize({ width: 1500, height: 950 })
+        return ctx.page
+    }
+
+    // The positioned box App.tsx places each terminal in (the pane minus nothing — header room is padding).
+    const paneBox = (page: Page, id: string) => page.evaluate((sid) => {
+        const r = document.querySelector(`[data-session-id="${sid}"]`)!.parentElement!.getBoundingClientRect()
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+    }, id)
+
+    test('dropping the session on screen onto its own terminal leaves one full view (report d2e6adc7)', async () => {
+        const page = await launchSplit(['s-a', 's-b'])
+        await page.locator('[data-session-item="s-a"]').click()
+        await expect(page.locator('[data-session-id="s-a"]')).toBeVisible()
+        await dropIntoSplit(page, 's-a')
+        await page.waitForTimeout(300)
+        // Before the fix: two pane headers for s-a, and the second pane empty (one xterm, one place).
+        await expect(page.locator('.pane-header')).toHaveCount(0)
+        await expect(page.locator('[data-session-id="s-a"]')).toBeVisible()
+
+        // In a real split, the same session dropped again adds no second pane.
+        await dropIntoSplit(page, 's-b')
+        await expect(page.locator('.pane-header')).toHaveCount(2)
+        await dropIntoSplit(page, 's-a')
+        await page.waitForTimeout(300)
+        const slots = await page.locator('[data-terminal-slot]').evaluateAll(els => els.map(el => el.getAttribute('data-terminal-slot')))
+        expect(slots).toEqual(['s-a', 's-b'])
+    })
+
+    test('panes touch: one 1px line between them and no space below (report a81cd0ce)', async () => {
+        const page = await launchSplit(['s-a', 's-b', 's-c'])
+        await page.locator('[data-session-item="s-a"]').click()
+        await dropIntoSplit(page, 's-b')
+        await expect(page.locator('.pane-header')).toHaveCount(2)
+
+        const area = await page.evaluate(() => {
+            const r = document.querySelector('[data-session-id]')!.parentElement!.parentElement!.getBoundingClientRect()
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+        })
+        let a = await paneBox(page, 's-a')
+        let b = await paneBox(page, 's-b')
+        expect(b.left - a.right, 'space between side-by-side panes').toBeLessThanOrEqual(1.01)
+        expect(b.left - a.right).toBeGreaterThan(0)
+        expect(area.bottom - a.bottom, 'space under the panes').toBeLessThanOrEqual(0.5)
+        expect(a.left - area.left).toBeLessThanOrEqual(0.5)
+        expect(area.right - b.right).toBeLessThanOrEqual(0.5)
+        // The line itself is drawn in that strip.
+        const line = await page.locator('[data-split-divider="vertical"]').boundingBox()
+        expect(line!.width).toBeLessThanOrEqual(1.01)
+        expect(line!.x).toBeGreaterThanOrEqual(a.right - 0.5)
+        expect(line!.x + line!.width).toBeLessThanOrEqual(b.left + 0.5)
+        // Header cells sit exactly over their terminals.
+        const cells = await page.locator('[data-terminal-slot]').evaluateAll(els => els.map(el => {
+            const r = el.parentElement!.getBoundingClientRect()
+            return { left: r.left, right: r.right }
+        }))
+        expect(Math.abs(cells[0].right - a.right)).toBeLessThanOrEqual(0.5)
+        expect(Math.abs(cells[1].left - b.left)).toBeLessThanOrEqual(0.5)
+
+        // Three panes: the same 1px between the top row and the full-width bottom pane.
+        await dropIntoSplit(page, 's-c')
+        await expect(page.locator('.pane-header')).toHaveCount(3)
+        a = await paneBox(page, 's-a')
+        const c = await paneBox(page, 's-c')
+        expect(c.top - a.bottom, 'space between rows').toBeLessThanOrEqual(1.01)
+        expect(c.top - a.bottom).toBeGreaterThan(0)
+        expect(area.bottom - c.bottom).toBeLessThanOrEqual(0.5)
+        await expect(page.locator('[data-split-divider="horizontal"]')).toHaveCount(1)
+    })
+
+    test('a wide pane gets the single-view header row, a narrow one keeps the compact row (report 08343040)', async () => {
+        const page = await launchSplit(['s-a', 's-b', 's-c'])
+        await page.setViewportSize({ width: 1800, height: 950 })
+        await page.locator('[data-session-item="s-a"]').click()
+        const single = page.locator('div.flex-1.glass-panel > div.draggable')
+        const singleHeight = (await single.boundingBox())!.height
+        const singleSearch = (await single.locator('button[title^="Search Files"]').boundingBox())!
+
+        await dropIntoSplit(page, 's-b')
+        const headerA = page.locator('[data-pane-header="s-a"]')
+        const headerB = page.locator('[data-pane-header="s-b"]')
+        await expect(headerA).toHaveAttribute('data-pane-wide', 'true')
+        await expect(headerB).toHaveAttribute('data-pane-wide', 'true')
+        // Same height and the same button size as the header over a single terminal.
+        expect(Math.abs((await headerA.boundingBox())!.height - singleHeight)).toBeLessThanOrEqual(1)
+        const paneSearch = (await headerA.locator('button[title="Search Files"]').boundingBox())!
+        expect(Math.abs(paneSearch.width - singleSearch.width)).toBeLessThanOrEqual(1)
+        expect(Math.abs(paneSearch.height - singleSearch.height)).toBeLessThanOrEqual(1)
+        // Related with its label, and ‹ › on the active pane only — one history for the window.
+        await expect(headerA.locator('[data-related-button]')).toContainText('Related')
+        // (which pane is active right after the drop depends on terminal focus timing — count both)
+        await expect(page.locator('[data-pane-header] [data-session-history]')).toHaveCount(1)
+        await expect(headerB.locator('[data-related-button]')).toContainText('Related')
+        // The terminal starts right under its header: nothing hidden behind it, no gap.
+        // Read both in one frame: the main header above animates its height when split view opens,
+        // so two separate reads can straddle a frame of that animation.
+        const underHeader = (id: string) => page.evaluate((sid) => {
+            const header = document.querySelector(`[data-pane-header="${sid}"]`)!.getBoundingClientRect()
+            return Math.abs(document.querySelector(`[data-session-id="${sid}"]`)!.getBoundingClientRect().top - header.bottom)
+        }, id)
+        await expect.poll(() => underHeader('s-a')).toBeLessThanOrEqual(0.5)
+
+        // Narrow window: half-width panes go back to the compact row.
+        await page.setViewportSize({ width: 1280, height: 950 })
+        await expect(headerA).toHaveAttribute('data-pane-wide', 'false')
+        expect(Math.round((await headerA.boundingBox())!.height)).toBe(32)
+        await expect(page.locator('[data-pane-header] [data-session-history]')).toHaveCount(0)
+
+        // One shape per split (round 2): three panes at 1280 — the full-width bottom pane is wide
+        // enough on its own, but the two on top are not, so every pane keeps the compact row.
+        await dropIntoSplit(page, 's-c')
+        const shapes = () => page.locator('[data-pane-header]').evaluateAll(els => els.map(el => el.getAttribute('data-pane-wide')))
+        await expect.poll(shapes).toEqual(['false', 'false', 'false'])
+        const heights = () => page.locator('[data-pane-header]').evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().height)))
+        expect(await heights()).toEqual([32, 32, 32])
+        await expect.poll(() => underHeader('s-c')).toBeLessThanOrEqual(0.5)
+
+        // Three panes at 1800: every pane is wide, so every pane gets the wide row.
+        await page.setViewportSize({ width: 1800, height: 950 })
+        await expect.poll(shapes).toEqual(['true', 'true', 'true'])
+        expect(await heights()).toEqual([40, 40, 40])
+    })
+
+    test('the header shape is decided for the whole split by its narrowest pane', () => {
+        // 1001 wide: two halves of 500 — compact, even though a 3-pane bottom row would be 1001.
+        expect(splitHeadersWide(1001, 3)).toBe(false)
+        expect(splitHeadersWide(1001, 1)).toBe(true)
+        expect(splitHeadersWide(1281, 2)).toBe(true) // halves of 640
+        expect(splitHeadersWide(1279, 4)).toBe(false)
+        expect(splitHeadersWide(0, 2)).toBe(false)
+    })
+})
 
 test.describe('T37 header breadcrumb', () => {
     let ctx: LaunchResult

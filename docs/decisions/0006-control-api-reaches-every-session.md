@@ -32,6 +32,11 @@ The maintainer decided (2026-09-30): if the API is switched on, all sessions are
 - **"Disconnect AI" interrupts, it does not lock.** It clears the mark and makes a wait in flight
   fail with `409 disconnected`. The next call from the API marks the session again. Ending access
   means switching the API off.
+- **That includes what the API left scheduled** *(2026-11-14)*. Autocron jobs a client made over
+  `/v1/crons` do not run while the API is off — a job's `agent` is a command typed into a shell, so
+  a job left behind would otherwise keep reaching the Mac after access was ended. Jobs made in the
+  Loop window are the person's own and run either way. Turning the API back on does not catch up
+  the runs it missed (see `docs/architecture/control-api.md` «Autocron»).
 - **Every terminal is mirrored while the API is on**, from the moment its pty starts. *(Since
   [0008](0008-terminal-history-lives-in-main.md) every terminal is mirrored always — the mirror is
   also the terminal's history.)* A mirror only

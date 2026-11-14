@@ -369,6 +369,10 @@ export function PhoneApp() {
         setUsageOpen(false)
         navigate(next.id, next.agent ? rememberedLens(next.id) ?? 'chat' : 'terminal', overUsage)
     }
+    // renamed from the list (ebf8dec6): the list and the open session's header show the Mac's name now, not at the next poll
+    const renamedFromList = (id: string, name: string): void => {
+        setData((current) => (current ? { ...current, sessions: current.sessions.map((s) => (s.id === id ? { ...s, name } : s)) } : current))
+    }
     // A session link in the chat (b2020233): the phone shows one session, so the first one the link names
     // that this list holds. Refs are full ids or their first 8+ characters, as on the Mac (sessionLink.ts).
     const openSessionLink = (uri: string): void => {
@@ -466,7 +470,7 @@ export function PhoneApp() {
                         <span className="phone-dock-entry-label">Usage</span>
                         <ChevronRight size={15} className="phone-dock-entry-icon" aria-hidden="true" />
                     </button>
-                    <SessionList data={data} activeId={session?.id ?? null} onOpen={open} />
+                    <SessionList data={data} activeId={session?.id ?? null} canRename={me.role === 'drive'} onOpen={open} onRenamed={renamedFromList} />
                 </aside>
             )}
             {!wide && session && drawer && <div className="phone-scrim" onClick={() => setDrawer(false)} data-testid="phone-scrim" />}

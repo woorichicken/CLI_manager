@@ -196,6 +196,10 @@ body.phone-body #root {
 }
 .phone-row {
     width: 100%;
+    /* a held finger renames (SessionRow): no callout, no text selection under it */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
     display: flex;
     align-items: flex-start;
     gap: 8px;
@@ -529,6 +533,31 @@ body.phone-body #root {
     flex-shrink: 0;
     /* fitted to the width it is shorter than the room: the spare room goes above, the input stays by the thumb (183cbd1e) */
     margin-top: auto;
+}
+/* history rows in the room above the screen (PhoneTerminalHistory, 3f59e735): they take the spare
+   room at the top, so the screen right under them drops its own auto margin */
+.phone-term-history {
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-top: auto;
+    pointer-events: none;
+}
+.phone-term-history + .phone-term-sizer {
+    margin-top: 0;
+}
+.phone-term-history-rows {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    color: #e0e0e0;
+    white-space: pre;
+    font-kerning: none;
+    font-variant-ligatures: none;
+}
+.phone-term-history-row {
+    overflow: hidden;
 }
 .phone-term-host {
     position: absolute;
@@ -1006,6 +1035,13 @@ body.phone-body #root {
     padding: 8px 8px 8px 12px;
     background: #0f0f14;
     border-bottom: 1px solid var(--border-color);
+}
+.phone-rename-inline {
+    /* in a list row, not over the session */
+    position: static;
+    z-index: auto;
+    padding: 6px 8px 6px 12px;
+    background: rgba(59, 130, 246, 0.08);
 }
 .phone-rename-input {
     flex: 1;

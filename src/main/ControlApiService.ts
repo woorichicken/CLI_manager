@@ -1,4 +1,5 @@
 import { AgentConversations, AgentConversationError } from './agentConversations'
+import type { LoopTypeResult } from './CronService'
 import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList, ChatForkRequest, ChatForkResult } from '../shared/conversation'
 import type { ForkOpenInput, ForkOpenResult } from './ConversationService'
 import { existsSync, realpathSync, statSync } from 'fs'
@@ -769,6 +770,29 @@ export class ControlApiService {
     async typeForChat(sessionId: string, text: string, allowed?: () => boolean): Promise<boolean> {
         // the person sees the screen: the stricter question test, as ConversationService's own check
         return this.typeAndSubmit(sessionId, { text, submit: true }, allowed, (id) => this.deps.mirror.asksQuestion(id))
+    }
+
+    /**
+     * Autocron's attach (CronService): one line into a promoted /loop terminal. A loop terminal is
+     * not a workspace session, so there is no session lookup and no AI mark, but the typing is the
+     * API's own — the Escape settle, a submit delay for the length, Enter pressed again while the
+     * prompt stays in the input box (T19). Nothing is typed while the box already holds text a
+     * person left there (the Chat's input_busy rule): the draft and the prompt would go out as one.
+     * Only typed text counts — the dim next-prompt suggestion does not. The question/menu guard is
+     * the caller's (index.ts loopRefusal).
+     */
+    async typeIntoLoop(terminalId: string, text: string): Promise<LoopTypeResult> {
+        const running = (): boolean => this.deps.terminals.hasTerminal(terminalId) && !this.deps.mirror.hasExited(terminalId)
+        if (!running()) return 'gone'
+        await this.deps.mirror.flush(terminalId)
+        if (this.deps.mirror.inputBox(terminalId)?.typed.trim()) return 'busy'
+        const line = text.replace(/[\r\n]+/g, ' ')
+        await this.settleAfterEscape(terminalId)
+        this.write(terminalId, line)
+        await sleep(submitDelay(line.length))
+        if (!running()) return 'gone'
+        this.write(terminalId, '\r')
+        return (await this.confirmSubmitted(terminalId, line)) ? 'submitted' : 'stuck'
     }
 
     /**

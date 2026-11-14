@@ -71,6 +71,51 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 세션 상태 — 「끝났는데 아직 안 봄」을 따로 표시하기(herdr `Done`)
+- Discovered: 2026-11-14 탐구 세션(Whosup·herdr 비교) 뒤 사람 결정: 「일단 백로그로」.
+- Evidence: 우리 상태는 `SessionStatus` = `idle | running | ready | error` 와 `awaitingInput` 뿐이다(`src/shared/types.ts:9`, `Sidebar/SessionItem.tsx`). 일이 끝난 세션은 사람이 봤든 안 봤든 같은 `ready` 라, 세션이 20~30개면 끝난 뒤 방치된 칸이 「쉬는 중」에 섞인다. herdr(`herdrdev/herdr` ee5bfb5)는 `app/api_helpers.rs` `pane_agent_status(state, seen)` 에서 Idle 이면서 `seen=false` 면 `Done`, 봤으면 `Idle` 로 나눈다(API `AgentStatus` = Idle·Working·Blocked·Done·Unknown).
+- Trigger: 여러 세션을 돌리다 끝난 세션을 놓쳤다는 말이 나올 때, 또는 아래 「보드 보기」를 시작할 때(그 전제다).
+- Fix direction: `running → ready` 전이 때 세션에 `unseenSince` 를 찍고, 그 세션을 선택(포커스)하면 지운다. 사이드바 점·Control API `state` 에 `done` 을 더한다. 재시작 뒤 유지 여부는 따로 정한다.
+- Owner: 없음
+
+### 세션 상태 판정 — 화면 규칙을 에이전트별 파일로 빼고 앱 배포 없이 갱신(herdr manifest)
+- Discovered: 2026-11-14 같은 탐구 세션.
+- Evidence: 우리 판정 문구(「esc to interrupt」, 「Enter to confirm · Esc to cancel」 등)는 코드 안에 있다(`promptScreen.ts`·`SessionScreenStatus.ts`·`TerminalMirror.ts`) — Claude·Codex 화면 문구가 바뀌면 릴리스가 필요하다. herdr 는 `src/detect/manifests/*.toml`(22개, 규칙 143개)에 영역(`bottom_non_empty_lines(N)`·`after_last_horizontal_rule`·`osc_title`)·우선순위·정규식을 두고, `manifest_update.rs` 가 `https://herdr.dev/agent-detection/index.toml`(엔진 버전 3, 256KB 상한)에서 받아 갱신한다. 대화 기록 보기 화면은 `transcript_viewer` 규칙으로 상태 갱신을 건너뛴다.
+- Why deferred: 원격 갱신은 서명·버전 고정·실패 시 내장 규칙으로 되돌림을 새로 정해야 한다.
+- Trigger: CLI 업데이트로 문구가 바뀌어 상태 오판 제보가 한 달에 두 번 이상 올 때.
+- Fix direction: 먼저 규칙을 앱 안 JSON 으로만 빼서(원격 없음) 시험을 규칙 표로 돌린다. 원격 갱신은 그다음 결정 기록과 함께.
+- Owner: 없음
+
+### 보드 보기 — 세션 전부를 카드 한 장에, 「다음 볼 칸」 한 줄(Whosup)
+- Discovered: 2026-11-14 같은 탐구 세션. Whosup(`fivetaku/whosup`, MIT, herdr 0.9+ 플러그인, `127.0.0.1:4790`)을 읽었다.
+- Evidence: Whosup 은 herdr 상태를 3초마다 모아 카드 보드로 보여 주고, 「다음 볼 칸」 한 줄 · 오래 기다린 순 정렬 · 15분 재알림(최대 4회) · 「봤음」 30분 숨김 · 재부팅 뒤 `--resume` · 누르면 그 칸으로 이동(`pane.focus`)을 한다. 우리는 사이드바 목록과 인박스뿐이다.
+- Trigger: 위 「끝났는데 아직 안 봄」이 들어간 뒤, 또는 세션 20개 이상을 한 화면에서 보고 싶다는 말이 나올 때.
+- Fix direction: 새 창 대신 메인 창의 보기 하나로. 정렬 기준은 `awaitingInput` > 안 본 끝남 > 일하는 중, 같은 칸 안에서는 기다린 시간 순.
+- Owner: 없음
+
+### Control API — 경로의 잘못된 `%` 인코딩이 500 으로 답한다
+- Discovered: 2026-11-14 T129 작성 중 실측 — `GET /v1/crons/%E0%A4%A` → 500 `{"code":"internal","message":"URI malformed"}`.
+- Evidence: `ControlApiServer` 라우터가 경로 조각마다 `decodeURIComponent` 를 부르는데 `URIError` 를 잡지 않아 맨 아래 500 으로 떨어진다. 크론만이 아니라 `:session` 등 모든 경로 변수가 같다.
+- Trigger: 클라이언트가 이름을 손으로 인코딩하는 도구(MCP·`clim`)를 붙일 때, 또는 로그에 `URI malformed` 가 보일 때.
+- Fix direction: 그 자리에서 `URIError` 를 잡아 400 `bad_path` 로 답한다.
+- Owner: 없음
+
+### 데스크톱 터미널 — 글꼴 크기만 바뀌면 xterm 스크롤 영역이 옛 줄 높이로 남을 수 있다
+- Discovered: 2026-11-14 fb-1114 세션 C. 폰에서 번들 글꼴이 스냅샷보다 늦게 오면 xterm 6.0.0 Viewport 가 스크롤 영역(줄 높이 × 줄 수)을 다시 재지 않아 끌기·`scrollLines` 가 안 먹었다(셸이 다시 출력할 때까지). 폰은 `src/renderer/src/phone/xtermViewportSync.ts`(렌더러 dimension 변경 → `_viewport.queueSync()`)로 고쳤다(PR #127).
+- Evidence: 실패 회차 내부값 Viewport `height 645 / scrollHeight 4575`(=15px×43·305줄) 인데 렌더러 cell 13px — 보고 `~/Downloads/_batches/fb-1114/reports/C.md`.
+- 제안: 데스크톱 `TerminalView` 도 같은 Viewport 를 쓴다. 줌(Cmd+±)·글꼴 설정 변경처럼 버퍼 resize 없이 셀 크기만 바뀌는 경로가 있는지 보고, 있으면 같은 `keepViewportInSync` 를 연결(공용 모듈로 옮김 — 컨펌 대상).
+- Why deferred: 이번 제보 범위 밖이고 데스크톱에서 재현을 아직 못 했다.
+- Trigger: 데스크톱에서 「줌 뒤 스크롤이 안 된다」 제보, 또는 xterm 업그레이드 때.
+- Owner: Maintainer
+
+### CI — pull_request 실행이 러너를 못 받고 15분 만에 취소된다
+- Discovered: 2026-11-14 fb-1114. PR #127 두 번·#128 한 번, 단계 0개 실행·`runner_name` 빈 값으로 15분 뒤 cancelled(timeout-minutes 25 보다 짧다). 같은 커밋의 push 실행은 통과. rerun 으로 넘어갔다.
+- Evidence: `gh api repos/woorichicken/CLI_manager/actions/jobs/132014364211` · `…/132023831866` — started 16:27:47Z → completed 16:42:48Z, steps [].
+- 제안: 다시 나면 `concurrency` 그룹(`ci-${{ github.ref }}` — push 와 pull_request 의 ref 가 달라 서로 안 끊는다)과 macOS 러너 대기 제한을 본다. push·PR 이 같은 커밋을 두 번 도는 것 자체를 줄이는 안도.
+- Why deferred: 재실행으로 풀렸고 원인이 GitHub 쪽 러너 대기일 수 있다.
+- Trigger: 같은 취소가 한 주에 두 번 더.
+- Owner: Maintainer
+
 ### `scripts/release.cjs --check` — main CI 가 빨간 채로 릴리즈해도 아무도 모른다
 - Discovered: 2026-11-11 회고(PR #117). main CI 는 08-16 부터 11-11 까지 한 번도 끝까지 못 갔고(취소·실패), 그사이 v1.31·v1.32 는 로컬 `--skip-tests` 로 나갔다. 프리플라이트에 CI 상태를 보는 칸이 없어 석 달 동안 아무도 몰랐다.
 - Evidence: `gh run list --branch main --limit 3` — 42857459382 failure(8653ea9) · 42942657150 cancelled(63a918f) · 42950644250 success(7535eff, #117 머지 뒤 처음).
@@ -376,6 +421,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: `AgentStatusResolver.ts`의 `SOURCE_RANK`에 `osc: 2` 자리가 있으나 이 소스로
   `applyObservedStatus`를 호출하는 코드가 없다 — `grep -rn "'osc'" src/`의 결과는
   `src/shared/types.ts`의 타입 선언과 주석 2줄뿐이다.
+- 2026-11-14 참고 추가: herdr 도 Claude 창 제목의 스피너(Braille·반원 글자)를 「일하는 중」 규칙 `osc_title_working` 으로 쓴다(`src/detect/manifests/claude.toml`). 우리의 1.5초 출력 기준(`DEFAULT_QUIET_MS`)보다 덜 흔들린다.
 
 ### `src/main/TerminalManager.ts` + `AgentStatusResolver.ts` — pane 단위 식별자가 없어 이벤트를 cwd로 추측한다
 - Discovered: 2026-08-16, Orca 소스 대조 중

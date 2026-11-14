@@ -45,6 +45,8 @@ import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
+import { splitAfterDrop, SPLIT_DIVIDER_PX, splitHeadersWide, PANE_HEADER_WIDE_PX, PANE_HEADER_COMPACT_PX } from './utils/splitLayout'
+import { SplitDividers } from './components/SplitDividers'
 
 /** Let the window settle before spending anything on a network check. */
 const UPDATE_CHECK_STARTUP_DELAY_MS = 2000
@@ -108,6 +110,18 @@ function App() {
     // The session the user is looking at: the focused split pane, else the active tab. One place reports it
     // for the recently viewed order (sidebar All sessions, Related sort); main skips a repeat of the id already in front.
     const viewedSessionId = splitLayout ? splitLayout.sessionIds[activeSplitIndex] ?? null : activeSession?.id ?? null
+    // Width of the terminal area, so a split pane wide enough can carry the single-view header (report 08343040).
+    const [splitAreaWidth, setSplitAreaWidth] = useState(0)
+    const splitAreaObserver = useRef<ResizeObserver | null>(null)
+    const splitAreaRef = React.useCallback((el: HTMLDivElement | null) => {
+        splitAreaObserver.current?.disconnect()
+        splitAreaObserver.current = null
+        if (!el) return
+        setSplitAreaWidth(el.clientWidth)
+        const observer = new ResizeObserver(() => setSplitAreaWidth(el.clientWidth))
+        observer.observe(el)
+        splitAreaObserver.current = observer
+    }, [])
     useEffect(() => {
         if (viewedSessionId) void window.api.pushRecentSession(viewedSessionId)
     }, [viewedSessionId])
@@ -604,9 +618,9 @@ function App() {
         : undefined
     const activeAiControl = activeLiveSession?.aiControl
 
-    // Single view only: a split view shows several sessions at once and has no one place in a history.
+    // One history for the window: in split view it follows the active pane, whose header shows ‹ › when wide.
     const sessionHistory = useSessionHistory(
-        splitLayout ? undefined : activeSession?.id,
+        viewedSessionId ?? undefined,
         id => workspaces.some(w => w.sessions?.some(s => s.id === id))
     )
     const activeParents = useMemo(
@@ -700,31 +714,15 @@ function App() {
         const sessionId = e.dataTransfer.getData('application/x-session-id')
         if (!sessionId) return
 
-        // Don't add if already in split
-        if (splitLayout?.sessionIds.includes(sessionId)) return
-
-        // Max 4 terminals in split
-        if (splitLayout && splitLayout.sessionIds.length >= 4) return
-
-        if (splitLayout) {
-            // Add to existing split
-            setSplitLayout({
-                ...splitLayout,
-                sessionIds: [...splitLayout.sessionIds, sessionId],
-                sizes: undefined // Reset sizes to auto-calculate
-            })
-        } else if (activeSession) {
-            // Start new split: current active session + dropped session
-            setSplitLayout({
-                sessionIds: [activeSession.id, sessionId]
-            })
-            setActiveSession(null)
-        } else {
-            // No active session, just add to split
-            setSplitLayout({
-                sessionIds: [sessionId]
-            })
+        const result = splitAfterDrop(splitLayout?.sessionIds ?? null, activeSession?.id ?? null, sessionId)
+        if (result.kind === 'ignore') return
+        if (result.kind === 'focus') {
+            setActiveSplitIndex(result.index)
+            return
         }
+        // sizes reset: the panes are laid out again for the new count
+        setSplitLayout({ ...(splitLayout ?? {}), sessionIds: result.sessionIds, sizes: undefined })
+        if (!splitLayout) setActiveSession(null)
     }
 
     // Handle removing a session from split view
@@ -1726,6 +1724,7 @@ function App() {
                 <div className="flex-1 pt-4 px-4 pb-0 flex flex-col overflow-hidden min-h-0">
                     {/* Terminal container with relative positioning for absolute children */}
                     <div
+                        ref={splitAreaRef}
                         className="flex-1 relative overflow-hidden"
                         onDragOver={handleTerminalAreaDragOver}
                         onDragLeave={handleTerminalAreaDragLeave}
@@ -1769,7 +1768,7 @@ function App() {
 
                         {/* Split View Headers Only - z-20 to be above terminals */}
                         {splitLayout && splitLayout.sessionIds.length > 0 && (
-                            <div className={`absolute inset-0 z-20 grid gap-2 pb-2 pointer-events-none ${
+                            <div data-split-grid className={`absolute inset-0 z-20 grid gap-px pointer-events-none ${
                                 splitLayout.sessionIds.length === 2 ? 'grid-cols-2 grid-rows-1' :
                                 splitLayout.sessionIds.length === 3 ? 'grid-cols-2 grid-rows-2' :
                                 splitLayout.sessionIds.length === 4 ? 'grid-cols-2 grid-rows-2' :
@@ -1796,7 +1795,7 @@ function App() {
                                     return (
                                         <div
                                             key={sessionId}
-                                            className={`flex flex-col border border-white/10 rounded-lg overflow-hidden pointer-events-none ${gridClass}`}
+                                            className={`flex flex-col overflow-hidden pointer-events-none ${gridClass}`}
                                         >
                                             {/* Header only - clickable */}
                                             <div className="pointer-events-auto">
@@ -1818,6 +1817,11 @@ function App() {
                                                     onReorder={handleSplitReorder}
                                                     relatedCount={relatedCountBySession.get(sessionId) ?? 0}
                                                     onOpenRelated={setRelatedDialogSessionId}
+                                                    wide={splitHeadersWide(splitAreaWidth, splitLayout.sessionIds.length)}
+                                                    fontSize={settings.fontSize}
+                                                    history={index === activeSplitIndex ? sessionHistory : undefined}
+                                                    parents={parentSessionsOf(sessionRelations, sessionId, workspaces)}
+                                                    onShowSession={id => showSessions([id])}
                                                 />
                                             </div>
                                             {/* Terminal placeholder - clicks pass through to terminal below */}
@@ -1825,6 +1829,7 @@ function App() {
                                         </div>
                                     )
                                 })}
+                                <SplitDividers count={splitLayout.sessionIds.length} />
                             </div>
                         )}
 
@@ -1865,10 +1870,12 @@ function App() {
                                 const count = splitLayout.sessionIds.length
                                 const idx = splitIndex
 
-                                // Calculate grid position with padding for breathing room
-                                const gap = 8 // gap between terminals (gap-2)
-                                const headerHeight = 32 // h-8 = 32px
-                                const bottomPadding = 8 // extra space at bottom
+                                // Panes touch: only the 1px divider line sits between them, the same
+                                // `gap-px` the header grid above uses, so headers and terminals line up
+                                // (report a81cd0ce asked for no space between panes).
+                                const gap = SPLIT_DIVIDER_PX
+                                const headerHeight = splitHeadersWide(splitAreaWidth, count) ? PANE_HEADER_WIDE_PX : PANE_HEADER_COMPACT_PX
+                                const bottomPadding = 0 // single view has none either
 
                                 // Use top/bottom for vertical positioning (responsive to parent height)
                                 // Use left/right for horizontal positioning (responsive to parent width)

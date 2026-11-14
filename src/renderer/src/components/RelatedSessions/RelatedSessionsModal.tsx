@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Columns2, Info, Plus, Waypoints, X } from 'lucide-react'
+import { Check, Columns2, Copy, Info, Plus, Waypoints, X } from 'lucide-react'
 import { SessionRelation, TerminalTemplate, Workspace } from '../../../../shared/types'
 import { RELATED_ORDERS, RelatedEntry, RelatedOrder, sessionTreeFor } from '../../utils/relatedSessions'
 import { MAX_LINKED_SESSIONS } from '../../utils/sessionLink'
+import { relatedForAgent } from '../../utils/relatedForAgent'
 import { useSessionPeeks } from '../../hooks/useSessionPeeks'
 import { RelationTree } from './RelationTree'
 import { CopyNotice, useCopyWithNotice } from '../Sidebar/CopyNotice'
@@ -27,6 +28,9 @@ const MAX_PICKED = MAX_LINKED_SESSIONS - 1
 
 /** The dialog's order is a preference: it outlives the dialog and a restart. */
 const ORDER_STORAGE_KEY = 'climanager.related.order'
+
+/** How long "Copy for agent" reads "Copied" — the checklist button's timing. */
+const COPIED_MS = 1500
 
 function storedOrder(): RelatedOrder {
     try {
@@ -68,6 +72,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     const [creating, setCreating] = useState(false)
     const [helpPinned, setHelpPinned] = useState(false)
     const [helpHover, setHelpHover] = useState(false)
+    const [copiedForAgent, setCopiedForAgent] = useState(false)
     const tree = useMemo(
         () => sessionTreeFor(relations, sessionId, workspaces, order, recentIds),
         [relations, sessionId, workspaces, order, recentIds]
@@ -146,6 +151,12 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     const show = (ids: string[]): void => {
         onShowSessions(ids)
         onClose()
+    }
+    // The ticked rows when there are any, else every related session (df23dbd0).
+    const copyForAgent = async (): Promise<void> => {
+        await navigator.clipboard.writeText(relatedForAgent({ id: sessionId, name: owner.name }, tree, peeks, liveSelection))
+        setCopiedForAgent(true)
+        setTimeout(() => setCopiedForAgent(false), COPIED_MS)
     }
     const changeOrder = (next: RelatedOrder): void => {
         setOrder(next)
@@ -253,16 +264,28 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                 </div>
 
                 {visibleIds.length > 0 && (
-                    <div className="flex items-center gap-2 px-4 py-2 border-t border-white/10">
-                        <span className="text-[11px] text-gray-500">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2 border-t border-white/10">
+                        {/* A narrow window gives the hint its own line instead of a thin column beside the buttons. */}
+                        <span className="text-[11px] text-gray-500 basis-full min-[560px]:basis-auto min-[560px]:flex-1 min-w-0">
                             {liveSelection.length === 0
                                 ? `Click a session to go there, or tick up to ${MAX_PICKED} to see them beside this one.`
                                 : `${liveSelection.length} of ${MAX_PICKED} selected — opens beside this session`}
                         </span>
                         <button
+                            onClick={() => void copyForAgent()}
+                            className="ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                            title={liveSelection.length === 0
+                                ? 'Copy these sessions with how an agent reaches them — paste it to an agent'
+                                : 'Copy the ticked sessions with how an agent reaches them — paste it to an agent'}
+                            data-related-copy-agent
+                        >
+                            {copiedForAgent ? <Check size={12} /> : <Copy size={12} />}
+                            {copiedForAgent ? 'Copied' : 'Copy for agent'}
+                        </button>
+                        <button
                             onClick={() => show([sessionId, ...liveSelection])}
                             disabled={liveSelection.length === 0}
-                            className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded text-xs text-white bg-blue-600 hover:bg-blue-500 disabled:bg-white/5 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
+                            className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded text-xs text-white bg-blue-600 hover:bg-blue-500 disabled:bg-white/5 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
                             data-related-open-split
                         >
                             <Columns2 size={12} />

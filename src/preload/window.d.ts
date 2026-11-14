@@ -2,6 +2,7 @@ import { ElectronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, WorkspaceFolder, LoopState, LoopUpdatePayload, LoopSession, LoopDetectionConfig, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage } from '../shared/types'
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
+import type { CronInput, CronRun, CronState, CronView } from '../shared/autocron'
 import type { PhoneTestPushResult } from '../shared/phone'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
@@ -190,6 +191,15 @@ declare global {
             getLoopConfig: () => Promise<IPCResult<LoopDetectionConfig>>
             setLoopConfig: (config: LoopDetectionConfig) => Promise<IPCResult<LoopDetectionConfig>>
             onLoopUpdate: (callback: (payload: LoopUpdatePayload) => void) => () => void
+
+            // Autocron
+            listCrons: () => Promise<IPCResult<CronState>>
+            createCron: (input: CronInput) => Promise<IPCResult<CronView>>
+            updateCron: (id: string, input: CronInput) => Promise<IPCResult<CronView>>
+            removeCron: (id: string) => Promise<IPCResult<boolean>>
+            runCron: (id: string) => Promise<IPCResult<CronRun>>
+            openCronSession: (sessionId: string) => Promise<IPCResult<boolean>>
+            onCronState: (callback: (state: CronState) => void) => () => void
 
             // Agent hook integration
             getHookState: () => Promise<HookInstallState>

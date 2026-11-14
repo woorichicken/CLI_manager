@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Infinity as InfinityIcon } from 'lucide-react'
+import { Infinity as InfinityIcon, CalendarClock } from 'lucide-react'
 import { TerminalView } from '../TerminalView'
 import { LoopList } from './LoopList'
 import { LoopStatsModal } from './LoopStatsModal'
+import { AutocronPanel } from './AutocronPanel'
 import { useLoops } from '../../hooks/useLoops'
 import { UserSettings, SessionStatus } from '../../../../shared/types'
 
@@ -70,6 +71,9 @@ function EmptyDashboard() {
 export function LoopDashboard() {
     const { projects, sessions, sessionForProject, openTerminal, restart, remove } = useLoops()
     const prefs = useTerminalPrefs()
+
+    // Loops (the /loop terminals) or Autocron (scheduled jobs). Loop terminals stay mounted while hidden.
+    const [tab, setTab] = useState<'loops' | 'autocron'>('loops')
 
     // Which project is currently selected in the list
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -168,19 +172,34 @@ export function LoopDashboard() {
         <div className="h-screen w-screen flex flex-col bg-black/90 text-white overflow-hidden">
             {/* Draggable title bar */}
             <div className="h-8 draggable flex items-center px-4 shrink-0 border-b border-white/5">
-                <div className="flex items-center gap-2 no-draggable">
-                    <InfinityIcon size={13} className="text-purple-400" />
-                    <span className="text-xs font-semibold text-gray-400">Loop Dashboard</span>
-                    {projects.length > 0 && (
-                        <span className="text-xs text-gray-600 font-mono">
-                            ({projects.length})
-                        </span>
-                    )}
+                <div className="flex items-center gap-1 no-draggable pl-16">
+                    <span className="text-xs font-semibold text-gray-400 mr-2">Loop Dashboard</span>
+                    <button
+                        type="button"
+                        onClick={() => setTab('loops')}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs ${tab === 'loops' ? 'bg-white/10 text-gray-200' : 'text-gray-500 hover:text-gray-300'}`}
+                        data-testid="loop-tab-loops"
+                    >
+                        <InfinityIcon size={13} className="text-purple-400" />
+                        <span className="font-semibold">Loops</span>
+                        {projects.length > 0 && <span className="text-gray-600 font-mono">({projects.length})</span>}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setTab('autocron')}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs ${tab === 'autocron' ? 'bg-white/10 text-gray-200' : 'text-gray-500 hover:text-gray-300'}`}
+                        data-testid="loop-tab-autocron"
+                    >
+                        <CalendarClock size={13} className="text-purple-400" />
+                        <span className="font-semibold">Autocron</span>
+                    </button>
                 </div>
             </div>
 
+            {tab === 'autocron' && <AutocronPanel loopProjects={projects} />}
+
             {/* Body */}
-            <div className="flex flex-1 min-h-0">
+            <div className="flex flex-1 min-h-0" style={{ display: tab === 'loops' ? 'flex' : 'none' }}>
                 {/* Left sidebar: loop project list */}
                 <div
                     className="flex flex-col border-r border-white/10 bg-black/30 shrink-0 overflow-hidden"
