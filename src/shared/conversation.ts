@@ -386,6 +386,11 @@ export interface ChatPreferences {
     showQuickReplies?: boolean
     /** The replies, in order. Default: continue · yes · no · retry. */
     quickReplies?: string[]
+    /**
+     * A colour per reply, keyed by the reply's text (report 93bd4834). Kept beside `quickReplies`, which stays
+     * a list of strings so builds and phone pages from before read it unchanged. No key: the plain chip.
+     */
+    quickReplyColors?: Record<string, QuickReplyColor>
     /** A touch screen: Return sends too (the phone's own setting). Default off — Return breaks the line. */
     returnSendsOnTouch?: boolean
     /** Keep the person's last message on top of the chat once it has scrolled away. Default off. */
@@ -407,6 +412,23 @@ export interface ChatPreferences {
 }
 
 export const DEFAULT_QUICK_REPLIES = ['continue', 'yes', 'no', 'retry']
+
+/** The fixed colours a quick reply chip can take — chat.css holds each one's text, border and fill per theme. */
+export const QUICK_REPLY_COLORS = ['blue', 'green', 'amber', 'red', 'purple', 'pink', 'teal'] as const
+export type QuickReplyColor = (typeof QUICK_REPLY_COLORS)[number]
+
+/** The reply's colour, or undefined — a value this build does not know (a newer build's) draws the plain chip. */
+export function quickReplyColorOf(colors: Record<string, string> | undefined, reply: string): QuickReplyColor | undefined {
+    const color = colors?.[reply]
+    return (QUICK_REPLY_COLORS as readonly string[]).includes(color ?? '') ? (color as QuickReplyColor) : undefined
+}
+
+/** Colours of the replies still on the list; the rest are dropped so the store does not collect stale keys. */
+export function keepQuickReplyColors(colors: Record<string, QuickReplyColor> | undefined, replies: string[]): Record<string, QuickReplyColor> | undefined {
+    if (!colors) return undefined
+    const kept = Object.fromEntries(replies.filter((reply) => quickReplyColorOf(colors, reply)).map((reply) => [reply, colors[reply]]))
+    return Object.keys(kept).length > 0 ? kept : undefined
+}
 
 /** A file is attached by its path; one the app has to store first (a pasted picture) may be this big. */
 export const MAX_ATTACH_BYTES = 32 * 1024 * 1024

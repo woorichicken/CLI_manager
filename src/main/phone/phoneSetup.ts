@@ -11,7 +11,7 @@ import type { TerminalMirror } from '../TerminalMirror'
 import type { PhoneSession, PhoneSessionsResponse, PhoneSessionState, PhoneUsageResponse } from '../../shared/phone'
 import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, UsageSnapshot, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
 import { DEFAULT_PHONE } from '../../shared/types'
-import { DEFAULT_QUICK_REPLIES } from '../../shared/conversation'
+import { DEFAULT_QUICK_REPLIES, keepQuickReplyColors } from '../../shared/conversation'
 // The sidebar's own ordering functions (pure, types only): the phone's list is the Mac's All
 // sessions List exactly because it is computed by the same code, not a copy of it.
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder, type SessionEntry } from '../../renderer/src/utils/sessionNavigation'
@@ -227,6 +227,10 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         quickReplies: () => {
             const chat = (deps.store.get('settings') as UserSettings | undefined)?.chat
             return (chat?.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim())
+        },
+        quickReplyColors: () => {
+            const chat = (deps.store.get('settings') as UserSettings | undefined)?.chat
+            return keepQuickReplyColors(chat?.quickReplyColors, (chat?.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim()))
         },
         quickRepliesSet: () => ((deps.store.get('settings') as UserSettings | undefined)?.chat?.quickReplies ?? []).some((reply) => reply.trim()),
         pinLastMessage: () => (deps.store.get('settings') as UserSettings | undefined)?.chat?.pinLastMessage === true,
