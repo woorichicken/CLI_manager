@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import { RelatedEntry, SessionTree, TreeEntry } from '../../utils/relatedSessions'
 import { SessionPeek } from '../../../../shared/types'
 import { RelatedSessionRow } from './RelatedSessionRow'
+import type { RelationFilterKey } from './RelationFilter'
 
 interface RelationTreeProps {
     tree: SessionTree
@@ -13,6 +14,8 @@ interface RelationTreeProps {
     onShow: (sessionId: string) => void
     onRemove: (sessionId: string) => void
     onCopyId: (sessionId: string) => void
+    /** Only this part of the tree; `all` (the default) is every section. */
+    filter?: RelationFilterKey
 }
 
 type Section = {
@@ -25,13 +28,26 @@ type Section = {
     entries: Array<RelatedEntry & { indent: number }>
 }
 
+/** The section a filter keeps. "Also related" sits outside the tree, so only All lists it. */
+const SECTION_FOR_FILTER: Record<Exclude<RelationFilterKey, 'all'>, Section['tree']> = {
+    above: 'up',
+    beside: 'side',
+    below: 'down'
+}
+
+const EMPTY_FILTER_TEXT: Record<Exclude<RelationFilterKey, 'all'>, string> = {
+    above: 'Nothing above this session: no session opened it or had it dropped on it.',
+    beside: 'Nothing beside this session: no other session sits under the same one.',
+    below: 'Nothing below this session: it has not opened a session, and none was dropped on it.'
+}
+
 /**
  * The relation tab: its children first — what the person usually comes here
  * for (474b70f8) — then its parents, who shares its parent, and the related
  * sessions the tree places elsewhere. Only for the Related dialog, hence not a
  * shared component.
  */
-export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, onToggle, onShow, onRemove, onCopyId }: RelationTreeProps) {
+export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, filter = 'all' }: RelationTreeProps) {
     const deepestAbove = tree.ancestors.reduce((max, entry) => Math.max(max, entry.depth), 0)
     const withIndent = (entries: TreeEntry[], indentOf: (entry: TreeEntry) => number) =>
         entries.map(entry => ({ ...entry, indent: indentOf(entry) }))
@@ -60,11 +76,21 @@ export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, 
         }
     ]
 
+    const shown = filter === 'all' ? sections : sections.filter(section => section.tree === SECTION_FOR_FILTER[filter])
+    // "This session" sits with the siblings, between above and beside: drawn where the Beside section is.
+    // Under Beside it marks rows beside it, so with none there it would only sit on top of the empty note.
+    const showSelf = filter === 'all' || (filter === 'beside' && tree.siblings.length > 0)
+
     return (
         <>
-            {sections.map(section => (
+            {filter !== 'all' && shown.every(section => section.entries.length === 0) && (
+                <div className="px-4 py-6 text-center text-xs text-gray-500" data-related-filter-empty={filter}>
+                    {EMPTY_FILTER_TEXT[filter]}
+                </div>
+            )}
+            {shown.map(section => (
                 <Fragment key={section.group}>
-                {section.tree === 'side' && (
+                {section.tree === 'side' && showSelf && (
                     <div className="px-4 py-1 text-[11px] text-blue-300/80 truncate" data-related-self>
                         ▸ {ownerName} (this session)
                     </div>
