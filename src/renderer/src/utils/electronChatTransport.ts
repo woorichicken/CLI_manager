@@ -29,7 +29,7 @@ const cwdBySession = new Map<string, string>()
  * pictures and text, the Mac's own app for the rest). Unset (a window without a preview),
  * the file opens in the Mac's own app.
  */
-type FileOpener = (path: string, line?: number) => void
+type FileOpener = (path: string, line?: number, sessionId?: string) => void
 let fileOpener: FileOpener | null = null
 export function setChatFileOpener(opener: FileOpener | null): void {
     fileOpener = opener
@@ -102,9 +102,9 @@ export const electronChatTransport: ChatTransport = {
         const result = await window.api.searchFiles(cwd, query)
         return result.success ? result.files.slice(0, SEARCH_RESULTS).map((file) => file.relativePath) : []
     },
-    openFile(_sessionId, path, line) {
-        if (fileOpener) fileOpener(path, line)
-        else void window.api.openChatPath(path)
+    openFile(sessionId, path, line) {
+        if (fileOpener) fileOpener(path, line, sessionId)
+        else void window.api.openChatPath(path, sessionId)
     },
     openLink(url) {
         if (/^(https?:|mailto:)/i.test(url)) void window.api.openExternal(url)

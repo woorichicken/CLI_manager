@@ -61,6 +61,9 @@ import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
 import { DictationService } from './Dictation'
 import { DictationLog } from './DictationLog'
+import { openInDock } from './dockOpen'
+import { dockLocation } from './phone/phoneDock'
+import { BROWSER_PAGE_EXTENSIONS } from '../shared/fileKinds'
 
 // Set app name for development mode
 app.setName('CLI Manager')
@@ -3847,8 +3850,14 @@ app.whenReady().then(async () => {
         saveChatAttachment(path.join(os.tmpdir(), 'climanager-chat'), typeof name === 'string' ? name : 'pasted', bytes)
     )
     // A file the chat names that the preview cannot show (a PDF, a video): the Mac's own app for it.
-    ipcMain.handle('chat-open-path', async (_e, target: unknown): Promise<{ success: boolean; error?: string }> => {
+    ipcMain.handle('chat-open-path', async (_e, target: unknown, sessionId?: unknown): Promise<{ success: boolean; error?: string }> => {
         if (typeof target !== 'string' || !path.isAbsolute(target) || !existsSync(target)) return { success: false, error: 'File not found' }
+        // A web page goes through Artifact Dock when it is there: Chrome's new tab would be closed as a duplicate (fc98b340).
+        const extension = path.extname(target).slice(1).toLowerCase()
+        if (BROWSER_PAGE_EXTENSIONS.has(extension)) {
+            const { socketPath } = dockLocation(process.env, process.platform, os.homedir())
+            if ((await openInDock(socketPath, target, typeof sessionId === 'string' ? sessionId : undefined)) === 'opened') return { success: true }
+        }
         const error = await shell.openPath(target)
         return error ? { success: false, error } : { success: true }
     })
