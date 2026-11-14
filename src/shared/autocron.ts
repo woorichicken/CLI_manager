@@ -35,7 +35,7 @@ export interface CronJob {
     missed: CronMissed
     createdAt: number
     updatedAt: number
-    /** Who made it: 'app' from the window, or the Control API client name. */
+    /** Who made it: 'app' from the window, or the Control API client name — such a job runs only while the API is on. */
     createdBy: string
 }
 
@@ -66,8 +66,10 @@ export interface CronRun {
 export interface CronView extends CronJob {
     nextRunAt: number | null
     lastRun: CronRun | null
-    /** Why the schedule cannot run, when it cannot (bad expression, missing loop project). */
+    /** Why the schedule cannot run, when it cannot (bad expression, missing loop project, Control API off). */
     problem?: string
+    /** Made over the Control API while the API is off: it waits until the API is on again. */
+    apiOff?: boolean
 }
 
 export interface CronState {

@@ -290,13 +290,17 @@ function CronDetail({ cron, runs, onEdit }: { cron: CronView; runs: CronRun[]; o
                 </div>
             </div>
 
-            {cron.problem && <p className="mt-3 text-xs text-red-400">{cron.problem}</p>}
+            {cron.problem && <p className="mt-3 text-xs text-red-400" data-testid="autocron-problem">{cron.problem}</p>}
             {message && <p className="mt-3 text-xs text-amber-400">{message}</p>}
 
             <dl className="grid grid-cols-[120px_1fr] gap-y-1.5 mt-4 text-xs">
                 <dt className="text-gray-500">Schedule</dt><dd className="text-gray-300 font-mono">{cron.schedule}</dd>
-                <dt className="text-gray-500">Next run</dt><dd className="text-gray-300" data-testid="autocron-next">{cron.enabled ? formatWhen(cron.nextRunAt) : 'paused'}</dd>
+                <dt className="text-gray-500">Next run</dt><dd className="text-gray-300" data-testid="autocron-next">{!cron.enabled ? 'paused' : cron.apiOff ? 'waits for the Control API' : formatWhen(cron.nextRunAt)}</dd>
                 <dt className="text-gray-500">If missed</dt><dd className="text-gray-300">{MISSED_LABELS[cron.missed.policy]}{cron.missed.policy === 'once' ? ` (within ${cron.missed.withinMinutes / 60} h)` : ''}</dd>
+                <dt className="text-gray-500">Made by</dt>
+                <dd className="text-gray-300" data-testid="autocron-made-by">
+                    {cron.createdBy === 'app' ? 'This window' : `Control API client "${cron.createdBy}" — runs only while the API is on`}
+                </dd>
                 <dt className="text-gray-500">Prompt</dt><dd className="text-gray-300 font-mono whitespace-pre-wrap break-words">{cron.prompt}</dd>
             </dl>
 
@@ -370,7 +374,9 @@ export function AutocronPanel({ loopProjects }: { loopProjects: LoopProject[] })
                                 <span className={`text-sm truncate ${c.enabled ? 'text-gray-200' : 'text-gray-500'}`}>{c.name}</span>
                             </div>
                             <div className="flex justify-between text-[11px] mt-0.5 pl-5">
-                                <span className="text-gray-500">{c.enabled ? `next ${formatWhen(c.nextRunAt)}` : 'paused'}</span>
+                                <span className={c.enabled && c.apiOff ? 'text-amber-400' : 'text-gray-500'}>
+                                    {!c.enabled ? 'paused' : c.apiOff ? 'waits for the Control API' : `next ${formatWhen(c.nextRunAt)}`}
+                                </span>
                                 <RunStatus run={c.lastRun} />
                             </div>
                         </button>

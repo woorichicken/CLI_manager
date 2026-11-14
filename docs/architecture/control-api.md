@@ -178,13 +178,15 @@ crontab lines and `/loop` sessions nobody can see together (request 2026-11-12, 
 `brand/artifacts/eli5-routine-hub-plan.html`: 「도는 곳 5군데, 보는 창 3개를 하나로」). Shown in the
 Loop window's **Autocron** tab. Code: `src/shared/cron.ts` (schedule math, missed-run decision — pure) ·
 `src/main/CronStore.ts` (jobs, runs, bookmark) · `src/main/CronService.ts` (tick, runner) ·
-renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127-autocron-unit.spec.ts`, `t128-autocron.spec.ts`.
+renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t132` (no Electron), `t128`/`t130`/`t133` (the app).
 
 | Piece | Contract |
 |---|---|
-| Modes | `new`: open a session in `cwd` with `agent` (a command — `claude`, `codex`) or a saved `template`, typing `prompt` like `POST /v1/sessions` does. `attach`: type `prompt` into the session of a Loop Dashboard project (`loopProjectId`) and press Enter — the loop keeps its context. A loop that is not running fails the run (`note` says to open it in the Loop window) |
+| Modes | `new`: open a session in `cwd` with `agent` (a command — `claude`, `codex`) or a saved `template`, typing `prompt` like `POST /v1/sessions` does. `attach`: type `prompt` (as one line) into the session of a Loop Dashboard project (`loopProjectId`) and press Enter — the loop keeps its context. It types through the API's input path (`ControlApiService.typeIntoLoop`): Enter is pressed again while the prompt stays in the input box, and nothing is typed while the box already holds text a person left there (`failed`, "already has text"). A loop that is not running, shows a question or menu, or has only its shell left fails the run (`note` says why) |
+| Made by | `createdBy` is `"app"` for a job made in the window, else the API client's name (a client that calls itself `app` is stored as `api`). **A job made over the API runs only while the Control API is on** (decision [0006](../decisions/0006-control-api-reaches-every-session.md), 2026-11-14): while it is off the job does not run, its bookmark moves (turning the API back on does not catch up), the job shows `apiOff: true`, `nextRunAt: null` and a `problem`, and «Run now» records a `failed` run. Jobs made in the window run either way |
+| Names | Unique, case and outer spaces ignored — a second `"Dup"` or a rename onto another job's name → `400`. Two jobs that already shared a name (made before 2026-11-14) are reached only by id |
 | Schedule | Five-field cron in this Mac's local time — `minute hour day-of-month month day-of-week`, with `*`, lists, ranges, steps; Sunday is 0 or 7; both day fields set → either matches. `@hourly`/`@daily`/`@weekly`/`@monthly`. A schedule that never matches (30 February) → `400` |
-| Tick | Every **30 s**, plus right after the Mac wakes (`powerMonitor` `resume`/`unlock-screen`); the first tick waits for the main window (it spawns new sessions' terminals). A run is on time within **2 min** of its minute |
+| Tick | Every **30 s**, plus right after the Mac wakes (`powerMonitor` `resume`/`unlock-screen`); the first tick waits for the main window (it spawns new sessions' terminals). A `new` run while the main window is closed opens it **hidden** (the dock icon shows it); if it fails to load or takes over **60 s**, that run fails and later ticks go on. A run is on time within **2 min** of its minute |
 | Missed | Times that passed while the Mac was off, asleep or the app closed fold into **one** decision (the newest; `missedCount` = older ones folded in). Per job: `once` (default) — run one time if within `withinMinutes` (default 360, max 7 days), else a `missed` record "more than N min late" · `skip` — record and wait · `notify` — record and a system notification. A run due now covers the misses before it |
 | Bookmark | Per job, the end of the last tick (`autocronCheckedAt`). It moves **before** the run starts, so a crash never replays a run. Switching a job on, or changing its schedule, restarts it at now — no catch-up of the old schedule or of time it was off |
 | Runs | `started` (session opened and prompt sent / typed into the loop) · `failed` (`note` why; also a notification) · `missed`. `trigger`: `scheduled`, `caught-up`, `manual`. `sessionId` → «Open session» (focuses it in the main window; an attach run opens the Loop window). A run still starting when the next comes → that one fails ("previous run was still starting") |
@@ -195,7 +197,7 @@ renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127-autocron-uni
 |---|---|---|
 | GET | `/v1/crons` | `{ crons: CronView[], runs: CronRun[] }` — each job with `nextRunAt`, `lastRun`, `problem` |
 | POST | `/v1/crons` | `{ name, schedule, mode?, agent? \| template?, cwd?, loopProjectId?, prompt, missed?: { policy, withinMinutes }, enabled? }` → `201 { cron }`; `createdBy` = the client name |
-| GET | `/v1/crons/:cron` | `{ cron }` — `:cron` is the id or the name (case ignored); unknown → `404 cron_not_found` |
+| GET | `/v1/crons/:cron` | `{ cron }` — `:cron` is the id or the name (case ignored); unknown, or a name two old jobs share → `404 cron_not_found` |
 | POST | `/v1/crons/:cron` | Same fields, only what changes → `{ cron }`. Bad input → `400` naming the field |
 | DELETE | `/v1/crons/:cron` | `{ removed: true }` |
 | GET | `/v1/crons/:cron/runs` | `{ runs }`, newest first |

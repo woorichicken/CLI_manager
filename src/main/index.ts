@@ -41,7 +41,8 @@ import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
 import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText } from './ChecklistStore'
 import { CronStore } from './CronStore'
-import { CronService } from './CronService'
+import { CronService, CRON_MADE_IN_WINDOW } from './CronService'
+import { waitForWindowLoad } from './windowLoad'
 import { CRON_CHANNELS, CronInput } from '../shared/autocron'
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
 import { TranscriptReader } from './TranscriptReader'
@@ -442,6 +443,10 @@ const sendCronState = (): void => {
     if (loopWindow && !loopWindow.isDestroyed()) loopWindow.webContents.send(CRON_CHANNELS.update_broadcast, cronService.state())
 }
 const cronStore = new CronStore(store, () => sendCronState())
+/** How long a main window opened for Autocron may take to load before that run fails. */
+const MAIN_WINDOW_LOAD_TIMEOUT_MS = 60_000
+/** The load of a main window Autocron opened, while it is under way. */
+let mainWindowLoading: Promise<void> | null = null
 const cronService: CronService = new CronService({
     store: cronStore,
     openSession: async (input) => {
@@ -449,7 +454,7 @@ const cronService: CronService = new CronService({
         return { sessionId: result.session.id, terminalStarted: result.terminalStarted, promptSent: result.promptSent, note: result.note }
     },
     loops: () => loopManager.getState(),
-    writeInput: (terminalId, data) => terminalManager.writeInput(terminalId, data),
+    typeIntoLoop: (terminalId, text) => controlApiService.typeIntoLoop(terminalId, text),
     hasTerminal: (terminalId) => terminalManager.hasTerminal(terminalId),
     loopRefusal: async (terminalId) => {
         if (terminalMirror.hasExited(terminalId)) return 'the shell in the loop terminal has exited'
@@ -463,13 +468,23 @@ const cronService: CronService = new CronService({
         }
         return null
     },
-    // New sessions are spawned by the main window's renderer, so it has to exist (hidden is fine).
-    ensureMainWindow: async () => {
-        if (mainWindow && !mainWindow.isDestroyed()) return
-        createWindow()
+    // New sessions are spawned by the main window's renderer, so it has to exist — hidden: a
+    // scheduled run must not pull a window the person closed in front of them (the dock icon
+    // shows it, see 'activate'). Runs that start together share one load; a load that fails or
+    // hangs rejects, so that run fails instead of holding the shared tick.
+    ensureMainWindow: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) return mainWindowLoading ?? Promise.resolve()
+        createWindow({ hidden: true })
         const window = mainWindow as BrowserWindow | null
-        if (window) await new Promise<void>((resolve) => window.webContents.once('did-finish-load', () => resolve()))
+        if (!window) return Promise.reject(new Error('the main window could not be created'))
+        const loading = waitForWindowLoad(window.webContents, MAIN_WINDOW_LOAD_TIMEOUT_MS)
+        mainWindowLoading = loading
+        void loading.catch(() => undefined).finally(() => {
+            if (mainWindowLoading === loading) mainWindowLoading = null
+        })
+        return loading
     },
+    apiOn: () => getControlApiSettings().enabled,
     notify: (title, body) => {
         if (isTestHeadless || !Notification.isSupported()) return
         new Notification({ title, body }).show()
@@ -988,7 +1003,8 @@ function isPrimaryModifier(input: Electron.Input): boolean {
 const RENDERER_RELOAD_LIMIT = 3
 const RENDERER_RELOAD_WINDOW_MS = 60_000
 
-function createWindow(): void {
+/** `hidden`: created for background work (Autocron) — stays hidden until the person asks for it. */
+function createWindow(options: { hidden?: boolean } = {}): void {
     // Create the browser window.
     mainWindow = new BrowserWindow({
         width: 1200,
@@ -1011,7 +1027,7 @@ function createWindow(): void {
     })
 
     mainWindow.on('ready-to-show', () => {
-        if (!isTestHeadless) {
+        if (!isTestHeadless && !options.hidden) {
             mainWindow?.show()
         }
     })
@@ -1402,7 +1418,7 @@ app.whenReady().then(async () => {
     }
     ipcMain.handle(CRON_CHANNELS.list, () => cronResult(() => cronService.state()))
     ipcMain.handle(CRON_CHANNELS.create, (_, input: CronInput) => cronResult(() => {
-        const made = cronService.create(input, 'app')
+        const made = cronService.create(input, CRON_MADE_IN_WINDOW)
         if (!made.ok) throw new Error(made.message)
         return made.cron
     }))
@@ -3515,6 +3531,8 @@ app.whenReady().then(async () => {
         // The folder name is read per request. Restarting the server for it
         // would cut every wait in flight.
         const running = controlApiServer.state().running
+        // API-made Autocron jobs run only while the API is on: the Autocron tab shows why they wait
+        if (merged.enabled !== previous.enabled) sendCronState()
         if (merged.enabled === previous.enabled && merged.port === previous.port && running === merged.enabled) {
             return controlApiServer.state()
         }
@@ -3871,6 +3889,9 @@ app.whenReady().then(async () => {
         if (isBackgroundMode) {
             // Exit background mode when dock icon is clicked
             showFromBackground()
+        } else if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible() && !isTestHeadless) {
+            // opened hidden for an Autocron run while the person had closed it
+            mainWindow.show()
         } else if (BrowserWindow.getAllWindows().length === 0) {
             createWindow()
         }
