@@ -211,6 +211,9 @@ test.describe('T134 template logo', () => {
         fs.writeFileSync(heavy, RED_SVG.replace('</svg>', `<!--${'x'.repeat(3 * 1024 * 1024)}--></svg>`))
         const good = path.join(files, 'good.svg')
         fs.writeFileSync(good, RED_SVG)
+        // Under 2 MB but claiming 60000×60000: halving step by step would ask for 30000px canvases (PR #138 review)
+        const giant = path.join(files, 'giant.svg')
+        fs.writeFileSync(giant, RED_SVG.replace('<svg ', '<svg width="60000" height="60000" '))
 
         ctx = await launchAppWithWorkspaces(
             [{ id: 'ws-t134', name: 'T134WS', path: folder, sessions: [OLD_SESSION] }],
@@ -231,6 +234,32 @@ test.describe('T134 template logo', () => {
             // The logo picked before stays.
             await expect(dialog.getByTestId('template-logo-preview')).toHaveAttribute('src', kept!)
         }
+
+        // A huge declared size still comes out as a visible 32×32 logo, quickly.
+        // cleared first, so the preview that comes back can only be the giant's (it draws the same red square)
+        await dialog.getByTestId('template-logo-remove').click()
+        await expect(dialog.getByTestId('template-logo-preview')).toHaveCount(0)
+        const startedAt = Date.now()
+        await input.setInputFiles(giant)
+        await expect(error).toHaveCount(0)
+        await expect(dialog.getByTestId('template-logo-preview')).toBeVisible()
+        expect(Date.now() - startedAt, 'no stall').toBeLessThan(5_000)
+        const giantPixel = await dialog.getByTestId('template-logo-preview').evaluate(async (el) => {
+            const img = el as HTMLImageElement
+            await img.decode()
+            const canvas = document.createElement('canvas')
+            canvas.width = img.naturalWidth
+            canvas.height = img.naturalHeight
+            const ctx = canvas.getContext('2d')!
+            ctx.drawImage(img, 0, 0)
+            return { w: img.naturalWidth, h: img.naturalHeight, rgba: Array.from(ctx.getImageData(16, 16, 1, 1).data) }
+        })
+        expect(giantPixel.w).toBe(32)
+        expect(giantPixel.rgba[0], 'the red square, not a blank logo').toBeGreaterThan(180)
+        expect(giantPixel.rgba[3]).toBe(255)
+        // Back to the small one for the save below.
+        await input.setInputFiles(good)
+        await expect(dialog.getByTestId('template-logo-preview')).toHaveAttribute('src', kept!)
 
         // Still responsive: the dialog saves and the logo is the good one.
         await saveTemplateAndSettings(page, dialog)

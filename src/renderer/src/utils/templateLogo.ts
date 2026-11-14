@@ -73,16 +73,19 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Draws the image centred into a square, keeping its proportions. Big sources are halved step by
- * step first: a single jump from 1000px to 32px skips most pixels and comes out jagged.
+ * Draws the image centred into a square, keeping its proportions. Big PNGs are halved step by step
+ * first: a single jump from 1000px to 32px skips most pixels and comes out jagged. An SVG is drawn
+ * straight at the final size — it is vector, so it renders sharp there, and its declared size can be
+ * anything (width="60000" fits in a few bytes): halving from it would ask for canvases far past the
+ * browser's limit, which come out blank (PR #138 review).
  */
-function shrinkToSquare(img: HTMLImageElement, size: number): string {
+function shrinkToSquare(img: HTMLImageElement, size: number, kind: LogoKind): string {
     // An SVG with only a viewBox can report 0×0; any square box fits it, so draw it at full size.
     let width = img.naturalWidth || size
     let height = img.naturalHeight || size
     let source: CanvasImageSource = img
 
-    while (width > size * 2 && height > size * 2) {
+    while (kind === 'png' && width > size * 2 && height > size * 2) {
         const half = document.createElement('canvas')
         half.width = Math.max(1, Math.round(width / 2))
         half.height = Math.max(1, Math.round(height / 2))
@@ -127,7 +130,7 @@ export async function readTemplateLogo(file: File): Promise<TemplateLogoResult> 
     try {
         const source = await readAsDataUrl(kind === 'svg' ? new Blob([file], { type: 'image/svg+xml' }) : file)
         const img = await loadImage(source)
-        return { ok: true, dataUrl: shrinkToSquare(img, TEMPLATE_LOGO_SIZE) }
+        return { ok: true, dataUrl: shrinkToSquare(img, TEMPLATE_LOGO_SIZE, kind) }
     } catch {
         return { ok: false, error: 'This image could not be read. Choose another PNG or SVG.' }
     }
