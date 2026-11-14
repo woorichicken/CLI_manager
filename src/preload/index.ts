@@ -424,7 +424,7 @@ const api = {
     listChatCommands: (sessionId: string): Promise<ChatCommand[]> => ipcRenderer.invoke('chat-commands', sessionId),
     listChatBackgroundTasks: (sessionId: string): Promise<BackgroundTaskList> => ipcRenderer.invoke('chat-background-tasks', sessionId),
     saveChatAttachment: (name: string, bytes: Uint8Array): Promise<AttachResult> => ipcRenderer.invoke('chat-save-attachment', name, bytes),
-    openChatPath: (target: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target),
+    openChatPath: (target: string, sessionId?: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target, sessionId),
     // Chat dictation (macOS): src/main/Dictation.ts
     dictationStatus: (): Promise<DictationStatus> => ipcRenderer.invoke('dictation-status'),
     startDictation: (context?: DictationStartContext): Promise<DictationStartResult> => ipcRenderer.invoke('dictation-start', context ?? {}),
