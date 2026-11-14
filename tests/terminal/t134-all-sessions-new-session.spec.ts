@@ -137,6 +137,8 @@ test.describe('T134 All sessions New session (c63a93c0)', () => {
         await resizeMainWindow(ctx.app, 390, 800)
         await activateSession(page, NAMES[FIRST])
         await page.getByTestId('sidebar-view-toggle').click()
+        await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
+        if (shots) await page.screenshot({ path: path.join(shots, `all-sessions-390-${label()}.png`) })
         await expect(newButton(page)).toBeVisible()
         await newButton(page).click()
         await expect(form(page)).toBeVisible()
