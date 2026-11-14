@@ -81,13 +81,17 @@ test.describe('T140 units', () => {
         expect(await openInDock(path.join(dir, 'missing.sock'), '/tmp/a.html')).toBe('unavailable')
         expect(await openInDock(null, '/tmp/a.html')).toBe('unavailable')
         // a host that never answers: the Mac's opener takes over after the timeout
-        const silent = net.createServer(() => {})
+        const held: net.Socket[] = []
+        const silent = net.createServer((socket) => {
+            held.push(socket)
+        })
         const silentPath = path.join(dir, 'silent.sock')
         await new Promise<void>((resolve) => silent.listen(silentPath, resolve))
         const started = Date.now()
         expect(await openInDock(silentPath, '/tmp/a.html', undefined, 300)).toBe('unavailable')
         expect(Date.now() - started).toBeLessThan(2_000)
-        await new Promise<void>((resolve) => silent.close(() => resolve()))
+        for (const socket of held) socket.destroy()
+        silent.close()
     })
 })
 
@@ -113,7 +117,7 @@ async function launch(dir: string): Promise<{ page: Page; report: string; opened
     const ts = (n: number): string => new Date(Date.UTC(2026, 10, 14, 1, 0, n)).toISOString()
     fs.writeFileSync(transcript, [
         { type: 'user', uuid: '00000000-0000-4000-8000-000000000001', timestamp: ts(1), message: { role: 'user', content: '보고서 어디 있어?' } },
-        { type: 'assistant', uuid: '00000000-0000-4000-8000-000000000002', timestamp: ts(2), message: { role: 'assistant', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: 'The page is report.html — open it.' }] } }
+        { type: 'assistant', uuid: '00000000-0000-4000-8000-000000000002', timestamp: ts(2), message: { role: 'assistant', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: 'The page is `report.html` — open it.' }] } }
     ].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
     result = await launchAppWithWorkspaces(
         [{ id: 'w-t140', name: 'T140 project', path: project, sessions: [{ id: CLAUDE, name: 'T140 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --continue --mode-row none` }] }],
