@@ -19,6 +19,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 의존성 보안 — Electron 39 → 42 등 `pnpm audit --prod` high 18건 · dependabot PR 정리
+- Discovered: 2026-11-14 v1.34.0 릴리즈 뒤 열린 의존성 PR 을 보다가.
+- Evidence: `pnpm audit --prod` → critical 0 · high 18 · moderate 9 · low 5. 고치려면 ① `electron` `^39.8.10` → 41.10.4+/42.11.16+(메이저, high·moderate·low) — 그 안의 `extract-zip@2.0.1` high 는 패치 없음 ② `electron-updater@6.8.9` 의 `js-yaml@4.1.1` → 4.3.2+ ③ `electron-store@11.0.2 > conf > ajv@8.17.1 > fast-uri@3.1.0` → fast-uri 3.1.9+·ajv 8.18.0+ ④ 직접 의존 `uuid@13.0.0` → 13.0.1+. 열린 dependabot PR 9개(#2~#5·#7~#10 은 08-18, #115 는 11-10) 중 이 넷을 고치는 것은 없다. `gh api repos/woorichicken/CLI_manager/dependabot/alerts` → 403 「Dependabot alerts are disabled」 — 버전 올리기 PR 은 오지만 보안 알림·보안 PR 은 꺼져 있다.
+- Why deferred: 사람 결정 2026-11-14 「일단 백로그로」. Electron 메이저는 node-pty ABI·xterm·`install-app-deps`·공증 빌드까지 다시 봐야 하는 작업이다.
+- Trigger: 다음 릴리즈 준비 때, 또는 audit 에 critical 이 생길 때. 순서 추천: ②③④(패치 버전, 작음) → ① Electron 메이저를 따로 한 갈래. 08-18 PR 8개는 충돌 상태라 닫고 dependabot 이 다시 열게 두고, #115 는 CI 다시 돌려 초록이면 머지. 저장소 설정 Security › Dependabot alerts 켜기는 사람 몫.
+- Owner: 없음
+
 ### 폰 입력칸에 터미널의 추천 답변(흐린 글) 보여 주기 — 제보 ba2ae0cb
 - Discovered: 2026-11-14 fb-1114b 끝 보고. 제보 ba2ae0cb-e427-4b5d-afca-00e4e20c4753(폰): Claude 입력 상자에 흐리게 뜨는 다음 프롬프트 추천을 폰 Chat 입력칸에도 보여 달라.
 - Evidence: 화면 쪽 판정은 이미 있다 — 추천 문구 분리(T19 「흐린 추천 문구 분리」·T88 반전 커서 뒤 회색 = 추천). 폰 Chat 입력칸(`ChatView`)은 그 값을 받지 않는다.
