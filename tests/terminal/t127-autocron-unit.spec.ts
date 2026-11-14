@@ -203,14 +203,14 @@ test.describe('T127 autocron', () => {
                 return { sessionId: `s${opened.length}`, ...openResult }
             },
             loops: () => loops,
-            writeInput: (id, data) => (written.push([id, data]), id === 'term1'),
+            typeIntoLoop: async (id, text) => (written.push([id, text]), id === 'term1' ? 'submitted' : 'gone'),
             hasTerminal: (id) => id === 'term1',
             loopRefusal: async () => null,
             ensureMainWindow: async () => {},
+            apiOn: () => true,
             notify: (title) => void notes.push(title),
             focusSession: (id) => id.startsWith('s'),
-            now: () => now,
-            sleep: async () => {}
+            now: () => now
         }
         const service = new CronService(deps)
         const made = service.create({ name: 'Morning', schedule: '0 8 * * *', agent: 'claude', cwd: '/w', prompt: 'go' }, 'app')
@@ -258,14 +258,20 @@ test.describe('T127 autocron', () => {
             store: new CronStore(fakeStore()),
             openSession: async () => { throw new Error('should not open') },
             loops: () => loops,
-            writeInput: (id, data) => (written.push([id, data]), id === 'term1'),
+            // the text, a pause, then Enter — as ControlApiService.typeIntoLoop does
+            typeIntoLoop: async (id, text) => {
+                written.push([id, text])
+                await new Promise((r) => setTimeout(r, 5))
+                written.push([id, '\r'])
+                return 'submitted'
+            },
             hasTerminal: (id) => id === 'term1',
             loopRefusal: async () => refusal,
             ensureMainWindow: async () => {},
+            apiOn: () => true,
             notify: () => {},
             focusSession: () => true,
-            now: () => now,
-            sleep: () => new Promise((r) => setTimeout(r, 5))
+            now: () => now
         })
         const made = service.create({ name: 'Nudge', schedule: '*/30 * * * *', mode: 'attach', loopProjectId: 'lp1', prompt: 'next step\nplease' }, 'api')
         if (!made.ok) throw new Error(made.message)

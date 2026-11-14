@@ -374,14 +374,14 @@ test.describe('T129 autocron cases', () => {
                 return result
             },
             loops: () => ({ projects: [], sessions: [] }),
-            writeInput: () => true,
+            typeIntoLoop: async () => 'submitted',
+            apiOn: () => true,
             hasTerminal: () => true,
             loopRefusal: async () => null,
             ensureMainWindow: async () => {},
             notify: (title, body) => void notes.push(`${title} | ${body}`),
             focusSession: () => true,
             now: () => now,
-            sleep: async () => {}
         }
         const service = new CronService(deps)
         const make = (name: string, extra: Record<string, unknown> = {}) => {
@@ -471,7 +471,8 @@ test.describe('T129 autocron cases', () => {
             store,
             openSession: async () => ({ sessionId: `s${++opened}`, terminalStarted: true, promptSent: true }),
             loops: () => ({ projects: [], sessions: [] }),
-            writeInput: () => true,
+            typeIntoLoop: async () => 'submitted',
+            apiOn: () => true,
             hasTerminal: () => true,
             loopRefusal: async () => null,
             ensureMainWindow: async () => {},
@@ -503,14 +504,21 @@ test.describe('T129 autocron cases', () => {
             store: new CronStore(fakeStore()),
             openSession: async () => { throw new Error('should not open') },
             loops: () => loops,
-            writeInput: (id, data) => (written.push([id, data]), writable),
+            // the text, a pause, then Enter — as ControlApiService.typeIntoLoop does; no Enter after a failed write
+            typeIntoLoop: async (id, text) => {
+                written.push([id, text])
+                if (!writable) return 'gone'
+                await new Promise((r) => setTimeout(r, 2))
+                written.push([id, '\r'])
+                return 'submitted'
+            },
+            apiOn: () => true,
             hasTerminal: (id) => id === 'term1',
             loopRefusal: () => refusal(),
             ensureMainWindow: async () => {},
             notify: () => {},
             focusSession: () => true,
-            now: () => at(2026, 11, 13, 12, 0),
-            sleep: () => new Promise((r) => setTimeout(r, 2))
+            now: () => at(2026, 11, 13, 12, 0)
         })
         const make = (name: string, loopProjectId: string, prompt: string) => {
             const r = service.create({ name, schedule: '*/30 * * * *', mode: 'attach', loopProjectId, prompt }, 'api')
@@ -554,7 +562,8 @@ test.describe('T129 autocron cases', () => {
             store: cronStore,
             openSession: async () => ({ sessionId: 'api-s1', terminalStarted: true, promptSent: true }),
             loops: () => ({ projects: [], sessions: [] }),
-            writeInput: () => true,
+            typeIntoLoop: async () => 'submitted',
+            apiOn: () => true,
             hasTerminal: () => false,
             loopRefusal: async () => null,
             ensureMainWindow: async () => {},

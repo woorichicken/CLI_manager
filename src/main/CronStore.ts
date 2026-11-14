@@ -127,6 +127,11 @@ export function checkCronInput(input: CronInput, base?: CronJob): Checked<{ job:
     }
 }
 
+/** Names are compared the way `get` finds them: case and outer spaces ignored. */
+function sameName(a: string, b: string): boolean {
+    return a.trim().toLowerCase() === b.trim().toLowerCase()
+}
+
 /**
  * Jobs, their run records and the scheduler's bookmark, in the app store.
  * Pure bookkeeping: no timers, no sessions — CronService does those.
@@ -141,9 +146,22 @@ export class CronStore {
         return (this.store.get(CRONS_KEY) as CronJob[] | undefined) ?? []
     }
 
+    /**
+     * By id, else by name (case and outer spaces ignored). A name that two jobs share — only
+     * possible for jobs made before names had to differ — picks neither, so an API call by name
+     * (DELETE, run) can never land on a job the caller did not mean.
+     */
     get(ref: string): CronJob | undefined {
         const all = this.list()
-        return all.find((j) => j.id === ref) ?? all.find((j) => j.name.toLowerCase() === ref.trim().toLowerCase())
+        const byId = all.find((j) => j.id === ref)
+        if (byId) return byId
+        const named = all.filter((j) => sameName(j.name, ref))
+        return named.length === 1 ? named[0] : undefined
+    }
+
+    /** The job (other than `exceptId`) already using this name, if any. */
+    private nameTaken(name: string, exceptId?: string): CronJob | undefined {
+        return this.list().find((j) => j.id !== exceptId && sameName(j.name, name))
     }
 
     create(input: CronInput, createdBy: string, now = Date.now()): Checked<{ job: CronJob }> {
@@ -151,6 +169,7 @@ export class CronStore {
         if (all.length >= CRONS_MAX) return { ok: false, message: `at most ${CRONS_MAX} jobs` }
         const checked = checkCronInput(input)
         if (!checked.ok) return checked
+        if (this.nameTaken(checked.job.name)) return { ok: false, message: `a job named "${checked.job.name}" already exists` }
         const job: CronJob = { id: randomUUID(), ...checked.job, createdAt: now, updatedAt: now, createdBy }
         this.store.set(CRONS_KEY, [...all, job])
         this.setCheckedAt(job.id, now)
@@ -165,6 +184,8 @@ export class CronStore {
         const before = all[index]
         const checked = checkCronInput(input, before)
         if (!checked.ok) return checked
+        // Only a new name is checked: pausing one of two old same-name jobs must still work.
+        if (!sameName(checked.job.name, before.name) && this.nameTaken(checked.job.name, id)) return { ok: false, message: `a job named "${checked.job.name}" already exists` }
         const job: CronJob = { ...before, ...checked.job, updatedAt: now }
         // checkCronInput returns only the fields the job keeps, so anything else from `before` goes:
         // the other mode's fields, and the agent or template the form switched away from.

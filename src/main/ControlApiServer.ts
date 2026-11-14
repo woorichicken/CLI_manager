@@ -6,7 +6,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { CALLER_SESSION_HEADER, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API } from '../shared/types'
 import { ControlApiError, ControlApiService } from './ControlApiService'
-import type { CronService } from './CronService'
+import { CRON_MADE_IN_WINDOW, type CronService } from './CronService'
 import type { CronInput } from '../shared/autocron'
 import { handleMcpBody } from './controlApiMcp'
 
@@ -572,7 +572,8 @@ export class ControlApiServer {
         })
         return [
             route('GET', '/v1/crons', () => crons().state()),
-            route('POST', '/v1/crons', ({ body, client }) => created({ cron: checked(crons().create(input(body), client)).cron })),
+            // A client calling itself «app» must not pass for the window: API-made jobs stop while the API is off.
+            route('POST', '/v1/crons', ({ body, client }) => created({ cron: checked(crons().create(input(body), client === CRON_MADE_IN_WINDOW ? 'api' : client)).cron })),
             route('GET', '/v1/crons/:cron', ({ params }) => ({ cron: job(params.cron) })),
             route('POST', '/v1/crons/:cron', ({ params, body }) => ({ cron: checked(crons().update(job(params.cron).id, input(body))).cron })),
             route('DELETE', '/v1/crons/:cron', ({ params }) => ({ removed: crons().remove(job(params.cron).id) })),
