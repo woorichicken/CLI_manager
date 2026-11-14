@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import type { ChatThread, ConversationSnapshot, ConversationTurn } from '../../src/shared/conversation'
 import { parseClaudeTranscript } from '../../src/main/transcript/claudeTranscript'
 import { parseCodexTranscript } from '../../src/main/transcript/codexTranscript'
-import { hasEarlierThreadReplies, replyForThread, threadStatus, turnsAfterFork } from '../../src/renderer/src/components/ChatView/threadTurns'
+import { hasEarlierThreadReplies, replyForThread, threadQuote, threadStatus, turnsAfterFork } from '../../src/renderer/src/components/ChatView/threadTurns'
 
 const FORKED_AT = Date.parse('2026-11-14T10:01:00.000Z')
 const copiedAndNew = [
@@ -139,4 +139,37 @@ test('T127 thread quote: older unindexed anchors use the first matching assistan
     expect(replyForThread(snapshot, { turnTs: timestamp })).toBe(turns[1])
     expect(replyForThread(snapshot, { turnTs: null })).toBe(turns[2])
     expect(replyForThread(snapshot, { turnTs: 'missing' })).toBeUndefined()
+})
+
+test('T127 readable quote: a table-first answer quotes the first prose paragraph without table source', () => {
+    const answer = '| file | change |\n| --- | --- |\n| index.tsx | Fixed |\n\nThe thread stays beside its parent.\nYou can keep writing here.\n\nA later paragraph.'
+    expect(threadQuote(answer)).toBe('The thread stays beside its parent.\nYou can keep writing here.')
+    expect(threadQuote(answer)).not.toContain('|')
+    expect(threadQuote('| file | change |\n| --- | --- |')).toBe('')
+})
+
+test('T127 readable quote: code-only answers get a short label; code and its blank lines are skipped', () => {
+    expect(threadQuote('```ts\nconst hidden = true\n\nconsole.log(hidden)\n```')).toBe('(code)')
+    expect(threadQuote('~~~~js\n```not a closing fence\n~~~~\n\nA readable explanation.')).toBe('A readable explanation.')
+    expect(threadQuote('```ts\nUnfinished fenced code')).toBe('(code)')
+    expect(threadQuote('')).toBe('')
+})
+
+test('T127 readable quote: headings, list markers, links, emphasis and inline code become plain text', () => {
+    expect(threadQuote('## **Thread replies** ##\n- Read the [guide](https://example.com/path_(thread)) and `code`.\n2. _Keep_ *writing* ~~here~~.')).toBe('Thread replies\nRead the guide and code.\nKeep writing here.')
+    expect(threadQuote('- [x] **Done**\r\n\r\nNext paragraph')).toBe('Done')
+    expect(threadQuote('Use `thread_id` in the [API](https://example.com).')).toBe('Use thread_id in the API.')
+    expect(threadQuote('Keep `__init__` and `a ** b` intact.')).toBe('Keep __init__ and a ** b intact.')
+})
+
+test('T127 readable quote: long paragraphs stay within three lines and 240 characters with an ellipsis', () => {
+    const long = threadQuote('A'.repeat(300))
+    expect(long).toBe(`${'A'.repeat(239)}…`)
+    expect(long.length).toBe(240)
+    const lines = threadQuote('First\nSecond\nThird\nFourth\n\nNext paragraph')
+    expect(lines).toBe('First\nSecond\nThird…')
+    expect(lines.split('\n')).toHaveLength(3)
+    expect(threadQuote('A'.repeat(240))).toBe('A'.repeat(240))
+    const emoji = threadQuote(`${'A'.repeat(238)}😀${'B'.repeat(10)}`)
+    expect(emoji).toBe(`${'A'.repeat(238)}…`)
 })

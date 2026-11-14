@@ -17,7 +17,6 @@ export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, 
     useLayoutEffect(() => {
         panel.current?.focus({ preventScroll: true })
     }, [thread.childId])
-    const excerpt = quote.trim().split('\n').slice(0, 4).join('\n')
     return (
         <aside
             ref={panel}
@@ -26,8 +25,8 @@ export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, 
             data-session-id={thread.childId}
             aria-label={`Thread: ${thread.name}`}
             tabIndex={-1}
-            onKeyDownCapture={(event) => {
-                if (event.key !== 'Escape') return
+            onKeyDown={(event) => {
+                if (event.key !== 'Escape' || event.defaultPrevented) return
                 event.preventDefault()
                 event.stopPropagation()
                 onClose()
@@ -53,7 +52,7 @@ export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, 
             </header>
             <div className="chat-thread-quote" data-testid="chat-thread-quote">
                 <div className="chat-thread-quote-label">Replying to {agentName}</div>
-                {excerpt && <blockquote>{excerpt}</blockquote>}
+                {quote && <blockquote>{quote}</blockquote>}
             </div>
             <div className="chat-thread-body">{children}</div>
         </aside>

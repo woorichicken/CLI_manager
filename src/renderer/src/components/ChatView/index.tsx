@@ -15,7 +15,7 @@ import { useElapsed } from './WorkBlock'
 import { ChatActionsContext, onChatCommand, type ChatActions, type GalleryImage } from './chatContext'
 import { ForkDialog, ForkNotice, type ForkProgress, type ForkTarget } from './ForkDialog'
 import { groupThreadsByTurn, threadsForTurn, type ThreadGroups } from './threadGroups'
-import { hasEarlierThreadReplies, replyForThread, turnsAfterFork } from './threadTurns'
+import { hasEarlierThreadReplies, replyForThread, threadQuote, turnsAfterFork } from './threadTurns'
 import { ThreadPanel } from './ThreadPanel'
 import { turnSegments } from './workBlocks'
 import { artifactLinks, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
@@ -477,13 +477,12 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         pinned.current = false
         target.scrollIntoView({ block: 'start' })
     }
-    const threadQuote = useMemo(() => {
+    const quotedReply = useMemo(() => {
         if (!selectedThread || !sourceSnapshot) return ''
         const reply = replyForThread(sourceSnapshot, selectedThread)
         if (!reply) return ''
-        return turnSegments(reply.parts).filter((segment) => segment.kind === 'answer')
-            .flatMap((segment) => segment.parts.map((part) => part.text)).join('\n\n')
-            .split('\n').slice(0, 4).join('\n').slice(0, 400)
+        return threadQuote(turnSegments(reply.parts).filter((segment) => segment.kind === 'answer')
+            .flatMap((segment) => segment.parts.map((part) => part.text)).join('\n\n'))
     }, [selectedThread, sourceSnapshot])
 
     return (
@@ -651,7 +650,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 )}
                 </div>
                 {selectedThread && (
-                    <ThreadPanel thread={selectedThread} agentName={agentName} quote={threadQuote} onClose={closeThread}
+                    <ThreadPanel thread={selectedThread} agentName={agentName} quote={quotedReply} onClose={closeThread}
                         onOpenSession={onSessionLink ? () => onSessionLink(`climanager://session/${selectedThread.childId}`) : undefined}>
                         <ChatView key={selectedThread.childId} sessionId={selectedThread.childId} transport={transport}
                             onOpenTerminal={(command) => onOpenSessionTerminal ? onOpenSessionTerminal(selectedThread.childId, command) : onSessionLink?.(`climanager://session/${selectedThread.childId}`)}

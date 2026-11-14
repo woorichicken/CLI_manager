@@ -53,7 +53,7 @@
 .chat-thread-panel-status { grid-row: 2; grid-column: 1; display: flex; align-items: center; gap: 7px; color: var(--chat-dim); font-size: 0.76em; }
 .chat-thread-quote { padding: 10px 12px; border-bottom: 1px solid var(--chat-line); font-size: 0.8em; }
 .chat-thread-quote-label { color: var(--chat-faint); margin-bottom: 5px; }
-.chat-thread-quote blockquote { margin: 0; padding-left: 9px; border-left: 2px solid var(--chat-line); color: var(--chat-dim); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-thread-quote blockquote { margin: 0; padding-left: 9px; border-left: 2px solid var(--chat-line); color: var(--chat-dim); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .chat-thread-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
 .chat-thread-body > .chat-view[data-thread-embedded] { inset: 0; }
 @container chat-layout (max-width: 759px) {

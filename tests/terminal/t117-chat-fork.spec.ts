@@ -69,7 +69,7 @@ interface Launched {
     home: string
 }
 
-async function launch(): Promise<Launched> {
+async function launch(workMs = 400): Promise<Launched> {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t117-'))
     const project = path.join(home, 'project')
     fs.mkdirSync(project)
@@ -87,7 +87,7 @@ async function launch(): Promise<Launched> {
                 name: 'T117 project',
                 path: project,
                 sessions: [
-                    { id: PARENT, name: 'T117 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --fresh-transcript ${fresh} --show-args --copy-transcript --work-ms 400` },
+                    { id: PARENT, name: 'T117 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --fresh-transcript ${fresh} --show-args --copy-transcript --work-ms ${workMs}` },
                     { id: SHELL, name: 'T117 Shell' }
                 ]
             }
@@ -155,7 +155,7 @@ async function openParentChat(page: Page) {
 
 test('T117 Mac: threads open beside the parent, hide inherited turns, and send only to the child', async () => {
     test.setTimeout(180_000)
-    const { app, page, fresh, transcript, project } = await launch()
+    const { app, page, fresh, transcript, project } = await launch(5000)
     const view = await openParentChat(page)
     const parentBefore = fs.readFileSync(transcript, 'utf8')
     const composer = view.locator(':scope > .chat-main').getByTestId('chat-composer')
@@ -200,6 +200,7 @@ test('T117 Mac: threads open beside the parent, hide inherited turns, and send o
     await expect(composer).toHaveValue('a draft I keep')
     await expect(panel.getByTestId('chat-thread-quote')).toContainText('Here is the summary.')
     await expect(panel.getByTestId('chat-thread-quote')).toContainText('Replying to Claude')
+    await expect(panel.getByTestId('chat-thread-quote')).not.toContainText('|')
 
     // The actual linked child file contains copied parent records, with the original UUID and time.
     await expect.poll(() => forks().find((session) => session.id === child.id)?.cliSessionId, { timeout: 20_000 }).toBeTruthy()
@@ -221,6 +222,22 @@ test('T117 Mac: threads open beside the parent, hide inherited turns, and send o
     await expect(childChat).toContainText('Echo: Only the thread gets this', { timeout: 15_000 })
     expect(await terminalLines(page, PARENT)).not.toContain('Only the thread gets this')
     await expect(view.getByTestId('chat-scroll').first()).not.toContainText('Echo: Only the thread gets this')
+    // The composer's Escape stops the child before the enclosing panel can treat it as close.
+    await childComposer.fill('Stop this thread turn')
+    await childComposer.press('Enter')
+    await expect(childChat.getByTestId('chat-working')).toBeVisible({ timeout: 15_000 })
+    await childComposer.press('Escape')
+    await expect(panel).toBeVisible()
+    await expect.poll(() => terminalLines(page, child.id), { timeout: 15_000 }).toContain('INTERRUPTED')
+    await expect(childChat.getByTestId('chat-working')).toHaveCount(0)
+    expect(await terminalLines(page, PARENT)).not.toContain('INTERRUPTED')
+    // Completion handles Escape locally too; an unhandled idle Escape below still closes the panel.
+    await childComposer.fill('/')
+    await expect(childChat.getByTestId('chat-complete')).toBeVisible()
+    await childComposer.press('Escape')
+    await expect(childChat.getByTestId('chat-complete')).toHaveCount(0)
+    await expect(panel).toBeVisible()
+    await childComposer.fill('')
     await childComposer.focus()
     await page.keyboard.press('Meta+Shift+I')
     await expect(composer).toBeFocused()
