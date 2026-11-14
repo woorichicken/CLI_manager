@@ -15,8 +15,8 @@
 import net from 'net'
 import { pathToFileURL } from 'url'
 
-/** The extension may need a moment to wake its host; past this the Mac's opener takes over. */
-export const DOCK_OPEN_TIMEOUT_MS = 5_000
+/** The host waits up to 8 s for the extension to wake (artifact-open allows 9 s); past this the Mac's opener takes over. */
+export const DOCK_OPEN_TIMEOUT_MS = 9_000
 const MAX_REPLY_BYTES = 64 * 1024
 const SESSION_ID = /^[\w-]{1,64}$/
 
