@@ -294,6 +294,9 @@
 /* a colour per reply (93bd4834): a 300 tint on the dark chat, a 700 shade on the light one — both read ≥ 4.5:1 */
 .chat-quick-reply[data-color] { color: var(--qr-fg); border-color: var(--qr-line); background: var(--qr-fill); }
 .chat-quick-reply[data-color]:hover, .chat-quick-reply[data-color].is-sending { color: var(--qr-fg); border-color: var(--qr-fg); }
+/* waiting chips do not light up under the pointer — as the plain ones (:disabled:hover above) — the sending one does */
+.chat-quick-reply[data-color]:disabled:hover { color: var(--qr-fg); border-color: var(--qr-line); }
+.chat-quick-reply[data-color].is-sending:hover { border-color: var(--qr-fg); }
 .chat-quick-reply[data-color="blue"] { --qr-fg: #93c5fd; --qr-line: rgba(59, 130, 246, 0.45); --qr-fill: rgba(59, 130, 246, 0.14); }
 .chat-quick-reply[data-color="green"] { --qr-fg: #86efac; --qr-line: rgba(34, 197, 94, 0.45); --qr-fill: rgba(34, 197, 94, 0.14); }
 .chat-quick-reply[data-color="amber"] { --qr-fg: #fcd34d; --qr-line: rgba(245, 158, 11, 0.45); --qr-fill: rgba(245, 158, 11, 0.14); }

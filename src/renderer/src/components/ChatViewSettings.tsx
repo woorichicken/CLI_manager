@@ -88,6 +88,8 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
                                         .split('\n')
                                         .map((line) => line.trim())
                                         .filter(Boolean)
+                                        // the same phrase twice would be one chip anyway, and colours follow the text
+                                        .filter((line, index, all) => all.indexOf(line) === index)
                                         .slice(0, 8)
                                     // a colour follows its reply's text, so a reply moved up keeps it and a deleted one lets it go
                                     update({ quickReplies, quickReplyColors: keepQuickReplyColors(chat.quickReplyColors, quickReplies) })
@@ -95,7 +97,7 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
                                 className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                             />
                             <QuickReplyColors
-                                replies={replies.filter((reply) => reply.trim())}
+                                replies={[...new Set(replies.filter((reply) => reply.trim()))]}
                                 colors={chat.quickReplyColors}
                                 onChange={(quickReplyColors) => update({ quickReplyColors })}
                             />

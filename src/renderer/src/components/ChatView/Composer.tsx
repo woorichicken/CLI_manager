@@ -511,7 +511,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }
     }
 
-    const quickReplies = (preferences.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim())
+    // once each: a list saved with the same phrase twice draws one chip (the chip is keyed by its text)
+    const quickReplies = [...new Set((preferences.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim()))]
     // also while the agent works: a tap then waits for the turn to end, as a typed message does
     const showQuick = preferences.showQuickReplies === true && !promptOptions && text === '' && attachments.length === 0 && quickReplies.length > 0
     const hint =

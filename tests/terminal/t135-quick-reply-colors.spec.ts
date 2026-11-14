@@ -1,4 +1,4 @@
-import { test, expect, type ElectronApplication, type Locator, type Page, _electron as electron } from '@playwright/test'
+import { test, expect, type CDPSession, type ElectronApplication, type Locator, type Page, _electron as electron } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -76,7 +76,7 @@ async function chipContrast(page: Page, reply: string): Promise<number> {
     }, reply)
 }
 
-async function openPhone(app: ElectronApplication, url: string): Promise<Page> {
+async function openPhone(app: ElectronApplication, url: string): Promise<{ phone: Page; cdp: CDPSession }> {
     const opened = app.waitForEvent('window')
     await app.evaluate(({ BrowserWindow, session }, o) => {
         const jar = session.fromPartition(o.partition)
@@ -93,7 +93,27 @@ async function openPhone(app: ElectronApplication, url: string): Promise<Page> {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
     await phone.reload()
     await phone.waitForLoadState('domcontentloaded')
-    return phone
+    return { phone, cdp }
+}
+
+/** The chip's border colour, plain and with :hover forced through DevTools (no pointer on a touch page). */
+async function borderPlainAndHovered(page: Page, cdp: CDPSession, reply: string): Promise<[string, string]> {
+    const selector = `[data-testid="chat-quick-replies"] button[title="Send “${reply}”"], [data-testid="chat-quick-replies"] button[title="Sending…"]`
+    const read = (): Promise<string> => page.evaluate(({ sel, text }) => {
+        const button = Array.from(document.querySelectorAll(sel)).find((b) => b.textContent?.trim() === text) as HTMLElement
+        return getComputedStyle(button).borderTopColor
+    }, { sel: selector, text: reply })
+    const plain = await read()
+    await cdp.send('DOM.enable')
+    await cdp.send('CSS.enable')
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1 })
+    const { nodeIds } = await cdp.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector: '[data-testid="chat-quick-replies"] button' })
+    const texts = await page.evaluate(() => Array.from(document.querySelectorAll('[data-testid="chat-quick-replies"] button')).map((b) => b.textContent?.trim()))
+    const nodeId = nodeIds[texts.indexOf(reply)]
+    await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] })
+    const hovered = await read()
+    await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] })
+    return [plain, hovered]
 }
 
 async function openMacChat(page: Page): Promise<void> {
@@ -135,8 +155,8 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
     await settings.scrollIntoViewIfNeeded()
     await settings.getByTestId('quick-reply-color-0-green').click()
     await settings.getByTestId('quick-reply-color-1-red').click()
-    await expect(settings.getByTestId('quick-reply-color-0-green')).toHaveAttribute('aria-pressed', 'true')
-    await expect(settings.getByTestId('quick-reply-color-2-none')).toHaveAttribute('aria-pressed', 'true')
+    await expect(settings.getByTestId('quick-reply-color-0-green')).toHaveAttribute('aria-checked', 'true')
+    await expect(settings.getByTestId('quick-reply-color-2-none')).toHaveAttribute('aria-checked', 'true')
     await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.getByTestId('chat-view-settings')).toHaveCount(0)
 
@@ -154,7 +174,7 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
 
     // --- The phone (390) shows the same colours ----------------------------------
     const state = await page.evaluate(() => window.api.getPhoneState())
-    const phone = await openPhone(app, `http://127.0.0.1:${state.port}/?session=${SESSION}&view=chat`)
+    const { phone, cdp } = await openPhone(app, `http://127.0.0.1:${state.port}/?session=${SESSION}&view=chat`)
     await expect(chip(phone, PHRASES[0])).toBeVisible({ timeout: 15_000 })
     await expect(chip(phone, PHRASES[0])).toHaveCSS('color', DARK_FG.green)
     await expect(chip(phone, PHRASES[1])).toHaveCSS('color', DARK_FG.red)
@@ -163,6 +183,28 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
     const me = await phone.evaluate(async () => (await fetch('/api/phone/me')).json()) as { quickReplies?: unknown[]; quickReplyColors?: Record<string, string> }
     expect(me.quickReplies).toEqual(PHRASES)
     expect(me.quickReplyColors).toEqual({ [PHRASES[0]]: 'green', [PHRASES[1]]: 'red' })
+
+    // --- One reply on its way: the waiting chips do not light up under the pointer (PR #139 review) ----
+    // a busy Mac: the send answers after 8 s, so the other chips stay disabled meanwhile
+    await phone.evaluate(() => {
+        const w = window as unknown as { fetch: typeof fetch }
+        const original = w.fetch.bind(window)
+        w.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+            if (/\/send$/.test(url) && init?.method === 'POST') await new Promise((resolve) => setTimeout(resolve, 8_000))
+            return original(input, init)
+        }
+    })
+    await chip(phone, PHRASES[0]).click()
+    await expect(chip(phone, PHRASES[0])).toHaveAttribute('data-sending', 'true')
+    await expect(chip(phone, PHRASES[1])).toBeDisabled()
+    const [plainDisabled, plainDisabledHover] = await borderPlainAndHovered(phone, cdp, PHRASES[2])
+    expect(plainDisabledHover, 'a plain waiting chip keeps its border').toBe(plainDisabled)
+    const [redDisabled, redDisabledHover] = await borderPlainAndHovered(phone, cdp, PHRASES[1])
+    expect(redDisabledHover, 'a coloured waiting chip keeps its border, as a plain one does').toBe(redDisabled)
+    const [, sendingHover] = await borderPlainAndHovered(phone, cdp, PHRASES[0])
+    expect(sendingHover, 'the sending chip stays lit').toBe(DARK_FG.green)
+    await expect(chip(phone, PHRASES[0])).not.toHaveAttribute('data-sending', 'true', { timeout: 15_000 })
 
     // --- Restart: the colours stay ------------------------------------------------
     const keptDir = userDataDir
@@ -180,14 +222,48 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
     await expect(chip(macChat2, PHRASES[0])).toHaveCSS('color', DARK_FG.green)
     await expect(chip(macChat2, PHRASES[1])).toHaveCSS('color', DARK_FG.red)
 
+    // --- The keyboard: a radio group per row — ← / → move the choice, Tab stops once per row (PR #139 review) ----
+    await page2.locator('button[title^="Settings"]').first().click()
+    await page2.getByTestId('settings-category-terminal').click()
+    const row0 = page2.getByTestId('quick-reply-color-0')
+    await expect(row0.getByRole('radiogroup')).toHaveCount(1)
+    await expect(row0.locator('[aria-pressed]')).toHaveCount(0)
+    await expect(row0.locator('[tabindex="0"]')).toHaveCount(1)
+    await page2.getByTestId('quick-reply-color-0-green').focus()
+    await page2.keyboard.press('ArrowRight')
+    await expect(page2.getByTestId('quick-reply-color-0-amber')).toHaveAttribute('aria-checked', 'true')
+    await expect(page2.getByTestId('quick-reply-color-0-amber')).toBeFocused()
+    await expect(page2.getByTestId('quick-reply-color-0-green')).toHaveAttribute('aria-checked', 'false')
+    // the focus ring shows
+    expect(await page2.getByTestId('quick-reply-color-0-amber').evaluate((el) => getComputedStyle(el).boxShadow)).toContain('rgb(96, 165, 250)')
+    await page2.keyboard.press('ArrowLeft')
+    await page2.keyboard.press('ArrowLeft')
+    await expect(page2.getByTestId('quick-reply-color-0-blue')).toHaveAttribute('aria-checked', 'true')
+    await page2.keyboard.press('ArrowLeft')
+    await page2.keyboard.press('ArrowLeft')
+    // past «none» it wraps to the last colour
+    await expect(page2.getByTestId('quick-reply-color-0-teal')).toBeFocused()
+    await page2.keyboard.press('ArrowRight')
+    await expect(page2.getByTestId('quick-reply-color-0-none')).toHaveAttribute('aria-checked', 'true')
+    await page2.keyboard.press('ArrowRight')
+    await page2.keyboard.press('ArrowRight')
+    await expect(page2.getByTestId('quick-reply-color-0-green')).toHaveAttribute('aria-checked', 'true')
+    // Tab leaves the row for the next row's chosen colour, not the next swatch
+    await page2.keyboard.press('Tab')
+    await expect(page2.getByTestId('quick-reply-color-1-red')).toBeFocused()
+    await page2.getByRole('button', { name: 'Cancel', exact: true }).click()
+
     // --- Editing the list drops colours of replies that are gone ---------------------
     await page2.locator('button[title^="Settings"]').first().click()
     await page2.getByTestId('settings-category-terminal').click()
     const list = page2.getByTestId('chat-setting-quick-list')
-    await list.fill([PHRASES[1], PHRASES[2]].join('\n'))
+    // the same phrase twice is saved once (one chip, one row)
+    await list.fill([PHRASES[1], PHRASES[2], PHRASES[1]].join('\n'))
     await list.blur()
+    await expect(page2.locator('[data-testid$="-none"][role="radio"]')).toHaveCount(2)
     // the red reply moved to the first row and kept its colour
-    await expect(page2.getByTestId('quick-reply-color-0-red')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page2.getByTestId('quick-reply-color-0-red')).toHaveAttribute('aria-checked', 'true')
     await page2.getByRole('button', { name: 'Save', exact: true }).click()
     await expect.poll(() => readSettings(keptDir).chat?.quickReplyColors).toEqual({ [PHRASES[1]]: 'red' })
+    expect(readSettings(keptDir).chat?.quickReplies).toEqual([PHRASES[1], PHRASES[2]])
 })

@@ -42,13 +42,30 @@ export function QuickReplyColors({ replies, colors, onChange }: QuickReplyColors
         onChange(Object.keys(next).length > 0 ? next : undefined)
     }
 
+    /** None first, then the colours: the order ← / → walks. */
+    const options: (QuickReplyColor | null)[] = [null, ...QUICK_REPLY_COLORS]
+
+    // a radio group: ← / → (↑ / ↓) move the choice and the focus along the row, Tab stops on the chosen one
+    const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, reply: string, current: QuickReplyColor | null): void => {
+        const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0
+        if (step === 0) return
+        event.preventDefault()
+        const next = options[(options.indexOf(current) + step + options.length) % options.length]
+        pick(reply, next)
+        const target = event.currentTarget.querySelector<HTMLButtonElement>(`[data-option="${next ?? 'none'}"]`)
+        target?.focus()
+    }
+
+    const ring = 'outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1e1e20]'
+
     return (
         <div className="mt-3 space-y-1.5" data-testid="quick-reply-colors">
             <p className="text-xs text-gray-400">Colour</p>
             {replies.map((reply, index) => {
                 const current = quickReplyColorOf(colors, reply) ?? null
                 return (
-                    <div key={reply} className="flex items-center gap-3" data-testid={`quick-reply-color-${index}`}>
+                    // index in the key too: a row is a position in the list (the list is saved without repeats)
+                    <div key={`${index}:${reply}`} className="flex items-center gap-3" data-testid={`quick-reply-color-${index}`}>
                         <span
                             className="flex-1 min-w-0 truncate text-xs"
                             style={current ? { color: TEXT[current] } : undefined}
@@ -56,35 +73,38 @@ export function QuickReplyColors({ replies, colors, onChange }: QuickReplyColors
                         >
                             {reply}
                         </span>
-                        <div className="flex items-center gap-1 shrink-0" role="radiogroup" aria-label={`Colour for “${reply}”`}>
-                            <button
-                                type="button"
-                                role="radio"
-                                aria-checked={current === null}
-                                aria-pressed={current === null}
-                                aria-label="No colour"
-                                title="No colour"
-                                data-testid={`quick-reply-color-${index}-none`}
-                                onClick={() => pick(reply, null)}
-                                className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] text-gray-400 ${current === null ? 'border-white ring-1 ring-white/60' : 'border-white/20 hover:border-white/50'}`}
-                            >
-                                ∅
-                            </button>
-                            {QUICK_REPLY_COLORS.map((color) => (
-                                <button
-                                    key={color}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={current === color}
-                                    aria-pressed={current === color}
-                                    aria-label={color}
-                                    title={color[0].toUpperCase() + color.slice(1)}
-                                    data-testid={`quick-reply-color-${index}-${color}`}
-                                    onClick={() => pick(reply, color)}
-                                    className={`w-5 h-5 rounded-full border ${current === color ? 'border-white ring-1 ring-white/60' : 'border-transparent hover:border-white/50'}`}
-                                    style={{ backgroundColor: SWATCH[color] }}
-                                />
-                            ))}
+                        <div
+                            className="flex items-center gap-1 shrink-0"
+                            role="radiogroup"
+                            aria-label={`Colour for “${reply}”`}
+                            onKeyDown={(event) => onKeyDown(event, reply, current)}
+                        >
+                            {options.map((option) => {
+                                const checked = option === current
+                                const name = option ? option[0].toUpperCase() + option.slice(1) : 'No colour'
+                                return (
+                                    <button
+                                        key={option ?? 'none'}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={checked}
+                                        aria-label={name}
+                                        title={name}
+                                        tabIndex={checked ? 0 : -1}
+                                        data-option={option ?? 'none'}
+                                        data-testid={`quick-reply-color-${index}-${option ?? 'none'}`}
+                                        onClick={() => pick(reply, option)}
+                                        className={
+                                            option
+                                                ? `w-5 h-5 rounded-full border ${ring} ${checked ? 'border-white ring-1 ring-white/60' : 'border-transparent hover:border-white/50'}`
+                                                : `w-5 h-5 rounded-full border flex items-center justify-center text-[10px] text-gray-400 ${ring} ${checked ? 'border-white ring-1 ring-white/60' : 'border-white/20 hover:border-white/50'}`
+                                        }
+                                        style={option ? { backgroundColor: SWATCH[option] } : undefined}
+                                    >
+                                        {option ? null : '∅'}
+                                    </button>
+                                )
+                            })}
                         </div>
                     </div>
                 )
