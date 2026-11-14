@@ -563,6 +563,7 @@ main 이 로드 중 죽고 앱 구동 시험마다 `electron.launch` 가 180초�
   - T132 자율 크론 리뷰 수정 유닛(11-14) — Electron 없이. 같은 이름 거절(대소문자·앞뒤 공백 무시, 만들기·이름 바꾸기, 옛 중복은 이름으로 안 잡힘) · API 가 만든 작업은 API 가 꺼지면 안 돎(창 작업은 돎, 이유 표시, 다시 켜도 밀린 것 안 함, 지금 실행도 막힘) · 붙기는 `typeIntoLoop` 결과(초안 있음·Enter 뒤에도 남음·터미널 없음)를 이유와 함께 실패로 · 창 로드 실패·시간 초과가 기다림을 끝내 다음 tick 이 돈다
   - T133 자율 크론 리뷰 수정 앱(11-14) — API 를 끈 채 시작하면 API 가 만든 작업은 안 돌고 Autocron 탭에 이유·만든 쪽이 보임(창 작업은 따라잡음) · `agent-mock --box --drop-enters 1` 루프에서 먹힌 Enter 를 다시 눌러 한 번 답 · 사람이 입력칸에 쓰다 둔 글이 있으면 아무것도 안 넣고 실패. 옛 코드에서 두 시험 다 실패, 초안 검사를 뺀 빌드에서 둘째 시험 실패(11-14 확인)
   - T140 Chat 웹 문서 → Artifact Dock(fc98b340) — 유닛: 요청 줄(open·file URL·activate·세션 id, 이상한 id 는 뺌)·ok → opened · 거절·깨진 답·끊김·소켓 없음·무응답 → unavailable. 앱: 가짜 Dock 소켓(`ARTIFACT_DOCK_SOCKET`)이 클릭마다 요청을 받고 `shell.openPath`(main 에서 가로챔)는 0번, Dock 이 거절하면 `shell.openPath` 한 번. 옛 코드에서 둘 다 실패(소켓 요청 0)
+  - T141 백로그 작은 결함(fb-1114b) — Electron 없이. Control API 경로 조각의 깨진 `%`(`/v1/sessions/%E0%A4%A`)가 500 이 아니라 400 `bad_path`(토큰 검사는 그 앞) · 폰 페이지 `notranslate`(Chrome 번역 풍선) · `closeApp` 이 닫히지 않는 시험 앱을 시간 초과 뒤 SIGKILL(폴더도 지움)·스스로 닫히면 안 죽임. 옛 코드에서 3건 실패. T1 은 명령 줄에 없는 `SEQ-DONE-2-…`(셸이 계산)를 기다린다
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - 범위·옵션 지정은 `pnpm exec playwright test tests/terminal/<spec>.spec.ts --workers=1`로 한다.

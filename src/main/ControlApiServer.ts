@@ -320,7 +320,13 @@ export class ControlApiServer {
                 if (!match) continue
 
                 const params: Record<string, string> = {}
-                r.keys.forEach((key, i) => (params[key] = decodeURIComponent(match[i + 1])))
+                try {
+                    r.keys.forEach((key, i) => (params[key] = decodeURIComponent(match[i + 1])))
+                } catch (error) {
+                    // a broken %-escape in a path piece (`/v1/crons/%E0%A4%A`) is the caller's mistake, not ours
+                    if (error instanceof URIError) return fail(400, 'bad_path', 'A path segment has a broken %-escape')
+                    throw error
+                }
 
                 let body: Record<string, unknown> = {}
                 if (method === 'POST') {
