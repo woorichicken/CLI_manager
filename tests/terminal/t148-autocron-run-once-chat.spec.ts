@@ -5,7 +5,7 @@ import path from 'path'
 import { REPO_ROOT, LaunchResult, closeApp, launchAppWithWorkspaces, openLoopWindow, waitForBufferText } from './helpers'
 
 /**
- * T142 — Autocron «Save & run now» and Chat in the Loop window (backlog 2026-11-16).
+ * T148 — Autocron «Save & run now» and Chat in the Loop window (backlog 2026-11-16).
  *
  * 1. A new job saved with «Save & run now» runs once (one manual run, the session answers the prompt),
  *    keeps its schedule, and the edit form has no such button. `POST /v1/crons` with `runNow: true`
@@ -27,8 +27,8 @@ const TEMPLATE = {
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
 const FIXTURES = path.join(__dirname, 'fixtures/transcripts')
 const CLAUDE_ID = '00000000-0000-4000-8000-00000000c142'
-const CLAUDE_SESSION = 't142-claude'
-const SHELL_SESSION = 't142-shell'
+const CLAUDE_SESSION = 't148-claude'
+const SHELL_SESSION = 't148-shell'
 const claudeProjectSlug = (cwd: string): string => cwd.replace(/[^A-Za-z0-9]/g, '-')
 
 interface Discovery { url: string; token: string }
@@ -38,7 +38,7 @@ function apiFor(home: string) {
     return async <T = any>(method: string, route: string, body?: unknown): Promise<{ status: number; json: T }> => {
         const res = await fetch(discovery.url + route, {
             method,
-            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't142' },
+            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't148' },
             body: body === undefined ? undefined : JSON.stringify(body)
         })
         const text = await res.text()
@@ -52,7 +52,7 @@ async function openAutocron(ctx: LaunchResult): Promise<Page> {
     return loop
 }
 
-test.describe('T142 autocron run once and chat', () => {
+test.describe('T148 autocron run once and chat', () => {
     let ctx: LaunchResult | undefined
     const tempDirs: string[] = []
     const tempDir = (prefix: string) => {
@@ -69,9 +69,9 @@ test.describe('T142 autocron run once and chat', () => {
 
     test('Save & run now runs a new job once; the API takes runNow', async () => {
         test.setTimeout(180_000)
-        const home = tempDir('climanger-t142-home-')
-        const jobFolder = tempDir('climanger-t142-job-')
-        ctx = await launchAppWithWorkspaces([{ id: 'ws-1', name: 'T142WS', path: jobFolder, sessions: [] }], {
+        const home = tempDir('climanger-t148-home-')
+        const jobFolder = tempDir('climanger-t148-job-')
+        ctx = await launchAppWithWorkspaces([{ id: 'ws-1', name: 'T148WS', path: jobFolder, sessions: [] }], {
             settings: { controlApi: { enabled: true, port: 0 } },
             customTemplates: [TEMPLATE],
             env: { CLIMANAGER_HOME: home }
@@ -82,7 +82,7 @@ test.describe('T142 autocron run once and chat', () => {
 
         // --- the form: Save & run now ----------------------------------------------------
         await loop.getByTestId('autocron-new').click()
-        await loop.getByTestId('autocron-name').fill('T142 ui')
+        await loop.getByTestId('autocron-name').fill('T148 ui')
         await loop.getByTestId('autocron-form').locator('select').first().selectOption('template')
         await loop.getByPlaceholder('Template name').fill('agent-mock')
         await loop.getByTestId('autocron-cwd').fill(jobFolder)
@@ -90,17 +90,17 @@ test.describe('T142 autocron run once and chat', () => {
         await loop.getByTestId('autocron-schedule').fill('0 8 * * 0')
         await loop.getByTestId('autocron-save-run').click()
 
-        await expect(loop.getByTestId('autocron-detail')).toContainText('T142 ui')
+        await expect(loop.getByTestId('autocron-detail')).toContainText('T148 ui')
         await expect(loop.getByTestId('autocron-runs')).toContainText('ran', { timeout: 60_000 })
         await expect(loop.getByTestId('autocron-runs')).toContainText('manual')
-        const ui = (await api('GET', '/v1/crons/T142%20ui')).json.cron
+        const ui = (await api('GET', '/v1/crons/T148%20ui')).json.cron
         expect(ui).toMatchObject({ createdBy: 'app', enabled: true, lastRun: { trigger: 'manual', status: 'started' } })
         expect(ui.nextRunAt).not.toBeNull()
         await expect.poll(async () => (await api('GET', `/v1/sessions/${ui.lastRun.sessionId}/output?mode=tail&lines=100`)).json.lines?.join('\n') ?? '', { timeout: 30_000 })
             .toContain('ANSWER[1]: first hello')
         // one run, not two (the effect that starts it must not fire twice)
         await loop.waitForTimeout(2000)
-        expect((await api('GET', '/v1/crons/T142%20ui/runs')).json.runs).toHaveLength(1)
+        expect((await api('GET', '/v1/crons/T148%20ui/runs')).json.runs).toHaveLength(1)
 
         // editing is Save only
         await loop.getByRole('button', { name: 'Edit' }).click()
@@ -109,12 +109,12 @@ test.describe('T142 autocron run once and chat', () => {
         await expect(loop.getByTestId('autocron-save')).toBeVisible()
 
         // --- the API: runNow ----------------------------------------------------------
-        const bad = await api('POST', '/v1/crons', { name: 'T142 bad', schedule: '@daily', template: 'agent-mock', cwd: jobFolder, prompt: 'p', runNow: 'yes' })
+        const bad = await api('POST', '/v1/crons', { name: 'T148 bad', schedule: '@daily', template: 'agent-mock', cwd: jobFolder, prompt: 'p', runNow: 'yes' })
         expect(bad.status).toBe(400)
         expect(bad.json.error.message).toContain('runNow')
-        expect((await api('GET', '/v1/crons/T142%20bad')).status).toBe(404)
+        expect((await api('GET', '/v1/crons/T148%20bad')).status).toBe(404)
 
-        const made = await api('POST', '/v1/crons', { name: 'T142 api', schedule: '@daily', template: 'agent-mock', cwd: jobFolder, prompt: 'api hello', runNow: true })
+        const made = await api('POST', '/v1/crons', { name: 'T148 api', schedule: '@daily', template: 'agent-mock', cwd: jobFolder, prompt: 'api hello', runNow: true })
         expect(made.status).toBe(201)
         expect(made.json.run).toMatchObject({ trigger: 'manual', status: 'started' })
         expect(made.json.cron.lastRun).toMatchObject({ trigger: 'manual', status: 'started' })
@@ -125,7 +125,7 @@ test.describe('T142 autocron run once and chat', () => {
 
     test('talks to a run session from the Loop window', async () => {
         test.setTimeout(180_000)
-        const home = tempDir('climanger-t142-chat-')
+        const home = tempDir('climanger-t148-chat-')
         const project = path.join(home, 'project')
         fs.mkdirSync(project)
         const claudeDir = path.join(home, 'claude')
@@ -135,7 +135,7 @@ test.describe('T142 autocron run once and chat', () => {
 
         const now = Date.now()
         const job = {
-            id: 'job-chat', name: 'T142 chat', enabled: true, schedule: '0 8 * * 0', mode: 'new', template: 'chat', cwd: project,
+            id: 'job-chat', name: 'T148 chat', enabled: true, schedule: '0 8 * * 0', mode: 'new', template: 'chat', cwd: project,
             prompt: 'p', missed: { policy: 'once', withinMinutes: 360 }, createdAt: now - 3600_000, updatedAt: now - 3600_000, createdBy: 'app'
         }
         const run = (id: string, minutesAgo: number, sessionId: string) => ({
@@ -143,10 +143,10 @@ test.describe('T142 autocron run once and chat', () => {
         })
         ctx = await launchAppWithWorkspaces(
             [{
-                id: 'ws-chat', name: 'T142 project', path: project,
+                id: 'ws-chat', name: 'T148 project', path: project,
                 sessions: [
-                    { id: CLAUDE_SESSION, name: 'T142 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 400 --continue` },
-                    { id: SHELL_SESSION, name: 'T142 Shell' }
+                    { id: CLAUDE_SESSION, name: 'T148 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 400 --continue` },
+                    { id: SHELL_SESSION, name: 'T148 Shell' }
                 ]
             }],
             {
@@ -154,21 +154,21 @@ test.describe('T142 autocron run once and chat', () => {
                 config: {
                     autocrons: [job],
                     // newest first, as the store keeps them: the Claude run is the default for Chat
-                    autocronRuns: [run('run-claude', 5, CLAUDE_SESSION), run('run-shell', 10, SHELL_SESSION), run('run-gone', 20, 't142-gone')],
+                    autocronRuns: [run('run-claude', 5, CLAUDE_SESSION), run('run-shell', 10, SHELL_SESSION), run('run-gone', 20, 't148-gone')],
                     autocronCheckedAt: { 'job-chat': now }
                 }
             }
         )
         await waitForBufferText(ctx.page, CLAUDE_SESSION, 'Claude Code (mock)', 20_000)
         const loop = await openAutocron(ctx)
-        await expect(loop.getByTestId('autocron-detail')).toContainText('T142 chat')
+        await expect(loop.getByTestId('autocron-detail')).toContainText('T148 chat')
         await expect(loop.getByTestId('autocron-talk-here')).toHaveCount(3)
 
         // the Chat tab opens on the newest run with a session
         await loop.getByTestId('autocron-view-chat').click()
         const chat = loop.getByTestId('autocron-chat')
         await expect(chat).toHaveAttribute('data-session-id', CLAUDE_SESSION)
-        await expect(loop.getByTestId('autocron-chat-name')).toHaveText('T142 Claude')
+        await expect(loop.getByTestId('autocron-chat-name')).toHaveText('T148 Claude')
         await expect(chat.locator('[data-testid="chat-turn"]').first()).toBeVisible({ timeout: 15_000 })
 
         // sent here → typed into the session's terminal → answered here
@@ -187,7 +187,7 @@ test.describe('T142 autocron run once and chat', () => {
         await loop.getByTestId('autocron-talk-here').nth(2).click()
         await expect(loop.getByTestId('autocron-chat-notice')).toContainText('This session was closed')
 
-        const shots = process.env.T142_SHOTS
+        const shots = process.env.T148_SHOTS
         if (shots) {
             fs.mkdirSync(shots, { recursive: true })
             await loop.getByTestId('autocron-view-details').click()

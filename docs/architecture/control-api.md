@@ -178,7 +178,7 @@ crontab lines and `/loop` sessions nobody can see together (request 2026-11-12, 
 `brand/artifacts/eli5-routine-hub-plan.html`: 「도는 곳 5군데, 보는 창 3개를 하나로」). Shown in the
 Loop window's **Autocron** tab. Code: `src/shared/cron.ts` (schedule math, missed-run decision — pure) ·
 `src/main/CronStore.ts` (jobs, runs, bookmark) · `src/main/CronService.ts` (tick, runner) ·
-renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t132` (no Electron), `t128`/`t130`/`t133`/`t142` (the app).
+renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t132` (no Electron), `t128`/`t130`/`t133`/`t148` (the app).
 
 | Piece | Contract |
 |---|---|
