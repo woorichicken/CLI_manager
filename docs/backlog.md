@@ -24,6 +24,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: 지금 스레드는 부모 세션 하나씩만 보인다 — 답 아래 칩(`ThreadChip`) → 오른쪽 `ThreadPanel`. IPC `chat-threads(sessionId)` 는 부모 하나의 `ChatThread[]`(childId·name·turnTs/turnIndex·forkedAt·status·lastActivityAt, `src/shared/conversation.ts:317`)만 돌려주고, 1초 감시(`refreshChatThreadSubscriptions`)도 구독한 부모만 돈다. 앱 전체를 보는 곳은 All sessions › Tree(fork 가 부모 밑 자식으로, 총괄·팀장이 연 세션과 섞임)와 사이드바 검색 `fork` 뿐이고, List 에는 스레드 표시가 없다.
 - Why deferred: 새 화면이라 범위(어디에 둘지·무엇을 보일지)를 정해야 한다. 사람이 아직 「만들어」를 말하지 않았다.
 - Trigger: 사람이 착수를 말할 때. 그때 정할 것 — ① 자리: All sessions 도구 줄 List · Tree 옆 세 번째 「Threads」(추천, 머리 줄 버튼 수 그대로) vs List 줄마다 스레드 수 배지 ② 줄 모양(슬랙 Threads 처럼): 부모 세션 이름 · 갈라진 답 인용(`ThreadPanel` 의 평문 첫 문단 3줄/240자 규칙 재사용) · 스레드 이름 · 상태 점(질문 대기 우선) · 마지막 활동 시각, 최근 활동 순 ③ 누르면: 부모 세션 Chat + 그 스레드 칸 열기(기존 `ThreadPanel`) ④ main: 모든 부모를 도는 `chat-threads-all` 하나(관계 저장소에서 anchor 있는 fork 만 — `chatThreadParentIds`), 감시는 보기가 열려 있을 때만 ⑤ 안 읽음 표시는 1차에서 뺄지. 비용 확인: 세션 40개·스레드 20개에서 1초 감시 비용을 T127 유닛처럼 잰다.
+- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` T-1·T-2 3차 승인): 착수. ① 자리 = All sessions 도구 줄 `[List · Tree]` **옆의 따로 된 아이콘**(MessagesSquare, 사람: 「list·tree 는 view 라 옆에 아이콘으로 별개로」) — 보기 탭 세 번째가 아니다 ⑤ 안 읽음 = 1차에서 뺀다(추천을 그대로 받음, 사람이 반대하지 않음).
+- Spec:
+  - 무엇: All sessions 보기에서 💬 아이콘을 켜면 목록이 앱 전체 스레드로 바뀐다. 다시 누르면 마지막 보기(List·Tree)로. 켜 있는 동안 List·Tree 는 흐리게(고른 값은 그대로). 상태는 localStorage(`sidebar-threads-open`)에 남긴다. 아이콘 배지 = 답을 기다리는(`waiting`) 스레드 수, 0이면 없음. New session 버튼은 글자 그대로(머리 줄 버튼 수·보기 전환 x 그대로).
+  - 줄: 상태 점(waiting 노랑 > working 파랑 > idle 빈 원) · 스레드 이름 · 마지막 활동 상대 시각 / `in <부모 세션> · <작업 영역>` / 갈라진 답 인용(평문 첫 문단, `ThreadPanel` 규칙 재사용, 줄에서는 2줄로 자름) / 상태 글(Waiting for you · Working). 순서 = 마지막 활동 최근 순(고정 — 누른다고 흔들리지 않음). 빈 상태 문구 「No threads yet — use Reply in thread on an answer」.
+  - 누르면: 부모 세션으로 가서 Chat 보기 + 그 스레드 칸(`ThreadPanel`)을 연다. 사이드바는 Threads 에 머물고 그 줄이 선택 표시. 칸은 지금처럼 Chat 을 좁혀 옆에 놓인다(`chat.css` `has-thread`, 폭 `clamp(340px, 40%, 520px)`), Chat 폭 760px 아래에서만 덮는다 — 이 동작은 바꾸지 않는다.
+  - main: `chat-threads-all` IPC 하나 — `chatThreadParentIds` 의 모든 부모를 `chatThreadsFor` 로 모아 부모 이름·작업 영역을 붙여 돌려준다. 1초 감시(`pollChatThreadChanges`)는 Threads 목록이 열려 있을 때만 모든 부모로 넓힌다(닫히면 지금처럼 구독한 부모만).
+  - 끝 조건: anchor 있는 fork 만 보인다(옛 fork·손 짝·총괄이 연 세션은 안 보임) · 자식이 닫히면 줄이 바로 빠짐 · 상태·시각이 3초 안에 따라옴 · 1280·390(사이드바 펼친 좁은 창)에서 줄이 안 넘침 · 목록이 닫혀 있으면 추가 비용 0.
+  - 시험: 유닛 — 여러 부모 합치기·정렬·닫힌 자식 제외·부모 이름 변경 반영, 감시 범위(열림/닫힘에 따라 읽는 부모 수)와 세션 40·스레드 20 에서 1틱 비용(T127 방식). E2E — chat-mock 부모 둘에 fork 셋(waiting·working·idle) → 아이콘 배지 1 · 줄 순서·상태 점 DOM · 누르면 부모 Chat 과 `chat-thread-panel` 이 그 자식 · Chat 이 좁아짐(칸과 Chat 박스가 안 겹침) · 다시 누르면 List 로 돌아옴 · 재시작 뒤 열림 유지. `T1xx_SHOTS` 로 1280·390 캡처. 옛 코드에서 실패 먼저.
 - Owner: 없음
 
 ### 의존성 보안 — Electron 39 → 42 등 `pnpm audit --prod` high 18건 · dependabot PR 정리
@@ -38,6 +46,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: 화면 쪽 판정은 이미 있다 — 추천 문구 분리(T19 「흐린 추천 문구 분리」·T88 반전 커서 뒤 회색 = 추천). 폰 Chat 입력칸(`ChatView`)은 그 값을 받지 않는다.
 - Why deferred: 사람 결정 2026-11-14 「급한 건 아니어서 릴리즈 먼저」.
 - Trigger: 다음 CLImanger 피드백 회차.
+- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` P-1 승인 · P-3 3차): 착수. 사람: 「단축키도 있기 때문에 이 방향(입력칸 안 흐린 글)이 좋아 보임」 — 입력칸 위 칩(P-2)은 뺐다.
+- Spec:
+  - 무엇: main 이 이미 읽는 입력 상자의 흐린 추천(`TerminalMirror` 입력 상자 읽기의 `suggestion`, Control API 가 `suggestion` 으로 내는 값 — `ControlApiService.ts` `box && !box.typed && box.suggestion`)을 Chat 스냅샷에 실어 `Composer.tsx` 입력칸이 **비었을 때만** 자리표시 글 대신 흐리게 보인다. 글자를 치기 시작하면 사라진다.
+  - 받기: Mac 은 입력칸이 비고 추천이 보일 때 `Tab` 이 그 글을 채운다(보내지 않음 — 사람이 Enter). 폰은 입력칸 오른쪽 `Use` 알약을 눌러 채운다. 같은 `ChatView` 라 두 곳이 한 번에 들어간다. Tab 은 추천이 없으면 지금 동작 그대로.
+  - 범위: Claude 만(Codex 는 화면 규칙을 확인한 뒤). 일하는 중·질문 카드가 떠 있을 때는 안 보인다. 추천 글은 화면에 보이는 그대로라 가리기(`maskSecrets`)는 하지 않는다 — 터미널에 이미 보이는 글이다.
+  - 끝 조건: 추천이 바뀌면 3초 안에 따라옴 · 추천이 사라지면(사람이 터미널에서 침·새 턴) 흐린 글도 사라짐 · 채운 뒤 보내면 에이전트가 받은 글 = 추천 글 · 폰 390 에서 긴 추천은 한 줄 말줄임, Use 가 보내기 버튼과 안 겹침.
+  - 시험: 유닛 — 스냅샷에 실리는 조건(빈 상자·typed 있음·clipped·일하는 중) 표. E2E — chat-mock 이 입력 상자에 흐린 추천을 그리는 옵션을 더해 Mac Chat 흐린 글 → Tab → 입력칸 값 = 추천 → Enter → 모의 `ANSWER` · 글 치면 사라짐 · 폰(CDP 390) Use 로 같은 흐름. 옛 코드에서 실패 먼저.
 - Owner: 없음
 
 ### Related 버튼 숫자와 창 안 「All N」이 다름
@@ -81,6 +96,12 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - 2번째(2026-11-12 fb-1112 90043d9d 「렌더링이 안됨」): 사람 답 「html climanager 안에서 열거나 누르면 크롬에서 볼수 있도록」 → 이번엔 뒤쪽만 했다 — Chat 의 `.html` 은 기본 브라우저(`shell.openPath`), `:줄` 이면 미리보기 + Browser 버튼(T96). 앱 안에서 그리기는 그대로 이 항목.
 - Trigger: 사람이 시작하자고 할 때, 또는 큰 HTML 보고서를 앱 밖으로 여는 일이 계속 불편하다는 말이 다시 나올 때.
 - Fix direction: 먼저 (a) — `.html` 은 기본으로 그려서 보이고 Source 전환 · 「Open in browser」 버튼, 한도는 폰과 같은 64MB. (b) 는 그 뒤 따로 결정 기록을 쓰고.
+- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` H-A·H-B 3차 승인): (a) 를 착수. 사람: 「기본적으로 A 로 나오되 B 로도 볼 수 있고, 세션·문서로 나누는 게 아니라 저렇게 나오는 건 분할 화면」 — 탭 줄(VS Code 식 편집기 탭)은 만들지 않는다. (b) 진짜 브라우저 탭은 그대로 이 항목에 남는다.
+- Spec:
+  - A(기본): Chat 의 `.html` 경로를 누르면 기본 브라우저 대신 미리보기 창(`ChatFilePreview.tsx`·`FilePreview.tsx` 의 창)을 크게 열어 **그려서** 보인다. 머리: 경로 · `[Preview | Source]` · `Side by side` · `Browser`(지금 동작) · 닫기. `:줄` 이면 Source 로 열고 그 줄. 그리기는 폰과 같은 분리 칸(결정 0011 — sandbox iframe, `connect-src 'none'`, 바깥 자원 막힘, 한도 64MB). 지금 글 미리보기의 500KB 한도(`read-file-content`)는 HTML 그리기에 쓰지 않는다. 아래 줄 「Sandboxed · no network」.
+  - B(옆으로): `Side by side` 를 누르면 창이 닫히고 문서가 지금 분할 화면(`showSessions`, 최대 4칸 `MAX_LINKED_SESSIONS`)에 세션처럼 한 칸으로 들어간다. 칸 머리는 세션 칸과 같은 경로 머리 + `Preview/Source` · 브라우저 · 닫기. 칸이 이미 4개면 버튼을 끄고 이유를 툴팁으로. 문서 칸은 저장하지 않는다(재시작 뒤에는 없음) — 저장 여부는 써 보고 정한다.
+  - 끝 조건: 925KB 보고서가 A·B 둘 다에서 그려짐 · 문서 안 스크립트가 앱 IPC·네트워크에 닿지 않음(폰 T102 탐침과 같은 판정을 Mac 에서) · B 칸 옆 세션에 바로 입력 가능 · Esc/닫기 뒤 포커스가 Chat 으로.
+  - 시험: E2E — chat-mock 답에 `.html` 경로 → 클릭 → 창 iframe 이 그려짐(`shell.openPath` 0번, main 에서 가로챔) · Source 전환 · `:줄` 은 Source · Side by side → 분할 칸 2개(세션 + 문서) · 4칸이면 버튼 꺼짐 · 탐침 페이지의 fetch·beacon·폼이 main `webRequest` 에 안 잡힘 · Browser 버튼은 지금처럼 `shell.openPath`. 1280 캡처.
 - Owner: 없음
 
 ### Chat 「새 세션으로 보내기」 전용 명령(`/split`)
