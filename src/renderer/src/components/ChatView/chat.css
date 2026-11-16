@@ -215,6 +215,17 @@
     position: absolute; inset: 0; padding: 6px 8px; color: var(--chat-fg); line-height: 1.45; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; pointer-events: none;
 }
 .chat-composer-token { color: #93c5fd; }
+/* Claude's next-prompt suggestion in the empty box (ba2ae0cb): one line, cut with … so the Use pill and Send keep their room */
+.chat-composer-suggestion {
+    position: absolute; left: 0; right: 76px; top: 0; padding: 6px 8px; line-height: 1.45; color: var(--chat-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}
+.chat-suggestion-use {
+    position: absolute; right: 2px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 6px; font-size: 11px; color: var(--chat-faint); white-space: nowrap;
+}
+.chat-suggestion-use:hover { color: var(--chat-fg); background: var(--chat-soft); }
+.chat-suggestion-use kbd { font: inherit; font-size: 10px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--chat-line); background: var(--chat-soft); color: #93c5fd; }
+.chat-suggestion-use.is-touch { padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(96, 165, 250, 0.45); color: #93c5fd; background: rgba(37, 99, 235, 0.14); font-weight: 600; }
+.chat-composer-input:has(.chat-suggestion-use.is-touch) .chat-composer-suggestion { right: 56px; }
 .chat-composer-send { width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: #2563eb; color: #fff; }
 .chat-composer-send:disabled { background: var(--chat-soft); color: var(--chat-faint); }
 .chat-composer-send.is-stop { background: rgba(248, 113, 113, 0.18); color: #fca5a5; border: 1px solid rgba(248, 113, 113, 0.45); }

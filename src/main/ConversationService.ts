@@ -147,7 +147,7 @@ export interface ConversationMirror {
     showsAwaitingInput(id: string): boolean
     /** TerminalMirror.asksQuestion — the Chat's own, stricter test; showsAwaitingInput without it */
     asksQuestion?(id: string): boolean
-    inputBox(id: string): { typed: string; clipped?: boolean; typedRows?: number } | null
+    inputBox(id: string): { typed: string; suggestion?: string; clipped?: boolean; typedRows?: number } | null
 }
 
 export interface ConversationServiceDeps {
@@ -192,6 +192,8 @@ interface Watched {
     /** background shells and agents the screen counts (screenBackground), or null */
     background?: { shells: number; agents: number } | null
     prompt: PromptMenu | null
+    /** Claude's dim next-prompt suggestion the box may show (chatSuggestion), or null */
+    suggestion?: string | null
     queue: QueueItem[]
     sending: boolean
     /** the last queued message typed that only the terminal can show (ConversationSnapshot.terminalOpened) */
@@ -297,6 +299,7 @@ export class ConversationService {
             ...(this.deps.home ? { home: this.deps.home } : {}),
             working: entry.working,
             prompt: entry.prompt,
+            suggestion: entry.suggestion ?? null,
             queued: entry.queue.map(({ id, text }) => ({ id, text })),
             revision: entry.revision,
             meta: null,
@@ -966,16 +969,23 @@ export class ConversationService {
         entry.working = screen.some(isBusyRow)
         entry.screenMode = screenAgentMode(screen)
         entry.background = screenBackground(screen)
-        entry.prompt = entry.working ? null : readPrompt(screen, agentOf(this.deps.session(sessionId)) ?? 'claude')
+        const agent = agentOf(this.deps.session(sessionId))
+        entry.prompt = entry.working ? null : readPrompt(screen, agent ?? 'claude')
+        entry.suggestion = chatSuggestion(mirror.inputBox(sessionId), {
+            agent,
+            working: entry.working,
+            // a question without a card (one the Chat cannot read) still has no box to fill
+            asking: entry.prompt !== null || (mirror.asksQuestion ? mirror.asksQuestion(sessionId) : mirror.showsAwaitingInput(sessionId))
+        })
         // any read can be the one a view gets (getConversation reads too): a change it sees is announced
         // here, or the next poll compares two equal states and the view keeps a card already answered
         // (chat-gap-r3-1109, T113: main said no prompt at rev 7 while the card it had sent at rev 7 stayed)
         this.noteState(sessionId, entry)
     }
 
-    /** Bumps the revision when what views show (conversation id, working, mode, menu, queue) changed. */
+    /** Bumps the revision when what views show (conversation id, working, mode, menu, suggestion, queue) changed. */
     private noteState(sessionId: string, entry: Watched): void {
-        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.background ?? null, entry.prompt?.signature ?? null, entry.queue.map((message) => message.id)])
+        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.background ?? null, entry.prompt?.signature ?? null, entry.suggestion ?? null, entry.queue.map((message) => message.id)])
         if (key === entry.lastKey) return
         entry.lastKey = key
         this.bump(sessionId, entry)
@@ -1091,6 +1101,21 @@ const TYPED_LINE_MAX = 200
 const CLEAR_INPUT_KEYS = ['\x0b', '\x15']
 const CLEAR_WAIT_MS = 1500
 const CLEAR_POLL_MS = 50
+
+/**
+ * The next prompt Claude suggests in dim text in its input box, for the Chat box to show in its place
+ * (ba2ae0cb): only while the box is empty and wholly on screen, and the agent neither works nor asks.
+ * Claude only — Codex's screen rules are not checked yet. Not masked: the terminal shows it already.
+ */
+export function chatSuggestion(
+    box: { typed: string; suggestion?: string; clipped?: boolean } | null,
+    state: { agent: ConversationAgent | null; working: boolean; asking: boolean }
+): string | null {
+    if (state.agent !== 'claude' || state.working || state.asking) return null
+    if (!box || box.clipped || box.typed.trim() !== '') return null
+    const text = box.suggestion?.trim() ?? ''
+    return text === '' ? null : text
+}
 /** A paste or an image Claude folded into a placeholder stands for more than the box shows. */
 const DRAFT_PLACEHOLDER = /\[(?:Pasted text #\d+|Image #\d+)/
 
