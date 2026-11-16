@@ -579,7 +579,17 @@ export class ControlApiServer {
         return [
             route('GET', '/v1/crons', () => crons().state()),
             // A client calling itself «app» must not pass for the window: API-made jobs stop while the API is off.
-            route('POST', '/v1/crons', ({ body, client }) => created({ cron: checked(crons().create(input(body), client === CRON_MADE_IN_WINDOW ? 'api' : client)).cron })),
+            route('POST', '/v1/crons', async ({ body, client }) => {
+                // `runNow: true` runs the new job once right away — the same first check the window's
+                // «Save & run now» gives. Checked before anything is saved, so a bad value saves nothing.
+                if (body.runNow !== undefined && typeof body.runNow !== 'boolean') {
+                    throw new ControlApiError(400, 'bad_request', 'runNow must be true or false.')
+                }
+                const { cron } = checked(crons().create(input(body), client === CRON_MADE_IN_WINDOW ? 'api' : client))
+                if (body.runNow !== true) return created({ cron })
+                const run = await crons().runNow(cron.id)
+                return created({ cron: crons().get(cron.id) ?? cron, run })
+            }),
             route('GET', '/v1/crons/:cron', ({ params }) => ({ cron: job(params.cron) })),
             route('POST', '/v1/crons/:cron', ({ params, body }) => ({ cron: checked(crons().update(job(params.cron).id, input(body))).cron })),
             route('DELETE', '/v1/crons/:cron', ({ params }) => ({ removed: crons().remove(job(params.cron).id) })),

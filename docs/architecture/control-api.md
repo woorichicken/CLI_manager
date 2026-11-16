@@ -178,7 +178,7 @@ crontab lines and `/loop` sessions nobody can see together (request 2026-11-12, 
 `brand/artifacts/eli5-routine-hub-plan.html`: 「도는 곳 5군데, 보는 창 3개를 하나로」). Shown in the
 Loop window's **Autocron** tab. Code: `src/shared/cron.ts` (schedule math, missed-run decision — pure) ·
 `src/main/CronStore.ts` (jobs, runs, bookmark) · `src/main/CronService.ts` (tick, runner) ·
-renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t132` (no Electron), `t128`/`t130`/`t133` (the app).
+renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t132` (no Electron), `t128`/`t130`/`t133`/`t142` (the app).
 
 | Piece | Contract |
 |---|---|
@@ -189,6 +189,7 @@ renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t13
 | Tick | Every **30 s**, plus right after the Mac wakes (`powerMonitor` `resume`/`unlock-screen`); the first tick waits for the main window (it spawns new sessions' terminals). A `new` run while the main window is closed opens it **hidden** (the dock icon shows it); if it fails to load or takes over **60 s**, that run fails and later ticks go on. A run is on time within **2 min** of its minute |
 | Missed | Times that passed while the Mac was off, asleep or the app closed fold into **one** decision (the newest; `missedCount` = older ones folded in). Per job: `once` (default) — run one time if within `withinMinutes` (default 360, max 7 days), else a `missed` record "more than N min late" · `skip` — record and wait · `notify` — record and a system notification. A run due now covers the misses before it |
 | Bookmark | Per job, the end of the last tick (`autocronCheckedAt`). It moves **before** the run starts, so a crash never replays a run. Switching a job on, or changing its schedule, restarts it at now — no catch-up of the old schedule or of time it was off |
+| Window | A new job's form has **Save & run now** (saves, then runs once — the schedule and bookmark do not move; editing has Save only). The detail has `Details · Chat`: Chat shows a run's session in the same Chat view as the main window (no terminal — a terminal view attaches to one window). «Talk here» on a run picks it; the default is the newest run with a session. An attach job links to its loop in the Loops tab instead |
 | Runs | `started` (session opened and prompt sent / typed into the loop) · `failed` (`note` why; also a notification) · `missed`. `trigger`: `scheduled`, `caught-up`, `manual`. `sessionId` → «Open session» (focuses it in the main window; an attach run opens the Loop window). A run still starting when the next comes → that one fails ("previous run was still starting") |
 | Kept | electron-store `autocrons` (max **100**), `autocronRuns` (newest **500**, all jobs), `autocronCheckedAt`. Deleting a job deletes its runs |
 | AI mark | Sessions opened by a job are marked `aiControl.client = "autocron"` |
@@ -196,7 +197,7 @@ renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t13
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/v1/crons` | `{ crons: CronView[], runs: CronRun[] }` — each job with `nextRunAt`, `lastRun`, `problem` |
-| POST | `/v1/crons` | `{ name, schedule, mode?, agent? \| template?, cwd?, loopProjectId?, prompt, missed?: { policy, withinMinutes }, enabled? }` → `201 { cron }`; `createdBy` = the client name |
+| POST | `/v1/crons` | `{ name, schedule, mode?, agent? \| template?, cwd?, loopProjectId?, prompt, missed?: { policy, withinMinutes }, enabled?, runNow? }` → `201 { cron }`; `createdBy` = the client name. `runNow: true` runs the new job once right away (like «Run now», waits until the session is up) → `201 { cron, run }`; a non-boolean `runNow` → `400` and nothing is saved |
 | GET | `/v1/crons/:cron` | `{ cron }` — `:cron` is the id or the name (case ignored); unknown, or a name two old jobs share → `404 cron_not_found` |
 | POST | `/v1/crons/:cron` | Same fields, only what changes → `{ cron }`. Bad input → `400` naming the field |
 | DELETE | `/v1/crons/:cron` | `{ removed: true }` |
