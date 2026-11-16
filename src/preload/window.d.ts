@@ -4,6 +4,7 @@ import type { AgentConversationList, AgentConversationConnectInput, AgentConvers
 import type { PhoneState } from '../shared/types'
 import type { CronInput, CronRun, CronState, CronView } from '../shared/autocron'
 import type { PhoneTestPushResult } from '../shared/phone'
+import type { DocPreviewOpenResult } from '../shared/docPreview'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 declare global {
@@ -289,6 +290,7 @@ declare global {
             listChatBackgroundTasks: (sessionId: string) => Promise<BackgroundTaskList>
             saveChatAttachment: (name: string, bytes: Uint8Array) => Promise<AttachResult>
             openChatPath: (target: string, sessionId?: string) => Promise<{ success: boolean; error?: string }>
+            openDocPreview: (target: string) => Promise<DocPreviewOpenResult>
             dictationStatus: () => Promise<DictationStatus>
             startDictation: (context?: DictationStartContext) => Promise<DictationStartResult>
             stopDictation: (id: number) => Promise<void>

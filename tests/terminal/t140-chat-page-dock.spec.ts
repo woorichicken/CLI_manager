@@ -15,7 +15,9 @@ import { dockOpenRequest, openInDock } from '../../src/main/dockOpen'
  * when it is there and keeps `shell.openPath` for a Mac without it.
  *
  *  units: the request line · ok → opened · refusal / no socket / hang-up / silence → unavailable
- *  app: a fake Dock socket (`ARTIFACT_DOCK_SOCKET`) gets the click, `shell.openPath` does not; the Dock refusing → the Mac's opener
+ *  app: a fake Dock socket (`ARTIFACT_DOCK_SOCKET`) gets the Browser press, `shell.openPath` does not; the Dock refusing → the Mac's opener
+ *
+ * Since T147 (decision 0013) a click on the page draws it in the app's preview first; its Browser button is the way out.
  */
 
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
@@ -147,14 +149,18 @@ test('T140 Mac Chat: a web page goes to Artifact Dock, not to a Chrome tab the D
     const { page, report, opened } = await launch(dir)
     const link = chat(page).getByRole('button', { name: 'report.html', exact: true }).first()
     await link.click()
+    // the page is drawn in the app first (T147); nothing asked the Dock or the browser yet
+    await expect(page.getByTestId('chat-file-preview').getByTestId('html-doc-frame')).toBeVisible()
+    expect(dock.lines.length).toBe(0)
+    const browser = page.getByTestId('file-preview-browser')
+    await browser.click()
     await expect.poll(() => dock!.lines.length).toBe(1)
     expect(JSON.parse(dock.lines[0])).toEqual({ cmd: 'open', url: pathToFileURL(report).href, activate: true, sessionId: CLAUDE })
-    // clicking again asks the Dock again — never a second Chrome tab
-    await link.click()
+    // pressing again asks the Dock again — never a second Chrome tab
+    await browser.click()
     await expect.poll(() => dock!.lines.length).toBe(2)
     await page.waitForTimeout(500)
     expect(await opened()).toEqual([])
-    await expect(page.getByTestId('chat-file-preview')).toHaveCount(0)
 })
 
 test('T140 Mac Chat: when the Dock cannot open it, the Mac\'s own opener does (fc98b340)', async () => {
@@ -163,6 +169,7 @@ test('T140 Mac Chat: when the Dock cannot open it, the Mac\'s own opener does (f
     dock = await fakeDock(dir, () => JSON.stringify({ ok: false, error: 'host not ready' }))
     const { page, report, opened } = await launch(dir)
     await chat(page).getByRole('button', { name: 'report.html', exact: true }).first().click()
+    await page.getByTestId('file-preview-browser').click()
     await expect.poll(opened).toEqual([report])
     expect(dock.lines.length).toBe(1)
 })

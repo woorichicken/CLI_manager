@@ -102,6 +102,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   - B(옆으로): `Side by side` 를 누르면 창이 닫히고 문서가 지금 분할 화면(`showSessions`, 최대 4칸 `MAX_LINKED_SESSIONS`)에 세션처럼 한 칸으로 들어간다. 칸 머리는 세션 칸과 같은 경로 머리 + `Preview/Source` · 브라우저 · 닫기. 칸이 이미 4개면 버튼을 끄고 이유를 툴팁으로. 문서 칸은 저장하지 않는다(재시작 뒤에는 없음) — 저장 여부는 써 보고 정한다.
   - 끝 조건: 925KB 보고서가 A·B 둘 다에서 그려짐 · 문서 안 스크립트가 앱 IPC·네트워크에 닿지 않음(폰 T102 탐침과 같은 판정을 Mac 에서) · B 칸 옆 세션에 바로 입력 가능 · Esc/닫기 뒤 포커스가 Chat 으로.
   - 시험: E2E — chat-mock 답에 `.html` 경로 → 클릭 → 창 iframe 이 그려짐(`shell.openPath` 0번, main 에서 가로챔) · Source 전환 · `:줄` 은 Source · Side by side → 분할 칸 2개(세션 + 문서) · 4칸이면 버튼 꺼짐 · 탐침 페이지의 fetch·beacon·폼이 main `webRequest` 에 안 잡힘 · Browser 버튼은 지금처럼 `shell.openPath`. 1280 캡처.
+- Update 2026-11-16: A·B 구현(`feat/html-preview-1116` — 결정 [0013](decisions/0013-mac-documents-on-a-custom-scheme.md), T146 유닛·T147 앱). 남은 것: (b) 진짜 브라우저 탭, 문서 칸 저장 여부(써 보고 정함), Source 의 500KB 한도(큰 문서는 「File too large」), 문서 칸 끌어 옮기기·⌘W 로 닫기는 없음.
 - Owner: 없음
 
 ### Chat 「새 세션으로 보내기」 전용 명령(`/split`)

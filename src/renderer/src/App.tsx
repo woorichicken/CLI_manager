@@ -47,6 +47,9 @@ import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 import { splitAfterDrop, SPLIT_DIVIDER_PX, splitHeadersWide, PANE_HEADER_WIDE_PX, PANE_HEADER_COMPACT_PX } from './utils/splitLayout'
 import { SplitDividers } from './components/SplitDividers'
+import { DocSplitPane } from './components/HtmlDoc/DocSplitPane'
+import { useDocPanes } from './hooks/useDocPanes'
+import { isDocPaneId, sessionPaneIds, splitAfterRemove } from './utils/docPanes'
 
 /** Let the window settle before spending anything on a network check. */
 const UPDATE_CHECK_STARTUP_DELAY_MS = 2000
@@ -109,7 +112,10 @@ function App() {
 
     // The session the user is looking at: the focused split pane, else the active tab. One place reports it
     // for the recently viewed order (sidebar All sessions, Related sort); main skips a repeat of the id already in front.
-    const viewedSessionId = splitLayout ? splitLayout.sessionIds[activeSplitIndex] ?? null : activeSession?.id ?? null
+    const viewedPaneId = splitLayout ? splitLayout.sessionIds[activeSplitIndex] ?? null : activeSession?.id ?? null
+    // a document pane (`doc:`) is not a session
+    const viewedSessionId = viewedPaneId && !isDocPaneId(viewedPaneId) ? viewedPaneId : null
+    const docPanes = useDocPanes({ splitLayout, setSplitLayout, activeSplitIndex, setActiveSplitIndex, activeSession, setActiveSession })
     // Width of the terminal area, so a split pane wide enough can carry the single-view header (report 08343040).
     const [splitAreaWidth, setSplitAreaWidth] = useState(0)
     const splitAreaObserver = useRef<ResizeObserver | null>(null)
@@ -725,42 +731,28 @@ function App() {
         if (!splitLayout) setActiveSession(null)
     }
 
-    // Handle removing a session from split view
+    // Handle removing a session (or a document pane) from split view
     const handleRemoveFromSplit = (sessionId: string) => {
         if (!splitLayout) return
-
-        const removedIndex = splitLayout.sessionIds.indexOf(sessionId)
-        const newSessionIds = splitLayout.sessionIds.filter(id => id !== sessionId)
-
-        if (newSessionIds.length <= 1) {
-            // Return to single view mode
-            if (newSessionIds.length === 1) {
-                // Find the remaining session and make it active
-                for (const workspace of workspaces) {
-                    const session = workspace.sessions?.find(s => s.id === newSessionIds[0])
-                    if (session) {
-                        setActiveWorkspace(workspace)
-                        setActiveSession(session)
-                        break
-                    }
+        const result = splitAfterRemove(splitLayout.sessionIds, activeSplitIndex, sessionId, docPanes.returnTo())
+        if (result.kind === 'layout') {
+            setSplitLayout({ ...splitLayout, sessionIds: result.sessionIds, sizes: undefined })
+            setActiveSplitIndex(result.activeIndex)
+            return
+        }
+        // Return to single view mode, on the one session left (or the one a document was put beside)
+        if (result.kind === 'single') {
+            for (const workspace of workspaces) {
+                const session = workspace.sessions?.find(s => s.id === result.sessionId)
+                if (session) {
+                    setActiveWorkspace(workspace)
+                    setActiveSession(session)
+                    break
                 }
             }
-            setSplitLayout(null)
-            setActiveSplitIndex(0)
-        } else {
-            // Update split layout
-            setSplitLayout({
-                ...splitLayout,
-                sessionIds: newSessionIds,
-                sizes: undefined // Reset sizes
-            })
-            // Adjust active index if needed
-            if (activeSplitIndex >= newSessionIds.length) {
-                setActiveSplitIndex(newSessionIds.length - 1)
-            } else if (removedIndex <= activeSplitIndex && activeSplitIndex > 0) {
-                setActiveSplitIndex(activeSplitIndex - 1)
-            }
         }
+        setSplitLayout(null)
+        setActiveSplitIndex(0)
     }
 
     // Handle layout change (resize)
@@ -790,8 +782,9 @@ function App() {
 
     // Sync split layout to Grid Window (one-way: main → grid)
     useEffect(() => {
-        if (splitLayout && splitLayout.sessionIds.length > 0) {
-            window.api.syncGridSessions(splitLayout.sessionIds)
+        const sessionIds = sessionPaneIds(splitLayout?.sessionIds ?? [])
+        if (sessionIds.length > 0) {
+            window.api.syncGridSessions(sessionIds)
         }
     }, [splitLayout?.sessionIds.join(',')])
 
@@ -1196,9 +1189,7 @@ function App() {
         onToggleSettings: () => setSettingsOpen(prev => !prev),
         onToggleRelated: () => {
             // The dialog belongs to one session: the focused split pane, else the active tab.
-            const targetId = splitLayout
-                ? splitLayout.sessionIds[activeSplitIndex] ?? null
-                : activeSession?.id ?? null
+            const targetId = viewedSessionId
             setRelatedDialogSessionId(current => (current || !targetId ? null : targetId))
         },
         onToggleChecklists: () => setChecklistsOpen(open => !open),
@@ -1775,6 +1766,22 @@ function App() {
                                 'grid-cols-1 grid-rows-1'
                             }`}>
                                 {splitLayout.sessionIds.map((sessionId, index) => {
+                                    const docPane = isDocPaneId(sessionId) ? docPanes.panes.get(sessionId) : undefined
+                                    if (docPane) {
+                                        return (
+                                            <DocSplitPane
+                                                key={sessionId}
+                                                paneId={sessionId}
+                                                pane={docPane}
+                                                isActive={index === activeSplitIndex}
+                                                wide={splitHeadersWide(splitAreaWidth, splitLayout.sessionIds.length)}
+                                                className={splitLayout.sessionIds.length === 3 && index === 2 ? 'col-span-2' : ''}
+                                                onActivate={() => setActiveSplitIndex(index)}
+                                                onSetSource={source => docPanes.setSource(sessionId, source)}
+                                                onClose={() => handleRemoveFromSplit(sessionId)}
+                                            />
+                                        )
+                                    }
                                     // Find session and workspace for header
                                     let foundSession: TerminalSession | undefined
                                     let foundWorkspace: Workspace | undefined
@@ -1810,7 +1817,7 @@ function App() {
                                                     onOpenSettings={() => handleOpenSettings('general')}
                                                     onOpenFullscreen={() => {
                                                         if (splitLayout) {
-                                                            window.api.openFullscreenTerminal(splitLayout.sessionIds)
+                                                            window.api.openFullscreenTerminal(sessionPaneIds(splitLayout.sessionIds))
                                                         }
                                                     }}
                                                     onPaneClick={() => setActiveSplitIndex(index)}
@@ -2163,7 +2170,11 @@ function App() {
             />
 
             {/* Files the Chat view names: pictures and text previewed, the rest in the Mac's own app */}
-            <ChatFilePreview openInApp={settings.chat?.openFilesInApp !== false} />
+            <ChatFilePreview
+                openInApp={settings.chat?.openFilesInApp !== false}
+                onSideBySide={docPanes.placeBeside}
+                sideBySideBlocked={docPanes.blockedReason}
+            />
             {/* What the Terminal ↔ Chat switch could not carry (4b9cb0c2) */}
             <HandoffNoticeToast />
 

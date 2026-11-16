@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { X, FileText, Loader2, AlertCircle, ExternalLink, Globe, Image } from 'lucide-react'
+import { X, FileText, Loader2, AlertCircle, ExternalLink, Globe, Image, Columns2 } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { BROWSER_PAGE_EXTENSIONS, IMAGE_EXTENSIONS, fileExtension } from '../../../shared/fileKinds'
 import { Markdown } from './ChatView/markdown/Markdown'
+import { HtmlDocView } from './HtmlDoc/HtmlDocView'
 import './ChatView/chat.css'
 
 /** Files drawn as their words with `renderMarkdown` (the phone file panel's list, PhoneFilePanel MARKDOWN_NAME). */
@@ -26,6 +27,12 @@ interface FilePreviewProps {
      * file panel (fb d89cfc4a). Asked for by the Chat's preview; ⌘P file search keeps its source view.
      */
     renderMarkdown?: boolean
+    /** An HTML page drawn here can move into the split view as a pane (backlog 「앱 안 브라우저」 B). */
+    onSideBySide?: (source: boolean) => void
+    /** Why Side by side is off (the split is full), shown as its tooltip. */
+    sideBySideBlocked?: string | null
+    /** The Browser button and Enter on a page: the Chat's opener (Artifact Dock, else the Mac's browser). */
+    onOpenInBrowser?: () => void
 }
 
 // Map file extensions to Prism language identifiers
@@ -94,14 +101,19 @@ const getLanguageFromPath = (filePath: string): string => {
     return langMap[ext] || 'text'
 }
 
-export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onOpenInEditor, renderMarkdown = false }: FilePreviewProps) {
+export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onOpenInEditor, renderMarkdown = false, onSideBySide, sideBySideBlocked, onOpenInBrowser }: FilePreviewProps) {
     const [content, setContent] = useState<string>('')
     const markdown = renderMarkdown && MARKDOWN_NAME.test(filePath)
-    // the preview shows a page's source; the browser draws it (90043d9d)
+    // a page is drawn in a sandboxed frame (decision 0013); its source is one press away
     const webPage = BROWSER_PAGE_EXTENSIONS.has(fileExtension(filePath))
+    const drawable = markdown || webPage
     // a line asked for is a place in the source: the drawn words have no line numbers
-    const [source, setSource] = useState(!markdown || line !== undefined)
-    useEffect(() => setSource(!markdown || line !== undefined), [filePath, line, markdown])
+    const [source, setSource] = useState(!drawable || line !== undefined)
+    useEffect(() => setSource(!drawable || line !== undefined), [filePath, line, drawable])
+    const openInBrowser = useCallback(() => {
+        if (onOpenInBrowser) onOpenInBrowser()
+        else void window.api.openChatPath(filePath)
+    }, [onOpenInBrowser, filePath])
     const [imageData, setImageData] = useState<{ data: string; mimeType: string } | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -110,7 +122,8 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
 
     // Load file content (text or image)
     const loadContent = useCallback(async () => {
-        if (!filePath) return
+        // a page reads itself (HtmlDocView): the 500 KB text limit is not the page's
+        if (!filePath || webPage) return
 
         setLoading(true)
         setError(null)
@@ -140,7 +153,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
         } finally {
             setLoading(false)
         }
-    }, [filePath])
+    }, [filePath, webPage])
 
     // Load content when opened
     useEffect(() => {
@@ -169,6 +182,9 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
             if (e.key === 'Escape' || e.key === ' ') {
                 e.preventDefault()
                 onClose()
+            } else if (e.key === 'Enter' && !e.metaKey && webPage) {
+                e.preventDefault()
+                openInBrowser()
             } else if (e.key === 'Enter' && !e.metaKey && onOpenInEditor) {
                 // Only open in editor if Enter pressed WITHOUT Cmd
                 e.preventDefault()
@@ -185,7 +201,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
             clearTimeout(timer)
             window.removeEventListener('keydown', handleKeyDown)
         }
-    }, [isOpen, onClose, onOpenInEditor])
+    }, [isOpen, onClose, onOpenInEditor, webPage, openInBrowser])
 
     if (!isOpen) return null
 
@@ -202,7 +218,8 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
 
             {/* Modal - Smaller size like macOS Quick Look */}
             <div
-                className="relative w-full max-w-2xl max-h-[60vh] bg-[#1e1e1e] rounded-lg shadow-2xl border border-white/20 flex flex-col overflow-hidden"
+                className={`relative w-full ${webPage ? 'max-w-6xl h-[88vh]' : 'max-w-2xl max-h-[60vh]'} bg-[#1e1e1e] rounded-lg shadow-2xl border border-white/20 flex flex-col overflow-hidden`}
+                data-testid="file-preview-window"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -219,7 +236,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
-                        {markdown && (
+                        {drawable && (
                             <div className="flex items-center mr-1 rounded border border-white/10 overflow-hidden text-[11px]" role="group" aria-label="Preview or source">
                                 <button
                                     type="button"
@@ -241,11 +258,23 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                                 </button>
                             </div>
                         )}
+                        {webPage && onSideBySide && (
+                            <button
+                                type="button"
+                                data-testid="file-preview-side-by-side"
+                                disabled={Boolean(sideBySideBlocked)}
+                                onClick={() => onSideBySide(source)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400 disabled:cursor-not-allowed"
+                                title={sideBySideBlocked || 'Side by side — open it as a pane next to this session'}
+                            >
+                                <Columns2 size={12} /> Side by side
+                            </button>
+                        )}
                         {webPage && (
                             <button
                                 type="button"
                                 data-testid="file-preview-browser"
-                                onClick={() => void window.api.openChatPath(filePath)}
+                                onClick={openInBrowser}
                                 className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
                                 title="Open in browser — see it as a page"
                             >
@@ -272,6 +301,11 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                 </div>
 
                 {/* Content */}
+                {webPage ? (
+                    <div className="flex-1 min-h-0" data-testid="file-preview-page">
+                        <HtmlDocView path={filePath} line={line} source={source} onEscape={onClose} />
+                    </div>
+                ) : (
                 <div className="flex-1 overflow-auto">
                     {loading && (
                         <div className="flex items-center justify-center h-32">
@@ -335,11 +369,13 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                         </SyntaxHighlighter>
                     )}
                 </div>
+                )}
 
                 {/* Footer - Minimal hints */}
                 <div className="px-3 py-1.5 border-t border-white/10 flex items-center gap-3 text-[10px] text-gray-500 bg-[#252526]">
                     <span><kbd className="px-1 py-0.5 bg-white/10 rounded">Space</kbd> Close</span>
-                    <span><kbd className="px-1 py-0.5 bg-white/10 rounded">Enter</kbd> Open</span>
+                    <span><kbd className="px-1 py-0.5 bg-white/10 rounded">Enter</kbd> {webPage ? 'Open in browser' : 'Open'}</span>
+                    {webPage && !source && <span className="ml-auto" data-testid="file-preview-sandboxed">Sandboxed · no network</span>}
                 </div>
             </div>
         </div>

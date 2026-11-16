@@ -64,6 +64,7 @@ import { DictationLog } from './DictationLog'
 import { openInDock } from './dockOpen'
 import { dockLocation } from './phone/phoneDock'
 import { BROWSER_PAGE_EXTENSIONS } from '../shared/fileKinds'
+import { guardDocPreviewFrames, registerDocPreviewScheme, setupDocPreview } from './docPreviewProtocol'
 
 // Set app name for development mode
 app.setName('CLI Manager')
@@ -1099,6 +1100,7 @@ function createWindow(options: { hidden?: boolean } = {}): void {
         shell.openExternal(details.url)
         return { action: 'deny' }
     })
+    guardDocPreviewFrames(mainWindow.webContents)
 
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
@@ -1310,12 +1312,16 @@ function validateCliSessionIds(): void {
     }
 }
 
+// The Mac's document frame (decision 0013): a privileged scheme is read once, before ready.
+registerDocPreviewScheme()
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
     // Fix PATH for packaged app (must be first!)
     await fixPath()
+    setupDocPreview()
 
     // Headless test mode: keep the app out of the macOS dock
     if (isTestHeadless && process.platform === 'darwin') {
