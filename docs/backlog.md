@@ -19,6 +19,38 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### Autocron 「Save & run now」 — 등록할 때 한 번 돌려 보기
+- Discovered: 2026-11-16 루프 활용 기획 세션. 사람: 「등록할때, 한번 실행하는걸로 그래서 예약 있더라도 지금 실행같은것도 있어야할듯」. `/content-scout` 매일 06:00 작업(`03cad8f5`)을 만들면서.
+- Evidence: 등록 폼(`AutocronPanel.tsx` `autocron-form`)은 일정 미리보기(`autocron-schedule-preview`)만 보이고 저장(`autocron-save`)으로 끝난다. 실제로 세션이 뜨고 프롬프트가 들어가는지는 상세 화면의 Run now(`autocron-run-now` → `POST /v1/crons/:cron/run`)를 따로 눌러야 안다. 예약 작업에 Run now 는 이미 있다 — 빠진 건 등록 흐름 안의 첫 실행이다.
+- Decided 2026-11-16(사람): 착수. 등록할 때 한 번 실행한다.
+- Spec:
+  - 무엇: 새 작업 폼의 저장 버튼 옆에 **Save & run now**(기본 버튼, 보라)를 두고 Save 는 회색 보조로. 편집 폼은 지금처럼 Save 만(편집은 「다시 돌리기」가 아니다). Save & run now = 저장 → 성공하면 같은 작업으로 Run now(trigger `manual`) → 상세 화면으로 가서 실행 줄이 「starting…」 → `started`/`failed` 로 바뀌는 걸 보여 준다. 저장이 실패하면 실행하지 않는다(폼 오류 그대로).
+  - 책갈피·다음 실행은 Run now 와 같다 — 첫 실행은 예약을 당기지도 밀지도 않는다. 꺼 둔 채(`enabled: false`) 저장해도 실행은 한 번 한다(작업이 도는지 보려는 것). API 가 만든 작업 규칙(API 꺼짐 → failed)은 그대로.
+  - API: `POST /v1/crons` 에 `runNow?: boolean` — true 면 201 응답이 `{ cron, run }`(Run now 와 같게 세션이 뜨고 프롬프트가 들어갈 때까지 기다림). 잘못된 값이면 `400` 이 그 필드를 짚는다. clim 은 `clim cron new … --run-now`.
+  - 끝 조건: 실행 기록에 trigger `manual` 한 줄 · 그 세션의 Open session 이 동작 · 실패면 note 와 알림 · 일정 시각에 다시 정상 실행(책갈피 그대로).
+  - 시험: 유닛(t132 옆) — 만들기+runNow 가 실행 하나·`nextRunAt` 변화 없음, 저장 실패면 실행 0, `runNow` 타입 오류 400. E2E(t128 옆) — `agent-mock` 템플릿으로 폼 Save & run now → 실행 줄 `started`·세션이 프롬프트에 답함, 편집 폼에는 버튼이 없음. 옛 코드에서 실패 먼저.
+- Owner: 루프 활용 기획 세션(2026-11-16)
+
+### Loop 창에서 대화 — Autocron 이 연 세션과 Loop 창 안에서 말하기
+- Discovered: 2026-11-16 루프 활용 기획 세션. 사람: 「대화를 Loop 화면에서도 가능하게 하고 싶음」.
+- Evidence: Autocron 탭의 실행 줄 Open session(`autocron-open-session` → `CronService.openSession`)은 메인 창으로 옮겨 그 세션을 보여 준다 — Loop 창 안에서는 그 세션 글을 읽거나 보낼 곳이 없다. Loop 창은 메인 창과 같은 preload(`src/main/index.ts` `createLoopWindow`)라 `window.api` 의 Chat 호출이 그대로 있고, `conversation-changed` 는 모든 창에 간다. `ChatView` 는 `ChatTransport` 를 props 로 받는다(폰이 같은 부품을 씀) — Electron 쪽 `utils/electronChatTransport.ts`. attach 실행은 이미 Loops 탭 터미널에서 바로 칠 수 있다.
+- Decided 2026-11-16(사람): 착수.
+- Spec:
+  - 무엇: Autocron 상세 화면 위에 `Details · Chat` 탭. Chat = 고른 실행의 세션을 데스크톱과 같은 `ChatView` 로(읽기·보내기·질문 카드·Stop·대기열 — 메인 창 Chat 과 같은 기능, 같은 transport). 기본으로 고르는 실행 = 세션이 아직 열려 있는 가장 최근 `started` 실행. 실행 줄마다 **Talk here** 를 두면 그 실행을 고르고 Chat 탭으로 간다(Open session 은 그대로 — 메인 창으로).
+  - 터미널은 Loop 창에 붙이지 않는다 — 터미널 뷰는 터미널당 하나만 붙는다(`TerminalManager.attachView`), 메인 창 것을 빼앗는다. Chat 머리에 「Open in main window」(= Open session) 만.
+  - 고를 수 없는 경우 문구: 세션이 닫힘 → 「This session was closed」 · Chat 을 못 쓰는 세션(에이전트 아님·대화 기록 못 찾음) → 「Chat isn't available for this session — Open in main window」 · attach 실행 → Loops 탭으로 가는 버튼(그 루프 터미널에서 친다).
+  - 보낸 글은 사람 입력이다 — Control API 경로를 타되 AI 표시는 붙이지 않는다(메인 창 Chat 과 같음). 창이 닫히면 구독을 푼다.
+  - 끝 조건: Loop 창에서 보낸 글이 그 세션 터미널에 들어가 답이 Loop 창·메인 창 Chat 둘 다에 뜸 · 질문 카드 답 · 메인 창 터미널 크기·스크롤백 변화 없음(PTY resize 0) · 1200×800 기본 창에서 목록·상세·Chat 이 넘치지 않음.
+  - 시험: E2E(t128 옆) — chat-mock 템플릿 작업을 Run now → Talk here → Chat 탭에 첫 답 · 보내기 → 터미널 `ANSWER[n]`·메인 창 Chat 에도 같은 턴 · 세션 닫기 → 「This session was closed」 · attach 실행은 Loops 탭 버튼 · `resized` 0. `T1xx_SHOTS` 로 Loop 창 캡처. 옛 코드에서 실패 먼저.
+- Owner: 루프 활용 기획 세션(2026-11-16)
+
+### Autocron attach 를 일반 세션에도 — 쓰던 세션에 정해진 시각에 프롬프트 넣기
+- Discovered: 2026-11-16 루프 활용 기획 세션. 사람: 「현재, 내가 사용하는 세션에도 cron 혹은 schedule 로 예약이 가능한지」 → 「일반 세션 사용은 백로그로」.
+- Evidence: attach 모드는 Loop Dashboard 프로젝트(`loopProjectId`)의 터미널만 고른다 — 폼 `autocron-loop` 선택지가 `loopProjects`, 실행은 `ControlApiService.typeIntoLoop`. 사이드바 세션(총괄·팀장 등)은 고를 수 없다. 지금 길은 세션 안의 Claude Code `/loop`(간격 반복, 정시 아님, 세션이 살아 있어야 함)뿐.
+- Why deferred: 사람 결정 「백로그로」. 입력 경로(`typeIntoLoop` 의 초안 검사·Enter 재시도·질문 거절)는 일반 세션에도 그대로 쓸 수 있어 보이지만, 사람이 쓰는 세션에 정시 입력이 끼는 규칙(작업 중이면 기다릴지 실패할지 · AI 표시를 붙일지 · 세션이 닫히면 작업을 어떻게 둘지)은 정해야 한다.
+- Trigger: 사람이 착수를 말할 때. 그때 정할 것 — ① 대상 고르기: 폼에서 세션 고르기 vs 세션 우클릭 「Schedule a prompt…」 ② 세션이 일하는 중이면: 실패(지금 attach 규칙) vs 대기열(Chat 의 대기열처럼) ③ 세션이 닫히면 작업을 끄고 문제로 표시할지 ④ 저장은 세션 id(`targetSessionId`) — 재시작 뒤에도 같은 id 라 그대로 이어짐.
+- Owner: 없음
+
 ### All sessions 에 「Threads」 보기 — 슬랙처럼 모든 세션의 스레드를 한곳에서
 - Discovered: 2026-11-15 사용자 요청 「List 형태에도 필요할거 같은데 슬랙같은 형태로 모든 세션의 쓰레드를 볼수 있도록」. v1.34.0 의 Reply in thread 를 쓰다가.
 - Evidence: 지금 스레드는 부모 세션 하나씩만 보인다 — 답 아래 칩(`ThreadChip`) → 오른쪽 `ThreadPanel`. IPC `chat-threads(sessionId)` 는 부모 하나의 `ChatThread[]`(childId·name·turnTs/turnIndex·forkedAt·status·lastActivityAt, `src/shared/conversation.ts:317`)만 돌려주고, 1초 감시(`refreshChatThreadSubscriptions`)도 구독한 부모만 돈다. 앱 전체를 보는 곳은 All sessions › Tree(fork 가 부모 밑 자식으로, 총괄·팀장이 연 세션과 섞임)와 사이드바 검색 `fork` 뿐이고, List 에는 스레드 표시가 없다.
