@@ -1,22 +1,26 @@
 import { useEffect, useState } from 'react'
 import type { ChatThreadEntry } from '../../../shared/conversation'
 
+export type ThreadListMode = 'off' | 'closed' | 'open'
+
 /**
- * Every parent's threads for the sidebar's Threads list.
- *
- * Off (another sidebar view): no reads. Open: main widens its 1s thread watch to every anchored parent and says when the list changed;
- * rows carry their parent quote. Closed: no watch at all (the spec's "no extra cost") — one read
- * without quotes (statuses only, no transcript reads) when the view shows, when `refreshKey` changes
- * and when the window comes back to the front, for the icon's waiting count. Between those reads the
- * count can lag a question asked meanwhile; opening the list makes it live.
+ * What each mode reads. Closed is when the icon's badge matters most, so it is live too (one tick
+ * 0.02ms at 40 sessions / 20 threads, T144) — only without the quotes, which read transcripts.
+ * Off (Folders view, or the sidebar closed and unmounted) reads nothing.
  */
-export function useAllChatThreads(mode: 'off' | 'closed' | 'open', refreshKey: unknown): ChatThreadEntry[] {
+export function threadListReads(mode: ThreadListMode): { watch: boolean; quotes: boolean } {
+    return { watch: mode !== 'off', quotes: mode === 'open' }
+}
+
+/**
+ * Every parent's threads for the sidebar's Threads list. While watching, main widens its 1s thread
+ * tick to every anchored parent and says when the list changed; the rows are read again then.
+ */
+export function useAllChatThreads(mode: ThreadListMode): ChatThreadEntry[] {
     const [threads, setThreads] = useState<ChatThreadEntry[]>([])
-    const open = mode === 'open'
-    const off = mode === 'off'
+    const { watch, quotes } = threadListReads(mode)
     useEffect(() => {
-        // Not in All sessions: nothing shows the list or its badge, so nothing is read.
-        if (off) {
+        if (!watch) {
             setThreads([])
             return
         }
@@ -24,18 +28,9 @@ export function useAllChatThreads(mode: 'off' | 'closed' | 'open', refreshKey: u
         let revision = 0
         const load = (): void => {
             const requested = ++revision
-            window.api.getAllChatThreads(open).then((next) => {
+            window.api.getAllChatThreads(quotes).then((next) => {
                 if (alive && requested === revision) setThreads(next)
             }).catch(() => {})
-        }
-        if (!open) {
-            // Coming back to the window is the moment a stale count would be noticed.
-            window.addEventListener('focus', load)
-            load()
-            return () => {
-                alive = false
-                window.removeEventListener('focus', load)
-            }
         }
         const stop = window.api.onAllChatThreadsChanged(load)
         void window.api.subscribeAllChatThreads()
@@ -45,6 +40,6 @@ export function useAllChatThreads(mode: 'off' | 'closed' | 'open', refreshKey: u
             stop()
             void window.api.unsubscribeAllChatThreads()
         }
-    }, [open, off, open ? null : refreshKey])
+    }, [watch, quotes])
     return threads
 }

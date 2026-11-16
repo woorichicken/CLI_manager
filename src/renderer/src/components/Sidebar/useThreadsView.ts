@@ -20,16 +20,14 @@ function readSavedThreadsOpen(): boolean {
  * The All sessions Threads list: whether it is on, its rows, and what opening one does — the
  * parent session in Chat with that thread's panel beside it. The sidebar stays on Threads.
  */
-export function useThreadsView({ inAllSessions, workspaces, refreshKey, onSelect }: {
+export function useThreadsView({ inAllSessions, workspaces, onSelect }: {
     inAllSessions: boolean
     workspaces: Workspace[]
-    /** changes when threads may have come or gone (relations): the closed list's badge reads again */
-    refreshKey: unknown
     onSelect: (workspace: Workspace, session: TerminalSession) => void
 }) {
     const [threadsOpen, setThreadsOpenState] = useState(readSavedThreadsOpen)
     const [selectedChildId, setSelectedChildId] = useState<string | null>(null)
-    const threads = useAllChatThreads(!inAllSessions ? 'off' : threadsOpen ? 'open' : 'closed', refreshKey)
+    const threads = useAllChatThreads(!inAllSessions ? 'off' : threadsOpen ? 'open' : 'closed')
     const waitingThreads = threads.filter((thread) => thread.status === 'waiting').length
 
     const setThreadsOpen = useCallback((next: boolean) => {

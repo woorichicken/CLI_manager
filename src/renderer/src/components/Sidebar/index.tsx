@@ -814,9 +814,7 @@ export function Sidebar({
     }
 
     // All sessions › Threads (its own icon beside List / Tree): every thread in the app.
-    // A string, not the array: the prop's default is a new [] on every render.
-    const threadRelationsKey = sessionRelations.map(r => `${r.from}>${r.to}:${r.kind}:${r.dismissed ? 1 : 0}:${r.anchor ? 1 : 0}`).join(',')
-    const threadsView = useThreadsView({ inAllSessions: isAllSessionsView, workspaces, refreshKey: threadRelationsKey, onSelect })
+    const threadsView = useThreadsView({ inAllSessions: isAllSessionsView, workspaces, onSelect })
     const chooseAllSessionsLayout = (next: AllSessionsLayout) => {
         // Picking a layout while Threads is on goes back to the session list in that layout.
         threadsView.setThreadsOpen(false)

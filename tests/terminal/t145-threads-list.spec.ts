@@ -8,7 +8,8 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  * T145 — All sessions › Threads (the 💬 icon beside List / Tree; backlog spec 2026-11-16).
  *
  * Two chat-mock parents and three anchored forks are seeded in config.json (the fork itself is T117's
- * subject): one child asks a question (waiting), one works for a long turn (working), one is idle.
+ * subject): one child asks a question (waiting), one works for a long turn (working), one is idle
+ * until it asks while the list is closed (the badge is live in All sessions; Folders view watches nothing).
  * A master-opened session without an anchor and a hand pair are seeded too — they must not appear.
  *
  *  - the icon's badge counts the waiting thread; the list shows the three rows newest first with their
@@ -146,11 +147,23 @@ async function overflowingRows(page: Page): Promise<string[]> {
 test('T145: the Threads icon lists every anchored thread, opens it beside the parent Chat, and keeps its place', async () => {
     test.setTimeout(240_000)
     const { page } = await launch()
-    // waiting and working first, so the badge and dots have something to show. The closed list keeps
-    // no watch: its badge is read when the All sessions view shows.
+    // waiting and working first, so the badge and dots have something to show
     await page.evaluate((id) => window.api.writeTerminal(id, 'ASK\r'), CHILD_WAIT)
     await page.evaluate((id) => window.api.writeTerminal(id, 'Keep working on the batch\r'), CHILD_WORK)
     await waitForBufferText(page, CHILD_WAIT, 'Do you want to proceed?', 15_000)
+
+    // Folders view: nothing watches the thread list — a renamed parent sends this window nothing
+    await page.evaluate(() => {
+        const w = window as unknown as { __t145Changes: number }
+        w.__t145Changes = 0
+        window.api.onAllChatThreadsChanged(() => { w.__t145Changes++ })
+    })
+    const listChanges = (): Promise<number> => page.evaluate(() => (window as unknown as { __t145Changes: number }).__t145Changes)
+    await page.evaluate((id) => window.api.renameSession('w-t145-backend', id, 'API lead (renamed)'), PARENT_B)
+    await page.waitForTimeout(2500)
+    expect(await listChanges()).toBe(0)
+    await page.evaluate((id) => window.api.renameSession('w-t145-backend', id, 'API lead'), PARENT_B)
+
     await page.getByTestId('sidebar-view-toggle').click()
     await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
     await shot(page, 't145-1-all-sessions')
@@ -165,6 +178,11 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     await expect(icon.getByTestId('all-sessions-threads-badge')).toHaveText('1', { timeout: 15_000 })
     await expect(page.getByTestId('all-sessions-new-session')).toContainText('New session')
     expect(await toggleX()).toBe(xBefore)
+    // still closed: the badge is live — the idle child asks and the count follows within 3 seconds
+    await page.evaluate((id) => window.api.writeTerminal(id, 'ASK\r'), CHILD_IDLE)
+    await expect(icon.getByTestId('all-sessions-threads-badge')).toHaveText('2', { timeout: 3000 })
+    await expect(icon).toHaveAttribute('aria-pressed', 'false')
+    expect(await listChanges()).toBeGreaterThan(0)
 
     await icon.click()
     await expect(icon).toHaveAttribute('aria-pressed', 'true')
@@ -175,10 +193,10 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     const row = (id: string) => page.locator(`[data-testid="sidebar-thread-row"][data-child-id="${id}"]`)
     await expect(row(CHILD_WAIT).getByTestId('sidebar-thread-dot')).toHaveAttribute('data-status', 'waiting', { timeout: 5000 })
     await expect(row(CHILD_WORK).getByTestId('sidebar-thread-dot')).toHaveAttribute('data-status', 'working', { timeout: 5000 })
-    await expect(row(CHILD_IDLE).getByTestId('sidebar-thread-dot')).toHaveAttribute('data-status', 'idle')
+    await expect(row(CHILD_IDLE).getByTestId('sidebar-thread-dot')).toHaveAttribute('data-status', 'waiting')
     await expect(row(CHILD_WAIT).getByTestId('sidebar-thread-status')).toHaveText('Waiting for you')
     await expect(row(CHILD_WORK).getByTestId('sidebar-thread-status')).toHaveText('Working')
-    await expect(row(CHILD_IDLE).getByTestId('sidebar-thread-status')).toHaveCount(0)
+    await expect(row(CHILD_IDLE).getByTestId('sidebar-thread-status')).toHaveText('Waiting for you')
     await expect(row(CHILD_WAIT).getByTestId('sidebar-thread-parent')).toHaveText('in Release prep · T145 project')
     await expect(row(CHILD_WORK).getByTestId('sidebar-thread-parent')).toHaveText('in API lead · T145 backend')
     await expect(row(CHILD_WAIT).getByTestId('sidebar-thread-quote')).toContainText('Here is the summary.')
@@ -190,10 +208,12 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     expect(await overflowingRows(page)).toEqual([])
     await shot(page, 't145-2-threads-1280')
 
-    // a status change follows within 3 seconds: the idle child asks too
-    await page.evaluate((id) => window.api.writeTerminal(id, 'ASK\r'), CHILD_IDLE)
-    await expect(row(CHILD_IDLE).getByTestId('sidebar-thread-dot')).toHaveAttribute('data-status', 'waiting', { timeout: 3000 })
-    await expect(icon.getByTestId('all-sessions-threads-badge')).toHaveText('2', { timeout: 3000 })
+    // open: a renamed parent follows within 3 seconds
+    await page.evaluate((id) => window.api.renameSession('w-t145-project', id, 'Release prep 2'), PARENT_A)
+    await expect(row(CHILD_WAIT).getByTestId('sidebar-thread-parent')).toHaveText('in Release prep 2 · T145 project', { timeout: 3000 })
+    await page.evaluate((id) => window.api.renameSession('w-t145-project', id, 'Release prep'), PARENT_A)
+    await expect(row(CHILD_WAIT).getByTestId('sidebar-thread-parent')).toHaveText('in Release prep · T145 project', { timeout: 3000 })
+    await expect(icon.getByTestId('all-sessions-threads-badge')).toHaveText('2')
 
     // a row opens the parent's Chat with that thread's panel beside it
     const before = await rowOrder(page)

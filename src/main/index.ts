@@ -3703,8 +3703,8 @@ app.whenReady().then(async () => {
     // Only parents with an open Chat view are polled, and only changed rows trigger a read in the renderer.
     const threadSubscriptions = new Map<number, Map<string, number>>()
     let threadSnapshots = new Map<string, string>()
-    // The sidebar's Threads list: windows that have it open, by webContents id → open count.
-    // Only while one is open does the tick widen to every anchored parent (0 extra work otherwise).
+    // The sidebar's Threads list and its badge: windows showing All sessions, by webContents id → count.
+    // Only while one is there does the tick widen to every anchored parent (0 extra work otherwise).
     const threadListSubscribers = new Map<number, number>()
     let threadListSnapshot: string | null = null
     let threadTimer: ReturnType<typeof setInterval> | null = null

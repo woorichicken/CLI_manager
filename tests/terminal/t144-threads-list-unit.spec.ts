@@ -6,6 +6,7 @@ import path from 'path'
 import { TerminalMirror } from '../../src/main/TerminalMirror'
 import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { ConversationService } from '../../src/main/ConversationService'
+import { threadListReads } from '../../src/renderer/src/hooks/useAllChatThreads'
 import { allChatThreads, chatThreadParentIds, pollChatThreadChanges } from '../../src/main/chatThreads'
 import type { SessionRelation } from '../../src/shared/types'
 
@@ -248,4 +249,10 @@ test('T144 quote (codex review): a parent read only for its quote is let go afte
     expect(forgets()).toBe(0)
     await new Promise((resolve) => setTimeout(resolve, 300))
     expect(forgets()).toBe(1)
+})
+
+test('T144 watch range: All sessions watches the list even closed (a live badge, no quotes); Folders and a closed sidebar read nothing', () => {
+    expect(threadListReads('open')).toEqual({ watch: true, quotes: true })
+    expect(threadListReads('closed')).toEqual({ watch: true, quotes: false })
+    expect(threadListReads('off')).toEqual({ watch: false, quotes: false })
 })

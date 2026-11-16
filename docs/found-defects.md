@@ -23,6 +23,20 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 Chat 스레드 칸 — 1280 에서 세션 메모 토글(빈 네모)이 칸 머리의 ✕ 옆에 겹친다
+- Date: 2026-11-16
+- Where: `components/SessionMemo.tsx:325` 의 메모 토글(`absolute top-2 right-14`, 세션 칸 오른쪽 위 고정)과 `ChatView/ThreadPanel.tsx` 머리의 닫기 ✕(칸의 오른쪽 위).
+- What: Chat 이 스레드 칸을 열면 칸의 머리가 세션 칸의 오른쪽 위를 차지해, 메모 토글이 칸 머리 위(✕ 바로 왼쪽)에 빈 네모로 얹힌다. v1.34 스레드 칸부터 있던 배치로, Threads 목록 작업(impl-1116)이 만든 것은 아니다.
+- Surfaced by: T145 캡처 `~/Downloads/_batches/impl-backlog-1116/shots/threads/t145-3-thread-open-1280-after.png`(오른쪽 위).
+- Fix direction: 칸이 열려 있으면 토글을 칸 왼쪽(Chat 쪽)으로 옮기거나, 칸 머리에 자리를 비워 둔다.
+
+### 🐛 Chat 스레드 칸 — 좁은 창(390)에 사이드바를 편 채 열면 칸 글이 한 글자씩 세로로 꺾인다
+- Date: 2026-11-16
+- Where: `ChatView/chat.css` 의 `@container chat-layout (max-width: 759px)` — Chat 폭이 760px 아래면 칸이 Chat 전체를 덮는다(의도). 390 창에 사이드바(256px)를 펴면 Chat 영역이 약 110px 이라, 덮은 칸 안의 머리·질문 카드가 그 폭으로 접힌다.
+- What: 칸 이름이 `R` 한 글자, 「Waiting for you」·「Open as session」이 겹치고, 질문 카드 「Do you want to proceed?」가 한 글자씩 세로로 늘어선다. 칸 자체는 창 안에 있다(T117 은 사이드바를 접고 재서 통과).
+- Surfaced by: T145 캡처 `~/Downloads/_batches/impl-backlog-1116/shots/threads/t145-4-threads-390-after.png`(오른쪽 칸).
+- Fix direction: 칸에 최소 폭을 두고 그보다 좁으면 사이드바를 덮거나, 그 폭에서는 칸 대신 세션으로 연다(Open as session).
+
 ### 🐛 Chat 전환 — 질문 화면에서도 「터미널에 쓰던 글이 있다(여러 줄)」 알림이 뜬다
 - Date: 2026-11-10
 - Where: Terminal → Chat 전환의 초안 옮기기(`ConversationService.takeTerminalDraft` → `HandoffNoticeToast`). 화면의 입력 상자를 읽어 판단한다.
