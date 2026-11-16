@@ -6,7 +6,7 @@ import { BROWSER_PAGE_EXTENSIONS, SYSTEM_TYPES } from '../../../shared/fileKinds
 interface ChatFilePreviewProps {
     openInApp?: boolean
     /** Side by side on a web page: the page becomes a split pane next to the session (backlog 「앱 안 브라우저」 B). */
-    onSideBySide?: (page: { path: string; line?: number; source: boolean }) => boolean
+    onSideBySide?: (page: { path: string; line?: number; source: boolean; sessionId?: string }) => boolean
     /** why Side by side is off (the split is full) */
     sideBySideBlocked?: string | null
 }
@@ -61,9 +61,10 @@ export function ChatFilePreview({ openInApp = true, onSideBySide, sideBySideBloc
             }}
             onOpenInBrowser={() => void window.api.openChatPath(target.path, target.sessionId)}
             onSideBySide={webPage && onSideBySide ? (source) => {
-                if (onSideBySide({ path: target.path, line: target.line, source })) close()
+                if (onSideBySide({ path: target.path, line: target.line, source, sessionId: target.sessionId })) close()
             } : undefined}
             sideBySideBlocked={sideBySideBlocked}
+            onNavigate={(path) => setTarget({ ...target, path, line: undefined })}
         />
         </div>
     )

@@ -26,7 +26,7 @@ export function useDocPanes({ splitLayout, setSplitLayout, activeSplitIndex, set
         const id = `${DOC_PANE_PREFIX}${nextId.current++}`
         const result = splitWithDoc(splitLayout?.sessionIds ?? null, activeSplitIndex, activeSession?.id ?? null, id)
         if (result.kind === 'full') return false
-        setPanes((current) => new Map(current).set(id, { path: pane.path, line: pane.line, source: pane.source ?? false }))
+        setPanes((current) => new Map(current).set(id, { path: pane.path, line: pane.line, source: pane.source ?? false, sessionId: pane.sessionId }))
         // sizes reset: the panes are laid out again for the new count
         setSplitLayout({ ...(splitLayout ?? {}), sessionIds: result.sessionIds, sizes: undefined })
         setActiveSplitIndex(result.activeIndex)
@@ -44,6 +44,14 @@ export function useDocPanes({ splitLayout, setSplitLayout, activeSplitIndex, set
         })
     }, [])
 
+    /** a link inside the page to another page of its folder: the pane shows that one, drawn */
+    const setPath = useCallback((id: string, path: string) => {
+        setPanes((current) => {
+            const pane = current.get(id)
+            return pane && pane.path !== path ? new Map(current).set(id, { ...pane, path, line: undefined, source: false }) : current
+        })
+    }, [])
+
     // a pane gone from the split (closed, replaced by a session) is forgotten
     const shownIds = splitLayout?.sessionIds.filter(isDocPaneId).join(',') ?? ''
     useEffect(() => {
@@ -56,6 +64,7 @@ export function useDocPanes({ splitLayout, setSplitLayout, activeSplitIndex, set
         panes,
         placeBeside,
         setSource,
+        setPath,
         /** why Side by side is off now, or null */
         blockedReason: docSideBlockedReason(splitLayout?.sessionIds ?? null),
         returnTo: () => returnTo.current

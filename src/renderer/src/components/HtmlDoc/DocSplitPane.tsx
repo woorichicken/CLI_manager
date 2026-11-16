@@ -11,6 +11,7 @@ interface DocSplitPaneProps {
     className?: string
     onActivate: () => void
     onSetSource: (source: boolean) => void
+    onNavigate: (path: string) => void
     onClose: () => void
 }
 
@@ -18,7 +19,7 @@ interface DocSplitPaneProps {
  * A document in split view (backlog 「앱 안 브라우저」 B): the same header place as a session's pane — the path, then
  * Preview/Source · Browser · close — and the page in the sandboxed frame below (decision 0013).
  */
-export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onActivate, onSetSource, onClose }: DocSplitPaneProps) {
+export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onActivate, onSetSource, onNavigate, onClose }: DocSplitPaneProps) {
     const parts = pane.path.split('/').filter(Boolean)
     const name = parts.pop() ?? pane.path
     const folders = parts.slice(-2)
@@ -38,10 +39,12 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
     )
     return (
         <div
-            className={`flex flex-col overflow-hidden pointer-events-auto bg-[#121216] ${className}`}
+            className={`flex flex-col overflow-hidden pointer-events-auto bg-[#121216] outline-none ${className}`}
             data-doc-pane={paneId}
             data-path={pane.path}
+            tabIndex={-1}
             onMouseDown={onActivate}
+            onFocus={onActivate}
         >
             <div
                 data-pane-header={paneId}
@@ -69,7 +72,7 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
                     data-testid="doc-pane-browser"
                     onClick={(event) => {
                         event.stopPropagation()
-                        void window.api.openChatPath(pane.path)
+                        void window.api.openChatPath(pane.path, pane.sessionId)
                     }}
                     className="p-1 shrink-0 hover:bg-white/10 rounded transition-colors text-gray-400 hover:text-white"
                     title="Open in browser"
@@ -90,7 +93,7 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
                 </button>
             </div>
             <div className="flex-1 min-h-0">
-                <HtmlDocView path={pane.path} line={pane.line} source={pane.source} />
+                <HtmlDocView path={pane.path} line={pane.line} source={pane.source} onNavigate={onNavigate} onFrameFocus={onActivate} />
             </div>
         </div>
     )

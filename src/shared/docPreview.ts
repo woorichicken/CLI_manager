@@ -20,6 +20,18 @@ export const DOC_PREVIEW_MAX_BYTES = PHONE_MAX_DOC_BYTES
 /** What the frame's bridge says to the window holding it (`postMessage`). Anything else is ignored. */
 export const DOC_PREVIEW_MESSAGE = 'clim-doc-preview'
 
+/**
+ * A page asking for another page of its folder (a link). The window opens it through `doc-preview-open`, so the path the
+ * preview shows, Source and Browser follow. Only plain segments ending in `.html`/`.htm` are taken.
+ */
+export function docPreviewSibling(documentPath: string, relative: unknown): string | null {
+    if (typeof relative !== 'string' || relative.length > 1024 || !/\.html?$/i.test(relative)) return null
+    const segments = relative.split('/')
+    if (segments.some((segment) => segment === '' || segment.startsWith('.') || segment.includes('\\') || segment.includes('\0'))) return null
+    const folder = documentPath.slice(0, documentPath.lastIndexOf('/'))
+    return `${folder}/${segments.join('/')}`
+}
+
 export type DocPreviewRefusal = 'not_found' | 'not_html' | 'too_large' | 'not_a_file' | 'bad_encoding'
 
 export type DocPreviewOpenResult =

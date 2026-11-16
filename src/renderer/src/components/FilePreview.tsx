@@ -33,6 +33,8 @@ interface FilePreviewProps {
     sideBySideBlocked?: string | null
     /** The Browser button and Enter on a page: the Chat's opener (Artifact Dock, else the Mac's browser). */
     onOpenInBrowser?: () => void
+    /** a page's link to another page of its folder: the owner shows that path */
+    onNavigate?: (path: string) => void
 }
 
 // Map file extensions to Prism language identifiers
@@ -101,7 +103,7 @@ const getLanguageFromPath = (filePath: string): string => {
     return langMap[ext] || 'text'
 }
 
-export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onOpenInEditor, renderMarkdown = false, onSideBySide, sideBySideBlocked, onOpenInBrowser }: FilePreviewProps) {
+export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onOpenInEditor, renderMarkdown = false, onSideBySide, sideBySideBlocked, onOpenInBrowser, onNavigate }: FilePreviewProps) {
     const [content, setContent] = useState<string>('')
     const markdown = renderMarkdown && MARKDOWN_NAME.test(filePath)
     // a page is drawn in a sandboxed frame (decision 0013); its source is one press away
@@ -303,7 +305,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                 {/* Content */}
                 {webPage ? (
                     <div className="flex-1 min-h-0" data-testid="file-preview-page">
-                        <HtmlDocView path={filePath} line={line} source={source} onEscape={onClose} />
+                        <HtmlDocView path={filePath} line={line} source={source} onEscape={onClose} onNavigate={onNavigate} />
                     </div>
                 ) : (
                 <div className="flex-1 overflow-auto">

@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { DocPreviewTokens, docPreviewBase, docPreviewContentSecurityPolicy, docPreviewRelativePath, openDocPreview, serveDocPreview, DOC_PREVIEW_BRIDGE } from '../../src/main/docPreview'
-import { DOC_PREVIEW_MAX_BYTES, DOC_PREVIEW_SANDBOX } from '../../src/shared/docPreview'
+import { DOC_PREVIEW_MAX_BYTES, DOC_PREVIEW_SANDBOX, docPreviewSibling } from '../../src/shared/docPreview'
 import { docSideBlockedReason, isDocPaneId, sessionPaneIds, splitAfterRemove, splitWithDoc } from '../../src/renderer/src/utils/docPanes'
 import { MAX_LINKED_SESSIONS } from '../../src/renderer/src/utils/sessionLink'
 
@@ -181,6 +181,19 @@ test.describe('T146 the document scheme', () => {
         expect(docPreviewRelativePath('a//b.png', 'r.html')).toBeNull()
         expect(docPreviewRelativePath('a%5Cb.png', 'r.html')).toBeNull()
         expect(docPreviewRelativePath('a%00.png', 'r.html')).toBeNull()
+    })
+
+    test('a page\'s link to another page of its folder becomes that path; anything else is ignored', () => {
+        const doc = '/Users/me/review/report.html'
+        expect(docPreviewSibling(doc, 'details.html')).toBe('/Users/me/review/details.html')
+        expect(docPreviewSibling(doc, 'part/2.htm')).toBe('/Users/me/review/part/2.htm')
+        expect(docPreviewSibling(doc, 'café 보고서.html')).toBe('/Users/me/review/café 보고서.html')
+        for (const refused of ['../secret.html', 'a/../../b.html', '.hidden.html', '/etc/x.html', 'a//b.html', 'notes.txt', 'data.json', 'a\\b.html', 'x\0.html', 'x'.repeat(1100) + '.html', 42, null]) {
+            expect(docPreviewSibling(doc, refused), String(refused).slice(0, 30)).toBeNull()
+        }
+        // the bridge posts that link, and no longer moves the frame itself
+        expect(DOC_PREVIEW_BRIDGE).toContain('post({ open:')
+        expect(DOC_PREVIEW_BRIDGE).not.toContain('location.replace(url.href)')
     })
 
     test('tokens: one per open, the oldest go past 32', async () => {

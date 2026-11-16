@@ -37,8 +37,10 @@ to serve the page from.
   person; it is kept from other pages.
 - **The phone's 64 MB limit, streamed.** The 500 KB of `read-file-content` stays for reading words (the Source view uses it).
 - **A small script in front of the page** (`DOC_PREVIEW_BRIDGE`): storage that lives in the page (an opaque origin's
-  `localStorage` throws and stops a kit's script), Escape passed up to close the preview, links that leave the folder do nothing.
-  It adds no power: the page could post the same message.
+  `localStorage` throws and stops a kit's script), Escape and a press passed up (close the preview, make a pane active), a link
+  to another page of the folder handed to the window — which opens it like any page, so the path shown, Source and Browser
+  follow — and other links do nothing. It adds no power: the page could post the same messages, and the window takes only a
+  plain relative `.html` path (`docPreviewSibling`).
 - **A split pane holds a document by a `doc:` id in the split's list.** It takes a place like a session; places that look a
   session up by id find none, and the grid window, the recent list and the Related dialog skip it. Not saved: the split is not.
 
@@ -49,6 +51,8 @@ to serve the page from.
 - A kit's comments do not reach a session from the Mac frame (the phone's send sheet is not here). Kept comments last as long as
   the frame.
 - The Source view of a page over 500 KB says it is too large; Browser or an editor reads it.
+- A page can make the preview show another page of its own folder (or below it) without a click — even in `~/Downloads`, where
+  its token serves nothing beside it. It is a page the person could open; the new page gets its own token and frame.
 - A page can still send itself out over WebRTC, which CSP cannot stop (as 0011). It holds no API answer and no cookie.
 
 ## Reversal

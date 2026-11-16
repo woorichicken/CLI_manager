@@ -1778,6 +1778,7 @@ function App() {
                                                 className={splitLayout.sessionIds.length === 3 && index === 2 ? 'col-span-2' : ''}
                                                 onActivate={() => setActiveSplitIndex(index)}
                                                 onSetSource={source => docPanes.setSource(sessionId, source)}
+                                                onNavigate={path => docPanes.setPath(sessionId, path)}
                                                 onClose={() => handleRemoveFromSplit(sessionId)}
                                             />
                                         )

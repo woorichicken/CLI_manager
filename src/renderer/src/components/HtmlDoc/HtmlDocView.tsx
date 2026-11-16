@@ -3,7 +3,7 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { DocPreviewOpenResult } from '../../../../shared/docPreview'
-import { DOC_PREVIEW_MESSAGE, DOC_PREVIEW_SANDBOX } from '../../../../shared/docPreview'
+import { DOC_PREVIEW_MESSAGE, DOC_PREVIEW_SANDBOX, docPreviewSibling } from '../../../../shared/docPreview'
 
 /**
  * An HTML report, drawn or as its source — the preview window's body (A) and a split pane's (B).
@@ -12,15 +12,26 @@ import { DOC_PREVIEW_MESSAGE, DOC_PREVIEW_SANDBOX } from '../../../../shared/doc
  * `window.api`; its policy refuses every connection. Its only word to us is Escape (the bridge in main/docPreview.ts).
  * Source: the text preview's reader, so its 500 KB limit applies there — drawing has the phone's 64 MB.
  */
-export function HtmlDocView({ path, line, source, onEscape }: { path: string; line?: number; source: boolean; onEscape?: () => void }) {
-    return source ? <HtmlSource path={path} line={line} /> : <HtmlFrame path={path} onEscape={onEscape} />
+interface HtmlDocViewProps {
+    path: string
+    line?: number
+    source: boolean
+    onEscape?: () => void
+    /** a link to another page of the folder: the owner shows that path instead */
+    onNavigate?: (path: string) => void
+    /** the page took the focus (a click inside it): clicks in a frame never reach this document */
+    onFrameFocus?: () => void
 }
 
-function HtmlFrame({ path, onEscape }: { path: string; onEscape?: () => void }) {
+export function HtmlDocView({ path, line, source, onEscape, onNavigate, onFrameFocus }: HtmlDocViewProps) {
+    return source ? <HtmlSource path={path} line={line} /> : <HtmlFrame path={path} onEscape={onEscape} onNavigate={onNavigate} onFrameFocus={onFrameFocus} />
+}
+
+function HtmlFrame({ path, onEscape, onNavigate, onFrameFocus }: Pick<HtmlDocViewProps, 'path' | 'onEscape' | 'onNavigate' | 'onFrameFocus'>) {
     const [opened, setOpened] = useState<DocPreviewOpenResult | null>(null)
     const frameRef = useRef<HTMLIFrameElement>(null)
-    const escapeRef = useRef(onEscape)
-    escapeRef.current = onEscape
+    const handlers = useRef({ onEscape, onNavigate, onFrameFocus, path })
+    handlers.current = { onEscape, onNavigate, onFrameFocus, path }
 
     useEffect(() => {
         let live = true
@@ -38,11 +49,25 @@ function HtmlFrame({ path, onEscape }: { path: string; onEscape?: () => void }) 
         const onMessage = (event: MessageEvent): void => {
             // only this frame's own page, and only the one thing it may say
             if (event.source !== frameRef.current?.contentWindow) return
-            const data = event.data as { type?: unknown; key?: unknown } | null
-            if (data?.type === DOC_PREVIEW_MESSAGE && data.key === 'Escape') escapeRef.current?.()
+            const data = event.data as { type?: unknown; key?: unknown; open?: unknown; pressed?: unknown } | null
+            if (data?.type !== DOC_PREVIEW_MESSAGE) return
+            if (data.key === 'Escape') handlers.current.onEscape?.()
+            if (data.pressed === true) handlers.current.onFrameFocus?.()
+            const sibling = docPreviewSibling(handlers.current.path, data.open)
+            if (sibling && handlers.current.onNavigate) handlers.current.onNavigate(sibling)
+        }
+        // focus moving into the frame blurs this window; the frame is then the active element
+        const onBlur = (): void => {
+            setTimeout(() => {
+                if (frameRef.current && document.activeElement === frameRef.current) handlers.current.onFrameFocus?.()
+            }, 0)
         }
         window.addEventListener('message', onMessage)
-        return () => window.removeEventListener('message', onMessage)
+        window.addEventListener('blur', onBlur)
+        return () => {
+            window.removeEventListener('message', onMessage)
+            window.removeEventListener('blur', onBlur)
+        }
     }, [])
 
     if (!opened) return <Centered><Loader2 size={20} className="text-blue-400 animate-spin" /></Centered>

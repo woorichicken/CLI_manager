@@ -53,7 +53,7 @@ async function shot(page: Page, name: string): Promise<void> {
 function bigReport(): string {
     const head = '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>Weekly release review</title>' +
         '<style>body{font:13px -apple-system,sans-serif;margin:24px;color:#1f2329}td{border-bottom:1px solid #eee;padding:4px 8px}</style></head>' +
-        '<body><h1 id="title">Weekly release review</h1><img id="pic" src="pic.png" width="40" height="40"><table>'
+        '<body><h1 id="title">Weekly release review</h1><p><a id="next" href="details.html">Details</a></p><img id="pic" src="pic.png" width="40" height="40"><table>'
     const tail = '</table><script>localStorage.setItem("k", "v"); document.body.dataset.ran = localStorage.getItem("k") + ":" + document.querySelectorAll("tr").length</script></body></html>\n'
     const rows: string[] = []
     let size = head.length + tail.length
@@ -126,6 +126,7 @@ async function launch(): Promise<Launched> {
     fs.writeFileSync(report, bigReport())
     fs.writeFileSync(path.join(project, 'pic.png'), PIXEL)
     fs.writeFileSync(path.join(project, 'probe.html'), PROBE_PAGE(port))
+    fs.writeFileSync(path.join(project, 'details.html'), '<!doctype html>\n<html><head><meta charset="utf-8"><title>Details</title></head><body><h1 id="title">Release details</h1></body></html>\n')
     fs.writeFileSync(path.join(project, 'small.html'), '<!doctype html>\n<html>\n<head><title>T147 small</title></head>\n<body><h1>Small</h1></body>\n</html>\n')
 
     const claudeDir = path.join(dir, 'claude')
@@ -207,8 +208,15 @@ test('T147 A: a report opens drawn in the preview window — Source, :line, Esca
     expect(box!.width).toBeGreaterThan(900)
     expect(box!.height).toBeGreaterThan(500)
 
+    // a link to another page of the folder: the window opens it, so the path shown follows
+    await frame.locator('#next').click()
+    await expect(preview(page)).toHaveAttribute('data-path', path.join(path.dirname(report), 'details.html'))
+    const details = await frameOf(page, preview(page))
+    await expect(details.locator('#title')).toHaveText('Release details')
+    await expect(preview(page)).toContainText('project/details.html')
+
     // Escape from inside the page closes it (the bridge), focus back in the Chat
-    await frame.locator('#title').click()
+    await details.locator('#title').click()
     await page.keyboard.press('Escape')
     await expect(preview(page)).toHaveCount(0)
     await expect.poll(() => focusInChat(page)).toBe(true)
@@ -330,15 +338,36 @@ test('T147 B: Side by side puts the page in split view beside the session, which
     await composer.press('Enter')
     await waitForBufferText(page, CLAUDE, 'ANSWER[1]: beside the report', 15_000)
 
+    // ⌘` between the panes: into the session, then into the page (not left in the session's input)
+    // (the shortcut is not taken from the Chat's message box — a textarea — as before; start from the pane's header)
+    const docHeader = page.locator('[data-pane-header^="doc:"]')
+    await docHeader.click()
+    await expect(docHeader).toHaveClass(/bg-blue-500\/10/)
+    await page.keyboard.press('Meta+Backquote')
+    await expect(page.locator(`[data-pane-header="${CLAUDE}"]`)).toHaveClass(/bg-blue-500\/10/)
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[data-doc-pane]')))).toBe(false)
+    await page.keyboard.press('Meta+Backquote')
+    await expect(docHeader).toHaveClass(/bg-blue-500\/10/)
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[data-doc-pane]')))).toBe(true)
+    await page.keyboard.press('Meta+Backquote')
+    await expect(page.locator(`[data-pane-header="${CLAUDE}"]`)).toHaveClass(/bg-blue-500\/10/)
+    // a click inside the page makes its pane the active one (clicks in a frame never reach the window's DOM)
+    await frame.locator('#title').click()
+    await expect(page.locator('[data-pane-header^="doc:"]')).toHaveClass(/bg-blue-500\/10/)
+    // a link inside the page: the pane shows that page, and its path follows
+    await frame.locator('#next').click()
+    await expect(docPanes.first()).toHaveAttribute('data-path', path.join(path.dirname(report), 'details.html'))
+    await expect((await frameOf(page, docPanes.first())).locator('#title')).toHaveText('Release details')
+    await expect(docPanes.first()).toContainText('details.html')
+    await docPanes.first().getByTestId('doc-pane-browser').click()
+    await expect.poll(opened).toEqual([path.join(path.dirname(report), 'details.html')])
+
     // the pane's own Source / Preview / Browser
     await docPanes.first().getByTestId('doc-pane-source').click()
     await expect(docPanes.first().getByTestId('html-doc-frame')).toHaveCount(0)
-    // the source view reads words, so the text preview's 500 KB limit says so for this 925 KB page
-    await expect(docPanes.first()).toContainText('File too large')
+    await expect(docPanes.first().getByTestId('html-doc-source')).toContainText('<title>Details</title>')
     await docPanes.first().getByTestId('doc-pane-preview').click()
     await expect(docPanes.first().getByTestId('html-doc-frame')).toBeVisible()
-    await docPanes.first().getByTestId('doc-pane-browser').click()
-    await expect.poll(opened).toEqual([report])
 
     // two more pages: four panes, and a fifth is refused with the reason
     for (const name of ['probe.html', 'report.html']) {

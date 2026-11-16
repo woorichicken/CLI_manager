@@ -118,7 +118,8 @@ export function docPreviewContentSecurityPolicy(base: string): string {
 /**
  * Put in front of every document. A report was written for a browser tab: kits keep comments in `localStorage`, which
  * throws in an opaque origin and stops the page's script. This stands in for storage (kept in the page, gone when it
- * closes), passes Escape up so the preview closes from inside the page, and keeps links from leaving the folder.
+ * closes), passes Escape and a press inside the page up (closing the preview, making a pane active), hands a link to another page of the folder to
+ * the window (which opens it, so the path shown follows), and keeps other links from leaving.
  * It adds no power: the page could post the same message itself. ASCII only, no closing script tag.
  */
 export const DOC_PREVIEW_BRIDGE = String.raw`(function () {
@@ -142,6 +143,8 @@ export const DOC_PREVIEW_BRIDGE = String.raw`(function () {
     window.addEventListener('keydown', function (event) {
         if (event.key === 'Escape' && !event.defaultPrevented) post({ key: 'Escape' })
     })
+    // a press inside the page: the window cannot see it, and it makes this pane the active one
+    window.addEventListener('pointerdown', function () { post({ pressed: true }) }, true)
     var base = location.pathname.split('/').slice(0, 2).join('/') + '/'
     document.addEventListener('click', function (event) {
         var anchor = event.target && event.target.closest && event.target.closest('a[href]')
@@ -150,10 +153,11 @@ export const DOC_PREVIEW_BRIDGE = String.raw`(function () {
         if (raw.charAt(0) === '#') return
         var url
         try { url = new URL(anchor.href) } catch (e) { event.preventDefault(); return }
-        // Another page of this folder replaces this one. Anything else (the web, the Mac's files) is the browser's job.
+        // Another page of this folder: the window opens it, so its path, Source and Browser follow. Anything else (the web,
+        // the Mac's files) is the browser's job.
         if (url.protocol === location.protocol && url.host === location.host && url.pathname.indexOf(base) === 0 && /\.html?$/i.test(url.pathname)) {
             event.preventDefault()
-            location.replace(url.href)
+            try { post({ open: decodeURIComponent(url.pathname.slice(base.length)) }) } catch (e) {}
             return
         }
         event.preventDefault()

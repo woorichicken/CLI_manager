@@ -17,6 +17,8 @@ export interface DocPane {
     line?: number
     /** showing the page's source instead of the drawn page */
     source: boolean
+    /** the session whose Chat named it: Browser hands it to Artifact Dock with the page (CLAUDE.md dockOpen) */
+    sessionId?: string
 }
 
 /** Why a document cannot be put beside: the split holds MAX_LINKED_SESSIONS panes. */
