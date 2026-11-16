@@ -3,7 +3,7 @@ import { CalendarClock, Play, Pause, Plus, Trash2, Pencil, ExternalLink, FolderO
 import type { CronInput, CronRun, CronState, CronView } from '../../../../shared/autocron'
 import { DEFAULT_MISSED, MissedPolicy, nextRun, parseCron } from '../../../../shared/cron'
 import type { LoopProject } from '../../../../shared/types'
-import { AutocronChat } from './AutocronChat'
+import { AutocronChat, useOpenSessionIds } from './AutocronChat'
 
 /**
  * Loop window › Autocron: jobs CLI Manager starts on a schedule — open a new agent session,
@@ -276,9 +276,9 @@ interface DetailProps {
     onShowLoop: (loopProjectId: string) => void
 }
 
-/** The run «Chat» opens on by default: the newest one that opened a session. */
-function newestSessionRun(runs: CronRun[]): CronRun | undefined {
-    return runs.find((run) => run.status === 'started' && run.sessionId)
+/** The run «Chat» opens on by default: the newest one whose session is still open (any, before the first read). */
+function newestSessionRun(runs: CronRun[], openSessionIds: Set<string> | null): CronRun | undefined {
+    return runs.find((run) => run.status === 'started' && run.sessionId && (!openSessionIds || openSessionIds.has(run.sessionId)))
 }
 
 function CronDetail({ cron, runs, onEdit, runOnOpen, onRanOnOpen, onShowLoop }: DetailProps) {
@@ -314,12 +314,14 @@ function CronDetail({ cron, runs, onEdit, runOnOpen, onRanOnOpen, onShowLoop }: 
     const remove = async () => {
         if (window.confirm(`Delete "${cron.name}" and its run history?`)) await window.api.removeCron(cron.id)
     }
-    const open = async (sessionId: string) => {
-        const r = await window.api.openCronSession(sessionId)
+    const open = async (sessionId: string, terminal?: { command?: string }) => {
+        const r = await window.api.openCronSession(sessionId, terminal)
         if (!r.success || !r.data) setMessage('That session is closed.')
     }
 
-    const chatSession = chatSessionId ?? newestSessionRun(runs)?.sessionId ?? null
+    // a pinned run («Talk here») stays even when its session closed — that run's notice says so
+    const openSessionIds = useOpenSessionIds()
+    const chatSession = chatSessionId ?? newestSessionRun(runs, openSessionIds)?.sessionId ?? null
     const tabClass = (active: boolean) => `px-2 py-0.5 rounded text-xs ${active ? 'bg-white/10 text-gray-200' : 'text-gray-500 hover:text-gray-300'}`
 
     const what = cron.mode === 'new' ? `New ${cron.template ? `"${cron.template}"` : cron.agent} session in ${cron.cwd}` : 'Types into a loop'
@@ -365,7 +367,7 @@ function CronDetail({ cron, runs, onEdit, runOnOpen, onRanOnOpen, onShowLoop }: 
         return (
             <div className="flex flex-col flex-1 min-h-0" data-testid="autocron-detail">
                 <div className="p-5 pb-3 shrink-0">{header}</div>
-                <AutocronChat sessionId={chatSession} onOpenInMain={(id) => void open(id)} />
+                <AutocronChat sessionId={chatSession} onOpenInMain={(id, terminal) => void open(id, terminal)} />
             </div>
         )
     }

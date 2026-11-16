@@ -44,7 +44,7 @@ import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts
 import { CronStore } from './CronStore'
 import { CronService, CRON_MADE_IN_WINDOW } from './CronService'
 import { waitForWindowLoad } from './windowLoad'
-import { CRON_CHANNELS, CronInput } from '../shared/autocron'
+import { CRON_CHANNELS, CronInput, CronOpenTerminal } from '../shared/autocron'
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
 import { TranscriptReader } from './TranscriptReader'
 import { ConversationService } from './ConversationService'
@@ -512,13 +512,13 @@ const cronService: CronService = new CronService({
         if (isTestHeadless || !Notification.isSupported()) return
         new Notification({ title, body }).show()
     },
-    focusSession: (sessionId) => {
+    focusSession: (sessionId, terminal) => {
         if (loopManager.getState().sessions.some((s) => s.terminalId === sessionId)) {
             createLoopWindow()
             return true
         }
         try {
-            controlApiService.focusSession(sessionId, 'autocron')
+            controlApiService.focusSession(sessionId, 'autocron', undefined, terminal)
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.show()
                 mainWindow.focus()
@@ -1458,7 +1458,10 @@ app.whenReady().then(async () => {
             return { success: false, error: e.message }
         }
     })
-    ipcMain.handle(CRON_CHANNELS.openSession, (_, { sessionId }: { sessionId: string }) => cronResult(() => cronService.openSession(sessionId)))
+    ipcMain.handle(CRON_CHANNELS.openSession, (_, { sessionId, terminal }: { sessionId: string; terminal?: CronOpenTerminal }) =>
+        cronResult(() => cronService.openSession(sessionId, terminal && typeof terminal === 'object'
+            ? { command: typeof terminal.command === 'string' ? terminal.command.slice(0, 200) : undefined }
+            : undefined)))
 
     // ============================================
     // Loop Dashboard IPC Handlers

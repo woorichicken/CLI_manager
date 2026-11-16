@@ -153,8 +153,9 @@ test.describe('T148 autocron run once and chat', () => {
                 env: { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: path.join(home, 'codex'), CLIMANAGER_HOME: path.join(home, 'clim') },
                 config: {
                     autocrons: [job],
-                    // newest first, as the store keeps them: the Claude run is the default for Chat
-                    autocronRuns: [run('run-claude', 5, CLAUDE_SESSION), run('run-shell', 10, SHELL_SESSION), run('run-gone', 20, 't148-gone')],
+                    // newest first, as the store keeps them. The newest run's session is closed, so Chat
+                    // opens on the next one that is still open — the Claude run
+                    autocronRuns: [run('run-gone', 2, 't148-gone'), run('run-claude', 5, CLAUDE_SESSION), run('run-shell', 10, SHELL_SESSION)],
                     autocronCheckedAt: { 'job-chat': now }
                 }
             }
@@ -164,7 +165,7 @@ test.describe('T148 autocron run once and chat', () => {
         await expect(loop.getByTestId('autocron-detail')).toContainText('T148 chat')
         await expect(loop.getByTestId('autocron-talk-here')).toHaveCount(3)
 
-        // the Chat tab opens on the newest run with a session
+        // the Chat tab opens on the newest run whose session is still open (not the closed newest one)
         await loop.getByTestId('autocron-view-chat').click()
         const chat = loop.getByTestId('autocron-chat')
         await expect(chat).toHaveAttribute('data-session-id', CLAUDE_SESSION)
@@ -179,19 +180,35 @@ test.describe('T148 autocron run once and chat', () => {
         await expect(chat.locator('[data-testid="chat-answer"]', { hasText: 'Echo: hello from the loop window' })).toBeVisible({ timeout: 15_000 })
         expect(fs.readFileSync(transcript, 'utf8')).toContain('hello from the loop window')
 
-        // a plain shell and a closed session
+        // a command only the terminal shows, sent from the Loop window while the main window has that
+        // session on Chat: the main window switches it to its terminal with «Back to Chat»
+        await chat.getByTestId('autocron-chat-open-main').click()
+        const main = ctx.page
+        await expect(main.getByTestId('view-toggle')).toBeVisible({ timeout: 10_000 })
+        await main.getByTestId('view-toggle-chat').click()
+        await expect(main.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'chat')
+        await composer.fill('/conf')
+        await expect(chat.locator('[data-testid="chat-complete-row"]', { hasText: '/config' }).first()).toBeVisible()
+        await composer.press('Enter')
+        await expect(composer).toHaveValue('/config ')
+        await composer.press('Enter')
+        await waitForBufferText(main, CLAUDE_SESSION, 'PANEL: /config', 15_000)
+        await expect(main.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal', { timeout: 10_000 })
+        await expect(main.getByTestId('chat-peek-bar')).toContainText('/config')
+
+        // a closed session (pinned with «Talk here» it still says so) and a plain shell
         await loop.getByTestId('autocron-view-details').click()
-        await loop.getByTestId('autocron-talk-here').nth(1).click()
-        await expect(loop.getByTestId('autocron-chat-notice')).toContainText("Chat isn't available")
+        await loop.getByTestId('autocron-talk-here').nth(0).click()
+        await expect(loop.getByTestId('autocron-chat-notice')).toContainText('This session was closed')
         await loop.getByTestId('autocron-view-details').click()
         await loop.getByTestId('autocron-talk-here').nth(2).click()
-        await expect(loop.getByTestId('autocron-chat-notice')).toContainText('This session was closed')
+        await expect(loop.getByTestId('autocron-chat-notice')).toContainText("Chat isn't available")
 
         const shots = process.env.T148_SHOTS
         if (shots) {
             fs.mkdirSync(shots, { recursive: true })
             await loop.getByTestId('autocron-view-details').click()
-            await loop.getByTestId('autocron-talk-here').first().click()
+            await loop.getByTestId('autocron-talk-here').nth(1).click()
             await loop.waitForTimeout(500)
             await loop.screenshot({ path: path.join(shots, 'loop-chat-1200.png') })
         }

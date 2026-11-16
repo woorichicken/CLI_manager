@@ -952,9 +952,9 @@ export class ControlApiService {
         return { ...output, timedOut, waitedMs: Date.now() - started, sleptMs }
     }
 
-    focusSession(sessionId: string, client?: string, caller?: string): ApiSession {
+    focusSession(sessionId: string, client?: string, caller?: string, terminal?: { command?: string }): ApiSession {
         const { workspace, session } = this.connect(sessionId, client, caller)
-        this.emit({ type: 'focus', workspaceId: workspace.id, sessionId })
+        this.emit({ type: 'focus', workspaceId: workspace.id, sessionId, ...(terminal ? { terminal } : {}) })
         return this.describe(workspace, session)
     }
 

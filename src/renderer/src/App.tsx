@@ -18,7 +18,7 @@ import { SessionViewToggle } from './components/SessionViewToggle'
 import { SessionChatSlot } from './components/SessionChatSlot'
 import { ChatFilePreview } from './components/ChatFilePreview'
 import { isAgentSession, setAgentPending, useAgentPendingVersion } from './utils/agentSession'
-import { getSessionViewMode, setSessionViewMode } from './hooks/useSessionViewMode'
+import { getSessionViewMode, setSessionPeek, setSessionViewMode } from './hooks/useSessionViewMode'
 import { sendChatCommand } from './components/ChatView/chatContext'
 import { HandoffNoticeToast } from './components/ChatView/HandoffNoticeToast'
 import { showHandoffNotice } from './components/ChatView/draftHandoff'
@@ -345,6 +345,12 @@ function App() {
                     return
                 case 'focus':
                     if (isMainWindow) {
+                        // the Loop window's Chat sent a command only the terminal shows: show it there,
+                        // with «Back to Chat» — what the main window's own Chat does (SessionChatSlot)
+                        if (event.terminal) {
+                            setSessionViewMode(event.sessionId, 'terminal')
+                            if (event.terminal.command) setSessionPeek(event.sessionId, event.terminal.command)
+                        }
                         apiFocusSessionIds.current.add(event.sessionId)
                         setPendingFocusSessionId(event.sessionId)
                     }

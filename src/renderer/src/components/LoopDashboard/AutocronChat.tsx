@@ -78,27 +78,55 @@ function Notice({ text, onOpenInMain }: { text: string; onOpenInMain?: () => voi
     )
 }
 
-export function AutocronChat({ sessionId, onOpenInMain }: { sessionId: string | null; onOpenInMain: (sessionId: string) => void }) {
-    if (!sessionId) return <Notice text="No session to talk to yet — run the job, then pick a run's «Talk here»." />
-    // keyed so a different run starts a fresh lookup and a fresh Chat view
-    return <SessionChat key={sessionId} sessionId={sessionId} onOpenInMain={() => onOpenInMain(sessionId)} />
+/** The ids of every open session, re-read every SESSION_CHECK_MS; null until the first read. */
+export function useOpenSessionIds(): Set<string> | null {
+    const [ids, setIds] = useState<Set<string> | null>(null)
+    useEffect(() => {
+        let cancelled = false
+        const check = () => {
+            window.api.getWorkspaces()
+                .then((workspaces) => {
+                    if (cancelled) return
+                    const next = new Set(workspaces.flatMap((w) => (w.sessions ?? []).map((s) => s.id)))
+                    // keep the same Set while nothing changed, so the panel does not re-render every tick
+                    setIds((prev) => (prev && prev.size === next.size && [...next].every((id) => prev.has(id)) ? prev : next))
+                })
+                .catch(() => {})
+        }
+        check()
+        const timer = window.setInterval(check, SESSION_CHECK_MS)
+        return () => {
+            cancelled = true
+            window.clearInterval(timer)
+        }
+    }, [])
+    return ids
 }
 
-function SessionChat({ sessionId, onOpenInMain }: { sessionId: string; onOpenInMain: () => void }) {
+/** Opens a session in the main window; with `terminal`, on its terminal showing that command. */
+export type OpenInMain = (sessionId: string, terminal?: { command?: string }) => void
+
+export function AutocronChat({ sessionId, onOpenInMain }: { sessionId: string | null; onOpenInMain: OpenInMain }) {
+    if (!sessionId) return <Notice text="No session to talk to yet — run the job, then pick a run's «Talk here»." />
+    // keyed so a different run starts a fresh lookup and a fresh Chat view
+    return <SessionChat key={sessionId} sessionId={sessionId} onOpenInMain={onOpenInMain} />
+}
+
+function SessionChat({ sessionId, onOpenInMain }: { sessionId: string; onOpenInMain: OpenInMain }) {
     const lookup = useSession(sessionId)
     const preferences = useChatPreferences()
 
     if (lookup.state === 'loading') return <Notice text="Looking for the session…" />
     if (lookup.state === 'closed') return <Notice text="This session was closed." />
     if (!isAgentSession(lookup.session)) {
-        return <Notice text="Chat isn't available for this session." onOpenInMain={onOpenInMain} />
+        return <Notice text="Chat isn't available for this session." onOpenInMain={() => onOpenInMain(sessionId)} />
     }
 
     return (
         <div className="flex flex-col flex-1 min-h-0" data-testid="autocron-chat" data-session-id={sessionId}>
             <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-white/5 shrink-0">
                 <span className="text-xs text-gray-300 truncate" data-testid="autocron-chat-name">{lookup.session.name}</span>
-                <button className="flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200 shrink-0" onClick={onOpenInMain} data-testid="autocron-chat-open-main">
+                <button className="flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200 shrink-0" onClick={() => onOpenInMain(sessionId)} data-testid="autocron-chat-open-main">
                     <ExternalLink size={11} /> Open in main window
                 </button>
             </div>
@@ -109,8 +137,11 @@ function SessionChat({ sessionId, onOpenInMain }: { sessionId: string; onOpenInM
                     sessionId={sessionId}
                     transport={electronChatTransport}
                     preferences={preferences}
-                    // a command only the terminal can show (/config, a bare /model) goes to the main window
-                    onOpenTerminal={onOpenInMain}
+                    // a command only the terminal can show (/config, a bare /model): the main window shows
+                    // that session's terminal — this window has none (see the note at the top)
+                    onOpenTerminal={(command) => onOpenInMain(sessionId, { command })}
+                    // the same from a thread's child conversation: its own terminal, in the main window
+                    onOpenSessionTerminal={(childId, command) => onOpenInMain(childId, { command })}
                 />
             </div>
         </div>

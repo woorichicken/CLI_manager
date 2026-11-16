@@ -855,6 +855,8 @@ export interface ControlApiSessionChange {
     folder?: WorkspaceFolder
     /** 'opened': also select the new session in the main window. */
     focus?: boolean
+    /** 'focus': also switch the session to its terminal (the Loop window's Chat sent a terminal-only command). */
+    terminal?: { command?: string }
 }
 
 /**
