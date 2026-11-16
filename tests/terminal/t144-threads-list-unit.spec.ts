@@ -1,4 +1,11 @@
 import { test, expect } from '@playwright/test'
+import { EventEmitter } from 'events'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { TerminalMirror } from '../../src/main/TerminalMirror'
+import { TranscriptReader } from '../../src/main/TranscriptReader'
+import { ConversationService } from '../../src/main/ConversationService'
 import { allChatThreads, chatThreadParentIds, pollChatThreadChanges } from '../../src/main/chatThreads'
 import type { SessionRelation } from '../../src/shared/types'
 
@@ -170,4 +177,75 @@ test('T144 cost: 40 sessions and 20 threads — one tick with the list open, and
     console.log(`[T144] 40 sessions · 20 threads: open-list tick median ${openMs.toFixed(4)} ms; closed tick ${closedMs.toFixed(4)} ms (1 tick/s → open ${(openMs / 10).toFixed(4)}% CPU)`)
     // A tick every second must stay far below a millisecond-scale budget on this size.
     expect(openMs).toBeLessThan(5)
+})
+
+/** A parent Claude conversation on disk, read by the real TranscriptReader (T119's harness). */
+async function quoteService(idleKeepMs?: number) {
+    const conversation = '00000000-0000-4000-8000-0000000c1440'
+    const cwd = '/t144/project'
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t144-'))
+    const folder = path.join(home, 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'))
+    fs.mkdirSync(folder, { recursive: true })
+    const file = path.join(folder, `${conversation}.jsonl`)
+    let n = 0
+    let last: string | null = null
+    const turn = (question: string, answer: string): string => {
+        const user = { type: 'user', uuid: `u-${++n}`, parentUuid: last, timestamp: new Date(Date.UTC(2026, 10, 16, 0, 0, n)).toISOString(), message: { role: 'user', content: question } }
+        const assistant = {
+            type: 'assistant', uuid: `a-${++n}`, parentUuid: user.uuid, timestamp: new Date(Date.UTC(2026, 10, 16, 0, 0, n)).toISOString(),
+            message: { role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'text', text: answer }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } }
+        }
+        last = assistant.uuid
+        return `${JSON.stringify(user)}\n${JSON.stringify(assistant)}\n`
+    }
+    fs.writeFileSync(file, turn('first question', '| a | b |\n|---|---|\n\nChangelog draft is ready. Two items need your call.'))
+    const reader = new TranscriptReader({ claudeConfigDir: () => home, codexHome: () => path.join(home, 'codex') })
+    let forgets = 0
+    const forget = reader.forget.bind(reader)
+    reader.forget = (key: string) => (forgets++, forget(key))
+    const events = new EventEmitter()
+    const mirror = new TerminalMirror({ events, getSize: () => ({ cols: 100, rows: 30 }), hasTerminal: () => true } as never)
+    events.emit('created', 'parent', 100, 30)
+    const rule = '─'.repeat(98)
+    events.emit('output', 'parent', ['⏺ Done.', '', rule, '❯ ', rule].join('\r\n'))
+    await mirror.flush('parent')
+    const changes: number[] = []
+    const service = new ConversationService({
+        session: () => ({ cwd, cliSessionId: conversation, cliToolName: 'claude' }),
+        reader, mirror, hasTerminal: () => true, writeInput: () => undefined, type: async () => true,
+        onChange: (_id, revision) => changes.push(revision),
+        ...(idleKeepMs !== undefined ? { idleKeepMs } : {})
+    })
+    const anchorTs = new Date(Date.UTC(2026, 10, 16, 0, 0, 2)).toISOString()
+    return { service, file, turn, changes, forgets: () => forgets, anchor: { turnTs: anchorTs, turnIndex: 1 } }
+}
+
+test('T144 quote: the parent reply is quoted as the thread panel quotes it; a moved anchor quotes nothing', async () => {
+    const { service, anchor } = await quoteService()
+    expect(service.replyQuote('parent', anchor)).toBe('Changelog draft is ready. Two items need your call.')
+    expect(service.replyQuote('parent', { turnTs: anchor.turnTs })).toBe('Changelog draft is ready. Two items need your call.')
+    expect(service.replyQuote('parent', { ...anchor, turnIndex: 0 })).toBe('')
+    expect(service.replyQuote('parent', { turnTs: '2020-01-01T00:00:00.000Z' })).toBe('')
+})
+
+test('T144 quote (codex review): new records the quote read takes are still announced to an open parent Chat', async () => {
+    const { service, file, turn, changes, anchor } = await quoteService()
+    await service.getConversation('parent')
+    service.subscribe('parent')
+    fs.appendFileSync(file, turn('second question', 'second answer'))
+    // the list reads first: the next poll will find nothing new, so the quote read has to tell
+    expect(service.replyQuote('parent', anchor)).toContain('Changelog draft')
+    expect(changes.length).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 1600))
+    expect(changes.length).toBe(1)
+    expect((await service.getConversation('parent')).turns.length).toBe(4)
+    service.unsubscribe('parent')
+})
+
+test('T144 quote (codex review): a parent read only for its quote is let go after the idle wait', async () => {
+    const { service, forgets, anchor } = await quoteService(80)
+    expect(service.replyQuote('parent', anchor)).not.toBe('')
+    expect(forgets()).toBe(0)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(forgets()).toBe(1)
 })

@@ -334,13 +334,20 @@ export class ConversationService {
         const info = this.deps.session(sessionId)
         const agent = agentOf(info)
         if (!info?.cliSessionId || agent === null) return ''
+        const entry = this.entry(sessionId)
         try {
-            const turns = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)?.turns
-            const reply = turns ? replyForThread({ turns, totalTurns: turns.length }, anchor) : undefined
+            const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
+            if (!read) return ''
+            // this read took the new records: the next poll will see nothing new, so whoever watches is told here
+            if (read.changed) this.bump(sessionId, entry)
+            const reply = replyForThread({ turns: read.turns, totalTurns: read.turns.length }, anchor)
             return reply ? replyQuote(reply) : ''
         } catch (error) {
             console.warn('[conversation] thread quote read failed', sessionId, error)
             return ''
+        } finally {
+            // a parent read only for its quote is let go like any unwatched chat
+            this.dropIfIdle(sessionId, entry)
         }
     }
 
