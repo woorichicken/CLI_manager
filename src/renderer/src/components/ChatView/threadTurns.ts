@@ -1,4 +1,5 @@
 import type { ChatThread, ConversationSnapshot, ConversationTurn } from '../../../../shared/conversation'
+import { turnSegments } from './workBlocks'
 
 /**
  * Native forks copy their parent's turns with the original timestamps, including replies after the
@@ -21,7 +22,7 @@ export function hasEarlierThreadReplies(snapshot: ConversationSnapshot, forkedAt
 }
 
 /** Resolve the exact parent reply in a paged snapshot; a stale indexed anchor must never quote a different reply. */
-export function replyForThread(snapshot: ConversationSnapshot, thread: Pick<ChatThread, 'turnTs' | 'turnIndex'>): ConversationTurn | undefined {
+export function replyForThread(snapshot: Pick<ConversationSnapshot, 'turns' | 'totalTurns'>, thread: Pick<ChatThread, 'turnTs' | 'turnIndex'>): ConversationTurn | undefined {
     if (thread.turnIndex !== undefined) {
         const localIndex = thread.turnIndex - snapshot.totalTurns + snapshot.turns.length
         const turn = Number.isInteger(localIndex) ? snapshot.turns[localIndex] : undefined
@@ -78,6 +79,12 @@ export function threadQuote(answer: string): string {
     // Avoid cutting an emoji's surrogate pair in half at the character limit.
     if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1)
     return `${cut}…`
+}
+
+/** The quote of one parent reply: the panel and the sidebar's Threads list both show this. */
+export function replyQuote(reply: ConversationTurn): string {
+    return threadQuote(turnSegments(reply.parts).filter((segment) => segment.kind === 'answer')
+        .flatMap((segment) => segment.parts.map((part) => part.text)).join('\n\n'))
 }
 
 /** A question needs the person's attention before another child's ongoing work. */

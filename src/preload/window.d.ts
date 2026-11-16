@@ -283,6 +283,11 @@ declare global {
             subscribeChatThreads: (sessionId: string) => Promise<void>
             unsubscribeChatThreads: (sessionId: string) => Promise<void>
             onChatThreadsChanged: (callback: (change: { sessionId: string }) => void) => () => void
+            /** every parent's threads for the sidebar's Threads list; `false` skips the quotes (badge count) */
+            getAllChatThreads: (quotes?: boolean) => Promise<import('../shared/conversation').ChatThreadEntry[]>
+            subscribeAllChatThreads: () => Promise<void>
+            unsubscribeAllChatThreads: () => Promise<void>
+            onAllChatThreadsChanged: (callback: () => void) => () => void
             getChatImage: (sessionId: string, ref: string) => Promise<string | null>
             getChatToolOutput: (sessionId: string, ref: string) => Promise<string | null>
             listChatCommands: (sessionId: string) => Promise<ChatCommand[]>

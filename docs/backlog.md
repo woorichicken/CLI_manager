@@ -19,21 +19,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
-### All sessions 에 「Threads」 보기 — 슬랙처럼 모든 세션의 스레드를 한곳에서
-- Discovered: 2026-11-15 사용자 요청 「List 형태에도 필요할거 같은데 슬랙같은 형태로 모든 세션의 쓰레드를 볼수 있도록」. v1.34.0 의 Reply in thread 를 쓰다가.
-- Evidence: 지금 스레드는 부모 세션 하나씩만 보인다 — 답 아래 칩(`ThreadChip`) → 오른쪽 `ThreadPanel`. IPC `chat-threads(sessionId)` 는 부모 하나의 `ChatThread[]`(childId·name·turnTs/turnIndex·forkedAt·status·lastActivityAt, `src/shared/conversation.ts:317`)만 돌려주고, 1초 감시(`refreshChatThreadSubscriptions`)도 구독한 부모만 돈다. 앱 전체를 보는 곳은 All sessions › Tree(fork 가 부모 밑 자식으로, 총괄·팀장이 연 세션과 섞임)와 사이드바 검색 `fork` 뿐이고, List 에는 스레드 표시가 없다.
-- Why deferred: 새 화면이라 범위(어디에 둘지·무엇을 보일지)를 정해야 한다. 사람이 아직 「만들어」를 말하지 않았다.
-- Trigger: 사람이 착수를 말할 때. 그때 정할 것 — ① 자리: All sessions 도구 줄 List · Tree 옆 세 번째 「Threads」(추천, 머리 줄 버튼 수 그대로) vs List 줄마다 스레드 수 배지 ② 줄 모양(슬랙 Threads 처럼): 부모 세션 이름 · 갈라진 답 인용(`ThreadPanel` 의 평문 첫 문단 3줄/240자 규칙 재사용) · 스레드 이름 · 상태 점(질문 대기 우선) · 마지막 활동 시각, 최근 활동 순 ③ 누르면: 부모 세션 Chat + 그 스레드 칸 열기(기존 `ThreadPanel`) ④ main: 모든 부모를 도는 `chat-threads-all` 하나(관계 저장소에서 anchor 있는 fork 만 — `chatThreadParentIds`), 감시는 보기가 열려 있을 때만 ⑤ 안 읽음 표시는 1차에서 뺄지. 비용 확인: 세션 40개·스레드 20개에서 1초 감시 비용을 T127 유닛처럼 잰다.
-- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` T-1·T-2 3차 승인): 착수. ① 자리 = All sessions 도구 줄 `[List · Tree]` **옆의 따로 된 아이콘**(MessagesSquare, 사람: 「list·tree 는 view 라 옆에 아이콘으로 별개로」) — 보기 탭 세 번째가 아니다 ⑤ 안 읽음 = 1차에서 뺀다(추천을 그대로 받음, 사람이 반대하지 않음).
-- Spec:
-  - 무엇: All sessions 보기에서 💬 아이콘을 켜면 목록이 앱 전체 스레드로 바뀐다. 다시 누르면 마지막 보기(List·Tree)로. 켜 있는 동안 List·Tree 는 흐리게(고른 값은 그대로). 상태는 localStorage(`sidebar-threads-open`)에 남긴다. 아이콘 배지 = 답을 기다리는(`waiting`) 스레드 수, 0이면 없음. New session 버튼은 글자 그대로(머리 줄 버튼 수·보기 전환 x 그대로).
-  - 줄: 상태 점(waiting 노랑 > working 파랑 > idle 빈 원) · 스레드 이름 · 마지막 활동 상대 시각 / `in <부모 세션> · <작업 영역>` / 갈라진 답 인용(평문 첫 문단, `ThreadPanel` 규칙 재사용, 줄에서는 2줄로 자름) / 상태 글(Waiting for you · Working). 순서 = 마지막 활동 최근 순(고정 — 누른다고 흔들리지 않음). 빈 상태 문구 「No threads yet — use Reply in thread on an answer」.
-  - 누르면: 부모 세션으로 가서 Chat 보기 + 그 스레드 칸(`ThreadPanel`)을 연다. 사이드바는 Threads 에 머물고 그 줄이 선택 표시. 칸은 지금처럼 Chat 을 좁혀 옆에 놓인다(`chat.css` `has-thread`, 폭 `clamp(340px, 40%, 520px)`), Chat 폭 760px 아래에서만 덮는다 — 이 동작은 바꾸지 않는다.
-  - main: `chat-threads-all` IPC 하나 — `chatThreadParentIds` 의 모든 부모를 `chatThreadsFor` 로 모아 부모 이름·작업 영역을 붙여 돌려준다. 1초 감시(`pollChatThreadChanges`)는 Threads 목록이 열려 있을 때만 모든 부모로 넓힌다(닫히면 지금처럼 구독한 부모만).
-  - 끝 조건: anchor 있는 fork 만 보인다(옛 fork·손 짝·총괄이 연 세션은 안 보임) · 자식이 닫히면 줄이 바로 빠짐 · 상태·시각이 3초 안에 따라옴 · 1280·390(사이드바 펼친 좁은 창)에서 줄이 안 넘침 · 목록이 닫혀 있으면 추가 비용 0.
-  - 시험: 유닛 — 여러 부모 합치기·정렬·닫힌 자식 제외·부모 이름 변경 반영, 감시 범위(열림/닫힘에 따라 읽는 부모 수)와 세션 40·스레드 20 에서 1틱 비용(T127 방식). E2E — chat-mock 부모 둘에 fork 셋(waiting·working·idle) → 아이콘 배지 1 · 줄 순서·상태 점 DOM · 누르면 부모 Chat 과 `chat-thread-panel` 이 그 자식 · Chat 이 좁아짐(칸과 Chat 박스가 안 겹침) · 다시 누르면 List 로 돌아옴 · 재시작 뒤 열림 유지. `T1xx_SHOTS` 로 1280·390 캡처. 옛 코드에서 실패 먼저.
-- Owner: 없음
-
 ### 의존성 보안 — Electron 39 → 42 등 `pnpm audit --prod` high 18건 · dependabot PR 정리
 - Discovered: 2026-11-14 v1.34.0 릴리즈 뒤 열린 의존성 PR 을 보다가.
 - Evidence: `pnpm audit --prod` → critical 0 · high 18 · moderate 9 · low 5. 고치려면 ① `electron` `^39.8.10` → 41.10.4+/42.11.16+(메이저, high·moderate·low) — 그 안의 `extract-zip@2.0.1` high 는 패치 없음 ② `electron-updater@6.8.9` 의 `js-yaml@4.1.1` → 4.3.2+ ③ `electron-store@11.0.2 > conf > ajv@8.17.1 > fast-uri@3.1.0` → fast-uri 3.1.9+·ajv 8.18.0+ ④ 직접 의존 `uuid@13.0.0` → 13.0.1+. 열린 dependabot PR 9개(#2~#5·#7~#10 은 08-18, #115 는 11-10) 중 이 넷을 고치는 것은 없다. `gh api repos/woorichicken/CLI_manager/dependabot/alerts` → 403 「Dependabot alerts are disabled」 — 버전 올리기 PR 은 오지만 보안 알림·보안 PR 은 꺼져 있다.
