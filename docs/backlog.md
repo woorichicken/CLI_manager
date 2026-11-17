@@ -81,13 +81,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - 2번째(2026-11-12 fb-1112 90043d9d 「렌더링이 안됨」): 사람 답 「html climanager 안에서 열거나 누르면 크롬에서 볼수 있도록」 → 이번엔 뒤쪽만 했다 — Chat 의 `.html` 은 기본 브라우저(`shell.openPath`), `:줄` 이면 미리보기 + Browser 버튼(T96). 앱 안에서 그리기는 그대로 이 항목.
 - Trigger: 사람이 시작하자고 할 때, 또는 큰 HTML 보고서를 앱 밖으로 여는 일이 계속 불편하다는 말이 다시 나올 때.
 - Fix direction: 먼저 (a) — `.html` 은 기본으로 그려서 보이고 Source 전환 · 「Open in browser」 버튼, 한도는 폰과 같은 64MB. (b) 는 그 뒤 따로 결정 기록을 쓰고.
-- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` H-A·H-B 3차 승인): (a) 를 착수. 사람: 「기본적으로 A 로 나오되 B 로도 볼 수 있고, 세션·문서로 나누는 게 아니라 저렇게 나오는 건 분할 화면」 — 탭 줄(VS Code 식 편집기 탭)은 만들지 않는다. (b) 진짜 브라우저 탭은 그대로 이 항목에 남는다.
+- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` H-A·H-B 3차 승인): (a) 를 착수. 사람: 「기본적으로 A 로 나오되 B 로도 볼 수 있고, 세션·문서로 나누는 게 아니라 저렇게 나오는 건 분할 화면」 — ~~탭 줄(VS Code 식 편집기 탭)은 만들지 않는다~~ **(2026-11-17 정정: 잘못 읽은 것이다.** 사람은 1차에 「세션들도 저렇게 볼 수 있었으면」으로 탭을 원했고, 2차 코멘트는 「세션 칸·문서 칸으로 갈라 묶지 말라 — 두 칸이 나란히 나오는 건 분할 화면」이라는 뜻이었다. 세션 탭 줄은 아래 Update 2026-11-17 로 따로 만든다.) (b) 진짜 브라우저 탭은 그대로 이 항목에 남는다.
 - Spec:
   - A(기본): Chat 의 `.html` 경로를 누르면 기본 브라우저 대신 미리보기 창(`ChatFilePreview.tsx`·`FilePreview.tsx` 의 창)을 크게 열어 **그려서** 보인다. 머리: 경로 · `[Preview | Source]` · `Side by side` · `Browser`(지금 동작) · 닫기. `:줄` 이면 Source 로 열고 그 줄. 그리기는 폰과 같은 분리 칸(결정 0011 — sandbox iframe, `connect-src 'none'`, 바깥 자원 막힘, 한도 64MB). 지금 글 미리보기의 500KB 한도(`read-file-content`)는 HTML 그리기에 쓰지 않는다. 아래 줄 「Sandboxed · no network」.
   - B(옆으로): `Side by side` 를 누르면 창이 닫히고 문서가 지금 분할 화면(`showSessions`, 최대 4칸 `MAX_LINKED_SESSIONS`)에 세션처럼 한 칸으로 들어간다. 칸 머리는 세션 칸과 같은 경로 머리 + `Preview/Source` · 브라우저 · 닫기. 칸이 이미 4개면 버튼을 끄고 이유를 툴팁으로. 문서 칸은 저장하지 않는다(재시작 뒤에는 없음) — 저장 여부는 써 보고 정한다.
   - 끝 조건: 925KB 보고서가 A·B 둘 다에서 그려짐 · 문서 안 스크립트가 앱 IPC·네트워크에 닿지 않음(폰 T102 탐침과 같은 판정을 Mac 에서) · B 칸 옆 세션에 바로 입력 가능 · Esc/닫기 뒤 포커스가 Chat 으로.
   - 시험: E2E — chat-mock 답에 `.html` 경로 → 클릭 → 창 iframe 이 그려짐(`shell.openPath` 0번, main 에서 가로챔) · Source 전환 · `:줄` 은 Source · Side by side → 분할 칸 2개(세션 + 문서) · 4칸이면 버튼 꺼짐 · 탐침 페이지의 fetch·beacon·폼이 main `webRequest` 에 안 잡힘 · Browser 버튼은 지금처럼 `shell.openPath`. 1280 캡처.
 - Update 2026-11-16: A·B 구현(`feat/html-preview-1116` — 결정 [0013](decisions/0013-mac-documents-on-a-custom-scheme.md), T146 유닛·T147 앱). 남은 것: (b) 진짜 브라우저 탭, 문서 칸 저장 여부(써 보고 정함), Source 의 500KB 한도(큰 문서는 「File too large」), 문서 칸 끌어 옮기기·⌘W 로 닫기는 없음.
+- Update 2026-11-17: 세션 탭 줄(`feat/session-tabs-1117`, T149 유닛·앱). 사람이 정한 것: ① 화면 맨 위(메인 칸 첫 줄, 사이드바 머리와 같은 높이) ② ⌘W 는 지금처럼 세션 종료 + 탭도 닫히고 옆 탭(오른쪽, 없으면 왼쪽)으로 ③ ⌘> ⌘<(⌘⇧. ⌘⇧,)로 탭 이동, 끝에서 돌아 감 ④ 재시작하면 탭·보던 탭 그대로. 사이드바와 별개 — 화면에 뜬 세션(분할 칸 포함)이 지금 탭 오른쪽에 탭으로 열리고, 탭 ×·가운데 클릭은 탭만 닫는다(세션·사이드바는 그대로). 끌어서 순서 바꿈. Settings › General 「Show Session Tabs」(기본 켬). 저장 키 `sessionTabs`(`{ ids, activeId }`). 문서 칸(`doc:`)은 탭이 아니다. 남은 것: 문서도 탭으로 둘지, 탭 우클릭 메뉴(Close Others 등), 탭을 끌어 분할 칸으로.
 - Decided 2026-11-17(사람, PR #152 머지 승인 때): 문서 칸은 재시작 뒤 **남기지 않는다** — 기본값(메모리만, `useDocPanes`) 그대로. 재시작 뒤 다시 여는 일이 불편하다는 말이 나오면 다시 정한다.
 - Owner: 없음
 

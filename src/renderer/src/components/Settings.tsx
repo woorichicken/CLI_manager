@@ -639,6 +639,36 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 </button>
                                             </div>
 
+                                            {/* Tab row toggle */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Show Session Tabs</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        A tab row at the top for the sessions you open, apart from the sidebar. Closing a tab keeps the session;
+                                                        ⌘W still ends it. ⌘⇧. and ⌘⇧, (⌘&gt; ⌘&lt;) move between tabs.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    data-testid="settings-show-session-tabs"
+                                                    aria-pressed={settings.showSessionTabs ?? true}
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        showSessionTabs: !(prev.showSessionTabs ?? true)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
+                                                        (settings.showSessionTabs ?? true)
+                                                            ? 'bg-emerald-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.showSessionTabs ?? true)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
                                             {/* All sessions tree toggle */}
                                             <div className="flex items-center justify-between">
                                                 <div>

@@ -35,7 +35,7 @@ const AWAITING_INPUT_COLOR = 'bg-amber-400 animate-pulse ring-2 ring-amber-400/3
 // Dots read from the screen in main (Settings > General "Show Session Status").
 // No pulse on "working": dozens of rows animating at once is noise, and the
 // dot itself already says the agent is mid-turn.
-const SCREEN_STATUS_COLORS = {
+export const SCREEN_STATUS_COLORS = {
     working: 'bg-blue-500',
     waiting: 'bg-amber-400 ring-2 ring-amber-400/30'
 } as const

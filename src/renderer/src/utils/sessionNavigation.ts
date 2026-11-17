@@ -46,7 +46,8 @@ export function neighborSession(sessions: TerminalSession[], sessionId: string):
 }
 
 /** Where closing the session on screen takes the user — see App's handleRemoveSession. */
-export type SessionLanding = 'neighbor' | 'recent'
+/** `tab`: the tab beside it in the tab row (⌘W while the row is on), else as `neighbor`. */
+export type SessionLanding = 'neighbor' | 'recent' | 'tab'
 
 /** A session together with the workspace row it lives under. */
 export interface SessionEntry {
