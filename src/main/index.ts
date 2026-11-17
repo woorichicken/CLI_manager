@@ -4042,6 +4042,7 @@ app.whenReady().then(async () => {
         recentSessions: () => recentSessions.list(),
         sidebarSessionOrder: () => sidebarSessionOrder,
         sessionRelations: () => sessionRelations.list(),
+        masterSessionIds: () => Object.keys(controlApiService.mastersSnapshot().masters),
         feedback: {
             enabled: () => feedbackMode.enabled(),
             appVersion: () => app.getVersion(),

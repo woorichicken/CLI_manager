@@ -184,6 +184,7 @@ export function SessionList({
                     >
                         <SessionRow
                             session={line.session}
+                            logo={line.session.templateId ? data?.templateLogos?.[line.session.templateId] : undefined}
                             active={line.session.id === activeId}
                             renaming={renaming}
                             canRename={canRename}

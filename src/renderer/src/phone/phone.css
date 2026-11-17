@@ -84,6 +84,10 @@ body.phone-body #root {
     z-index: 55;
     background: rgba(0, 0, 0, 0.45);
 }
+.phone-sidebar-logo {
+    flex-shrink: 0;
+    border-radius: 4px;
+}
 .phone-sidebar-head {
     display: flex;
     align-items: center;
@@ -292,6 +296,18 @@ body.phone-body #root {
     margin-top: 3px;
     flex-shrink: 0;
     color: var(--text-tertiary);
+}
+.phone-row-logo {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+}
+/* the Mac row's colours for the same marks (SessionItem roleIcon) */
+.phone-row-icon-master {
+    color: #fb7185;
+}
+.phone-row-icon-ai {
+    color: #34d399;
 }
 .phone-row-text {
     flex: 1;
