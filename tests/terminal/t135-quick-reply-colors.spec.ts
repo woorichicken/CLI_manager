@@ -122,6 +122,113 @@ async function openMacChat(page: Page): Promise<void> {
     await expect(page.locator('[data-testid="chat-view"][data-session-id]:visible').getByTestId('chat-composer')).toBeVisible()
 }
 
+/** The person's own list (fb-1117): wide enough to need a second line in a 1280 window. */
+const LONG_LIST = ['컴팩트하게', '진행하자 / 계속해줘', '이해를 못했어.', '남은 todo는?', '회고 할만한 포인트가 있나?', '답장 초안은?', '/t135skill + 남은 투두는?', '$t135skill 로 설명해줘']
+const CODEX = 't135-codex'
+const CODEX_ID = '00000000-0000-4000-8000-00000000c13c'
+const SHOTS = process.env.T135_SHOTS
+const SHOT_LABEL = process.env.T135_LABEL ?? 'after'
+/** T135_BEFORE=1: the captures only (the old code wraps the row and converts nothing) — the review's «before» */
+const SHOTS_ONLY = process.env.T135_BEFORE === '1'
+
+/** The row's chips: their tops (one line = one value) and how far the row scrolls. */
+const rowState = (root: Page): Promise<{ tops: number[]; scrollWidth: number; clientWidth: number; scrollLeft: number; hidden: string | null }> =>
+    root.evaluate(() => {
+        // the shown session's row (the others are hidden with their chat)
+        const row = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="chat-quick-replies"]')).find((r) => r.offsetParent !== null)!
+        const tops = Array.from(row.querySelectorAll('button')).map((b) => Math.round(b.getBoundingClientRect().top))
+        return { tops: [...new Set(tops)], scrollWidth: row.scrollWidth, clientWidth: row.clientWidth, scrollLeft: row.scrollLeft, hidden: row.getAttribute('data-hidden') }
+    })
+
+test('T135 quick replies stay on one line and scroll sideways (29993485); a skill reply follows the agent, / or $ (e624ef79)', async () => {
+    test.setTimeout(200_000)
+    const { project, claudeDir, transcript, statusFile } = seed()
+    const home = path.dirname(project)
+    const codexDir = path.join(home, 'codex')
+    const rollout = path.join(codexDir, 'sessions', '2026', '11', '03', `rollout-2026-11-03T10-00-00-${CODEX_ID}.jsonl`)
+    fs.mkdirSync(path.dirname(rollout), { recursive: true })
+    fs.copyFileSync(path.join(__dirname, 'fixtures/transcripts/codex/rollout-2026-11-03T10-00-00-00000000-0000-4000-8000-0000000000c1.jsonl'), rollout)
+    // the same skill, installed for both agents (one folder linked to both on the person's Mac)
+    for (const root of [path.join(claudeDir, 'skills'), path.join(codexDir, 'skills')]) {
+        fs.mkdirSync(path.join(root, 't135skill'), { recursive: true })
+        fs.writeFileSync(path.join(root, 't135skill', 'SKILL.md'), '---\nname: t135skill\ndescription: Explain it simply\n---\nbody\n')
+    }
+    result = await launchAppWithWorkspaces(
+        [{
+            id: 'w-t135',
+            name: 'T135 project',
+            path: project,
+            sessions: [
+                { id: SESSION, name: 'T135 Claude', cliSessionId: SESSION_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 300 --mode-row none` },
+                { id: CODEX, name: 'T135 Codex', cliSessionId: CODEX_ID, cliToolName: 'codex', cliCommand: `node ${MOCK} --agent codex --transcript ${rollout} --work-ms 300` }
+            ]
+        }],
+        {
+            settings: { phone: { enabled: true, port: PORT }, chat: { showQuickReplies: true, quickReplies: LONG_LIST } },
+            env: { CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir }
+        }
+    )
+    const { app, page } = result
+    await resizeMainWindow(app, 1280, 800)
+    await waitForBufferText(page, SESSION, 'Claude Code (mock)', 20_000)
+
+    // --- Claude: the skill reply reads as Claude runs it, before the tap ---------
+    await openMacChat(page)
+    const macChat = page.locator('[data-testid="chat-view"][data-session-id]:visible')
+    await expect(chip(macChat, '컴팩트하게')).toBeVisible({ timeout: 15_000 })
+    if (SHOTS) {
+        fs.mkdirSync(SHOTS, { recursive: true })
+        await page.waitForTimeout(1000)
+        await page.screenshot({ path: path.join(SHOTS, `quick-row-mac-${SHOT_LABEL}-1280.png`) })
+    }
+    if (SHOTS_ONLY) {
+        const state = await page.evaluate(() => window.api.getPhoneState())
+        const { phone } = await openPhone(app, `http://127.0.0.1:${state.port}/?session=${SESSION}&view=chat`)
+        await expect(chip(phone, '컴팩트하게')).toBeVisible({ timeout: 15_000 })
+        await phone.waitForTimeout(1000)
+        await phone.screenshot({ path: path.join(SHOTS!, `quick-row-phone-${SHOT_LABEL}-390.png`) })
+        return
+    }
+    await expect(chip(macChat, '/t135skill 로 설명해줘')).toBeVisible()
+    await expect(chip(macChat, '/t135skill + 남은 투두는?')).toBeVisible()
+    // one line, wider than the box: it scrolls, the far end fades
+    const before = await rowState(page)
+    expect(before.tops, 'every chip on one line').toHaveLength(1)
+    expect(before.scrollWidth).toBeGreaterThan(before.clientWidth)
+    expect(before.hidden).toBe('end')
+    // a mouse wheel's up/down moves it sideways
+    const box = (await macChat.getByTestId('chat-quick-replies').boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.wheel(0, 240)
+    await expect.poll(async () => (await rowState(page)).scrollLeft).toBeGreaterThan(0)
+    await expect.poll(async () => (await rowState(page)).hidden).toMatch(/^(both|start)$/)
+    // the tap sends what the chip says
+    await chip(macChat, '/t135skill 로 설명해줘').click()
+    await waitForBufferText(page, SESSION, 'ANSWER[1]: /t135skill 로 설명해줘', 15_000)
+
+    // --- Codex: the same saved reply goes as $ -----------------------------------
+    await page.getByText('T135 Codex', { exact: true }).first().click()
+    await page.getByTestId('view-toggle-chat').click()
+    const codexChat = page.locator('[data-testid="chat-view"][data-session-id]:visible')
+    await expect(chip(codexChat, '$t135skill + 남은 투두는?')).toBeVisible({ timeout: 15_000 })
+    await chip(codexChat, '$t135skill + 남은 투두는?').click()
+    await waitForBufferText(page, CODEX, 'ANSWER[1]: $t135skill + 남은 투두는?', 15_000)
+    expect((await rowState(page)).tops).toHaveLength(1)
+
+    // --- The phone (390): one line too, swiped sideways --------------------------
+    const state = await page.evaluate(() => window.api.getPhoneState())
+    const { phone } = await openPhone(app, `http://127.0.0.1:${state.port}/?session=${SESSION}&view=chat`)
+    await expect(chip(phone, '컴팩트하게')).toBeVisible({ timeout: 15_000 })
+    if (SHOTS) {
+        await phone.waitForTimeout(1000)
+        await phone.screenshot({ path: path.join(SHOTS, `quick-row-phone-${SHOT_LABEL}-390.png`) })
+    }
+    const onPhone = await rowState(phone)
+    expect(onPhone.tops, 'one line on the phone').toHaveLength(1)
+    expect(onPhone.scrollWidth).toBeGreaterThan(onPhone.clientWidth)
+    expect(onPhone.hidden).toBe('end')
+})
+
 test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept across a restart, old string list still reads', async () => {
     test.setTimeout(200_000)
     const { project, claudeDir, transcript, statusFile } = seed()

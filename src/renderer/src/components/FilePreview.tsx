@@ -305,7 +305,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                 {/* Content */}
                 {webPage ? (
                     <div className="flex-1 min-h-0" data-testid="file-preview-page">
-                        <HtmlDocView path={filePath} line={line} source={source} onEscape={onClose} onNavigate={onNavigate} />
+                        <HtmlDocView path={filePath} line={line} source={source} onNavigate={onNavigate} />
                     </div>
                 ) : (
                 <div className="flex-1 overflow-auto">
