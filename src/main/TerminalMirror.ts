@@ -450,6 +450,49 @@ export class TerminalMirror {
         }
     }
 
+    /**
+     * Codex's input line (fb-1117 1d15e1c2). Codex draws no box: its composer is the lowest row that
+     * starts with a bright `›` at the left edge, plus the rows it wrapped onto (indented) down to a
+     * blank row. Its placeholder ("Ask Codex to do anything") is dim, and so is the `›` of a past
+     * prompt in the transcript, so only bright cells count as typed. Reading Codex by Claude's box
+     * rules took a table's `────────  ────────` separators for the box and the table row between
+     * them for typed text — every Chat send was refused (codex-cli 0.166.0, recorded).
+     * Null when no composer is on screen.
+     */
+    codexInput(id: string): InputBox | null {
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return null
+        const buffer = mirror.term.buffer.active
+        const cell = buffer.getNullCell()
+        const lineAt = (row: number) => buffer.getLine(buffer.viewportY + row)
+        let start = -1
+        for (let row = mirror.term.rows - 1; row >= 0 && start < 0; row--) {
+            const line = lineAt(row)
+            if (!line?.translateToString(true).startsWith(CODEX_PROMPT_GLYPH)) continue
+            line.getCell(0, cell)
+            if (!cell.isDim()) start = row
+        }
+        if (start < 0) return null
+
+        const typed: string[] = []
+        for (let row = start; row < mirror.term.rows; row++) {
+            const line = lineAt(row)
+            const text = line?.translateToString(true) ?? ''
+            // The composer ends at a blank row (the footer sits under it); a wrapped row is indented.
+            if (!line || (row > start && (text.trim() === '' || !text.startsWith('  ')))) break
+            let rowText = ''
+            for (let col = row === start ? 1 : 0; col < line.length; col++) {
+                line.getCell(col, cell)
+                if (cell.getWidth() === 0) continue
+                const chars = cell.getChars()
+                rowText += chars.trim() === '' || cell.isDim() ? ' ' : chars
+            }
+            typed.push(collapseSpaces(rowText))
+        }
+        const typedRows = typed.filter(Boolean)
+        return { typed: typedRows.join(' '), typedRows: typedRows.length, suggestion: '' }
+    }
+
     /** The screen currently shows an agent turn in progress. */
     showsBusy(id: string): boolean {
         return this.screen(id).some((line) => isBusyRow(line))
@@ -567,6 +610,9 @@ function idePillCells(afterPrompt: string): number {
 
 /** Stands in for Claude's drawn cursor until the box tells typed from suggested. */
 const CURSOR_MARK = '\u0000'
+
+/** Codex's composer glyph at the left edge (codex-cli 0.166.0); bold there, dim on a past prompt. */
+const CODEX_PROMPT_GLYPH = '›'
 
 /**
  * Claude's new-session tip as the box's whole row (`Try "how does <filepath> work?"`). Dim
