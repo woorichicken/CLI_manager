@@ -23,6 +23,20 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 앱 안 HTML 미리보기 — 닫으면 페이지에 남긴 코멘트가 사라진다
+- Date: 2026-11-17
+- Where: `src/main/docPreview.ts` `DOC_PREVIEW_BRIDGE` — `localStorage`·`sessionStorage` 를 페이지 메모리(`makeStore`)로 바꾼다.
+- What: before-after 리뷰처럼 코멘트를 브라우저 저장소에 쓰는 페이지를 앱 미리보기로 열고 ×(또는 예전엔 Esc)로 닫으면, 다시 열 때 빈 상태다. 제보 b6a75106 의 Esc 쪽은 #157 에서 막았지만(문서 안 Esc 는 문서 몫) × 로 닫으면 같다.
+- Surfaced by: fb-1117 작업 세션 B 보고(`_batches/fb-1117/reports/B.md` 발견 1).
+- Fix direction: 토큰 폴더·문서 경로별로 main 이 앱 실행 동안 저장소 내용을 들고 있다가 다시 열 때 돌려준다(디스크에는 안 씀 — 결정 0013 의 「저장하지 않음」과 맞춤).
+
+### 🐛 재시작(resume)하면 Shift+Tab 으로 바꾼 권한 모드가 풀린다
+- Date: 2026-11-17
+- Where: 앱 재시작 resume 이 저장된 `cliCommand` 를 그대로 친다(`--permission-mode default …` 로 연 세션이면 default 로 돌아감).
+- What: 사람이 세션 안에서 auto·bypass 로 바꿔 두어도 앱을 재시작하면 시작 명령의 모드로 다시 뜬다. Control API 로 `--permission-mode default` 를 넣어 연 세션(총괄·팀장 배치)이 모두 해당. Fork 쪽은 #158 에서 부모 화면 모드를 붙이도록 고쳤다(제보 d2b9bf31).
+- Surfaced by: fb-1117 작업 세션 A 실측(`_batches/fb-1117/reports/A.md` 발견 1).
+- Fix direction: fork 에 쓴 `withPermissionMode`(화면 모드 → `--permission-mode <값>`)를 재시작 직전에도 적용하거나, 모드가 바뀔 때 저장 명령을 갱신.
+
 ### 🐛 Chat 스레드 칸 — 1280 에서 세션 메모 토글(빈 네모)이 칸 머리의 ✕ 옆에 겹친다
 - Date: 2026-11-16
 - Where: `components/SessionMemo.tsx:325` 의 메모 토글(`absolute top-2 right-14`, 세션 칸 오른쪽 위 고정)과 `ChatView/ThreadPanel.tsx` 머리의 닫기 ✕(칸의 오른쪽 위).
