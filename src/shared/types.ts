@@ -316,6 +316,10 @@ export interface SystemInfo {
     terminal: {
         activeSessionCount: number
         workspaceCount: number
+        /** Sessions mid-turn right now (the sidebar's blue dot rule), counted when the popover opens */
+        workingCount: number
+        /** Sessions waiting on the person right now (the amber dot rule) */
+        waitingCount: number
     }
 }
 

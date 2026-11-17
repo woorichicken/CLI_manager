@@ -135,6 +135,7 @@ export function SystemMonitorPopover({ anchorRef, onClose }: SystemMonitorPopove
 
                         {/* Disk */}
                         <MonitorRow
+                            testId="disk"
                             icon={<HardDrive size={13} />}
                             label="Disk"
                             value={`${info.disk.used} / ${info.disk.total}`}
@@ -158,10 +159,29 @@ export function SystemMonitorPopover({ anchorRef, onClose }: SystemMonitorPopove
                         <div className="border-t border-white/5" />
 
                         {/* Terminal Info */}
-                        <div className="flex items-center gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-xs" data-system-monitor="sessions">
                             <Terminal size={13} className="text-gray-500 flex-shrink-0" />
                             <span className="text-gray-400">Sessions</span>
-                            <span className="text-gray-200 ml-auto font-medium">{info.terminal.activeSessionCount}</span>
+                            <span className="text-gray-200 ml-auto font-medium" data-system-monitor-total>{info.terminal.activeSessionCount}</span>
+                        </div>
+                        {/* Right now: the same working / waiting rule as the sidebar status dots, counted on open */}
+                        <div className="flex items-center gap-2 text-xs pl-5" data-system-monitor="activity">
+                            <span className="text-gray-500">Now</span>
+                            <span className="ml-auto flex items-center gap-2 font-medium">
+                                <span
+                                    className={info.terminal.workingCount > 0 ? 'text-blue-300' : 'text-gray-500'}
+                                    data-system-monitor-working={info.terminal.workingCount}
+                                >
+                                    {info.terminal.workingCount} working
+                                </span>
+                                <span className="text-gray-600">·</span>
+                                <span
+                                    className={info.terminal.waitingCount > 0 ? 'text-amber-300' : 'text-gray-500'}
+                                    data-system-monitor-waiting={info.terminal.waitingCount}
+                                >
+                                    {info.terminal.waitingCount} waiting
+                                </span>
+                            </span>
                         </div>
 
                         {/* Uptime */}
@@ -193,17 +213,18 @@ interface MonitorRowProps {
     percent: number
     detail?: string
     color?: string
+    testId?: string
 }
 
-function MonitorRow({ icon, label, value, percent, detail, color }: MonitorRowProps) {
+function MonitorRow({ icon, label, value, percent, detail, color, testId }: MonitorRowProps) {
     const barColor = color || getBarColor(percent)
 
     return (
-        <div className="space-y-1">
+        <div className="space-y-1" data-system-monitor={testId}>
             <div className="flex items-center gap-2 text-xs">
                 <span className="text-gray-500 flex-shrink-0">{icon}</span>
                 <span className="text-gray-400">{label}</span>
-                <span className="text-gray-200 ml-auto font-medium">{value}</span>
+                <span className="text-gray-200 ml-auto font-medium" data-system-monitor-value>{value}</span>
             </div>
             {/* Progress bar */}
             <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
@@ -213,7 +234,7 @@ function MonitorRow({ icon, label, value, percent, detail, color }: MonitorRowPr
                 />
             </div>
             {detail && (
-                <div className="text-[10px] text-gray-600 pl-5">{detail}</div>
+                <div className="text-[10px] text-gray-600 pl-5" data-system-monitor-detail>{detail}</div>
             )}
         </div>
     )
