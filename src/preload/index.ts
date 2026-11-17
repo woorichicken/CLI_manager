@@ -5,6 +5,7 @@ import { CRON_CHANNELS, CronInput, CronRun, CronState, CronView } from '../share
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatForkRequest, ChatForkResult, ChatThread, ChatThreadEntry, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
+import type { DocPreviewOpenResult } from '../shared/docPreview'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 // Custom APIs for renderer
@@ -433,6 +434,8 @@ const api = {
     listChatBackgroundTasks: (sessionId: string): Promise<BackgroundTaskList> => ipcRenderer.invoke('chat-background-tasks', sessionId),
     saveChatAttachment: (name: string, bytes: Uint8Array): Promise<AttachResult> => ipcRenderer.invoke('chat-save-attachment', name, bytes),
     openChatPath: (target: string, sessionId?: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target, sessionId),
+    // An HTML report drawn in the app's sandboxed frame (decision 0013): src/main/docPreview.ts
+    openDocPreview: (target: string): Promise<DocPreviewOpenResult> => ipcRenderer.invoke('doc-preview-open', target),
     // Chat dictation (macOS): src/main/Dictation.ts
     dictationStatus: (): Promise<DictationStatus> => ipcRenderer.invoke('dictation-status'),
     startDictation: (context?: DictationStartContext): Promise<DictationStartResult> => ipcRenderer.invoke('dictation-start', context ?? {}),

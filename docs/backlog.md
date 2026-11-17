@@ -119,6 +119,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   - B(옆으로): `Side by side` 를 누르면 창이 닫히고 문서가 지금 분할 화면(`showSessions`, 최대 4칸 `MAX_LINKED_SESSIONS`)에 세션처럼 한 칸으로 들어간다. 칸 머리는 세션 칸과 같은 경로 머리 + `Preview/Source` · 브라우저 · 닫기. 칸이 이미 4개면 버튼을 끄고 이유를 툴팁으로. 문서 칸은 저장하지 않는다(재시작 뒤에는 없음) — 저장 여부는 써 보고 정한다.
   - 끝 조건: 925KB 보고서가 A·B 둘 다에서 그려짐 · 문서 안 스크립트가 앱 IPC·네트워크에 닿지 않음(폰 T102 탐침과 같은 판정을 Mac 에서) · B 칸 옆 세션에 바로 입력 가능 · Esc/닫기 뒤 포커스가 Chat 으로.
   - 시험: E2E — chat-mock 답에 `.html` 경로 → 클릭 → 창 iframe 이 그려짐(`shell.openPath` 0번, main 에서 가로챔) · Source 전환 · `:줄` 은 Source · Side by side → 분할 칸 2개(세션 + 문서) · 4칸이면 버튼 꺼짐 · 탐침 페이지의 fetch·beacon·폼이 main `webRequest` 에 안 잡힘 · Browser 버튼은 지금처럼 `shell.openPath`. 1280 캡처.
+- Update 2026-11-16: A·B 구현(`feat/html-preview-1116` — 결정 [0013](decisions/0013-mac-documents-on-a-custom-scheme.md), T146 유닛·T147 앱). 남은 것: (b) 진짜 브라우저 탭, 문서 칸 저장 여부(써 보고 정함), Source 의 500KB 한도(큰 문서는 「File too large」), 문서 칸 끌어 옮기기·⌘W 로 닫기는 없음.
 - Owner: 없음
 
 ### Chat 「새 세션으로 보내기」 전용 명령(`/split`)
@@ -727,6 +728,30 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 확장자 목록·문자 집합과 URL 오탐 가드를 같이 손봐야 해서 별도 작업.
 - Trigger: 한글 경로·사진 경로를 ⌘-클릭해도 안 열린다는 제보.
 - Fix direction: 「한글 포함 절대경로 + 이미지·문서 확장자」만 더하고, 들여쓴 이어짐은 `terminalPathSelection` 의 잇기 규칙을 같이 쓴다. T14 에 한글·jpg 경우.
+- Owner: 없음
+
+### 앱 안 HTML 보기 — Source 는 500KB 까지만(큰 보고서는 「File too large」)
+- Discovered: 2026-11-16 impl-1116 htmlpreview(`feat/html-preview-1116`).
+- Evidence: 그리기는 64MB(`src/main/docPreview.ts` `DOC_PREVIEW_MAX_BYTES`)지만 Source 보기(`components/HtmlDoc/HtmlDocView.tsx` `HtmlSource`)는 글 미리보기 `read-file-content` 의 기본 한도 500KB(`src/main/index.ts` `maxSize = 500000`)를 그대로 써서, T147 의 925KB 보고서는 미리보기 창·분할 칸 둘 다 Source 에서 `File too large (925KB)` 가 뜬다. 큰 글을 `react-syntax-highlighter`(Prism)로 한 번에 색칠하는 비용은 재지 않았다.
+- Why deferred: 한도를 올리면 렌더러가 몇 MB 를 한 번에 색칠해야 한다 — 가상화된 코드 보기나 색칠 생략이 필요해 이번 명세 밖.
+- Trigger: 큰 보고서의 Source 를 앱 안에서 보고 싶다는 말, 또는 `:줄` 링크가 500KB 넘는 HTML 을 가리키는 제보.
+- Fix direction: 먼저 925KB·5MB 문서로 색칠 시간을 잰다. 느리면 큰 파일은 색칠 없이(또는 `:줄` 주변 N줄만) 보이고, 한도는 그리기와 같은 64MB 로.
+- Owner: 없음
+
+### 앱 안 HTML 보기 — 문서 칸은 끌어 옮기기·⌘W 닫기가 없다
+- Discovered: 2026-11-16 impl-1116 htmlpreview.
+- Evidence: 세션 칸 머리(`components/SplitTerminalHeader.tsx`)는 끌어 자리 바꾸기(`onReorder` → App `handleSplitReorder`)가 있지만 문서 칸 머리(`components/HtmlDoc/DocSplitPane.tsx`)엔 손잡이가 없다. ⌘W(`useKeyboardShortcuts` `closeActiveSession`)는 활성 칸의 id 로 워크스페이스를 찾는데 `doc:` id 는 없어서 아무 일도 안 한다 — 문서 칸은 머리의 ✕ 로만 닫힌다.
+- Why deferred: 명세(「칸 머리 = 경로 + Preview/Source · 브라우저 · 닫기」)에 없었다.
+- Trigger: 문서 칸을 쓰면서 자리를 바꾸거나 키로 닫고 싶다는 말.
+- Fix direction: `DocSplitPane` 머리에 같은 끌기 데이터(`application/x-session-id` 대신 칸 id)를 붙여 `handleSplitReorder` 를 쓰고, `closeActiveSession` 이 `isDocPaneId` 면 `handleRemoveFromSplit` 을 부르게.
+- Owner: 없음
+
+### 분할 칸 이동(⌘`)이 Chat 입력칸에서는 안 먹는다
+- Discovered: 2026-11-16 impl-1116 htmlpreview — T147 B 를 쓰다가.
+- Evidence: `src/renderer/src/hooks/useKeyboardShortcuts.ts` 는 Chat 단축키(⌘⇧M·⌘⇧I 등)·메모·⌘W 만 입력칸 판정보다 먼저 받고, 그 뒤 `if (tag === 'textarea' && !el.closest('.xterm')) return` 으로 나머지를 버린다. Chat 의 입력칸(`chat-composer`)은 textarea 라 ⌘`·⌘⇧` 가 분할 칸을 옮기지 않는다 — 터미널 보기(xterm textarea)에서는 된다(T26). 문서 칸과 무관한 원래 동작.
+- Why deferred: 이번 범위 밖이고, 입력칸에서 어떤 단축키를 받을지는 다른 키와 함께 정해야 한다.
+- Trigger: Chat 보기로 분할을 쓰면서 키로 칸을 못 옮긴다는 말.
+- Fix direction: `nextSplitPane`·`prevSplitPane` 을 Chat 단축키 묶음처럼 입력칸 판정 앞으로(⌘` 는 글자를 치지 않는다). T26 에 Chat 입력칸에서 누르는 경우를 더한다.
 - Owner: 없음
 
 ## Blocked

@@ -34,6 +34,7 @@ know X".
 | [0010](0010-phone-reads-only-what-the-chat-names.md) | A phone reads only the files its chat names | active |
 | [0011](0011-phone-documents-in-a-sandboxed-frame.md) | A phone opens a report in a sandboxed frame; only the person's press sends its comments | active |
 | [0012](0012-dictation-log-stays-on-this-mac.md) | The dictation log stays on this Mac, off by default, and expires | active |
+| [0013](0013-mac-documents-on-a-custom-scheme.md) | The Mac draws a report in a sandboxed frame on a custom scheme | active |
 
 ## Template
 

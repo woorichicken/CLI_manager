@@ -518,7 +518,7 @@ test('T96 Mac Chat: a named path opens in the preview, or in the Mac\'s app with
     })
 })
 
-test('T96 Mac Chat: a web page opens in the browser; with a line, the preview offers the browser (90043d9d)', async () => {
+test('T96 Mac Chat: a web page is drawn in the preview, the browser one press away; with a line, its source (90043d9d → T147)', async () => {
     test.setTimeout(120_000)
     const { app, page, project } = await launch()
     await app.evaluate(({ shell }) => {
@@ -535,7 +535,13 @@ test('T96 Mac Chat: a web page opens in the browser; with a line, the preview of
     const pageLink = chat(page).getByRole('button', { name: 'report.html', exact: true }).first()
     await pageLink.scrollIntoViewIfNeeded()
     await pageLink.click()
+    // drawn in the app's sandboxed frame (decision 0013), not handed to the browser
+    await expect(page.getByTestId('chat-file-preview').getByTestId('html-doc-frame')).toBeVisible()
+    await page.getByTestId('file-preview-browser').click()
     await expect.poll(opened).toEqual([report])
+    // FilePreview listens for keys 100 ms after it opens, so the key that opened it does not close it
+    await page.waitForTimeout(200)
+    await page.keyboard.press('Escape')
     await expect(page.getByTestId('chat-file-preview')).toHaveCount(0)
     // a line is a place in the source: the preview, with the browser one click away
     await chat(page).getByRole('button', { name: /report\.html:3/ }).first().click()

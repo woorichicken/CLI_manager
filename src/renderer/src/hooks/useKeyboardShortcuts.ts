@@ -153,9 +153,10 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         onSetActiveSplitIndex(nextIndex)
         // The highlight alone would leave the caret in the old pane, so the next
         // keystrokes would go to a terminal the user just moved away from.
-        const textarea = document.querySelector<HTMLTextAreaElement>(
-            `[data-session-id="${splitLayout.sessionIds[nextIndex]}"] .xterm-helper-textarea`
-        )
+        const target = splitLayout.sessionIds[nextIndex]
+        const textarea = document.querySelector<HTMLElement>(`[data-session-id="${target}"] .xterm-helper-textarea`)
+            // a document pane (`doc:`): its page, or the pane itself while the page loads
+            ?? document.querySelector<HTMLElement>(`[data-doc-pane="${target}"] iframe, [data-doc-pane="${target}"]`)
         textarea?.focus()
     }, [splitLayout, activeSplitIndex, onSetActiveSplitIndex])
 
