@@ -31,6 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | When adding or debugging an integration with an external AI CLI (hooks, status line, usage data) | [`docs/integrations/CLAUDE.md`](docs/integrations/CLAUDE.md) |
 | When a document contradicts the code and you need to know whether it was ever true | [`docs/legacy/CLAUDE.md`](docs/legacy/CLAUDE.md) |
 | Before building, publishing, or distributing a release — anything with an effect outside this machine | [`docs/operations/CLAUDE.md`](docs/operations/CLAUDE.md) |
+| Before merging or releasing a change — which gates its tier needs, and what a session may merge without a person | [`docs/ship-bar.md`](docs/ship-bar.md) |
 | Before running, adding, or removing a script in scripts/ | [`scripts/CLAUDE.md`](scripts/CLAUDE.md) |
 <!-- docs-index:end -->
 
@@ -572,6 +573,8 @@ main 이 로드 중 죽고 앱 구동 시험마다 `electron.launch` 가 180초�
   - T144 Threads 목록 유닛 — Electron 없이. `allChatThreads`: 여러 부모 합치기(부모 이름·작업 영역)·마지막 활동 순·같은 시각은 id 순, anchor 없는 fork·손 짝·총괄이 연 세션·뺀 짝 제외, 자식/부모가 닫히면 빠짐, 부모 이름 변경 반영 · 감시 범위: 목록 구독이 없으면 틱이 예전과 같은 부모만 읽고(구독 없으면 0번), 있으면 모든 anchor 부모를 한 번씩(구독 부모와 공유) · `threadListReads`: All sessions 는 목록이 닫혀 있어도 감시(인용 없이)·Folders/접힘은 0 · 상태·이름·작업 영역·닫힘은 다음 틱에 알림·30초 안 출력은 조용 · 세션 40·스레드 20 에서 열린 목록 1틱 중앙값을 찍는다(11-16 0.02ms, 화면 판정은 가짜 — 실제 미러 판정은 T68) · 인용(`ConversationService.replyQuote`, 실제 TranscriptReader): 패널과 같은 글·옮겨진 anchor 는 빈 글, 인용 읽기가 가져간 새 기록도 열린 부모 Chat 에 알림·구독 없는 부모는 유휴 대기 뒤 놓음(codex 검수 2건 — 수정 전 코드에서 실패)
   - T145 Threads 목록 앱 — chat-mock 부모 둘(작업 영역 둘)·anchor fork 셋(ASK → waiting · 긴 턴 → working · idle)과 anchor 없는 연 세션·손 짝을 config 에 심는다: Folders 보기에선 부모 이름을 바꿔도 목록 알림 0 · 닫힌 배지 1 → idle 자식 ASK 에 3초 안 2(실시간) · 켜면 List·Tree 흐림(`data-dimmed`) · 줄 셋(둘은 안 보임)·상태 점·상태 글·`in 부모 · 작업 영역`·인용(표 없음)·DOM 순서 = main 순서 · 열린 목록에서 부모 이름을 바꾸면 3초 안에 `in …` 이 따라옴 · 줄을 누르면 부모 Chat + `chat-thread-panel` 이 그 자식, Chat 본문 오른쪽 끝 ≤ 칸 왼쪽(겹치지 않음), 줄 선택 표시·순서 그대로, 다른 부모 줄로 바뀜 · 1280·390 에서 줄 안 넘침 · 자식을 닫으면 3초 안에 줄·칸이 빠짐 · 아이콘 다시 → List · 재시작 뒤 켜짐 유지 · 스레드 없으면 안내 문구. `T145_SHOTS`·`T145_LABEL`. 옛 코드엔 아이콘이 없어 실패
   - T141 백로그 작은 결함(fb-1114b) — Electron 없이. Control API 경로 조각의 깨진 `%`(`/v1/sessions/%E0%A4%A`)가 500 이 아니라 400 `bad_path`(토큰 검사는 그 앞) · 폰 페이지 `notranslate`(Chrome 번역 풍선) · `closeApp` 이 닫히지 않는 시험 앱을 시간 초과 뒤 SIGKILL(폴더도 지움)·스스로 닫히면 안 죽임. 옛 코드에서 3건 실패. T1 은 명령 줄에 없는 `SEQ-DONE-2-…`(셸이 계산)를 기다린다
+  - T142 Chat 추천 유닛(ba2ae0cb) — Electron 없이. `chatSuggestion` 표(빈 상자·typed·clipped·일하는 중·질문·Codex·빈 글) · 실제 `TerminalMirror` 에 chat-mock `--suggest` 와 같은 바이트(첫 글자 반전 커서 + 나머지 흐림)를 그려 `snapshot.suggestion` 까지, typed·일하는 중·clipped·Codex 는 null · 추천이 바뀌거나 사라지면 revision 이 오름(같으면 그대로). 옛 코드에서 16건 실패
+  - T143 Chat 추천 앱(ba2ae0cb) — chat-mock `--suggest`·`SUGGEST <글>`: Mac Chat 빈 입력칸에 흐린 추천 + 「Tab to use」·placeholder 비움, 글 치면 사라지고 지우면 돌아옴, 새 턴의 추천이 턴 끝 3초 안, Tab → 입력칸 = 추천(보내지 않음·포커스 유지) → Enter → 모의 `ANSWER[n]: <추천>`, 보낸 뒤 사라짐, 터미널에서 치면 사라지고 지우면 돌아옴, 추천 없을 때 Tab 은 채우지 않음 · 폰(CDP 390) 긴 추천 한 줄 말줄임·Use 가 Send 와 안 겹침·Use → 입력칸(키보드 안 띄움) → Send → `ANSWER[1]`. `T143_SHOTS`·`T143_LABEL`. 옛 코드에서 2건 실패
   - `loop-counter.spec.ts` — Electron 없이 도는 순수 유닛
 - **실행**: `pnpm build && pnpm test:term` (빌드된 `out/`을 구동하므로 빌드 필수)
   - 범위·옵션 지정은 `pnpm exec playwright test tests/terminal/<spec>.spec.ts --workers=1`로 한다.

@@ -227,6 +227,12 @@ export interface ConversationSnapshot {
     working: boolean
     /** a question menu on screen, or null */
     prompt: PromptMenu | null
+    /**
+     * Claude's dim next-prompt suggestion while its input box is empty, the agent idle and nothing asked
+     * (ba2ae0cb): the Chat box shows it in place of its placeholder, and Tab or Use fills it in. Absent or
+     * null: none to show.
+     */
+    suggestion?: string | null
     /** messages sent from the chat while the agent worked, waiting for the turn to end, oldest first */
     queued: QueuedMessage[]
     /** model · effort · context, from the transcript; null before the first answer records them */

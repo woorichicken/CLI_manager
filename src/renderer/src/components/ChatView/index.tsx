@@ -615,6 +615,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                             placeholder={placeholder}
                             onSend={sendText}
                             onInterrupt={interrupt}
+                            suggestion={agent === 'claude' ? snapshot?.suggestion ?? null : null}
                             status={
                                 <>
                                     <PlanChip items={todos} />

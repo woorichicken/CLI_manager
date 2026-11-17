@@ -14,6 +14,9 @@
  *                         (recorded 2026-11-05, 4359b4ee)
  *   --mode-row <text>     the row under the input box (default `⏵⏵ accept edits on`); `none` draws no row
  *   --permission-mode <m> what a prompt records as `permissionMode` (Claude Code 2.1.3xx: default, plan, auto, …)
+ *   --suggest <text>      (Claude) a next-prompt suggestion in the empty input box, drawn as Claude Code 2.1.3xx draws it:
+ *                         its cursor inverse on the first letter, the rest dim (T19 · T88 edge-audit 2). Typing hides it,
+ *                         Tab takes it into the box (as Claude does), a submitted prompt drops it (ba2ae0cb, T143)
  *   --continue            new records follow the transcript's last entry (a resumed session), so its history stays on the branch
  *   --show-args           print the start's own arguments (`ARGS: --resume <id> --fork-session`) — what the app typed after
  *                         the saved command (T117 Fork)
@@ -43,6 +46,7 @@
  *             prints `CHOSE: ask color=…; size=…` (a note as `size=None of the above (note: …)`).
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
  *   TABLE     answers with a five-column table wider than a phone (Korean cells).
+ *   SUGGEST <text>  (Claude) answers, then suggests <text> in the empty box; bare `SUGGEST` answers with no suggestion.
  *   LINK <id> answers with a session link to <id>'s first 8 characters, in backticks and in a sentence (b2020233).
  *   /name …   (Claude) a skill: records the 2.1.318 echo (no <command-args> when sent bare) and its body, then answers.
  *   /model X  (Claude) records the command and "Set model to `X 5`", as Claude Code 2.1.3xx does; the next
@@ -64,7 +68,7 @@ const arg = (name, fallback) => {
     return index > 0 ? process.argv[index + 1] : fallback
 }
 /** the mock's own options; the rest of argv is what the app typed after the saved command */
-const OWN_VALUE_FLAGS = new Set(['--transcript', '--agent', '--work-ms', '--user-delay-ms', '--name', '--spinner', '--mode-row', '--permission-mode', '--fresh-transcript'])
+const OWN_VALUE_FLAGS = new Set(['--transcript', '--agent', '--work-ms', '--user-delay-ms', '--name', '--spinner', '--mode-row', '--permission-mode', '--fresh-transcript', '--suggest'])
 const OWN_FLAGS = new Set(['--continue', '--show-args', '--copy-transcript'])
 const START_ARGS = []
 for (let i = 2; i < process.argv.length; i++) {
@@ -99,6 +103,10 @@ const NAME = arg('--name')
 const SPINNER_318 = arg('--spinner') === '318'
 const MODE_ROW = arg('--mode-row', '⏵⏵ accept edits on')
 const PERMISSION_MODE = arg('--permission-mode')
+/** the dim next-prompt suggestion the empty box shows now (Claude), or null */
+let suggestion = AGENT === 'codex' ? null : arg('--suggest') ?? null
+/** set by a SUGGEST prompt: the suggestion the turn's end puts up */
+let nextSuggestion = null
 let workStartedAt = 0
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
@@ -297,15 +305,22 @@ function boxLines() {
           ? [`${glyph === '∗' ? '✶' : glyph} Galloping… (${seconds}s · ↓ ${12 * (spinner + 1)} tokens)`]
           : [`${glyph} Working… (${AGENT === 'codex' ? 'Esc' : 'esc'} to interrupt)`]
     if (AGENT === 'codex') return [...status, `› ${input}`, '  ? for shortcuts']
-    return [...status, topRule(), `❯ ${input}`, rule(), ...(MODE_ROW === 'none' ? [] : [`  ${MODE_ROW}`])]
+    return [...status, topRule(), `❯ ${input || suggestionRow()}`, rule(), ...(MODE_ROW === 'none' ? [] : [`  ${MODE_ROW}`])]
+}
+
+/** Claude Code's suggestion row: the cursor inverse on the first letter, the rest dim — fitted to the width before the escapes go in */
+function suggestionRow() {
+    if (!suggestion || busy) return ''
+    const text = suggestion.slice(0, Math.max(1, cols() - 4))
+    return `\x1b[7m${text[0]}\x1b[27m\x1b[2m${text.slice(1)}\x1b[22m`
 }
 
 function draw() {
     const bottom = boxLines()
     const room = Math.max(0, rows() - bottom.length - 1)
     const top = history.slice(-room)
-    // Home + erase below: redraws in place without pushing the screen into scrollback.
-    out('\x1b[H\x1b[J' + [...top, ...bottom].map((line) => line.slice(0, cols())).join('\r\n'))
+    // Home + erase below: redraws in place without pushing the screen into scrollback. The suggestion row carries escapes and is fitted already.
+    out('\x1b[H\x1b[J' + [...top, ...bottom].map((line) => (line.includes('\x1b[') ? line : line.slice(0, cols()))).join('\r\n'))
 }
 
 function say(line) {
@@ -333,6 +348,8 @@ function answerTurn(text, answer = null) {
         const said = answer ?? `Echo: ${text}\n\n| key | value |\n| --- | --- |\n| length | ${text.length} |`
         recordAnswer(said)
         say(`⏺ ${said.split('\n')[0]}`)
+        suggestion = nextSuggestion
+        nextSuggestion = null
         draw()
         // what was typed during the turn goes next
         if (held.length > 0) setTimeout(() => (submit(held.shift()), draw()), 50)
@@ -510,6 +527,8 @@ function choose() {
 }
 
 function submit(text) {
+    // a new turn: the old suggestion goes
+    suggestion = null
     submitted++
     say(`> ${text}`)
     say(`ANSWER[${submitted}]: ${text.includes('\n') ? `lines=${text.split('\n').length}` : text}`)
@@ -545,7 +564,10 @@ function submit(text) {
         recordPlan()
         answerTurn(text, 'Planned three steps.')
     } else if (text === 'TABLE') answerTurn(text, WIDE_TABLE)
-    else if (/^LINK [0-9a-f-]{8,}$/.test(text)) {
+    else if (/^SUGGEST(\s|$)/.test(text) && AGENT !== 'codex') {
+        nextSuggestion = text.slice('SUGGEST'.length).trim() || null
+        answerTurn(text, nextSuggestion ? 'Here is a next step.' : 'Nothing to suggest.')
+    } else if (/^LINK [0-9a-f-]{8,}$/.test(text)) {
         const ref = text.slice(5, 13)
         answerTurn(text, `Opened it: \`climanager://session/${ref}\`\n\nOr go to climanager://session/${ref} and look.`)
     }
@@ -632,7 +654,9 @@ function handleKey(key) {
         submit(text)
         return draw()
     }
-    if (key === '\x7f') input = input.slice(0, -1)
+    // Tab in the empty box takes the suggestion, as Claude Code does
+    if (key === '\t' && input === '' && suggestion && !busy) input = suggestion
+    else if (key === '\x7f') input = input.slice(0, -1)
     else if (key === '\x15') input = ''
     else if (key === '\x03') process.exit(0)
     else if (key >= ' ') input += key
