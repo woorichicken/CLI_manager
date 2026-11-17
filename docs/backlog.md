@@ -397,6 +397,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - 재발: 2026-10-30 세션 작업 리스트 1차 회귀 묶음(10 스펙 · 스왑 48G) — `:141` 1회 실패(행이 10초 안에 안 사라짐), 단독 재실행 15/15 통과.
 - 재발: 2026-10-31 헤더 체크리스트 2차 회귀 묶음(8 스펙 · 스왑 49~54G, 30분 대기 뒤) — `:132` 「Cmd+] skips a session deleted from the sidebar」가 `Delete session` 클릭 「performing click action」에서 4.5분 멈춤(10-29 와 같은 모양). 같은 빌드 계열로 T26 단독 11/11 통과.
 - 재발: 2026-11-01 v1.24.0 사전 점검 2·3회차(스왑 49~51G) — `:132` 가 두 번 모두, 3회차에는 `t40-session-tree.spec.ts:156` 「what you looked at … survives a restart」도 같은 `Delete session` 클릭 「performing click action」에서 4.5분 멈춤. 두 시험 단독 `--repeat-each=3` 6/6 통과(16초). 로그 `/tmp/climanager-release-124-build-2.log` · `/tmp/climanager-release-124-build.log` → 전체 `/var/folders/cx/yf5b5yt170q7jsdn4xz6pfhr0000gn/T/release-tests-1793464630529.log` · `-1793467211086.log`.
+- 재발: 2026-11-17 v1.35.0 사전 점검(전체 1671건 · 29.9분) — `:132` 「Cmd+] skips a session deleted from the sidebar」 행이 10초 안에 안 사라짐, 같은 회차 T11 은 정리 `ENOTEMPTY`. 둘 다 단독 재실행 12/12 통과 → `--skip-tests` 로 빌드. **트리거는 이미 충족 — 고칠 차례**(위 Fix direction).
 - Trigger: 사전 점검·묶음 실행에서 사이드바 삭제 시험이 다시 실패할 때.
 - Fix direction: 실패 때 화면(확인 상자 여부)과 `hasRunningProcess` 값을 남긴다 → 원인이 상자면 시험 모드에서 확인을 건너뛰는 길, 빗나간 클릭이면 「hover → 버튼 보임 대기 → 클릭 → 행 사라짐」 재시도. 여러 시험(T26·T40·T45·T52)의 사이드바 삭제를 공용 도우미로 묶는 것은 사람 컨펌.
 - Owner: 없음
