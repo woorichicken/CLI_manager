@@ -396,6 +396,8 @@ export interface LoopSeedSession {
     id: string
     loopProjectId: string
     terminalId: string
+    /** default 'claude' */
+    cliToolName?: string
     status?: 'running' | 'ready' | 'stopped'
     loopCount?: number
 }
@@ -451,7 +453,7 @@ export async function launchAppForLoop(opts: LoopLaunchOptions): Promise<LaunchR
         id: s.id,
         loopProjectId: s.loopProjectId,
         terminalId: s.terminalId,
-        cliToolName: 'claude',
+        cliToolName: s.cliToolName ?? 'claude',
         status: s.status ?? 'ready',
         loopCount: s.loopCount ?? 0,
         lastLoopAt: null,

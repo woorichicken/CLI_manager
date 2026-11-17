@@ -149,6 +149,8 @@ export interface ConversationMirror {
     /** TerminalMirror.asksQuestion — the Chat's own, stricter test; showsAwaitingInput without it */
     asksQuestion?(id: string): boolean
     inputBox(id: string): { typed: string; suggestion?: string; clipped?: boolean; typedRows?: number } | null
+    /** TerminalMirror.codexInput — Codex's `›` line; Codex has no box for inputBox to read. */
+    codexInput(id: string): { typed: string; suggestion?: string; clipped?: boolean; typedRows?: number } | null
 }
 
 export interface ConversationServiceDeps {
@@ -879,9 +881,13 @@ export class ConversationService {
                 message: 'The agent is asking a question. Answer it first — Enter would pick the highlighted option.'
             }
         }
-        const box = this.deps.mirror.inputBox(sessionId)
-        const claude = agentOf(this.deps.session(sessionId)) === 'claude'
-        // Only Claude's box is read from its rules; a lone rule on a Codex screen is its output.
+        const agent = agentOf(this.deps.session(sessionId))
+        const claude = agent === 'claude'
+        // Only Claude's box is read from its rules. Codex has no box: rules on its screen are its output
+        // (a table's separators read as one — fb-1117 1d15e1c2), and its input is the `›` line.
+        // After the question test above, on purpose: a Codex approval menu's `› 1. Yes, proceed` row reads
+        // as typed text to codexInput, and Enter would pick it — it must be refused as awaiting_input.
+        const box = agent === 'codex' ? mirror.codexInput(sessionId) : mirror.inputBox(sessionId)
         const clipped = box?.clipped === true && claude
         if (box?.typed.trim() || clipped) {
             const draft = claude ? clearableDraft(box) : null

@@ -176,7 +176,8 @@ test.describe('T112 a menu closed in two writes within one millisecond', () => {
                 outputCount: () => count,
                 hasExited: () => false,
                 showsAwaitingInput: () => false,
-                inputBox: () => ({ typed: '' })
+                inputBox: () => ({ typed: '' }),
+                codexInput: () => ({ typed: '' })
             },
             hasTerminal: () => true,
             writeInput: () => undefined,
@@ -209,7 +210,8 @@ test.describe('T112 a menu a view read is announced when it goes', () => {
                 outputCount: () => count,
                 hasExited: () => false,
                 showsAwaitingInput: () => false,
-                inputBox: () => ({ typed: '' })
+                inputBox: () => ({ typed: '' }),
+                codexInput: () => ({ typed: '' })
             },
             hasTerminal: () => true,
             writeInput: () => undefined,

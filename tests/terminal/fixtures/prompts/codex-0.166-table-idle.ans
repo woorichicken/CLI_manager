@@ -1,0 +1,40 @@
+[?1049h[H[2m│ [0mRun [38;5;75mbrew upgrade --cask codex[0m to update.[2m        │
+│                                                 │
+│ [0mSee full release notes:[2m                         │
+│ [38;5;75;4;22mhttps://github.com/openai/codex/releases/latest[39;24;2m │
+╰─────────────────────────────────────────────────╯
+[0m 
+ 
+ [1C[38;5;75m>_ [39;1mOpenAI Codex[22;2m (v0.166.0)
+[0m [4C[2m/private/tmp/claude-501/-Users-masked-username-Downloads-CLImanger/…/scratchpad/codexrec/work
+[0m 
+[2m  To get started, describe a task or try one of these commands:
+[0m 
+  /init[2m - create an AGENTS.md file with instructions for Codex
+[0m [1C/status[2m - show current session configuration
+[0m [1C/permissions[2m - choose what Codex is allowed to do
+[0m [1C/model[2m - choose what model and reasoning effort to use
+[0m [1C/review[2m - review any changes and find issues
+[0m 
+[100m [109X
+[1;2m› [22;22mReply with a markdown table of 3 fruits and their colors (two columns), then one short sentence. Do not use[1X
+ [1X[1Cany[1X[1Ctools.[98X
+ [109X
+[0m 
+[38;2;249;226;175;1;2m• [22;22m Fruit     Color                                                                                            
+[0m [1C[2m━━━━━━━━  ━━━━━━━━
+[0m   Apple     Red
+ [1C[2m────────  ────────
+[0m [2CBanana[4CYellow
+ [1C[2m────────  ────────
+[0m [2CGrape [4CPurple
+ 
+ [1CThese fruits make[1Ca[1Ccolorful[1Csnack.
+ 
+[2m  Worked for 6s • 9:47 PM                                                                                     
+[0m 
+ 
+[1m›[0m [2mAsk Codex to do anything
+[0m 
+ [1C[38;5;223mGPT-6.1-Sol xhigh[0m ·[1C[38;5;216mContext 97% left[0m · [38;5;216m34.2K in[0m · [38;5;216m89 out[0m · [38;5;175m5h 100% left[0m · [38;5;175mweekly 0% left
+[0m  [1m?[0m for shortcuts[67C⚠[1C[38;5;179m4 warnings[1C[0m·[1C[1mf2[1C[0mto[1Cview[3A[107D[?2004h[?1004h[?1003h

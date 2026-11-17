@@ -46,6 +46,8 @@
  *             prints `CHOSE: ask color=…; size=…` (a note as `size=None of the above (note: …)`).
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
  *   TABLE     answers with a five-column table wider than a phone (Korean cells).
+ *   FRUITS    (Codex) answers with a three-row table and draws it as codex-cli 0.166.0 does — `━` under the
+ *             header, `────────  ────────` between rows (fb-1117 1d15e1c2: two of those read as an input box).
  *   SUGGEST <text>  (Claude) answers, then suggests <text> in the empty box; bare `SUGGEST` answers with no suggestion.
  *   LINK <id> answers with a session link to <id>'s first 8 characters, in backticks and in a sentence (b2020233).
  *   /name …   (Claude) a skill: records the 2.1.318 echo (no <command-args> when sent bare) and its body, then answers.
@@ -348,6 +350,7 @@ function answerTurn(text, answer = null) {
         const said = answer ?? `Echo: ${text}\n\n| key | value |\n| --- | --- |\n| length | ${text.length} |`
         recordAnswer(said)
         say(`⏺ ${said.split('\n')[0]}`)
+        if (text === 'FRUITS') for (const line of codexTableRows(said)) say(line)
         suggestion = nextSuggestion
         nextSuggestion = null
         draw()
@@ -564,6 +567,7 @@ function submit(text) {
         recordPlan()
         answerTurn(text, 'Planned three steps.')
     } else if (text === 'TABLE') answerTurn(text, WIDE_TABLE)
+    else if (text === 'FRUITS' && AGENT === 'codex') answerTurn(text, FRUIT_TABLE)
     else if (/^SUGGEST(\s|$)/.test(text) && AGENT !== 'codex') {
         nextSuggestion = text.slice('SUGGEST'.length).trim() || null
         answerTurn(text, nextSuggestion ? 'Here is a next step.' : 'Nothing to suggest.')
@@ -583,6 +587,26 @@ const WIDE_TABLE = [
     '| lightsoft | 11/6 월차 1 (입사 6개월) | 기본부여 5 → 6 | 운영 DB 조회만 했고 실제로 넣지는 않음 | 없음 |',
     '| 박원호 | 바뀐 입사일 2016-02-01 기준으로 다시 계산 | 없음 — 올해 숫자는 기초잔여로 대신함 | 이력에만 쌓임 | 다음 달 확인 |'
 ].join('\n')
+
+/** the table of the recorded codex-cli 0.166.0 turn (fixtures/prompts/codex-0.166-table-idle.ans) */
+const FRUIT_TABLE = ['Here are three fruits.', '', '| Fruit | Color |', '| --- | --- |', '| Apple | Red |', '| Banana | Yellow |', '| Grape | Purple |'].join('\n')
+
+/**
+ * A markdown table as codex-cli 0.166.0 draws it (recorded): cells padded one space inside columns two
+ * wider than their longest cell, a `━` rule under the header and a dim `─` rule between rows, two apart.
+ */
+function codexTableRows(markdown) {
+    const rows = markdown
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => /^\|.*\|$/.test(line) && !/^\|\s*-/.test(line))
+        .map((line) => line.slice(1, -1).split('|').map((cell) => cell.trim()))
+    if (rows.length < 2) return []
+    const widths = rows[0].map((_, i) => Math.max(...rows.map((row) => (row[i] ?? '').length)) + 2)
+    const rule = (ch) => `  \x1b[2m${widths.map((width) => ch.repeat(width)).join('  ')}\x1b[22m`
+    const cells = (row) => `  ${row.map((cell, i) => ` ${cell}`.padEnd(widths[i])).join('  ')}`
+    return [cells(rows[0]), rule('━'), ...rows.slice(1).flatMap((row, i) => (i === 0 ? [cells(row)] : [rule('─'), cells(row)]))]
+}
 
 let escape = ''
 let escapeTimer = null
