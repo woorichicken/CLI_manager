@@ -19,31 +19,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
-### Autocron 「Save & run now」 — 등록할 때 한 번 돌려 보기
-- Discovered: 2026-11-16 루프 활용 기획 세션. 사람: 「등록할때, 한번 실행하는걸로 그래서 예약 있더라도 지금 실행같은것도 있어야할듯」. `/content-scout` 매일 06:00 작업(`03cad8f5`)을 만들면서.
-- Evidence: 등록 폼(`AutocronPanel.tsx` `autocron-form`)은 일정 미리보기(`autocron-schedule-preview`)만 보이고 저장(`autocron-save`)으로 끝난다. 실제로 세션이 뜨고 프롬프트가 들어가는지는 상세 화면의 Run now(`autocron-run-now` → `POST /v1/crons/:cron/run`)를 따로 눌러야 안다. 예약 작업에 Run now 는 이미 있다 — 빠진 건 등록 흐름 안의 첫 실행이다.
-- Decided 2026-11-16(사람): 착수. 등록할 때 한 번 실행한다.
-- Spec:
-  - 무엇: 새 작업 폼의 저장 버튼 옆에 **Save & run now**(기본 버튼, 보라)를 두고 Save 는 회색 보조로. 편집 폼은 지금처럼 Save 만(편집은 「다시 돌리기」가 아니다). Save & run now = 저장 → 성공하면 같은 작업으로 Run now(trigger `manual`) → 상세 화면으로 가서 실행 줄이 「starting…」 → `started`/`failed` 로 바뀌는 걸 보여 준다. 저장이 실패하면 실행하지 않는다(폼 오류 그대로).
-  - 책갈피·다음 실행은 Run now 와 같다 — 첫 실행은 예약을 당기지도 밀지도 않는다. 꺼 둔 채(`enabled: false`) 저장해도 실행은 한 번 한다(작업이 도는지 보려는 것). API 가 만든 작업 규칙(API 꺼짐 → failed)은 그대로.
-  - API: `POST /v1/crons` 에 `runNow?: boolean` — true 면 201 응답이 `{ cron, run }`(Run now 와 같게 세션이 뜨고 프롬프트가 들어갈 때까지 기다림). 잘못된 값이면 `400` 이 그 필드를 짚는다. clim 은 `clim cron new … --run-now`.
-  - 끝 조건: 실행 기록에 trigger `manual` 한 줄 · 그 세션의 Open session 이 동작 · 실패면 note 와 알림 · 일정 시각에 다시 정상 실행(책갈피 그대로).
-  - 시험: 유닛(t132 옆) — 만들기+runNow 가 실행 하나·`nextRunAt` 변화 없음, 저장 실패면 실행 0, `runNow` 타입 오류 400. E2E(t128 옆) — `agent-mock` 템플릿으로 폼 Save & run now → 실행 줄 `started`·세션이 프롬프트에 답함, 편집 폼에는 버튼이 없음. 옛 코드에서 실패 먼저.
-- Owner: 루프 활용 기획 세션(2026-11-16)
-
-### Loop 창에서 대화 — Autocron 이 연 세션과 Loop 창 안에서 말하기
-- Discovered: 2026-11-16 루프 활용 기획 세션. 사람: 「대화를 Loop 화면에서도 가능하게 하고 싶음」.
-- Evidence: Autocron 탭의 실행 줄 Open session(`autocron-open-session` → `CronService.openSession`)은 메인 창으로 옮겨 그 세션을 보여 준다 — Loop 창 안에서는 그 세션 글을 읽거나 보낼 곳이 없다. Loop 창은 메인 창과 같은 preload(`src/main/index.ts` `createLoopWindow`)라 `window.api` 의 Chat 호출이 그대로 있고, `conversation-changed` 는 모든 창에 간다. `ChatView` 는 `ChatTransport` 를 props 로 받는다(폰이 같은 부품을 씀) — Electron 쪽 `utils/electronChatTransport.ts`. attach 실행은 이미 Loops 탭 터미널에서 바로 칠 수 있다.
-- Decided 2026-11-16(사람): 착수.
-- Spec:
-  - 무엇: Autocron 상세 화면 위에 `Details · Chat` 탭. Chat = 고른 실행의 세션을 데스크톱과 같은 `ChatView` 로(읽기·보내기·질문 카드·Stop·대기열 — 메인 창 Chat 과 같은 기능, 같은 transport). 기본으로 고르는 실행 = 세션이 아직 열려 있는 가장 최근 `started` 실행. 실행 줄마다 **Talk here** 를 두면 그 실행을 고르고 Chat 탭으로 간다(Open session 은 그대로 — 메인 창으로).
-  - 터미널은 Loop 창에 붙이지 않는다 — 터미널 뷰는 터미널당 하나만 붙는다(`TerminalManager.attachView`), 메인 창 것을 빼앗는다. Chat 머리에 「Open in main window」(= Open session) 만.
-  - 고를 수 없는 경우 문구: 세션이 닫힘 → 「This session was closed」 · Chat 을 못 쓰는 세션(에이전트 아님·대화 기록 못 찾음) → 「Chat isn't available for this session — Open in main window」 · attach 실행 → Loops 탭으로 가는 버튼(그 루프 터미널에서 친다).
-  - 보낸 글은 사람 입력이다 — Control API 경로를 타되 AI 표시는 붙이지 않는다(메인 창 Chat 과 같음). 창이 닫히면 구독을 푼다.
-  - 끝 조건: Loop 창에서 보낸 글이 그 세션 터미널에 들어가 답이 Loop 창·메인 창 Chat 둘 다에 뜸 · 질문 카드 답 · 메인 창 터미널 크기·스크롤백 변화 없음(PTY resize 0) · 1200×800 기본 창에서 목록·상세·Chat 이 넘치지 않음.
-  - 시험: E2E(t128 옆) — chat-mock 템플릿 작업을 Run now → Talk here → Chat 탭에 첫 답 · 보내기 → 터미널 `ANSWER[n]`·메인 창 Chat 에도 같은 턴 · 세션 닫기 → 「This session was closed」 · attach 실행은 Loops 탭 버튼 · `resized` 0. `T1xx_SHOTS` 로 Loop 창 캡처. 옛 코드에서 실패 먼저.
-- Owner: 루프 활용 기획 세션(2026-11-16)
-
 ### Autocron attach 를 일반 세션에도 — 쓰던 세션에 정해진 시각에 프롬프트 넣기
 - Discovered: 2026-11-16 루프 활용 기획 세션. 사람: 「현재, 내가 사용하는 세션에도 cron 혹은 schedule 로 예약이 가능한지」 → 「일반 세션 사용은 백로그로」.
 - Evidence: attach 모드는 Loop Dashboard 프로젝트(`loopProjectId`)의 터미널만 고른다 — 폼 `autocron-loop` 선택지가 `loopProjects`, 실행은 `ControlApiService.typeIntoLoop`. 사이드바 세션(총괄·팀장 등)은 고를 수 없다. 지금 길은 세션 안의 Claude Code `/loop`(간격 반복, 정시 아님, 세션이 살아 있어야 함)뿐.
@@ -51,25 +26,18 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 사람이 착수를 말할 때. 그때 정할 것 — ① 대상 고르기: 폼에서 세션 고르기 vs 세션 우클릭 「Schedule a prompt…」 ② 세션이 일하는 중이면: 실패(지금 attach 규칙) vs 대기열(Chat 의 대기열처럼) ③ 세션이 닫히면 작업을 끄고 문제로 표시할지 ④ 저장은 세션 id(`targetSessionId`) — 재시작 뒤에도 같은 id 라 그대로 이어짐.
 - Owner: 없음
 
+### `AutocronPanel.tsx` 512줄 — 컴포넌트 300줄 규칙 넘음
+- Discovered: 2026-11-17 Autocron 「Save & run now」·Loop 창 대화 구현(PR — `feat/autocron-run-once-chat-1116`) 뒤. 원래 410줄 → 490줄(기능) → 512줄(codex 검수 고침: 닫힌 세션 건너뛰기·`useOpenSessionIds`).
+- Evidence: `wc -l src/renderer/src/components/LoopDashboard/AutocronPanel.tsx` = 512. 목록·폼·상세(Details·Chat 탭·실행 줄)가 한 파일. Chat 은 이미 `AutocronChat.tsx` 로 나뉘어 있다.
+- Why deferred: 상세 화면 분리는 모듈화라 사람 컨펌 대상(전역 규칙) — 구현 세션·기획 세션 둘 다 나누지 않았다. 동작 문제는 없다(T148·T128·T133 통과).
+- Trigger: 다음에 Autocron 화면을 고칠 때. 그때 상세(`AutocronDetail.tsx` — Details·Chat 탭·실행 줄)와 폼(`AutocronForm.tsx`)을 떼는 안을 먼저 컨펌받는다.
+- Owner: 없음
+
 ### 의존성 보안 — Electron 39 → 42 등 `pnpm audit --prod` high 18건 · dependabot PR 정리
 - Discovered: 2026-11-14 v1.34.0 릴리즈 뒤 열린 의존성 PR 을 보다가.
 - Evidence: `pnpm audit --prod` → critical 0 · high 18 · moderate 9 · low 5. 고치려면 ① `electron` `^39.8.10` → 41.10.4+/42.11.16+(메이저, high·moderate·low) — 그 안의 `extract-zip@2.0.1` high 는 패치 없음 ② `electron-updater@6.8.9` 의 `js-yaml@4.1.1` → 4.3.2+ ③ `electron-store@11.0.2 > conf > ajv@8.17.1 > fast-uri@3.1.0` → fast-uri 3.1.9+·ajv 8.18.0+ ④ 직접 의존 `uuid@13.0.0` → 13.0.1+. 열린 dependabot PR 9개(#2~#5·#7~#10 은 08-18, #115 는 11-10) 중 이 넷을 고치는 것은 없다. `gh api repos/woorichicken/CLI_manager/dependabot/alerts` → 403 「Dependabot alerts are disabled」 — 버전 올리기 PR 은 오지만 보안 알림·보안 PR 은 꺼져 있다.
 - Why deferred: 사람 결정 2026-11-14 「일단 백로그로」. Electron 메이저는 node-pty ABI·xterm·`install-app-deps`·공증 빌드까지 다시 봐야 하는 작업이다.
 - Trigger: 다음 릴리즈 준비 때, 또는 audit 에 critical 이 생길 때. 순서 추천: ②③④(패치 버전, 작음) → ① Electron 메이저를 따로 한 갈래. 08-18 PR 8개는 충돌 상태라 닫고 dependabot 이 다시 열게 두고, #115 는 CI 다시 돌려 초록이면 머지. 저장소 설정 Security › Dependabot alerts 켜기는 사람 몫.
-- Owner: 없음
-
-### 폰 입력칸에 터미널의 추천 답변(흐린 글) 보여 주기 — 제보 ba2ae0cb
-- Discovered: 2026-11-14 fb-1114b 끝 보고. 제보 ba2ae0cb-e427-4b5d-afca-00e4e20c4753(폰): Claude 입력 상자에 흐리게 뜨는 다음 프롬프트 추천을 폰 Chat 입력칸에도 보여 달라.
-- Evidence: 화면 쪽 판정은 이미 있다 — 추천 문구 분리(T19 「흐린 추천 문구 분리」·T88 반전 커서 뒤 회색 = 추천). 폰 Chat 입력칸(`ChatView`)은 그 값을 받지 않는다.
-- Why deferred: 사람 결정 2026-11-14 「급한 건 아니어서 릴리즈 먼저」.
-- Trigger: 다음 CLImanger 피드백 회차.
-- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` P-1 승인 · P-3 3차): 착수. 사람: 「단축키도 있기 때문에 이 방향(입력칸 안 흐린 글)이 좋아 보임」 — 입력칸 위 칩(P-2)은 뺐다.
-- Spec:
-  - 무엇: main 이 이미 읽는 입력 상자의 흐린 추천(`TerminalMirror` 입력 상자 읽기의 `suggestion`, Control API 가 `suggestion` 으로 내는 값 — `ControlApiService.ts` `box && !box.typed && box.suggestion`)을 Chat 스냅샷에 실어 `Composer.tsx` 입력칸이 **비었을 때만** 자리표시 글 대신 흐리게 보인다. 글자를 치기 시작하면 사라진다.
-  - 받기: Mac 은 입력칸이 비고 추천이 보일 때 `Tab` 이 그 글을 채운다(보내지 않음 — 사람이 Enter). 폰은 입력칸 오른쪽 `Use` 알약을 눌러 채운다. 같은 `ChatView` 라 두 곳이 한 번에 들어간다. Tab 은 추천이 없으면 지금 동작 그대로.
-  - 범위: Claude 만(Codex 는 화면 규칙을 확인한 뒤). 일하는 중·질문 카드가 떠 있을 때는 안 보인다. 추천 글은 화면에 보이는 그대로라 가리기(`maskSecrets`)는 하지 않는다 — 터미널에 이미 보이는 글이다.
-  - 끝 조건: 추천이 바뀌면 3초 안에 따라옴 · 추천이 사라지면(사람이 터미널에서 침·새 턴) 흐린 글도 사라짐 · 채운 뒤 보내면 에이전트가 받은 글 = 추천 글 · 폰 390 에서 긴 추천은 한 줄 말줄임, Use 가 보내기 버튼과 안 겹침.
-  - 시험: 유닛 — 스냅샷에 실리는 조건(빈 상자·typed 있음·clipped·일하는 중) 표. E2E — chat-mock 이 입력 상자에 흐린 추천을 그리는 옵션을 더해 Mac Chat 흐린 글 → Tab → 입력칸 값 = 추천 → Enter → 모의 `ANSWER` · 글 치면 사라짐 · 폰(CDP 390) Use 로 같은 흐름. 옛 코드에서 실패 먼저.
 - Owner: 없음
 
 ### Related 버튼 숫자와 창 안 「All N」이 다름
@@ -120,6 +88,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   - 끝 조건: 925KB 보고서가 A·B 둘 다에서 그려짐 · 문서 안 스크립트가 앱 IPC·네트워크에 닿지 않음(폰 T102 탐침과 같은 판정을 Mac 에서) · B 칸 옆 세션에 바로 입력 가능 · Esc/닫기 뒤 포커스가 Chat 으로.
   - 시험: E2E — chat-mock 답에 `.html` 경로 → 클릭 → 창 iframe 이 그려짐(`shell.openPath` 0번, main 에서 가로챔) · Source 전환 · `:줄` 은 Source · Side by side → 분할 칸 2개(세션 + 문서) · 4칸이면 버튼 꺼짐 · 탐침 페이지의 fetch·beacon·폼이 main `webRequest` 에 안 잡힘 · Browser 버튼은 지금처럼 `shell.openPath`. 1280 캡처.
 - Update 2026-11-16: A·B 구현(`feat/html-preview-1116` — 결정 [0013](decisions/0013-mac-documents-on-a-custom-scheme.md), T146 유닛·T147 앱). 남은 것: (b) 진짜 브라우저 탭, 문서 칸 저장 여부(써 보고 정함), Source 의 500KB 한도(큰 문서는 「File too large」), 문서 칸 끌어 옮기기·⌘W 로 닫기는 없음.
+- Decided 2026-11-17(사람, PR #152 머지 승인 때): 문서 칸은 재시작 뒤 **남기지 않는다** — 기본값(메모리만, `useDocPanes`) 그대로. 재시작 뒤 다시 여는 일이 불편하다는 말이 나오면 다시 정한다.
 - Owner: 없음
 
 ### Chat 「새 세션으로 보내기」 전용 명령(`/split`)
