@@ -307,7 +307,7 @@ test('T117 Mac: threads open beside the parent, hide inherited turns, and send o
     await childComposer.fill('Stop this thread turn')
     await childComposer.press('Enter')
     await expect(childChat.getByTestId('chat-working')).toBeVisible({ timeout: 15_000 })
-    await expect.soft(chip).toHaveAttribute('data-status', 'working', { timeout: 5_000 })
+    await expect.soft(chip).toHaveAttribute('data-status', 'working', { timeout: 3_000 })
     await shot(page, 't117-A1-chip-working')
     await childComposer.press('Escape')
     await expect(panel).toBeVisible()
