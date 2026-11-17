@@ -20,6 +20,7 @@ import { PhoneDevices } from './PhoneDevices'
 import { dockHostFiles, dockLocation, PhoneDock } from './phoneDock'
 import { PhonePush } from './PhonePush'
 import { PhoneServer } from './PhoneServer'
+import { phoneTemplateLogo } from './templateLogos'
 import { TailscaleStatus } from './tailscaleStatus'
 import { phoneQueueHooks } from './phoneQueue'
 import { AgentSwapReader, appUsageForPhone, runAgentSwapInLoginShell, type AgentSwapRun } from './phoneUsage'
@@ -136,7 +137,10 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         // The Mac row's icon slot (SessionItem roleIcon): crown, else the template's logo, else the AI robot.
         const masters = new Set(deps.masterSessionIds?.() ?? [])
         const logoOf = new Map(
-            ((deps.store.get('customTemplates') as TerminalTemplate[] | undefined) ?? []).flatMap((template) => (template.logo ? [[template.id, template.logo] as const] : []))
+            ((deps.store.get('customTemplates') as TerminalTemplate[] | undefined) ?? []).flatMap((template) => {
+                const logo = phoneTemplateLogo(template.logo)
+                return logo ? [[template.id, logo] as const] : []
+            })
         )
         const templateLogos: Record<string, string> = {}
         const sessions = ordered.map(({ workspace, session }): PhoneSession => {

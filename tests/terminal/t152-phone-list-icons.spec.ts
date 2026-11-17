@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import zlib from 'zlib'
 import { closeApp, launchAppWithWorkspaces, type LaunchResult, resizeMainWindow } from './helpers'
+import { MAX_PHONE_LOGO_CHARS, phoneTemplateLogo } from '../../src/main/phone/templateLogos'
 
 /**
  * T152 — fb-1117 2nd round, the phone's session drawer (CDP touch 390×844, scale 3, let in as the Mac's owner).
@@ -117,6 +118,29 @@ const decoded = (page: Page, selector: string): Promise<{ w: number; h: number; 
         const px = ctx.getImageData(Math.floor(img.naturalWidth / 2), Math.floor(img.naturalHeight / 2), 1, 1).data
         return { w: img.naturalWidth, h: img.naturalHeight, rgba: [...px] }
     }, selector)
+
+test.describe('T152 units', () => {
+    test('phoneTemplateLogo: only a base64 PNG data URL up to the cap goes to the phone', () => {
+        const good = redPngDataUrl()
+        expect(phoneTemplateLogo(good)).toBe(good)
+        const odd: unknown[] = [
+            undefined,
+            null,
+            42,
+            '',
+            'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+            'data:image/png,not-base64',
+            'javascript:alert(1)',
+            'https://example.com/logo.png',
+            `${good}" onerror="x`,
+            `${good}\nmore`,
+            'data:image/png;base64,' + 'A'.repeat(MAX_PHONE_LOGO_CHARS)
+        ]
+        for (const value of odd) expect(phoneTemplateLogo(value), String(value).slice(0, 40)).toBeUndefined()
+        const atCap = 'data:image/png;base64,' + 'A'.repeat(MAX_PHONE_LOGO_CHARS - 'data:image/png;base64,'.length)
+        expect(phoneTemplateLogo(atCap)).toBe(atCap)
+    })
+})
 
 test('T152 phone drawer: the app logo in the head, and the Mac row icons on each session row (df190888 · 59886f9c)', async () => {
     test.setTimeout(180_000)
