@@ -195,6 +195,12 @@ test.describe('T148 autocron run once and chat', () => {
         await waitForBufferText(main, CLAUDE_SESSION, 'PANEL: /config', 15_000)
         await expect(main.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal', { timeout: 10_000 })
         await expect(main.getByTestId('chat-peek-bar')).toContainText('/config')
+        // the picker's arrows and Enter go to that terminal without a click
+        await expect.poll(() => main.evaluate((id) => {
+            const el = document.activeElement
+            return !!el && el.classList.contains('xterm-helper-textarea')
+                && el.closest('[data-session-id]')?.getAttribute('data-session-id') === id
+        }, CLAUDE_SESSION), { timeout: 5_000 }).toBe(true)
 
         // a closed session (pinned with «Talk here» it still says so) and a plain shell
         await loop.getByTestId('autocron-view-details').click()

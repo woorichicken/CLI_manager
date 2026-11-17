@@ -66,6 +66,24 @@ const UPDATE_CHECK_FOCUS_THROTTLE_MS = 30 * 60 * 1000
 
 /** How long a session link problem (closed or ambiguous session) stays on screen. */
 const SESSION_LINK_NOTICE_MS = 4000
+/** How long to keep trying to focus a terminal that is still being shown. */
+const TERMINAL_FOCUS_RETRY_MS = 50
+const TERMINAL_FOCUS_TRIES = 20
+
+/**
+ * Put the keys in a session's terminal input — after a switch to its terminal, the picker's arrows and
+ * Enter must reach it without a click (what SessionChatSlot does for the main window's own Chat). The
+ * session may still be on its way to the screen, so it retries for about a second.
+ */
+function focusTerminalInput(sessionId: string, triesLeft = TERMINAL_FOCUS_TRIES): void {
+    window.setTimeout(() => {
+        const input = document.querySelector<HTMLTextAreaElement>(
+            `[data-session-id="${CSS.escape(sessionId)}"] .xterm-helper-textarea`
+        )
+        input?.focus()
+        if (document.activeElement !== input && triesLeft > 1) focusTerminalInput(sessionId, triesLeft - 1)
+    }, TERMINAL_FOCUS_RETRY_MS)
+}
 
 function App() {
     const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -356,6 +374,7 @@ function App() {
                         if (event.terminal) {
                             setSessionViewMode(event.sessionId, 'terminal')
                             if (event.terminal.command) setSessionPeek(event.sessionId, event.terminal.command)
+                            focusTerminalInput(event.sessionId)
                         }
                         apiFocusSessionIds.current.add(event.sessionId)
                         setPendingFocusSessionId(event.sessionId)
