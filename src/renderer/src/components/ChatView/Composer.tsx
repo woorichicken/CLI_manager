@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import { AlertTriangle, ArrowUp, FileText, Loader2, Plus, Square, X } from 'lucide-react'
 import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
 import { InputBusyNote } from './InputBusyNote'
+import { ComposerSuggestion } from './ComposerSuggestion'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH, quickReplyColorOf } from '../../../../shared/conversation'
 import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands } from './chatLib'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
@@ -96,6 +97,8 @@ export interface ComposerProps {
     onInterrupt(): Promise<string | null>
     /** the row under the box (model, context, plan) */
     status?: ReactNode
+    /** Claude's dim next-prompt suggestion (ConversationSnapshot.suggestion): shown while the box is empty */
+    suggestion?: string | null
 }
 
 /**
@@ -108,7 +111,7 @@ export interface ComposerProps {
  * Stop (and Esc) while the agent works, one-tap replies, the length limit, and the card's numbers.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-    { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, autoFocus = true, placeholder: messagePlaceholder, onSend, onInterrupt, status },
+    { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, autoFocus = true, placeholder: messagePlaceholder, onSend, onInterrupt, status, suggestion = null },
     ref
 ) {
     const [text, setText] = useState(() => readDraft(sessionId))
@@ -347,6 +350,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const over = message.length - MAX_CHAT_TEXT_LENGTH
     const empty = !message.trim()
     const showStop = working && text.trim() === '' && attachments.length === 0
+    // only in an empty box, and not while the agent works, a card asks, or the mic or a menu has the box
+    const shownSuggestion =
+        suggestion && text === '' && attachments.length === 0 && !working && promptOptions === null && !pendingPick && !dictation.active && !menuOpen ? suggestion : null
+    /** Fills the box with the suggestion — it is not sent: Enter (or Send) still is the person's. */
+    const takeSuggestion = (): void => {
+        if (!shownSuggestion) return
+        // a phone: leave the keyboard down, the Send button is right there
+        if (touch) setDraft(shownSuggestion)
+        else setDraft(shownSuggestion, shownSuggestion.length)
+    }
 
     /**
      * The box empties at once, so the next message can be typed while this one is typed into the
@@ -439,6 +452,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }
         }
         const modifier = event.metaKey || event.ctrlKey
+        // Tab takes the suggestion; without one it moves focus as it always did
+        if (event.key === 'Tab' && !event.shiftKey && !modifier && !event.altKey && shownSuggestion) {
+            event.preventDefault()
+            takeSuggestion()
+            return
+        }
         // a phone keyboard's Return has no Shift: on touch it breaks the line, the Send button sends
         // a phone may choose Return to send (its own setting — 69340cc2)
         const enterSends = touch ? preferences.returnSendsOnTouch === true : preferences.enterSends !== false
@@ -671,7 +690,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         onScroll={(event) => {
                             if (backdrop.current) backdrop.current.scrollTop = event.currentTarget.scrollTop
                         }}
-                        placeholder={placeholder}
+                        placeholder={shownSuggestion ? '' : placeholder}
                         title={touch ? (preferences.returnSendsOnTouch === true ? 'Return sends' : 'Return starts a new line · the arrow sends') : preferences.enterSends === false ? '⌘Enter sends · Enter starts a new line' : 'Enter sends · Shift+Enter starts a new line'}
                         onChange={(event) => {
                             setDraft(event.target.value)
@@ -684,6 +703,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         readOnly={dictation.active}
                         data-dictating={dictation.active ? 'true' : undefined}
                     />
+                    {shownSuggestion && <ComposerSuggestion text={shownSuggestion} touch={touch} onUse={takeSuggestion} />}
                     </div>
                     {showStop ? (
                         <button
