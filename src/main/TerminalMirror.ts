@@ -452,11 +452,12 @@ export class TerminalMirror {
 
     /**
      * Codex's input line (fb-1117 1d15e1c2). Codex draws no box: its composer is the lowest row that
-     * starts with a bright `›` at the left edge, plus the rows it wrapped onto (indented) down to a
-     * blank row. Its placeholder ("Ask Codex to do anything") is dim, and so is the `›` of a past
-     * prompt in the transcript, so only bright cells count as typed. Reading Codex by Claude's box
-     * rules took a table's `────────  ────────` separators for the box and the table row between
-     * them for typed text — every Chat send was refused (codex-cli 0.166.0, recorded).
+     * starts with a bright `›` at the left edge (a past prompt's `›` in the transcript is dim). Only
+     * bright cells count as typed — its placeholder ("Ask Codex to do anything") is dim. Only that row
+     * is read: a draft that wraps has text there too, and the rows under it are Codex's hints and
+     * status (`? for shortcuts`), which a reader of wrapped rows would take for typed text. Reading
+     * Codex by Claude's box rules took a table's `────────  ────────` separators for the box and the
+     * table row between them for typed text — every Chat send was refused (codex-cli 0.166.0, recorded).
      * Null when no composer is on screen.
      */
     codexInput(id: string): InputBox | null {
@@ -464,33 +465,22 @@ export class TerminalMirror {
         if (!mirror) return null
         const buffer = mirror.term.buffer.active
         const cell = buffer.getNullCell()
-        const lineAt = (row: number) => buffer.getLine(buffer.viewportY + row)
-        let start = -1
-        for (let row = mirror.term.rows - 1; row >= 0 && start < 0; row--) {
-            const line = lineAt(row)
+        for (let row = mirror.term.rows - 1; row >= 0; row--) {
+            const line = buffer.getLine(buffer.viewportY + row)
             if (!line?.translateToString(true).startsWith(CODEX_PROMPT_GLYPH)) continue
             line.getCell(0, cell)
-            if (!cell.isDim()) start = row
-        }
-        if (start < 0) return null
-
-        const typed: string[] = []
-        for (let row = start; row < mirror.term.rows; row++) {
-            const line = lineAt(row)
-            const text = line?.translateToString(true) ?? ''
-            // The composer ends at a blank row (the footer sits under it); a wrapped row is indented.
-            if (!line || (row > start && (text.trim() === '' || !text.startsWith('  ')))) break
-            let rowText = ''
-            for (let col = row === start ? 1 : 0; col < line.length; col++) {
+            if (cell.isDim()) continue
+            let typed = ''
+            for (let col = 1; col < line.length; col++) {
                 line.getCell(col, cell)
                 if (cell.getWidth() === 0) continue
                 const chars = cell.getChars()
-                rowText += chars.trim() === '' || cell.isDim() ? ' ' : chars
+                typed += chars.trim() === '' || cell.isDim() ? ' ' : chars
             }
-            typed.push(collapseSpaces(rowText))
+            const text = collapseSpaces(typed)
+            return { typed: text, typedRows: text ? 1 : 0, suggestion: '' }
         }
-        const typedRows = typed.filter(Boolean)
-        return { typed: typedRows.join(' '), typedRows: typedRows.length, suggestion: '' }
+        return null
     }
 
     /** The screen currently shows an agent turn in progress. */

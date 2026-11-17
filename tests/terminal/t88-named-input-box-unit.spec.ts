@@ -211,24 +211,25 @@ test.describe('T88 Codex has no box — its `›` line is the input (fb-1117 1d1
         const mirror = await codexMirror(codexScreen('codex-0.166-table-idle.ans'))
         // What 1.35.1 read: the table row between two separators, as typed text.
         expect(mirror.inputBox('s1')?.typed).toBe('Banana Yellow')
-        expect(mirror.codexInput('s1')).toEqual({ typed: '', typedRows: 0, suggestion: '' })
         const { service, sent } = codexConversations(mirror)
         expect(await service.send('s1', '공모전 자체에 대해서 조금 더 자세하게 적어줘')).toEqual({ status: 'sent' })
         expect(sent).toEqual(['공모전 자체에 대해서 조금 더 자세하게 적어줘'])
+        expect(mirror.codexInput('s1')).toEqual({ typed: '', typedRows: 0, suggestion: '' })
     })
 
     test('a real unsent draft in Codex\'s line is still refused, with nothing typed', async () => {
         const mirror = await codexMirror(codexScreen('codex-0.166-typed.ans'))
-        expect(mirror.codexInput('s1')).toEqual({ typed: 'please check the build logs', typedRows: 1, suggestion: '' })
         const { service, sent } = codexConversations(mirror)
         const result = await service.send('s1', 'hello')
+        // 1.35.1 sent it: its box reader found no rules on this screen and so no text.
         expect(result).toMatchObject({ status: 'rejected', reason: 'input_busy' })
         // Clear and send is Claude's (Ctrl+K · Ctrl+U were measured there only).
         expect(result).not.toHaveProperty('draft')
         expect(sent).toEqual([])
+        expect(mirror.codexInput('s1')).toEqual({ typed: 'please check the build logs', typedRows: 1, suggestion: '' })
     })
 
-    test('a wrapped draft reads whole; a past prompt above (dim `›`) is not the line', async () => {
+    test('only the bright `›` row is the line: not a past prompt (dim `›`), not the hints under it', async () => {
         const DIM_GLYPH = '\x1b[2m›\x1b[22m'
         const rows = [
             `${DIM_GLYPH} an earlier prompt, already sent`,
@@ -244,10 +245,18 @@ test.describe('T88 Codex has no box — its `›` line is the input (fb-1117 1d1
             '',
             '  GPT-6.1-Sol xhigh · Context 97% left'
         ]
-        const mirror = await codexMirror(rows.join('\r\n'), COLS, ROWS)
-        expect(mirror.codexInput('s1')).toEqual({ typed: 'first row of a long draft and its second row', typedRows: 2, suggestion: '' })
-        const empty = await codexMirror([`${DIM_GLYPH} an earlier prompt, already sent`, '', '\x1b[1m›\x1b[22m \x1b[2mAsk Codex to do anything\x1b[22m'].join('\r\n'), COLS, ROWS)
-        expect(empty.codexInput('s1')?.typed).toBe('')
+        const draft = await codexMirror(rows.join('\r\n'), COLS, ROWS)
+        expect(draft.codexInput('s1')).toEqual({ typed: 'first row of a long draft', typedRows: 1, suggestion: '' })
+        // A placeholder, with the hint row right under it (chat-mock draws Codex so): nothing typed.
+        const empty = await codexMirror(
+            [`${DIM_GLYPH} an earlier prompt, already sent`, '', '\x1b[1m›\x1b[22m \x1b[2mAsk Codex to do anything\x1b[22m', '  ? for shortcuts'].join('\r\n'),
+            COLS,
+            ROWS
+        )
+        expect(empty.codexInput('s1')).toEqual({ typed: '', typedRows: 0, suggestion: '' })
+        // No composer on screen (only a past prompt): no line to read.
+        const none = await codexMirror(`${DIM_GLYPH} an earlier prompt, already sent`, COLS, ROWS)
+        expect(none.codexInput('s1')).toBeNull()
     })
 })
 
