@@ -2,9 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
 import { CRON_CHANNELS, CronInput, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
-import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatForkRequest, ChatForkResult, ChatThread, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
+import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatForkRequest, ChatForkResult, ChatThread, ChatThreadEntry, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
+import type { DocPreviewOpenResult } from '../shared/docPreview'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 // Custom APIs for renderer
@@ -419,12 +420,22 @@ const api = {
         ipcRenderer.on('chat-threads-changed', listener)
         return () => ipcRenderer.removeListener('chat-threads-changed', listener)
     },
+    getAllChatThreads: (quotes = true): Promise<ChatThreadEntry[]> => ipcRenderer.invoke('chat-threads-all', quotes),
+    subscribeAllChatThreads: (): Promise<void> => ipcRenderer.invoke('chat-threads-all-subscribe'),
+    unsubscribeAllChatThreads: (): Promise<void> => ipcRenderer.invoke('chat-threads-all-unsubscribe'),
+    onAllChatThreadsChanged: (callback: () => void) => {
+        const listener = (): void => callback()
+        ipcRenderer.on('chat-threads-all-changed', listener)
+        return () => ipcRenderer.removeListener('chat-threads-all-changed', listener)
+    },
     getChatImage: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-image', sessionId, ref),
     getChatToolOutput: (sessionId: string, ref: string): Promise<string | null> => ipcRenderer.invoke('chat-tool-output', sessionId, ref),
     listChatCommands: (sessionId: string): Promise<ChatCommand[]> => ipcRenderer.invoke('chat-commands', sessionId),
     listChatBackgroundTasks: (sessionId: string): Promise<BackgroundTaskList> => ipcRenderer.invoke('chat-background-tasks', sessionId),
     saveChatAttachment: (name: string, bytes: Uint8Array): Promise<AttachResult> => ipcRenderer.invoke('chat-save-attachment', name, bytes),
     openChatPath: (target: string, sessionId?: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('chat-open-path', target, sessionId),
+    // An HTML report drawn in the app's sandboxed frame (decision 0013): src/main/docPreview.ts
+    openDocPreview: (target: string): Promise<DocPreviewOpenResult> => ipcRenderer.invoke('doc-preview-open', target),
     // Chat dictation (macOS): src/main/Dictation.ts
     dictationStatus: (): Promise<DictationStatus> => ipcRenderer.invoke('dictation-status'),
     startDictation: (context?: DictationStartContext): Promise<DictationStartResult> => ipcRenderer.invoke('dictation-start', context ?? {}),

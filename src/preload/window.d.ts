@@ -4,6 +4,7 @@ import type { AgentConversationList, AgentConversationConnectInput, AgentConvers
 import type { PhoneState } from '../shared/types'
 import type { CronInput, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
 import type { PhoneTestPushResult } from '../shared/phone'
+import type { DocPreviewOpenResult } from '../shared/docPreview'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 declare global {
@@ -283,12 +284,18 @@ declare global {
             subscribeChatThreads: (sessionId: string) => Promise<void>
             unsubscribeChatThreads: (sessionId: string) => Promise<void>
             onChatThreadsChanged: (callback: (change: { sessionId: string }) => void) => () => void
+            /** every parent's threads for the sidebar's Threads list; `false` skips the quotes (badge count) */
+            getAllChatThreads: (quotes?: boolean) => Promise<import('../shared/conversation').ChatThreadEntry[]>
+            subscribeAllChatThreads: () => Promise<void>
+            unsubscribeAllChatThreads: () => Promise<void>
+            onAllChatThreadsChanged: (callback: () => void) => () => void
             getChatImage: (sessionId: string, ref: string) => Promise<string | null>
             getChatToolOutput: (sessionId: string, ref: string) => Promise<string | null>
             listChatCommands: (sessionId: string) => Promise<ChatCommand[]>
             listChatBackgroundTasks: (sessionId: string) => Promise<BackgroundTaskList>
             saveChatAttachment: (name: string, bytes: Uint8Array) => Promise<AttachResult>
             openChatPath: (target: string, sessionId?: string) => Promise<{ success: boolean; error?: string }>
+            openDocPreview: (target: string) => Promise<DocPreviewOpenResult>
             dictationStatus: () => Promise<DictationStatus>
             startDictation: (context?: DictationStartContext) => Promise<DictationStartResult>
             stopDictation: (id: number) => Promise<void>

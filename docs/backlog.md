@@ -51,21 +51,6 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 사람이 착수를 말할 때. 그때 정할 것 — ① 대상 고르기: 폼에서 세션 고르기 vs 세션 우클릭 「Schedule a prompt…」 ② 세션이 일하는 중이면: 실패(지금 attach 규칙) vs 대기열(Chat 의 대기열처럼) ③ 세션이 닫히면 작업을 끄고 문제로 표시할지 ④ 저장은 세션 id(`targetSessionId`) — 재시작 뒤에도 같은 id 라 그대로 이어짐.
 - Owner: 없음
 
-### All sessions 에 「Threads」 보기 — 슬랙처럼 모든 세션의 스레드를 한곳에서
-- Discovered: 2026-11-15 사용자 요청 「List 형태에도 필요할거 같은데 슬랙같은 형태로 모든 세션의 쓰레드를 볼수 있도록」. v1.34.0 의 Reply in thread 를 쓰다가.
-- Evidence: 지금 스레드는 부모 세션 하나씩만 보인다 — 답 아래 칩(`ThreadChip`) → 오른쪽 `ThreadPanel`. IPC `chat-threads(sessionId)` 는 부모 하나의 `ChatThread[]`(childId·name·turnTs/turnIndex·forkedAt·status·lastActivityAt, `src/shared/conversation.ts:317`)만 돌려주고, 1초 감시(`refreshChatThreadSubscriptions`)도 구독한 부모만 돈다. 앱 전체를 보는 곳은 All sessions › Tree(fork 가 부모 밑 자식으로, 총괄·팀장이 연 세션과 섞임)와 사이드바 검색 `fork` 뿐이고, List 에는 스레드 표시가 없다.
-- Why deferred: 새 화면이라 범위(어디에 둘지·무엇을 보일지)를 정해야 한다. 사람이 아직 「만들어」를 말하지 않았다.
-- Trigger: 사람이 착수를 말할 때. 그때 정할 것 — ① 자리: All sessions 도구 줄 List · Tree 옆 세 번째 「Threads」(추천, 머리 줄 버튼 수 그대로) vs List 줄마다 스레드 수 배지 ② 줄 모양(슬랙 Threads 처럼): 부모 세션 이름 · 갈라진 답 인용(`ThreadPanel` 의 평문 첫 문단 3줄/240자 규칙 재사용) · 스레드 이름 · 상태 점(질문 대기 우선) · 마지막 활동 시각, 최근 활동 순 ③ 누르면: 부모 세션 Chat + 그 스레드 칸 열기(기존 `ThreadPanel`) ④ main: 모든 부모를 도는 `chat-threads-all` 하나(관계 저장소에서 anchor 있는 fork 만 — `chatThreadParentIds`), 감시는 보기가 열려 있을 때만 ⑤ 안 읽음 표시는 1차에서 뺄지. 비용 확인: 세션 40개·스레드 20개에서 1초 감시 비용을 T127 유닛처럼 잰다.
-- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` T-1·T-2 3차 승인): 착수. ① 자리 = All sessions 도구 줄 `[List · Tree]` **옆의 따로 된 아이콘**(MessagesSquare, 사람: 「list·tree 는 view 라 옆에 아이콘으로 별개로」) — 보기 탭 세 번째가 아니다 ⑤ 안 읽음 = 1차에서 뺀다(추천을 그대로 받음, 사람이 반대하지 않음).
-- Spec:
-  - 무엇: All sessions 보기에서 💬 아이콘을 켜면 목록이 앱 전체 스레드로 바뀐다. 다시 누르면 마지막 보기(List·Tree)로. 켜 있는 동안 List·Tree 는 흐리게(고른 값은 그대로). 상태는 localStorage(`sidebar-threads-open`)에 남긴다. 아이콘 배지 = 답을 기다리는(`waiting`) 스레드 수, 0이면 없음. New session 버튼은 글자 그대로(머리 줄 버튼 수·보기 전환 x 그대로).
-  - 줄: 상태 점(waiting 노랑 > working 파랑 > idle 빈 원) · 스레드 이름 · 마지막 활동 상대 시각 / `in <부모 세션> · <작업 영역>` / 갈라진 답 인용(평문 첫 문단, `ThreadPanel` 규칙 재사용, 줄에서는 2줄로 자름) / 상태 글(Waiting for you · Working). 순서 = 마지막 활동 최근 순(고정 — 누른다고 흔들리지 않음). 빈 상태 문구 「No threads yet — use Reply in thread on an answer」.
-  - 누르면: 부모 세션으로 가서 Chat 보기 + 그 스레드 칸(`ThreadPanel`)을 연다. 사이드바는 Threads 에 머물고 그 줄이 선택 표시. 칸은 지금처럼 Chat 을 좁혀 옆에 놓인다(`chat.css` `has-thread`, 폭 `clamp(340px, 40%, 520px)`), Chat 폭 760px 아래에서만 덮는다 — 이 동작은 바꾸지 않는다.
-  - main: `chat-threads-all` IPC 하나 — `chatThreadParentIds` 의 모든 부모를 `chatThreadsFor` 로 모아 부모 이름·작업 영역을 붙여 돌려준다. 1초 감시(`pollChatThreadChanges`)는 Threads 목록이 열려 있을 때만 모든 부모로 넓힌다(닫히면 지금처럼 구독한 부모만).
-  - 끝 조건: anchor 있는 fork 만 보인다(옛 fork·손 짝·총괄이 연 세션은 안 보임) · 자식이 닫히면 줄이 바로 빠짐 · 상태·시각이 3초 안에 따라옴 · 1280·390(사이드바 펼친 좁은 창)에서 줄이 안 넘침 · 목록이 닫혀 있으면 추가 비용 0.
-  - 시험: 유닛 — 여러 부모 합치기·정렬·닫힌 자식 제외·부모 이름 변경 반영, 감시 범위(열림/닫힘에 따라 읽는 부모 수)와 세션 40·스레드 20 에서 1틱 비용(T127 방식). E2E — chat-mock 부모 둘에 fork 셋(waiting·working·idle) → 아이콘 배지 1 · 줄 순서·상태 점 DOM · 누르면 부모 Chat 과 `chat-thread-panel` 이 그 자식 · Chat 이 좁아짐(칸과 Chat 박스가 안 겹침) · 다시 누르면 List 로 돌아옴 · 재시작 뒤 열림 유지. `T1xx_SHOTS` 로 1280·390 캡처. 옛 코드에서 실패 먼저.
-- Owner: 없음
-
 ### 의존성 보안 — Electron 39 → 42 등 `pnpm audit --prod` high 18건 · dependabot PR 정리
 - Discovered: 2026-11-14 v1.34.0 릴리즈 뒤 열린 의존성 PR 을 보다가.
 - Evidence: `pnpm audit --prod` → critical 0 · high 18 · moderate 9 · low 5. 고치려면 ① `electron` `^39.8.10` → 41.10.4+/42.11.16+(메이저, high·moderate·low) — 그 안의 `extract-zip@2.0.1` high 는 패치 없음 ② `electron-updater@6.8.9` 의 `js-yaml@4.1.1` → 4.3.2+ ③ `electron-store@11.0.2 > conf > ajv@8.17.1 > fast-uri@3.1.0` → fast-uri 3.1.9+·ajv 8.18.0+ ④ 직접 의존 `uuid@13.0.0` → 13.0.1+. 열린 dependabot PR 9개(#2~#5·#7~#10 은 08-18, #115 는 11-10) 중 이 넷을 고치는 것은 없다. `gh api repos/woorichicken/CLI_manager/dependabot/alerts` → 403 「Dependabot alerts are disabled」 — 버전 올리기 PR 은 오지만 보안 알림·보안 PR 은 꺼져 있다.
@@ -134,6 +119,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
   - B(옆으로): `Side by side` 를 누르면 창이 닫히고 문서가 지금 분할 화면(`showSessions`, 최대 4칸 `MAX_LINKED_SESSIONS`)에 세션처럼 한 칸으로 들어간다. 칸 머리는 세션 칸과 같은 경로 머리 + `Preview/Source` · 브라우저 · 닫기. 칸이 이미 4개면 버튼을 끄고 이유를 툴팁으로. 문서 칸은 저장하지 않는다(재시작 뒤에는 없음) — 저장 여부는 써 보고 정한다.
   - 끝 조건: 925KB 보고서가 A·B 둘 다에서 그려짐 · 문서 안 스크립트가 앱 IPC·네트워크에 닿지 않음(폰 T102 탐침과 같은 판정을 Mac 에서) · B 칸 옆 세션에 바로 입력 가능 · Esc/닫기 뒤 포커스가 Chat 으로.
   - 시험: E2E — chat-mock 답에 `.html` 경로 → 클릭 → 창 iframe 이 그려짐(`shell.openPath` 0번, main 에서 가로챔) · Source 전환 · `:줄` 은 Source · Side by side → 분할 칸 2개(세션 + 문서) · 4칸이면 버튼 꺼짐 · 탐침 페이지의 fetch·beacon·폼이 main `webRequest` 에 안 잡힘 · Browser 버튼은 지금처럼 `shell.openPath`. 1280 캡처.
+- Update 2026-11-16: A·B 구현(`feat/html-preview-1116` — 결정 [0013](decisions/0013-mac-documents-on-a-custom-scheme.md), T146 유닛·T147 앱). 남은 것: (b) 진짜 브라우저 탭, 문서 칸 저장 여부(써 보고 정함), Source 의 500KB 한도(큰 문서는 「File too large」), 문서 칸 끌어 옮기기·⌘W 로 닫기는 없음.
 - Owner: 없음
 
 ### Chat 「새 세션으로 보내기」 전용 명령(`/split`)
@@ -742,6 +728,30 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 확장자 목록·문자 집합과 URL 오탐 가드를 같이 손봐야 해서 별도 작업.
 - Trigger: 한글 경로·사진 경로를 ⌘-클릭해도 안 열린다는 제보.
 - Fix direction: 「한글 포함 절대경로 + 이미지·문서 확장자」만 더하고, 들여쓴 이어짐은 `terminalPathSelection` 의 잇기 규칙을 같이 쓴다. T14 에 한글·jpg 경우.
+- Owner: 없음
+
+### 앱 안 HTML 보기 — Source 는 500KB 까지만(큰 보고서는 「File too large」)
+- Discovered: 2026-11-16 impl-1116 htmlpreview(`feat/html-preview-1116`).
+- Evidence: 그리기는 64MB(`src/main/docPreview.ts` `DOC_PREVIEW_MAX_BYTES`)지만 Source 보기(`components/HtmlDoc/HtmlDocView.tsx` `HtmlSource`)는 글 미리보기 `read-file-content` 의 기본 한도 500KB(`src/main/index.ts` `maxSize = 500000`)를 그대로 써서, T147 의 925KB 보고서는 미리보기 창·분할 칸 둘 다 Source 에서 `File too large (925KB)` 가 뜬다. 큰 글을 `react-syntax-highlighter`(Prism)로 한 번에 색칠하는 비용은 재지 않았다.
+- Why deferred: 한도를 올리면 렌더러가 몇 MB 를 한 번에 색칠해야 한다 — 가상화된 코드 보기나 색칠 생략이 필요해 이번 명세 밖.
+- Trigger: 큰 보고서의 Source 를 앱 안에서 보고 싶다는 말, 또는 `:줄` 링크가 500KB 넘는 HTML 을 가리키는 제보.
+- Fix direction: 먼저 925KB·5MB 문서로 색칠 시간을 잰다. 느리면 큰 파일은 색칠 없이(또는 `:줄` 주변 N줄만) 보이고, 한도는 그리기와 같은 64MB 로.
+- Owner: 없음
+
+### 앱 안 HTML 보기 — 문서 칸은 끌어 옮기기·⌘W 닫기가 없다
+- Discovered: 2026-11-16 impl-1116 htmlpreview.
+- Evidence: 세션 칸 머리(`components/SplitTerminalHeader.tsx`)는 끌어 자리 바꾸기(`onReorder` → App `handleSplitReorder`)가 있지만 문서 칸 머리(`components/HtmlDoc/DocSplitPane.tsx`)엔 손잡이가 없다. ⌘W(`useKeyboardShortcuts` `closeActiveSession`)는 활성 칸의 id 로 워크스페이스를 찾는데 `doc:` id 는 없어서 아무 일도 안 한다 — 문서 칸은 머리의 ✕ 로만 닫힌다.
+- Why deferred: 명세(「칸 머리 = 경로 + Preview/Source · 브라우저 · 닫기」)에 없었다.
+- Trigger: 문서 칸을 쓰면서 자리를 바꾸거나 키로 닫고 싶다는 말.
+- Fix direction: `DocSplitPane` 머리에 같은 끌기 데이터(`application/x-session-id` 대신 칸 id)를 붙여 `handleSplitReorder` 를 쓰고, `closeActiveSession` 이 `isDocPaneId` 면 `handleRemoveFromSplit` 을 부르게.
+- Owner: 없음
+
+### 분할 칸 이동(⌘`)이 Chat 입력칸에서는 안 먹는다
+- Discovered: 2026-11-16 impl-1116 htmlpreview — T147 B 를 쓰다가.
+- Evidence: `src/renderer/src/hooks/useKeyboardShortcuts.ts` 는 Chat 단축키(⌘⇧M·⌘⇧I 등)·메모·⌘W 만 입력칸 판정보다 먼저 받고, 그 뒤 `if (tag === 'textarea' && !el.closest('.xterm')) return` 으로 나머지를 버린다. Chat 의 입력칸(`chat-composer`)은 textarea 라 ⌘`·⌘⇧` 가 분할 칸을 옮기지 않는다 — 터미널 보기(xterm textarea)에서는 된다(T26). 문서 칸과 무관한 원래 동작.
+- Why deferred: 이번 범위 밖이고, 입력칸에서 어떤 단축키를 받을지는 다른 키와 함께 정해야 한다.
+- Trigger: Chat 보기로 분할을 쓰면서 키로 칸을 못 옮긴다는 말.
+- Fix direction: `nextSplitPane`·`prevSplitPane` 을 Chat 단축키 묶음처럼 입력칸 판정 앞으로(⌘` 는 글자를 치지 않는다). T26 에 Chat 입력칸에서 누르는 경우를 더한다.
 - Owner: 없음
 
 ## Blocked

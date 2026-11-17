@@ -36,7 +36,7 @@ import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
-import { chatThreadParentIds, chatThreadsFor, pollChatThreadChanges } from './chatThreads'
+import { allChatThreads, chatThreadParentIds, chatThreadsFor, pollChatThreadChanges } from './chatThreads'
 import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
@@ -50,7 +50,7 @@ import { TranscriptReader } from './TranscriptReader'
 import { ConversationService } from './ConversationService'
 import { createChatCommandLister } from './chatCommands'
 import { saveChatAttachment } from './chatAttachments'
-import type { ChatForkRequest, ChatForkResult, ChatThread, PromptAnswer } from '../shared/conversation'
+import type { ChatForkRequest, ChatForkResult, ChatThread, ChatThreadEntry, PromptAnswer } from '../shared/conversation'
 import { MAX_CHAT_TEXT_LENGTH } from '../shared/conversation'
 import { relayFeedbackRequest } from './FeedbackRelay'
 import { FeedbackModeState } from './feedbackMode'
@@ -64,6 +64,7 @@ import { DictationLog } from './DictationLog'
 import { openInDock } from './dockOpen'
 import { dockLocation } from './phone/phoneDock'
 import { BROWSER_PAGE_EXTENSIONS } from '../shared/fileKinds'
+import { guardDocPreviewFrames, registerDocPreviewScheme, setupDocPreview } from './docPreviewProtocol'
 
 // Set app name for development mode
 app.setName('CLI Manager')
@@ -394,7 +395,8 @@ const sessionRelations = new SessionRelations(store, (visible) => {
 anchoredChatParents = chatThreadParentIds(sessionRelations.list())
 const chatThreadSources = {
     relations: () => sessionRelations.list(),
-    sessions: () => (store.get('workspaces') as Workspace[]).flatMap((workspace) => workspace.sessions),
+    sessions: () => (store.get('workspaces') as Workspace[]).flatMap((workspace) =>
+        workspace.sessions.map((session) => ({ id: session.id, name: session.name, workspaceName: workspace.name }))),
     screen: terminalMirror
 }
 const readChatThreads = (parentId: string): ChatThread[] => anchoredChatParents.has(parentId) ? chatThreadsFor(
@@ -1099,6 +1101,7 @@ function createWindow(options: { hidden?: boolean } = {}): void {
         shell.openExternal(details.url)
         return { action: 'deny' }
     })
+    guardDocPreviewFrames(mainWindow.webContents)
 
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
@@ -1310,12 +1313,16 @@ function validateCliSessionIds(): void {
     }
 }
 
+// The Mac's document frame (decision 0013): a privileged scheme is read once, before ready.
+registerDocPreviewScheme()
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
     // Fix PATH for packaged app (must be first!)
     await fixPath()
+    setupDocPreview()
 
     // Headless test mode: keep the app out of the macOS dock
     if (isTestHeadless && process.platform === 'darwin') {
@@ -3705,15 +3712,31 @@ app.whenReady().then(async () => {
     // Only parents with an open Chat view are polled, and only changed rows trigger a read in the renderer.
     const threadSubscriptions = new Map<number, Map<string, number>>()
     let threadSnapshots = new Map<string, string>()
+    // The sidebar's Threads list and its badge: windows showing All sessions, by webContents id → count.
+    // Only while one is there does the tick widen to every anchored parent (0 extra work otherwise).
+    const threadListSubscribers = new Map<number, number>()
+    let threadListSnapshot: string | null = null
     let threadTimer: ReturnType<typeof setInterval> | null = null
     const refreshThreads = (): void => {
         const parents = new Set([...threadSubscriptions.values()].flatMap((subs) => [...subs.keys()]))
-        if (parents.size === 0 && threadTimer) {
+        const listOpen = [...threadListSubscribers.values()].some((count) => count > 0)
+        if (parents.size === 0 && !listOpen && threadTimer) {
             clearInterval(threadTimer)
             threadTimer = null
         }
-        const tick = pollChatThreadChanges(parents, anchoredChatParents, threadSnapshots, chatThreadSources)
+        if (!listOpen) threadListSnapshot = null
+        const tick = pollChatThreadChanges(parents, anchoredChatParents, threadSnapshots, chatThreadSources, listOpen ? { previous: threadListSnapshot } : undefined)
         threadSnapshots = tick.snapshots
+        if (tick.all) {
+            threadListSnapshot = tick.all.snapshot
+            if (tick.all.changed) {
+                for (const [owner, count] of threadListSubscribers) {
+                    if (count === 0) continue
+                    const target = webContents.fromId(owner)
+                    if (target && !target.isDestroyed()) target.send('chat-threads-all-changed')
+                }
+            }
+        }
         for (const sessionId of tick.changed) {
             for (const [owner, subs] of threadSubscriptions) {
                 if (!subs.has(sessionId)) continue
@@ -3728,6 +3751,57 @@ app.whenReady().then(async () => {
     ipcMain.handle('chat-threads', (_event, sessionId: unknown): ChatThread[] =>
         typeof sessionId === 'string' ? readChatThreads(sessionId) : []
     )
+    // An anchor never changes, so a quote read once stays right; misses are read again next time.
+    const threadQuotes = new Map<string, string>()
+    const THREAD_QUOTE_CACHE_MAX = 500
+    const quoteFor = (parentId: string, thread: ChatThread): string => {
+        const key = `${parentId}\0${thread.turnTs ?? ''}\0${thread.turnIndex ?? ''}`
+        const cached = threadQuotes.get(key)
+        if (cached !== undefined) return cached
+        const quote = conversationService.replyQuote(parentId, { turnTs: thread.turnTs, ...(thread.turnIndex === undefined ? {} : { turnIndex: thread.turnIndex }) })
+        if (quote) {
+            if (threadQuotes.size >= THREAD_QUOTE_CACHE_MAX) threadQuotes.clear()
+            threadQuotes.set(key, quote)
+        }
+        return quote
+    }
+    // `quotes: false` is the closed list's badge count: statuses only, no transcript reads.
+    ipcMain.handle('chat-threads-all', (_event, quotes: unknown): ChatThreadEntry[] =>
+        allChatThreads(anchoredChatParents, chatThreadSources.relations(), chatThreadSources.sessions(), terminalMirror)
+            .map((row) => ({ ...row, quote: quotes === false ? '' : quoteFor(row.parentId, row) }))
+    )
+    ipcMain.handle('chat-threads-all-subscribe', (event): void => {
+        const sender = event.sender
+        if (!threadListSubscribers.has(sender.id)) {
+            const clear = (): void => {
+                sender.removeListener('destroyed', clear)
+                sender.removeListener('render-process-gone', clear)
+                sender.removeListener('did-start-navigation', navigating)
+                threadListSubscribers.delete(sender.id)
+                refreshChatThreadSubscriptions()
+            }
+            const navigating = (_event: unknown, _url: string, inPlace: boolean, mainFrame: boolean): void => {
+                if (mainFrame && !inPlace) clear()
+            }
+            sender.once('destroyed', clear)
+            sender.once('render-process-gone', clear)
+            sender.on('did-start-navigation', navigating)
+        }
+        threadListSubscribers.set(sender.id, (threadListSubscribers.get(sender.id) ?? 0) + 1)
+        if (!threadTimer) {
+            threadTimer = setInterval(refreshChatThreadSubscriptions, 1000)
+            threadTimer.unref()
+        }
+        refreshChatThreadSubscriptions()
+    })
+    ipcMain.handle('chat-threads-all-unsubscribe', (event): void => {
+        const count = threadListSubscribers.get(event.sender.id) ?? 0
+        if (count === 0) return
+        // The sender's cleanup listeners stay until it goes; a later subscribe reuses the slot.
+        if (count === 1) threadListSubscribers.set(event.sender.id, 0)
+        else threadListSubscribers.set(event.sender.id, count - 1)
+        refreshChatThreadSubscriptions()
+    })
     ipcMain.handle('chat-threads-subscribe', (event, sessionId: unknown): void => {
         if (typeof sessionId !== 'string') return
         const sender = event.sender

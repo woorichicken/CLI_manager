@@ -1,10 +1,15 @@
-import type { ChatThread } from '../shared/conversation'
+import type { ChatThread, ChatThreadEntry } from '../shared/conversation'
 import type { SessionRelation } from '../shared/types'
 
 interface ThreadSession {
     id: string
     name: string
+    /** the workspace the session sits in; only the Threads list shows it */
+    workspaceName?: string
 }
+
+/** A Threads list row before main adds the quote, which reads the parent's transcript. */
+export type ChatThreadListRow = Omit<ChatThreadEntry, 'quote'>
 
 interface ThreadScreen {
     hasExited(id: string): boolean
@@ -33,20 +38,61 @@ export function chatThreadSnapshot(threads: ChatThread[]): string {
     })).sort((a, b) => a.childId.localeCompare(b.childId)))
 }
 
-/** One tick shares its reads across parents; inactive parents still publish an emptied list. */
-export function pollChatThreadChanges(parents: ReadonlySet<string>, anchoredParents: ReadonlySet<string>, previous: ReadonlyMap<string, string>, sources: ThreadSources): { snapshots: Map<string, string>; changed: string[] } {
-    const hasThreads = [...parents].some((id) => anchoredParents.has(id))
+/**
+ * One tick shares its reads across parents; inactive parents still publish an emptied list.
+ * `all` is the sidebar's Threads list: while one is open the tick also compares every anchored
+ * parent's threads as one list. Without it the tick reads exactly what it read before the list existed.
+ */
+export function pollChatThreadChanges(
+    parents: ReadonlySet<string>,
+    anchoredParents: ReadonlySet<string>,
+    previous: ReadonlyMap<string, string>,
+    sources: ThreadSources,
+    all?: { previous: string | null }
+): { snapshots: Map<string, string>; changed: string[]; all?: { snapshot: string; changed: boolean } } {
+    const hasThreads = (all !== undefined && anchoredParents.size > 0) || [...parents].some((id) => anchoredParents.has(id))
     const relations = hasThreads ? sources.relations() : []
     const sessions = hasThreads ? sources.sessions() : []
     const snapshots = new Map<string, string>()
     const changed: string[] = []
+    const byParent = new Map<string, ChatThread[]>()
+    const threadsOf = (parentId: string): ChatThread[] => {
+        let threads = byParent.get(parentId)
+        if (!threads) {
+            threads = anchoredParents.has(parentId) ? chatThreadsFor(parentId, relations, sessions, sources.screen) : []
+            byParent.set(parentId, threads)
+        }
+        return threads
+    }
     for (const parentId of parents) {
-        const threads = anchoredParents.has(parentId) ? chatThreadsFor(parentId, relations, sessions, sources.screen) : []
-        const next = chatThreadSnapshot(threads)
+        const next = chatThreadSnapshot(threadsOf(parentId))
         snapshots.set(parentId, next)
         if (previous.get(parentId) !== next) changed.push(parentId)
     }
-    return { snapshots, changed }
+    if (!all) return { snapshots, changed }
+    // A parent both subscribed and listed is read once: the list reuses that parent's rows.
+    const snapshot = chatThreadSnapshot(mergeChatThreads(anchoredParents, sessions, threadsOf))
+    return { snapshots, changed, all: { snapshot, changed: all.previous !== snapshot } }
+}
+
+/** Every anchored parent's threads as one list, newest activity first. */
+export function allChatThreads(anchoredParents: ReadonlySet<string>, relations: SessionRelation[], sessions: ThreadSession[], screen: ThreadScreen): ChatThreadListRow[] {
+    if (anchoredParents.size === 0) return []
+    return mergeChatThreads(anchoredParents, sessions, (parentId) => chatThreadsFor(parentId, relations, sessions, screen))
+}
+
+function mergeChatThreads(anchoredParents: ReadonlySet<string>, sessions: ThreadSession[], threadsOf: (parentId: string) => ChatThread[]): ChatThreadListRow[] {
+    const live = new Map(sessions.map((session) => [session.id, session]))
+    const rows: ChatThreadListRow[] = []
+    for (const parentId of anchoredParents) {
+        const parent = live.get(parentId)
+        if (!parent) continue
+        for (const thread of threadsOf(parentId)) {
+            rows.push({ ...thread, parentId, parentName: parent.name, workspaceName: parent.workspaceName ?? '' })
+        }
+    }
+    // The same order the chips use: a click does not reorder it, only new output does.
+    return rows.sort((a, b) => b.lastActivityAt - a.lastActivityAt || a.childId.localeCompare(b.childId))
 }
 
 /** Only an anchored, outward fork belongs beneath a reply; old Related pairs stay in Related. */

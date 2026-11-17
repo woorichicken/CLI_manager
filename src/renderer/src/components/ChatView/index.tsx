@@ -15,9 +15,9 @@ import { useElapsed } from './WorkBlock'
 import { ChatActionsContext, onChatCommand, type ChatActions, type GalleryImage } from './chatContext'
 import { ForkDialog, ForkNotice, type ForkProgress, type ForkTarget } from './ForkDialog'
 import { groupThreadsByTurn, threadsForTurn, type ThreadGroups } from './threadGroups'
-import { hasEarlierThreadReplies, replyForThread, threadQuote, turnsAfterFork } from './threadTurns'
+import { hasEarlierThreadReplies, replyForThread, replyQuote, turnsAfterFork } from './threadTurns'
 import { ThreadPanel } from './ThreadPanel'
-import { turnSegments } from './workBlocks'
+import { onOpenThreadChange, openThreadOf, setOpenThread } from './threadSelection'
 import { artifactLinks, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
 import './chat.css'
 
@@ -95,8 +95,6 @@ const NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Cod
  * scroller is already gone.
  */
 const scrollMemory = new Map<string, { top: number; pinned: boolean; limit: number }>()
-/** Open thread selection belongs to its parent session and lasts until the app restarts. */
-const openThreadBySession = new Map<string, string>()
 
 /** Each session's command list, for telling which sent commands open the terminal. */
 const commandLists = new Map<string, Promise<ChatCommand[]>>()
@@ -144,7 +142,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const [forkProgress, setForkProgress] = useState<ForkProgress | null>(null)
     const [threads, setThreads] = useState<ChatThread[]>([])
     const [threadsLoaded, setThreadsLoaded] = useState(false)
-    const [selectedThreadId, setSelectedThreadId] = useState<string | null>(() => openThreadBySession.get(sessionId) ?? null)
+    const [selectedThreadId, setSelectedThreadId] = useState<string | null>(() => openThreadOf(sessionId))
     const refreshThreads = useRef<(() => void) | null>(null)
     const forkReturnFocus = useRef<HTMLElement | null>(null)
     useEffect(() => {
@@ -174,11 +172,13 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         }
     }, [sessionId, transport, touch, embedded])
     const openThread = useCallback((childId: string): void => {
-        openThreadBySession.set(sessionId, childId)
+        setOpenThread(sessionId, childId)
         setSelectedThreadId(childId)
     }, [sessionId])
+    // The sidebar's Threads list opens a panel in a view that is already on screen.
+    useEffect(() => embedded || touch ? undefined : onOpenThreadChange(sessionId, setSelectedThreadId), [sessionId, embedded, touch])
     const closeThread = useCallback((): void => {
-        openThreadBySession.delete(sessionId)
+        setOpenThread(sessionId, null)
         setSelectedThreadId(null)
         window.setTimeout(() => composer.current?.focus(), 0)
     }, [sessionId])
@@ -207,7 +207,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         setPicked(null)
         setGallery(null)
         setForkTarget(null)
-        setSelectedThreadId(openThreadBySession.get(sessionId) ?? null)
+        setSelectedThreadId(openThreadOf(sessionId))
     }, [sessionId])
 
     const restored = useRef<string | null>(null)
@@ -481,8 +481,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         if (!selectedThread || !sourceSnapshot) return ''
         const reply = replyForThread(sourceSnapshot, selectedThread)
         if (!reply) return ''
-        return threadQuote(turnSegments(reply.parts).filter((segment) => segment.kind === 'answer')
-            .flatMap((segment) => segment.parts.map((part) => part.text)).join('\n\n'))
+        return replyQuote(reply)
     }, [selectedThread, sourceSnapshot])
 
     return (
@@ -616,6 +615,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                             placeholder={placeholder}
                             onSend={sendText}
                             onInterrupt={interrupt}
+                            suggestion={agent === 'claude' ? snapshot?.suggestion ?? null : null}
                             status={
                                 <>
                                     <PlanChip items={todos} />
