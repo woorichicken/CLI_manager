@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { closeApp, launchAppWithWorkspaces, type LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText } from './helpers'
-import { commandPieces, foldUserMessage, mayNameCommand } from '../../src/renderer/src/components/ChatView/chatLib'
+import { commandPieces, foldUserMessage, mayNameCommand, skillTriggerFor } from '../../src/renderer/src/components/ChatView/chatLib'
 import { checklistForAgent } from '../../src/renderer/src/utils/checklistForAgent'
 import { screenAgentMode } from '../../src/main/screenLines'
 import { foldMetadata } from '../../src/main/transcript/metadata'
@@ -201,6 +201,24 @@ test.describe('T96 units', () => {
         expect(commandPieces(text, commands, false).map((p) => p.text).join('')).toBe(text)
         expect(mayNameCommand('words only src/a')).toBe(false)
         expect(mayNameCommand('words /x')).toBe(true)
+    })
+
+    test('skillTriggerFor: a quick reply\'s skill is typed the way this agent runs it (e624ef79)', () => {
+        const claude = [skill('eli5'), { name: 'mine', description: '', source: 'command' as const }, builtin('clear')]
+        const codex = [codexSkill('eli5'), codexSkill('review'), builtin('review'), builtin('model')]
+        expect(skillTriggerFor('/eli5 로 설명해줘', codex, true)).toBe('$eli5 로 설명해줘')
+        expect(skillTriggerFor('$eli5 로 설명해줘', claude, false)).toBe('/eli5 로 설명해줘')
+        expect(skillTriggerFor('  $mine', claude, false), 'the person\'s own command, leading space kept').toBe('  /mine')
+        expect(skillTriggerFor('/eli5', codex, true), 'the word alone').toBe('$eli5')
+        expect(skillTriggerFor('/eli5 로', claude, false), 'already this agent\'s way').toBe('/eli5 로')
+        expect(skillTriggerFor('$eli5 로', codex, true)).toBe('$eli5 로')
+        expect(skillTriggerFor('/model gpt', codex, true), 'a Codex built-in').toBe('/model gpt')
+        expect(skillTriggerFor('/review', codex, true), 'a built-in that runs as typed wins over a skill of the name').toBe('/review')
+        expect(skillTriggerFor('$clear', claude, false), 'only to a skill, never to a built-in').toBe('$clear')
+        expect(skillTriggerFor('/tidy 해줘', codex, true), 'a name this agent does not know').toBe('/tidy 해줘')
+        expect(skillTriggerFor('먼저 /eli5', codex, true), 'only the opening word').toBe('먼저 /eli5')
+        expect(skillTriggerFor('/eli5로', codex, true), 'glued to a word: not a command').toBe('/eli5로')
+        expect(skillTriggerFor('/eli5 로', [], true), 'no list: as written').toBe('/eli5 로')
     })
 
     test('foldUserMessage: lines, one long paragraph, short', () => {
