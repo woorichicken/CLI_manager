@@ -172,7 +172,7 @@ export function LoopDashboard() {
         <div className="h-screen w-screen flex flex-col bg-black/90 text-white overflow-hidden">
             {/* Draggable title bar */}
             <div className="h-8 draggable flex items-center px-4 shrink-0 border-b border-white/5">
-                <div className="flex items-center gap-1 no-draggable pl-16">
+                <div className="flex items-center gap-1 no-drag pl-16">
                     <span className="text-xs font-semibold text-gray-400 mr-2">Loop Dashboard</span>
                     <button
                         type="button"

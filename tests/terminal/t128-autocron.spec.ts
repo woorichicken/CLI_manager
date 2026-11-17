@@ -98,6 +98,19 @@ test.describe('T128 autocron', () => {
         // --- 2. The window -------------------------------------------------------------
         const loop = await openLoopWindow(app, page)
         await loop.getByTestId('loop-tab-autocron').click()
+        // Playwright clicks ignore drag regions, so a tab inside the title bar's drag region still
+        // "works" here while a real mouse only moves the window (v1.35.0). Check the region itself.
+        for (const tab of ['loop-tab-autocron', 'loop-tab-loops']) {
+            // app-region is not inherited: the nearest element that sets it decides what a mouse press does.
+            const region = await loop.getByTestId(tab).evaluate((el) => {
+                for (let node: Element | null = el; node; node = node.parentElement) {
+                    const value = getComputedStyle(node).getPropertyValue('-webkit-app-region').trim()
+                    if (value && value !== 'none') return value
+                }
+                return 'none'
+            })
+            expect(region, `${tab} must be clickable, not part of the window drag region`).toBe('no-drag')
+        }
         await expect(loop.getByTestId('autocron-item')).toHaveCount(2)
 
         await loop.getByTestId('autocron-new').click()

@@ -114,7 +114,7 @@ export function FullscreenTerminalView({
         <div className="h-screen w-screen bg-black/90 flex flex-col">
             {/* Draggable title bar for window movement */}
             <div className="h-8 draggable flex items-center justify-center shrink-0">
-                <span className="text-gray-500 text-xs no-draggable">Grid View ({activeSessionIds.length})</span>
+                <span className="text-gray-500 text-xs no-drag">Grid View ({activeSessionIds.length})</span>
             </div>
             <div className={`flex-1 min-h-0 grid ${gridClass} gap-2 p-2 pt-0`}>
                 {activeSessionIds.map((sessionId, index) => {
