@@ -16,24 +16,29 @@ interface ChatFilePreviewProps {
  * (the one ⌘P file search uses), anything else — a PDF, a video, a sound, an office file — in the Mac's own app, as ovis's
  * file viewer shows them. A web page is drawn in a sandboxed frame (decision 0013), its source and the browser one press
  * away; with a line it opens on the source. With Settings › Terminal › Chat view's switch off (0a17912b), everything goes
- * to the Mac's own app.
+ * to the Mac's own app. ⌘-click skips the preview: a web page goes to the browser (Artifact Dock), anything else to the
+ * Mac's own app. ⌥-click puts a web page beside the session in split view (when the split is full, the preview opens).
  */
 export function ChatFilePreview({ openInApp = true, onSideBySide, sideBySideBlocked }: ChatFilePreviewProps) {
     const [target, setTarget] = useState<{ path: string; line?: number; sessionId?: string } | null>(null)
     /** Where the person was (the link in the Chat): focus goes back there when the preview closes. */
     const returnFocus = useRef<HTMLElement | null>(null)
     useEffect(() => {
-        setChatFileOpener((path, line, sessionId) => {
+        setChatFileOpener((path, line, sessionId, mode) => {
             const extension = path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? ''
-            if (!openInApp || SYSTEM_TYPES.has(extension)) {
+            if (!openInApp || SYSTEM_TYPES.has(extension) || mode === 'outside') {
                 void window.api.openChatPath(path, sessionId)
+                return
+            }
+            // a line asked for is a place in the source (as the preview opens it)
+            if (mode === 'beside' && BROWSER_PAGE_EXTENSIONS.has(extension) && onSideBySide?.({ path, line, source: line !== undefined, sessionId })) {
                 return
             }
             returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
             setTarget({ path, line, sessionId })
         })
         return () => setChatFileOpener(null)
-    }, [openInApp])
+    }, [openInApp, onSideBySide])
 
     const close = useCallback(() => {
         setTarget(null)

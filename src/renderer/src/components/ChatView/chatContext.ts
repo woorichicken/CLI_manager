@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { ChatTransport } from '../../../../shared/conversation'
+import type { ChatOpenMode, ChatTransport } from '../../../../shared/conversation'
 
 /** One picture of a gallery the lightbox steps through. */
 export interface GalleryImage {
@@ -17,7 +17,9 @@ export interface ChatActions {
     sessionId: string
     transport: ChatTransport
     /** a path as the agent wrote it (relative to the session's folder, `~/`, `:12` / `#L12` after it) */
-    openPath(path: string): void
+    openPath(path: string, mode?: ChatOpenMode): void
+    /** the tooltip for a link to `path` — says what ⌘-click and ⌥-click do (empty hints on a phone) */
+    openTitle(path: string): string
     /** false where nothing can show a file (a view-only phone): paths stay plain words, not dead buttons (G9) */
     canOpenPaths: boolean
     /** shows the session(s) a `climanager://session/…` link names; absent where nothing can (b2020233) */

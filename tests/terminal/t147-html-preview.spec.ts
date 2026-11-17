@@ -4,6 +4,7 @@ import http from 'http'
 import type { AddressInfo } from 'net'
 import os from 'os'
 import path from 'path'
+import { chatOpenMode, chatOpenTitle } from '../../src/renderer/src/components/ChatView/chatLib'
 import { closeApp, launchAppWithWorkspaces, type LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText } from './helpers'
 
 /**
@@ -17,6 +18,9 @@ import { closeApp, launchAppWithWorkspaces, type LaunchResult, REPO_ROOT, resize
  *     control request from a window of the app proves both see requests at all.
  *  B: Side by side → the split view holds the session and the page; the session takes input at once; a pane's
  *     Preview/Source/Browser/close; four panes turn Side by side off with the reason.
+ *  C: modified clicks (2026-11-17 request): ⌘-click skips the preview and opens the page in the browser (Artifact
+ *     Dock, else `shell.openPath`); ⌥-click puts it beside the session in split view, `:line` beside on the source;
+ *     the link's tooltip says so. The modes themselves: a unit test of `chatOpenMode` / `chatOpenTitle`.
  *
  * T147_SHOTS=<dir> + T147_LABEL save captures before the checks, so the old code's «before» comes from the same run.
  */
@@ -393,4 +397,60 @@ test('T147 B: Side by side puts the page in split view beside the session, which
     }
     await expect(page.locator('[data-split-grid]')).toHaveCount(0)
     await expect(chat(page).getByTestId('chat-composer')).toBeVisible()
+})
+
+test('T147 C unit: what a modified click asks for, and what the link says', () => {
+    const click = (keys: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean }>) => ({ metaKey: false, ctrlKey: false, altKey: false, ...keys })
+    expect(chatOpenMode(click({}), true)).toBe('preview')
+    expect(chatOpenMode(click({ metaKey: true }), true)).toBe('outside')
+    expect(chatOpenMode(click({ altKey: true }), true)).toBe('beside')
+    expect(chatOpenMode(click({ metaKey: true, altKey: true }), true), '⌘ wins').toBe('outside')
+    // on the Mac Ctrl belongs to the terminal (utils/platform); elsewhere Ctrl is the primary key
+    expect(chatOpenMode(click({ ctrlKey: true }), true)).toBe('preview')
+    expect(chatOpenMode(click({ ctrlKey: true }), false)).toBe('outside')
+    expect(chatOpenMode(click({ metaKey: true }), false)).toBe('preview')
+
+    expect(chatOpenTitle('docs/report.html', true)).toBe('Open docs/report.html — ⌘click: browser · ⌥click: side by side')
+    expect(chatOpenTitle('small.html:3', true)).toBe('Open small.html:3 — ⌘click: browser · ⌥click: side by side')
+    expect(chatOpenTitle('src/App.tsx', true)).toBe('Open src/App.tsx — ⌘click: default app')
+    expect(chatOpenTitle('slides.pdf', true), 'a PDF always opens outside').toBe('Open slides.pdf')
+    expect(chatOpenTitle('report.html', false)).toBe('Open report.html — Ctrl+click: browser · Alt+click: side by side')
+})
+
+test('T147 C: ⌘-click opens the page in the browser, ⌥-click beside the session; a plain click still previews', async () => {
+    test.setTimeout(180_000)
+    const { page, report, opened, project } = await launch()
+    const link = chat(page).getByRole('button', { name: 'report.html', exact: true }).first()
+    const docPanes = page.locator('[data-doc-pane]')
+
+    await expect(link).toHaveAttribute('title', 'Open report.html — ⌘click: browser · ⌥click: side by side')
+
+    // ⌘-click: straight to the browser (no Dock here → the Mac's opener), no preview window
+    await link.click({ modifiers: ['Meta'] })
+    await expect.poll(opened).toEqual([report])
+    await page.waitForTimeout(400)
+    await expect(preview(page)).toHaveCount(0)
+    await expect(docPanes).toHaveCount(0)
+
+    // ⌥-click: beside the session in split view, no preview window, nothing more to the browser
+    await link.click({ modifiers: ['Alt'] })
+    await expect(docPanes).toHaveCount(1)
+    await expect(docPanes.first()).toHaveAttribute('data-path', report)
+    await expect(page.locator(`[data-pane-header="${CLAUDE}"]`)).toBeVisible()
+    await expect(preview(page)).toHaveCount(0)
+    const frame = await frameOf(page, docPanes.first())
+    await expect(frame.locator('#title')).toHaveText('Weekly release review')
+    await shot(page, 't147-c-alt-click')
+
+    // ⌥-click on a line: a second pane, on the source at that line
+    await chat(page).getByRole('button', { name: /small\.html:3/ }).first().click({ modifiers: ['Alt'] })
+    await expect(docPanes).toHaveCount(2)
+    await expect(docPanes.nth(1)).toHaveAttribute('data-path', path.join(project, 'small.html'))
+    await expect(docPanes.nth(1).getByTestId('html-doc-source')).toBeVisible()
+    expect(await opened()).toEqual([report])
+
+    // a plain click is the preview window, as before
+    await chat(page).getByRole('button', { name: 'probe.html', exact: true }).first().click()
+    await expect(preview(page)).toHaveAttribute('data-path', path.join(project, 'probe.html'))
+    expect(await opened()).toEqual([report])
 })

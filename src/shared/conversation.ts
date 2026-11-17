@@ -468,6 +468,13 @@ export type PromptAnswerResult =
  * (`renderer/src/utils/electronChatTransport.ts`); a phone page would fill it
  * with fetch + WebSocket. Chat view components take it as a prop.
  */
+/**
+ * How a click on a file the chat names asked for it: a plain click previews it in the app, ⌘-click opens it
+ * outside (a web page in the browser through Artifact Dock, anything else in the Mac's own app), ⌥-click puts a
+ * web page beside the session in split view (VS Code's 「open to the side」).
+ */
+export type ChatOpenMode = 'preview' | 'outside' | 'beside'
+
 export interface ChatTransport {
     getConversation(sessionId: string, limit?: number): Promise<ConversationSnapshot>
     /** Calls `onChange` whenever the conversation, the working state or the question changes. */
@@ -501,8 +508,11 @@ export interface ChatTransport {
     listBackgroundTasks(sessionId: string): Promise<BackgroundTaskList>
     /** Files under the session's folder whose name or path matches, as paths relative to it. */
     searchFiles(sessionId: string, query: string): Promise<string[]>
-    /** Shows a file the chat names (absolute, or relative to the session's folder), at a line when given. */
-    openFile(sessionId: string, path: string, line?: number): void
+    /**
+     * Shows a file the chat names (absolute, or relative to the session's folder), at a line when given.
+     * `mode` is how the click asked for it (⌘-click: outside the app, ⌥-click: beside the session); a phone ignores it.
+     */
+    openFile(sessionId: string, path: string, line?: number, mode?: ChatOpenMode): void
     /** Opens a web address outside the app. */
     openLink(url: string): void
     /** «Fork into a new session» from one reply (ChatForkRequest). Absent: no Fork button. */

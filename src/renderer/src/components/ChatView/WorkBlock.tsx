@@ -6,7 +6,8 @@ import { LinkedText, Markdown } from './markdown/Markdown'
 import { TaskResultCard } from './TurnParts'
 import { ChatImageStrip } from './ChatImages'
 import { useChatActions } from './chatContext'
-import { formatElapsed, isTodoTool, lineDiff, todoProgress, todoSnapshot, toolFile, type DiffLine, type TodoItem } from './chatLib'
+import { isMac } from '../../utils/platform'
+import { chatOpenMode, formatElapsed, isTodoTool, lineDiff, todoProgress, todoSnapshot, toolFile, type DiffLine, type TodoItem } from './chatLib'
 
 /**
  * One run of an assistant turn's work — tool calls, reasoning, progress words —
@@ -190,7 +191,7 @@ const ToolRow = memo(function ToolRow({ tool }: { tool: ToolPart }) {
                     {tool.error && <AlertCircle size={12} className="text-red-400 shrink-0" aria-label="Failed" />}
                 </button>
                 {file && actions?.canOpenPaths && (
-                    <button type="button" className="chat-tool-open" title={`Open ${file}`} aria-label={`Open ${file}`} data-testid="chat-tool-open" onClick={() => actions.openPath(file)}>
+                    <button type="button" className="chat-tool-open" title={actions.openTitle(file)} aria-label={`Open ${file}`} data-testid="chat-tool-open" onClick={(event) => actions.openPath(file, chatOpenMode(event, isMac))}>
                         <ExternalLink size={12} aria-hidden="true" />
                     </button>
                 )}
