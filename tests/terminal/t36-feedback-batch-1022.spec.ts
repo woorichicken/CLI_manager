@@ -92,6 +92,7 @@ test.describe('T36 feedback batch 1022', () => {
         await page.locator('button[title^="Settings"]').click()
         const toggle = page.getByTestId('settings-show-source-control')
         await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+        await toggle.scrollIntoViewIfNeeded()
         await shot('settings-show-source-control')
         await toggle.click()
         await expect(toggle).toHaveAttribute('aria-pressed', 'false')
