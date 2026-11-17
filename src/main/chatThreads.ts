@@ -15,6 +15,41 @@ interface ThreadScreen {
     hasExited(id: string): boolean
     screenStatus(id: string): { busy: boolean; question: string | null }
     lastOutputAt(id: string): number
+    /** The child's turns since the fork (`ReplyCounter`); undefined when not known. Absent: no counts. */
+    replies?(childId: string, forkedAt: number, lastOutputAt: number): number | undefined
+}
+
+/** After a child's last output, its transcript is read again for this long: the record lands just after the screen. */
+export const REPLY_SETTLE_MS = 5_000
+const REPLY_CACHE_MAX = 500
+
+/**
+ * Each thread's reply count (fb-1117 2c8bc2b5): the child's turns written since the fork, as the
+ * thread panel shows them. The child's transcript is read only when its output time moved, and for
+ * REPLY_SETTLE_MS after that (the record is written just after the screen) — a quiet child is never
+ * read again, so a tick over idle threads costs no transcript reads.
+ */
+export class ReplyCounter {
+    private readonly cache = new Map<string, { at: number; forkedAt: number; count: number | undefined }>()
+
+    constructor(
+        private readonly read: (childId: string, forkedAt: number) => number | undefined,
+        private readonly now: () => number = Date.now
+    ) {}
+
+    count(childId: string, forkedAt: number, lastOutputAt: number): number | undefined {
+        const cached = this.cache.get(childId)
+        const settling = lastOutputAt > 0 && this.now() - lastOutputAt < REPLY_SETTLE_MS
+        if (cached && cached.at === lastOutputAt && cached.forkedAt === forkedAt && !settling) return cached.count
+        const count = this.read(childId, forkedAt)
+        if (this.cache.size >= REPLY_CACHE_MAX && !this.cache.has(childId)) this.cache.clear()
+        this.cache.set(childId, { at: lastOutputAt, forkedAt, count })
+        return count
+    }
+
+    forget(childId: string): void {
+        this.cache.delete(childId)
+    }
 }
 
 const ACTIVITY_BUCKET_MS = 30_000
@@ -104,6 +139,8 @@ export function chatThreadsFor(parentId: string, relations: SessionRelation[], s
         const child = live.get(relation.to)
         if (!child) return []
         const state = screen.hasExited(child.id) ? { busy: false, question: null } : screen.screenStatus(child.id)
+        const output = screen.lastOutputAt(child.id)
+        const replies = screen.replies?.(child.id, relation.at, output)
         return [{
             childId: child.id,
             name: child.name,
@@ -111,7 +148,8 @@ export function chatThreadsFor(parentId: string, relations: SessionRelation[], s
             ...(relation.anchor.turnIndex === undefined ? {} : { turnIndex: relation.anchor.turnIndex }),
             forkedAt: relation.at,
             status: state.question !== null ? 'waiting' : state.busy ? 'working' : 'idle',
-            lastActivityAt: screen.lastOutputAt(child.id) || relation.at
+            lastActivityAt: output || relation.at,
+            ...(replies === undefined ? {} : { replies })
         }]
     }).sort((a, b) => b.lastActivityAt - a.lastActivityAt || a.childId.localeCompare(b.childId))
 }
