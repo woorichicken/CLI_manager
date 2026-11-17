@@ -9,7 +9,7 @@ import type { TerminalEventLog } from '../TerminalEventLog'
 import type { TerminalManager } from '../TerminalManager'
 import type { TerminalMirror } from '../TerminalMirror'
 import type { PhoneSession, PhoneSessionsResponse, PhoneSessionState, PhoneUsageResponse } from '../../shared/phone'
-import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, UsageSnapshot, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
+import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, TerminalTemplate, UsageSnapshot, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
 import { DEFAULT_PHONE } from '../../shared/types'
 import { DEFAULT_QUICK_REPLIES, keepQuickReplyColors } from '../../shared/conversation'
 // The sidebar's own ordering functions (pure, types only): the phone's list is the Mac's All
@@ -56,6 +56,8 @@ export interface PhoneSetupDeps {
     staticDir: string
     /** recently viewed session ids, newest first (RecentSessions) — the All sessions order */
     recentSessions(): string[]
+    /** sessions orchestrating through the Control API — the Mac row's crown (59886f9c) */
+    masterSessionIds?(): string[]
     /** the ids in the order the sidebar draws sessions, as the renderer last reported it (null before it has) */
     sidebarSessionOrder(): string[] | null
     /** the feedback widget on the phone page: main's relay and terminal context (phoneFeedback.ts) */
@@ -131,6 +133,12 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         const entries = orderForAllSessions(drawn, deps.recentSessions())
         const grouped = groupBySessionFolder(entries, sessionFolders)
         const ordered = [...grouped.folders.flatMap((group) => group.rows), ...grouped.unfiled]
+        // The Mac row's icon slot (SessionItem roleIcon): crown, else the template's logo, else the AI robot.
+        const masters = new Set(deps.masterSessionIds?.() ?? [])
+        const logoOf = new Map(
+            ((deps.store.get('customTemplates') as TerminalTemplate[] | undefined) ?? []).flatMap((template) => (template.logo ? [[template.id, template.logo] as const] : []))
+        )
+        const templateLogos: Record<string, string> = {}
         const sessions = ordered.map(({ workspace, session }): PhoneSession => {
             const dot = dots.get(session.id)
             let state: PhoneSessionState = 'idle'
@@ -140,6 +148,13 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
             else if (dot?.state === 'working') state = 'working'
             const agent = session.cliToolName === 'claude' ? 'claude' : session.cliToolName === 'codex' ? 'codex' : null
             const folderId = session.sessionFolderId && sessionFolders.some((f) => f.id === session.sessionFolderId) ? session.sessionFolderId : undefined
+            const logo = session.templateId ? logoOf.get(session.templateId) : undefined
+            let icon: PhoneSession['icon']
+            if (masters.has(session.id)) icon = 'master'
+            else if (logo && session.templateId) {
+                icon = 'logo'
+                templateLogos[session.templateId] = logo
+            } else if (session.aiControl) icon = 'ai'
             return {
                 id: session.id,
                 name: session.name,
@@ -150,11 +165,14 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
                 ...(state === 'waiting' && dot?.question ? { question: maskLine(dot.question) } : {}),
                 ...(folderId ? { sessionFolderId: folderId } : {}),
                 ...(session.isPinned ? { pinned: true } : {}),
-                ...(filledMemoPages(session) > 0 ? { memoPages: filledMemoPages(session) } : {})
+                ...(filledMemoPages(session) > 0 ? { memoPages: filledMemoPages(session) } : {}),
+                ...(icon ? { icon } : {}),
+                ...(icon === 'logo' ? { templateId: session.templateId } : {})
             }
         })
         return {
             sessions,
+            ...(Object.keys(templateLogos).length > 0 ? { templateLogos } : {}),
             sessionFolders: grouped.folders.filter((group) => group.rows.length > 0).map(({ folder }) => ({ id: folder.id, name: folder.name }))
         }
     }
