@@ -65,6 +65,15 @@ export interface PhoneSession {
     pinned?: boolean
     /** how many memo pages hold something; absent when the memo is empty (84188aa0) */
     memoPages?: number
+    /**
+     * The icon the Mac sidebar row draws in this session's slot (59886f9c), in the sidebar's order:
+     * `master` — an orchestrator through the Control API (crown) · `logo` — its template's logo
+     * (`templateId`, image in the response's `templateLogos`) · `ai` — driven by an AI (robot).
+     * Absent: the phone's own Chat / Terminal icon.
+     */
+    icon?: 'master' | 'logo' | 'ai'
+    /** with `icon: 'logo'`: the template whose logo it is — a key of `templateLogos` */
+    templateId?: string
 }
 
 /** POST /api/phone/rename/<sessionId> — the name the Mac kept (trimmed, at most 80 characters) */
@@ -88,6 +97,11 @@ export interface PhoneSessionsResponse {
     sessions: PhoneSession[]
     /** the All sessions folders, in order — the phone marks where each one's sessions start */
     sessionFolders: Array<{ id: string; name: string }>
+    /**
+     * Template id → logo (a 32×32 PNG data URL), once per template a listed session uses — not
+     * once per row: the list is polled and a logo is a few KB. Absent when no row draws one.
+     */
+    templateLogos?: Record<string, string>
 }
 
 /** One document in the Artifact Dock, as the extension's side panel lists it. */

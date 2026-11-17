@@ -4041,6 +4041,7 @@ app.whenReady().then(async () => {
         staticDir: join(__dirname, '../renderer'),
         recentSessions: () => recentSessions.list(),
         sidebarSessionOrder: () => sidebarSessionOrder,
+        masterSessionIds: () => Object.keys(controlApiService.mastersSnapshot().masters),
         feedback: {
             enabled: () => feedbackMode.enabled(),
             appVersion: () => app.getVersion(),
