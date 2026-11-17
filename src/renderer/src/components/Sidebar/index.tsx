@@ -24,6 +24,8 @@ import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
 import { ConnectConversationDialog } from './ConnectConversationDialog'
 import { AllSessionsToolbar, type AllSessionsLayout } from './AllSessionsToolbar'
+import { SidebarThreads } from './SidebarThreads'
+import { useThreadsView } from './useThreadsView'
 import { NewSessionDialog } from '../NewSessionDialog'
 
 /**
@@ -811,7 +813,11 @@ export function Sidebar({
         } catch { /* storage blocked: the choice just won't survive a restart */ }
     }
 
+    // All sessions › Threads (its own icon beside List / Tree): every thread in the app.
+    const threadsView = useThreadsView({ inAllSessions: isAllSessionsView, workspaces, onSelect })
     const chooseAllSessionsLayout = (next: AllSessionsLayout) => {
+        // Picking a layout while Threads is on goes back to the session list in that layout.
+        threadsView.setThreadsOpen(false)
         setSavedLayout(next)
         try {
             localStorage.setItem(ALL_SESSIONS_LAYOUT_STORAGE_KEY, next)
@@ -1281,8 +1287,18 @@ export function Sidebar({
                             canCreate={newSessionWorkspaces.length > 0}
                             onNewSession={() => setNewSessionOpen(true)}
                             newSessionOpen={newSessionOpen}
+                            threadsOpen={threadsView.threadsOpen}
+                            onToggleThreads={() => threadsView.setThreadsOpen(!threadsView.threadsOpen)}
+                            waitingThreads={threadsView.waitingThreads}
                         />
-                        {allSessionEntries.length === 0 ? (
+                        {threadsView.threadsOpen ? (
+                            <SidebarThreads
+                                threads={threadsView.threads}
+                                selectedChildId={threadsView.selectedChildId}
+                                activeSessionId={activeSessionId}
+                                onOpen={threadsView.openThreadRow}
+                            />
+                        ) : allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
                         ) : sessionForest ? (
                             <SidebarSessionTree forest={sessionForest} listProps={allSessionsListProps} />

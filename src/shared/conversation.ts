@@ -331,6 +331,16 @@ export interface ChatThread {
     lastActivityAt: number
 }
 
+/** One row of the sidebar's Threads list: a thread of any parent, with where it came from. */
+export interface ChatThreadEntry extends ChatThread {
+    parentId: string
+    parentName: string
+    /** the parent session's workspace name; empty when the session is in none */
+    workspaceName: string
+    /** the parent reply it branched from, as the thread panel quotes it; empty while unreadable */
+    quote: string
+}
+
 export interface ChatForkRequest {
     /**
      * the reply's place among all the conversation's turns (0 = the first of `totalTurns`). Absent (the

@@ -25,6 +25,7 @@ import { BackgroundTaskReader, settleBackground } from './transcript/backgroundT
 import type { AliasResolver } from '../shared/agentCommand'
 import type { SessionRelationAnchor } from '../shared/types'
 import { forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName } from './chatFork'
+import { replyForThread, replyQuote } from '../renderer/src/components/ChatView/threadTurns'
 
 /**
  * The Chat view's main-process side: one conversation per terminal session,
@@ -325,6 +326,31 @@ export class ConversationService {
             console.error('[conversation] read failed', sessionId, error)
             this.dropIfIdle(sessionId, entry)
             return { ...base, agent, unavailable: 'read-failed', turns: [], totalTurns: 0, truncated: false }
+        }
+    }
+
+    /**
+     * The parent reply a thread branched from, quoted as its thread panel quotes it — for the
+     * sidebar's Threads list. Empty when the conversation cannot be read or the reply is gone.
+     */
+    replyQuote(sessionId: string, anchor: SessionRelationAnchor): string {
+        const info = this.deps.session(sessionId)
+        const agent = agentOf(info)
+        if (!info?.cliSessionId || agent === null) return ''
+        const entry = this.entry(sessionId)
+        try {
+            const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
+            if (!read) return ''
+            // this read took the new records: the next poll will see nothing new, so whoever watches is told here
+            if (read.changed) this.bump(sessionId, entry)
+            const reply = replyForThread({ turns: read.turns, totalTurns: read.turns.length }, anchor)
+            return reply ? replyQuote(reply) : ''
+        } catch (error) {
+            console.warn('[conversation] thread quote read failed', sessionId, error)
+            return ''
+        } finally {
+            // a parent read only for its quote is let go like any unwatched chat
+            this.dropIfIdle(sessionId, entry)
         }
     }
 
