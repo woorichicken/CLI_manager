@@ -46,7 +46,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^11.0.0",
     "@types/web-push": "3.6.4",
-    "@types/ws": "8.18.1",
+    "@types/ws": "8.18.2",
     "autoprefixer": "^10.4.17",
     "electron": "^39.8.10",
     "electron-builder": "^26.0.12",
@@ -59,7 +59,7 @@
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
     "web-push": "3.6.7",
-    "ws": "8.22.0"
+    "ws": "8.22.1"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
