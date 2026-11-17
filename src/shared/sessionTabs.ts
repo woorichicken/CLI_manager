@@ -76,3 +76,13 @@ export function pruneSessionTabs(ids: string[], exists: (id: string) => boolean)
     const next = ids.filter(exists)
     return next.length === ids.length ? ids : next
 }
+
+export type TabCloseScope = 'others' | 'right' | 'all'
+
+/** The tab menu's Close Other Tabs / Close Tabs to the Right / Close All Tabs: which tabs go. */
+export function tabsToClose(ids: string[], id: string, scope: TabCloseScope): string[] {
+    if (scope === 'all') return [...ids]
+    if (scope === 'others') return ids.filter((other) => other !== id)
+    const index = ids.indexOf(id)
+    return index < 0 ? [] : ids.slice(index + 1)
+}

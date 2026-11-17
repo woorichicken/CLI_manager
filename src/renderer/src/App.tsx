@@ -38,7 +38,7 @@ import { FeedbackGate } from './components/Feedback/FeedbackGate'
 import { resumeCommandFor } from './utils/resumeCommand'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { mostRecentOtherSession, neighborSession, sessionsInSidebarOrder, sidebarWorkspaceOrder, type SessionLanding } from './utils/sessionNavigation'
-import { describeSessionLinkProblems, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
+import { describeSessionLinkProblems, MAX_LINKED_SESSIONS, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
 import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
@@ -47,6 +47,7 @@ import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 import { useSessionTabs } from './hooks/useSessionTabs'
 import { SessionTabBar, type SessionTabEntry } from './components/SessionTabs/SessionTabBar'
+import type { SessionTabMenuActions } from './components/SessionTabs/SessionTabMenu'
 import { closeSessionTab, stepSessionTab } from '../../shared/sessionTabs'
 import { splitAfterDrop, SPLIT_DIVIDER_PX, splitHeadersWide, PANE_HEADER_WIDE_PX, PANE_HEADER_COMPACT_PX } from './utils/splitLayout'
 import { SplitDividers } from './components/SplitDividers'
@@ -662,6 +663,61 @@ function App() {
         const next = neighbor ? sessionOwnerById.get(neighbor) : undefined
         if (next) handleSelect(next.workspace, next.session)
         else setActiveSession(null)
+    }
+
+    // The tab menu's Close Others / to the Right / All: the same as × on each, at once. Panes of closed tabs leave
+    // split view; when the session on screen goes, `focusId` (the right-clicked tab) takes its place.
+    const handleCloseTabs = (closing: string[], focusId: string | null): void => {
+        if (closing.length === 0) return
+        sessionTabs.closeTabs(closing)
+        const gone = new Set(closing)
+        const showOnly = (id: string | null): void => {
+            const owner = id ? sessionOwnerById.get(id) : undefined
+            if (owner) {
+                setActiveWorkspace(owner.workspace)
+                setActiveSession(owner.session)
+            } else {
+                setActiveSession(null)
+            }
+        }
+        if (splitLayout) {
+            if (!splitLayout.sessionIds.some(id => gone.has(id))) return
+            const kept = splitLayout.sessionIds.filter(id => !gone.has(id))
+            if (kept.length >= 2) {
+                setSplitLayout({ ...splitLayout, sessionIds: kept, sizes: undefined })
+                setActiveSplitIndex(Math.max(0, focusId ? kept.indexOf(focusId) : 0))
+                return
+            }
+            setSplitLayout(null)
+            setActiveSplitIndex(0)
+            showOnly(sessionPaneIds(kept)[0] ?? focusId)
+            return
+        }
+        if (activeSession && gone.has(activeSession.id)) showOnly(focusId)
+    }
+
+    const tabMenu: SessionTabMenuActions = {
+        onCloseMany: handleCloseTabs,
+        sideBySideBlocked: (id) => {
+            const result = splitAfterDrop(splitLayout?.sessionIds ?? null, activeSession?.id ?? null, id)
+            if (result.kind === 'focus') return 'Already in split view'
+            if (result.kind === 'ignore') {
+                return splitLayout
+                    ? `Split view holds ${MAX_LINKED_SESSIONS} panes — close one first`
+                    : 'This is the session on screen'
+            }
+            return null
+        },
+        onOpenSideBySide: (id) => {
+            const result = splitAfterDrop(splitLayout?.sessionIds ?? null, activeSession?.id ?? null, id)
+            if (result.kind !== 'layout') return
+            setSplitLayout({ ...(splitLayout ?? {}), sessionIds: result.sessionIds, sizes: undefined })
+            if (!splitLayout) setActiveSession(null)
+        },
+        onEndSession: (id) => {
+            const owner = sessionOwnerById.get(id)
+            if (owner) void handleRemoveSession(owner.workspace.id, id, false, 'tab')
+        }
     }
 
     const handleStepTab = (direction: 1 | -1): void => {
@@ -1653,18 +1709,6 @@ function App() {
                 />
             )}
             <div className="flex-1 glass-panel m-2 ml-0 rounded-lg overflow-hidden flex flex-col">
-                {/* Tab row: the sessions the person opened, apart from the sidebar */}
-                {sessionTabsEnabled && sessionTabEntries.length > 0 && (
-                    <SessionTabBar
-                        tabs={sessionTabEntries}
-                        activeId={viewedSessionId}
-                        visibleIds={splitLayout ? sessionPaneIds(splitLayout.sessionIds) : []}
-                        onSelect={handleSelectTab}
-                        onClose={handleCloseTab}
-                        onMove={sessionTabs.moveTab}
-                        compact={Boolean(splitLayout)}
-                    />
-                )}
                 {/* Header - minimized in split view */}
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} border-b border-white/10 flex items-center px-4 draggable justify-between relative z-10 transition-all`}>
                     {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers.
@@ -1815,6 +1859,20 @@ function App() {
                         {/* Grid button removed - each split pane has its own */}
                     </div>
                 </div>
+                {/* Tab row: the sessions the person opened, apart from the sidebar. Below the header (review
+                    2026-11-17): the header keeps its line with the sidebar header, the tabs sit over the terminals. */}
+                {sessionTabsEnabled && sessionTabEntries.length > 0 && (
+                    <SessionTabBar
+                        tabs={sessionTabEntries}
+                        activeId={viewedSessionId}
+                        visibleIds={splitLayout ? sessionPaneIds(splitLayout.sessionIds) : []}
+                        onSelect={handleSelectTab}
+                        onClose={handleCloseTab}
+                        onMove={sessionTabs.moveTab}
+                        menu={tabMenu}
+                        compact={Boolean(splitLayout)}
+                    />
+                )}
                 <div className="flex-1 pt-4 px-4 pb-0 flex flex-col overflow-hidden min-h-0">
                     {/* Terminal container with relative positioning for absolute children */}
                     <div

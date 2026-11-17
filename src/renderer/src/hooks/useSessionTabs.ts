@@ -30,6 +30,8 @@ export interface SessionTabsApi {
     loaded: boolean
     /** Closes a tab (the session keeps running). Returns where to go if it was on screen. */
     closeTab: (id: string) => string | null
+    /** Closes several tabs at once (the tab menu's Close Others / to the Right / All). Sessions keep running. */
+    closeTabs: (ids: string[]) => void
     moveTab: (id: string, toIndex: number) => void
     /** The tab on screen when the app last saved, once — App shows it after a restart. */
     takeRestoreId: () => string | null
@@ -109,6 +111,16 @@ export function useSessionTabs({ active, enabled, ready, viewedSessionId, onScre
         return neighbor
     }, [])
 
+    const closeTabs = useCallback((closing: string[]): void => {
+        const gone = new Set(closing)
+        const current = stateRef.current
+        const ids = current.ids.filter((id) => !gone.has(id))
+        if (ids.length === current.ids.length) return
+        const next = { ids, activeId: current.activeId && !gone.has(current.activeId) ? current.activeId : null }
+        stateRef.current = next
+        setState(next)
+    }, [])
+
     const moveTab = useCallback((id: string, toIndex: number) => {
         setState((prev) => {
             const ids = moveSessionTab(prev.ids, id, toIndex)
@@ -122,5 +134,5 @@ export function useSessionTabs({ active, enabled, ready, viewedSessionId, onScre
         return restoreIdRef.current
     }, [])
 
-    return { ids: enabled ? state.ids : [], loaded, closeTab, moveTab, takeRestoreId }
+    return { ids: enabled ? state.ids : [], loaded, closeTab, closeTabs, moveTab, takeRestoreId }
 }

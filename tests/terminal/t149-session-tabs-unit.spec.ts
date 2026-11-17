@@ -6,6 +6,7 @@ import {
     openSessionTab,
     pruneSessionTabs,
     stepSessionTab,
+    tabsToClose,
     SESSION_TABS_KEY,
 } from '../../src/shared/sessionTabs'
 import { SessionTabs } from '../../src/main/SessionTabs'
@@ -64,6 +65,16 @@ test.describe('T149 session tabs unit', () => {
         const ids = ['a', 'b', 'c']
         expect(moveSessionTab(ids, 'b', 1)).toBe(ids)
         expect(moveSessionTab(ids, 'x', 0)).toBe(ids)
+    })
+
+    test('the tab menu closes the others, the ones to the right, or all', () => {
+        const ids = ['a', 'b', 'c', 'd']
+        expect(tabsToClose(ids, 'b', 'others')).toEqual(['a', 'c', 'd'])
+        expect(tabsToClose(ids, 'b', 'right')).toEqual(['c', 'd'])
+        expect(tabsToClose(ids, 'd', 'right')).toEqual([])
+        expect(tabsToClose(ids, 'x', 'right')).toEqual([])
+        expect(tabsToClose(ids, 'b', 'all')).toEqual(ids)
+        expect(tabsToClose(['a'], 'a', 'others')).toEqual([])
     })
 
     test('stored values of the wrong shape become no tabs; the active tab must be one of them', () => {

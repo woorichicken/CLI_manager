@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useSessionScreenStatus } from '../../hooks/useSessionScreenStatus'
 import { SCREEN_STATUS_COLORS } from '../Sidebar/SessionItem'
+import { SessionTabMenu, type SessionTabMenuActions } from './SessionTabMenu'
 
 export interface SessionTabEntry {
     id: string
@@ -19,26 +20,31 @@ interface SessionTabBarProps {
     onSelect: (id: string) => void
     onClose: (id: string) => void
     onMove: (id: string, toIndex: number) => void
-    /** Split view: the sidebar header shrinks to h-6 there, so the row does too and both still end on one line. */
+    /** Right-click menu. Without it a right-click does nothing (no browser menu either). */
+    menu?: SessionTabMenuActions
+    /** Split view: the header above shrinks to h-6, and the row follows. */
     compact?: boolean
 }
+
+/** VS Code 「shrink」 sizing: name width up to 200px, giving way to 80px before the row scrolls. */
+const TAB_WIDTH = 'flex-[0_1_auto] min-w-[80px] max-w-[200px]'
 
 /** A drag in this row carries this type, so a tab is not mistaken for a sidebar row dropped on split view. */
 const TAB_DRAG_TYPE = 'application/x-climanager-tab'
 
 /**
- * The tab row at the top of the main area (h-10, the same height as the
- * sidebar header so both top rows end on one line). Empty space drags the
- * window; tabs do not (`no-drag` on each — the region is not inherited, see
- * the Loop window fix in v1.35.1).
+ * The tab row under the main header, over the terminals. Tabs shrink as more open (VS Code's
+ * 「shrink」 sizing): each keeps its name width up to 200px and gives way down to 80px, after
+ * which the row scrolls sideways and the tab on screen is scrolled into view.
  */
-export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, onMove, compact = false }: SessionTabBarProps): React.ReactElement | null {
+export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, onMove, menu, compact = false }: SessionTabBarProps): React.ReactElement | null {
     const rowRef = useRef<HTMLDivElement>(null)
     const [dropIndex, setDropIndexState] = useState<number | null>(null)
     // The drop reads the ref: dragover and drop can come before a render in between.
     const dropIndexRef = useRef<number | null>(null)
     const setDropIndex = (index: number | null): void => { dropIndexRef.current = index; setDropIndexState(index) }
     const draggingRef = useRef<string | null>(null)
+    const [menuAt, setMenuAt] = useState<{ id: string; x: number; y: number } | null>(null)
 
     // The tab on screen stays in view when the row overflows — also when the window narrows.
     useEffect(() => {
@@ -78,7 +84,7 @@ export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, o
             data-testid="session-tab-bar"
             role="tablist"
             aria-label="Open sessions"
-            className={`${compact ? 'h-6' : 'h-10'} shrink-0 border-b border-white/10 flex items-stretch overflow-x-auto overflow-y-hidden draggable session-tab-bar transition-all`}
+            className={`${compact ? 'h-6' : 'h-9'} shrink-0 border-b border-white/10 flex items-stretch overflow-x-auto overflow-y-hidden session-tab-bar transition-all`}
             // No scrollbar: it would take height from the row; the wheel and the active-tab reveal still scroll it.
             style={{ scrollbarWidth: 'none' }}
             onWheel={(event) => { if (event.deltaY && !event.deltaX) rowRef.current?.scrollBy({ left: event.deltaY }) }}
@@ -102,10 +108,25 @@ export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, o
                     }}
                     onDragOver={(event) => dropAt(event, index)}
                     onDragEnd={() => { draggingRef.current = null; setDropIndex(null) }}
+                    onContextMenu={(event) => {
+                        event.preventDefault()
+                        if (menu) setMenuAt({ id: tab.id, x: event.clientX, y: event.clientY })
+                    }}
                 />
             ))}
-            {/* The rest of the row: window drag space. */}
-            <div className="flex-1 min-w-8" />
+            {/* Tabs take what they need; the rest of the row stays empty. */}
+            <div className="flex-1 min-w-4" />
+            {menu && menuAt && tabs.some((tab) => tab.id === menuAt.id) && (
+                <SessionTabMenu
+                    x={menuAt.x}
+                    y={menuAt.y}
+                    tabId={menuAt.id}
+                    tabIds={tabs.map((tab) => tab.id)}
+                    actions={menu}
+                    onCloseTab={onClose}
+                    onClose={() => setMenuAt(null)}
+                />
+            )}
         </div>
     )
 }
@@ -121,9 +142,10 @@ interface SessionTabProps {
     onDragStart: (event: React.DragEvent) => void
     onDragOver: (event: React.DragEvent) => void
     onDragEnd: () => void
+    onContextMenu: (event: React.MouseEvent) => void
 }
 
-function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onClose, onDragStart, onDragOver, onDragEnd }: SessionTabProps): React.ReactElement {
+function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onClose, onDragStart, onDragOver, onDragEnd, onContextMenu }: SessionTabProps): React.ReactElement {
     const screenStatus = useSessionScreenStatus(tab.id)
     const status = screenStatus.enabled ? screenStatus.status : null
     const dot = status && status.state !== 'idle' && !active ? status : null
@@ -140,11 +162,12 @@ function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onC
             onDragStart={onDragStart}
             onDragOver={onDragOver}
             onDragEnd={onDragEnd}
+            onContextMenu={onContextMenu}
             onClick={() => onSelect(tab.id)}
             // Middle click closes, as in a browser or VS Code.
             onAuxClick={(event) => { if (event.button === 1) { event.preventDefault(); onClose(tab.id) } }}
             onMouseDown={(event) => { if (event.button === 1) event.preventDefault() }}
-            className={`group relative no-drag flex items-center gap-1.5 pl-3 pr-1.5 min-w-[96px] max-w-[200px] shrink-0 cursor-pointer select-none border-r border-white/10 text-xs transition-colors ${
+            className={`group relative no-drag flex items-center gap-1.5 pl-3 pr-1.5 ${TAB_WIDTH} cursor-pointer select-none border-r border-white/10 text-xs transition-colors ${
                 active
                     ? 'bg-white/10 text-white'
                     : visible

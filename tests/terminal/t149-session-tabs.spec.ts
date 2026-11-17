@@ -5,7 +5,7 @@ import path from 'path'
 import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './helpers'
 
 /**
- * T149 — the tab row at the top of the main area (Settings › General 「Show Session Tabs」, default on).
+ * T149 — the tab row under the main header (Settings › General 「Show Session Tabs」, default on).
  *
  * A session that comes on screen gets a tab right after the one the person was on. Clicking a tab shows
  * it; ⌘⇧. / ⌘⇧, (⌘> ⌘<) step through the tabs; × closes the tab and keeps the session; ⌘W ends the
@@ -69,6 +69,11 @@ async function dragTab(page: Page, id: string, ontoId: string): Promise<void> {
         tab.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }))
     }, [id, ontoId])
 }
+
+const MANY_TAB_NAMES = [
+    'api server', 'web dev', 'deploy', 'feedback batch 1117', 'night shift', 'release 1.36',
+    'docs', 'chief', 'team lead: phone', 'team lead: chat view', 'worker 1', 'worker 2: session tabs'
+]
 
 test.describe('T149 session tabs', () => {
     let ctx: LaunchResult | null = null
@@ -136,11 +141,14 @@ test.describe('T149 session tabs', () => {
         await shot(page, 'after-tabs-390')
         await page.setViewportSize({ width: 1280, height: 800 })
 
-        // The tab row and the sidebar header end on one line (T36 measures the first row).
+        // The header keeps its line with the sidebar header (T36); the tab row sits right under it (review 2026-11-17).
         const sidebarHeader = page.locator('div.glass-panel > div.draggable').filter({ hasText: 'Workspaces' }).first()
+        const mainHeader = page.locator('div.flex-1.glass-panel > div.draggable').first()
         const sideBox = (await sidebarHeader.boundingBox())!
+        const headBox = (await mainHeader.boundingBox())!
         const barBox = (await page.getByTestId('session-tab-bar').boundingBox())!
-        expect(Math.abs((sideBox.y + sideBox.height) - (barBox.y + barBox.height))).toBeLessThanOrEqual(1)
+        expect(Math.abs((sideBox.y + sideBox.height) - (headBox.y + headBox.height))).toBeLessThanOrEqual(1)
+        expect(Math.abs(barBox.y - (headBox.y + headBox.height))).toBeLessThanOrEqual(1)
 
         // Clicking a tab shows its session.
         await page.locator('[data-session-tab="s-2"]').click()
@@ -214,13 +222,13 @@ test.describe('T149 session tabs', () => {
         await dropIntoSplit(page, 's-2')
         await expect.poll(() => visibleSession(page)).toBe('s-1,s-2')
         await expect.poll(() => tabOrder(page)).toContain('s-2')
-        // Split view shrinks the sidebar header; the tab row follows so both still end on one line.
-        const sideHeader = page.locator('div.glass-panel > div.draggable').filter({ hasText: 'Workspaces' }).first()
+        // Split view shrinks the header to h-6; the tab row follows it (compact) and stays right under it.
+        const mainHeader = page.locator('div.flex-1.glass-panel > div.draggable').first()
         await expect.poll(async () => {
-            const sideBox = (await sideHeader.boundingBox())!
+            const headBox = (await mainHeader.boundingBox())!
             const barBox = (await page.getByTestId('session-tab-bar').boundingBox())!
-            return Math.round(Math.abs((sideBox.y + sideBox.height) - (barBox.y + barBox.height)))
-        }).toBeLessThanOrEqual(1)
+            return Math.round(barBox.height) <= 24 && Math.abs(barBox.y - (headBox.y + headBox.height)) <= 1
+        }).toBe(true)
         await shot(page, 'after-split-1280')
         // Both panes are marked as on screen.
         await expect(page.locator('[data-session-tab="s-1"][data-visible="true"]')).toHaveCount(1)
@@ -244,5 +252,116 @@ test.describe('T149 session tabs', () => {
         await page.getByTestId('settings-show-session-tabs').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect.poll(() => tabOrder(page), { timeout: 10_000 }).toEqual(['s-1', 's-3'])
+    })
+
+    test('many tabs shrink before the row scrolls; at 390 they stop at the minimum and the one on screen stays in view', async () => {
+        const ids = Array.from({ length: 12 }, (_, i) => `m-${String(i + 1).padStart(2, '0')}`)
+        ctx = await launchAppWithWorkspaces([{
+            id: 'ws-m', name: 'T149MANY', path: tempDir(),
+            // Names of different lengths, as real sessions have: long ones give way more than short ones.
+            sessions: ids.map((id, i) => ({ id, name: MANY_TAB_NAMES[i] }))
+        }], { config: { sessionTabs: { ids, activeId: 'm-12' } } })
+        const page = ctx.page
+        await page.setViewportSize({ width: 1280, height: 800 })
+        await expect.poll(() => tabOrder(page), { timeout: 15_000 }).toEqual(ids)
+        await expect.poll(() => visibleSession(page)).toBe('m-12')
+
+        const measure = (): Promise<{ widths: number[]; overflow: boolean; activeInView: boolean }> => page.evaluate(() => {
+            const row = document.querySelector('[data-testid="session-tab-bar"]') as HTMLElement
+            const rowBox = row.getBoundingClientRect()
+            const tabs = Array.from(row.querySelectorAll('[data-session-tab]')) as HTMLElement[]
+            const active = row.querySelector('[data-session-tab][data-active="true"]')!.getBoundingClientRect()
+            return {
+                widths: tabs.map((tab) => Math.round(tab.getBoundingClientRect().width)),
+                overflow: row.scrollWidth > row.clientWidth + 1,
+                activeInView: active.left >= rowBox.left - 1 && active.right <= rowBox.right + 1
+            }
+        })
+        // 1280: twelve tabs fit by shrinking — narrower than their 200px names, no scrolling.
+        await expect.poll(async () => (await measure()).overflow).toBe(false)
+        const wide = await measure()
+        expect(Math.max(...wide.widths)).toBeLessThan(200)
+        expect(Math.min(...wide.widths)).toBeGreaterThanOrEqual(80)
+        await shot(page, 'after-many-1280')
+
+        // 390: no room even at the minimum — tabs stop at 80px and the row scrolls to the one on screen.
+        await page.setViewportSize({ width: 390, height: 800 })
+        await expect.poll(async () => {
+            const narrow = await measure()
+            return narrow.overflow && narrow.activeInView && narrow.widths.every((width) => width === 80)
+        }).toBe(true)
+        await shot(page, 'after-many-390')
+    })
+
+    test('right-click menu: close others / to the right / all, side by side, end session', async () => {
+        const page = await launchThree()
+        for (const id of ['s-1', 's-2', 's-3', 's-b']) {
+            await sidebarRow(page, id).click()
+            await expect.poll(() => visibleSession(page)).toBe(id)
+        }
+        await page.locator('[data-session-tab="s-2"]').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1', 's-2', 's-3', 's-b'])
+
+        const openMenu = async (id: string): Promise<void> => {
+            await page.locator(`[data-session-tab="${id}"]`).click({ button: 'right' })
+            await expect(page.locator(`[data-session-tab-menu="${id}"]`)).toBeVisible()
+        }
+        const item = (name: string) => page.locator(`[data-tab-menu-item="${name}"]`)
+
+        // Esc and a press outside close the menu without doing anything.
+        await openMenu('s-1')
+        await shot(page, 'after-menu-1280')
+        await page.keyboard.press('Escape')
+        await expect(page.locator('[data-session-tab-menu]')).toHaveCount(0)
+        await openMenu('s-1')
+        await page.mouse.click(700, 400)
+        await expect(page.locator('[data-session-tab-menu]')).toHaveCount(0)
+        expect(await tabOrder(page)).toEqual(['s-1', 's-2', 's-3', 's-b'])
+
+        // The last tab has nothing to its right.
+        await openMenu('s-b')
+        await expect(item('close-right')).toBeDisabled()
+        await page.keyboard.press('Escape')
+
+        // Close Tabs to the Right of s-3: s-b goes; the screen (s-2) stays.
+        await openMenu('s-3')
+        await item('close-right').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1', 's-2', 's-3'])
+        expect(await visibleSession(page)).toBe('s-2')
+        await expect(sidebarRow(page, 's-b')).toBeVisible()
+
+        // Open Side by Side: s-3 joins the session on screen in split view; the one on screen cannot pair with itself.
+        await openMenu('s-2')
+        await expect(item('side-by-side')).toBeDisabled()
+        await page.keyboard.press('Escape')
+        await openMenu('s-3')
+        await item('side-by-side').click()
+        await expect.poll(() => visibleSession(page)).toBe('s-2,s-3')
+        await openMenu('s-3')
+        await expect(item('side-by-side')).toBeDisabled()
+        await page.keyboard.press('Escape')
+
+        // Close Other Tabs from s-1: s-2 and s-3 leave the row and split view; s-1 comes on screen.
+        await openMenu('s-1')
+        await item('close-others').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1'])
+        await expect.poll(() => visibleSession(page)).toBe('s-1')
+        for (const id of ['s-2', 's-3']) await expect(sidebarRow(page, id)).toBeVisible()
+
+        // End Session: the session itself goes (sidebar and config), as ⌘W would.
+        await sidebarRow(page, 's-2').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1', 's-2'])
+        await openMenu('s-2')
+        await item('end-session').click()
+        await expect(page.locator('[data-session-item="s-2"]')).toHaveCount(0, { timeout: 10_000 })
+        await expect.poll(() => storedSessionIds(ctx!.userDataDir)).not.toContain('s-2')
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1'])
+        await expect.poll(() => visibleSession(page)).toBe('s-1')
+
+        // Close All Tabs: no row, nothing on screen, sessions still in the sidebar.
+        await openMenu('s-1')
+        await item('close-all').click()
+        await expect(page.getByTestId('session-tab-bar')).toHaveCount(0)
+        await expect(sidebarRow(page, 's-1')).toBeVisible()
     })
 })
