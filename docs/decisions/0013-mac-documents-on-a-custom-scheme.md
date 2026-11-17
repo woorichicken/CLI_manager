@@ -37,10 +37,12 @@ to serve the page from.
   person; it is kept from other pages.
 - **The phone's 64 MB limit, streamed.** The 500 KB of `read-file-content` stays for reading words (the Source view uses it).
 - **A small script in front of the page** (`DOC_PREVIEW_BRIDGE`): storage that lives in the page (an opaque origin's
-  `localStorage` throws and stops a kit's script), Escape and a press passed up (close the preview, make a pane active), a link
+  `localStorage` throws and stops a kit's script), a press passed up (make a pane active), a link
   to another page of the folder handed to the window — which opens it like any page, so the path shown, Source and Browser
   follow — and other links do nothing. It adds no power: the page could post the same messages, and the window takes only a
-  plain relative `.html` path (`docPreviewSibling`).
+  plain relative `.html` path (`docPreviewSibling`). Escape stays the page's — it is not passed up (fb-1117 b6a75106: a review
+  page closes its enlarged photo with Escape, and passing it up closed the preview and the comments kept in the page). The
+  window's × closes, or Escape with the focus outside the page.
 - **A split pane holds a document by a `doc:` id in the split's list.** It takes a place like a session; places that look a
   session up by id find none, and the grid window, the recent list and the Related dialog skip it. Not saved: the split is not.
 
