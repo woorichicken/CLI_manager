@@ -3,7 +3,9 @@ import { ipcMain } from 'electron'
 import { SystemInfo } from '../shared/types'
 import { promisify } from 'util'
 import os from 'os'
+import { existsSync } from 'fs'
 import Store from 'electron-store'
+import { MAC_DATA_VOLUME, diskCommand, parseDiskUsage } from './systemMonitorInfo'
 
 const execAsync = promisify(exec)
 
@@ -16,9 +18,12 @@ const execAsync = promisify(exec)
  */
 export class SystemMonitor {
     private store: any
+    /** Working / waiting counts from the screen mirrors; read once per popover open. */
+    private readonly sessionActivity: () => { working: number; waiting: number }
 
-    constructor(store: Store) {
+    constructor(store: Store, sessionActivity: () => { working: number; waiting: number } = () => ({ working: 0, waiting: 0 })) {
         this.store = store
+        this.sessionActivity = sessionActivity
 
         // Register IPC handler - fetches data only when popover opens
         ipcMain.handle('get-system-info', async () => {
@@ -101,7 +106,8 @@ export class SystemMonitor {
     }
 
     /**
-     * Disk usage via macOS `df` command
+     * Disk usage via `df`, read from the data volume on macOS — `/` is the sealed system
+     * volume and reports a few GB used on a nearly full disk (fb-1117 9aebd089).
      */
     private async getDiskInfo(): Promise<SystemInfo['disk']> {
         const defaultDisk: SystemInfo['disk'] = {
@@ -109,20 +115,8 @@ export class SystemMonitor {
         }
 
         try {
-            const { stdout } = await execAsync('df -h /', { timeout: 3000 })
-            const lines = stdout.split('\n')
-            // Skip header line, get data line
-            const dataLine = lines[1]
-
-            if (dataLine) {
-                const parts = dataLine.split(/\s+/)
-                return {
-                    total: parts[1] || '-',
-                    used: parts[2] || '-',
-                    available: parts[3] || '-',
-                    usagePercent: parts[4] || '-'
-                }
-            }
+            const { stdout } = await execAsync(diskCommand(existsSync(MAC_DATA_VOLUME)), { timeout: 3000 })
+            return parseDiskUsage(stdout) ?? defaultDisk
         } catch (error) {
             console.error('[SystemMonitor] Failed to get disk info:', error)
         }
@@ -185,9 +179,20 @@ export class SystemMonitor {
                 (sum: number, w: any) => sum + (w.sessions?.length || 0), 0
             )
 
-            return { activeSessionCount, workspaceCount }
+            const { working, waiting } = this.readSessionActivity()
+            return { activeSessionCount, workspaceCount, workingCount: working, waitingCount: waiting }
         } catch {
-            return { activeSessionCount: 0, workspaceCount: 0 }
+            return { activeSessionCount: 0, workspaceCount: 0, workingCount: 0, waitingCount: 0 }
+        }
+    }
+
+    /** A bad screen read must not cost the whole popover its numbers. */
+    private readSessionActivity(): { working: number; waiting: number } {
+        try {
+            return this.sessionActivity()
+        } catch (error) {
+            console.error('[SystemMonitor] Failed to read session activity:', error)
+            return { working: 0, waiting: 0 }
         }
     }
 }
