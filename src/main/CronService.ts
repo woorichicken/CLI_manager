@@ -1,4 +1,4 @@
-import { CronInput, CronJob, CronRun, CronState, CronView } from '../shared/autocron'
+import { CronInput, CronJob, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
 import type { LoopState } from '../shared/types'
 import { nextRun, parseCron, planTick } from '../shared/cron'
 import { Checked, CronStore } from './CronStore'
@@ -58,8 +58,9 @@ export interface CronServiceDeps {
     apiOn(): boolean
     /** A system notification for «notify» misses and failures. */
     notify(title: string, body: string): void
-    /** Focus a session in the main window — «Open session». False when it is gone. */
-    focusSession(sessionId: string): boolean
+    /** Focus a session in the main window — «Open session». False when it is gone.
+     *  With `terminal`, the main window also switches that session to its terminal. */
+    focusSession(sessionId: string, terminal?: CronOpenTerminal): boolean
     now?: () => number
 }
 
@@ -276,7 +277,7 @@ export class CronService {
     }
 
     /** «Open session» on a run: focuses it in the main window (new) or opens the Loop window (attach). */
-    openSession(sessionId: string): boolean {
-        return this.deps.focusSession(sessionId)
+    openSession(sessionId: string, terminal?: CronOpenTerminal): boolean {
+        return this.deps.focusSession(sessionId, terminal)
     }
 }

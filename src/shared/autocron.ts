@@ -92,6 +92,15 @@ export interface CronInput {
     enabled?: unknown
 }
 
+/**
+ * «Open in main window» from the Loop window's Chat, after a command only a terminal can show
+ * (`/config`, a bare `/model`): the main window switches that session to its terminal, and shows the
+ * «Back to Chat» bar naming the command (the same as the main window's own Chat does).
+ */
+export interface CronOpenTerminal {
+    command?: string
+}
+
 export const CRON_CHANNELS = {
     list: 'cron-list',
     create: 'cron-create',

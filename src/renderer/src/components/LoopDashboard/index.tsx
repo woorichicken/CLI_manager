@@ -196,7 +196,15 @@ export function LoopDashboard() {
                 </div>
             </div>
 
-            {tab === 'autocron' && <AutocronPanel loopProjects={projects} />}
+            {tab === 'autocron' && (
+                <AutocronPanel
+                    loopProjects={projects}
+                    onShowLoop={(loopProjectId) => {
+                        void handleSelectProject(loopProjectId)
+                        setTab('loops')
+                    }}
+                />
+            )}
 
             {/* Body */}
             <div className="flex flex-1 min-h-0" style={{ display: tab === 'loops' ? 'flex' : 'none' }}>

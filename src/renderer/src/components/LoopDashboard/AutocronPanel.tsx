@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarClock, Play, Pause, Plus, Trash2, Pencil, ExternalLink, FolderOpen } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarClock, Play, Pause, Plus, Trash2, Pencil, ExternalLink, FolderOpen, MessageSquareText, Repeat } from 'lucide-react'
 import type { CronInput, CronRun, CronState, CronView } from '../../../../shared/autocron'
 import { DEFAULT_MISSED, MissedPolicy, nextRun, parseCron } from '../../../../shared/cron'
 import type { LoopProject } from '../../../../shared/types'
+import { AutocronChat, useOpenSessionIds } from './AutocronChat'
 
 /**
  * Loop window › Autocron: jobs CLI Manager starts on a schedule — open a new agent session,
@@ -18,6 +19,9 @@ const PRESETS: Array<{ label: string; schedule: string }> = [
     { label: 'Every 30 minutes', schedule: '*/30 * * * *' },
     { label: 'Mondays 10:00', schedule: '0 10 * * 1' }
 ]
+
+const PRIMARY_BUTTON = 'px-3 py-1.5 rounded bg-purple-500/80 hover:bg-purple-500 text-xs text-white disabled:opacity-50'
+const SECONDARY_BUTTON = 'px-3 py-1.5 rounded border border-white/15 text-xs text-gray-300 hover:text-white disabled:opacity-50'
 
 const MISSED_LABELS: Record<MissedPolicy, string> = {
     once: 'Run once when back',
@@ -73,7 +77,8 @@ interface FormProps {
     initial?: CronView
     loopProjects: LoopProject[]
     onCancel: () => void
-    onSaved: (cron: CronView) => void
+    /** `runNow`: the person chose «Save & run now» — the detail view runs the job once */
+    onSaved: (cron: CronView, runNow: boolean) => void
 }
 
 function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
@@ -97,7 +102,7 @@ function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
         return { ok: true, text: `Next: ${formatWhen(nextRun(parsed.schedule, Date.now()))}` }
     }, [schedule])
 
-    const save = async () => {
+    const save = async (runNow: boolean) => {
         setSaving(true)
         setError(null)
         const input: CronInput = {
@@ -112,7 +117,8 @@ function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
         }
         const result = initial ? await window.api.updateCron(initial.id, input) : await window.api.createCron(input)
         setSaving(false)
-        if (result.success && result.data) onSaved(result.data)
+        // nothing runs unless the save went through — a bad form keeps its error and stays open
+        if (result.success && result.data) onSaved(result.data, runNow)
         else setError(result.error ?? 'Could not save')
     }
 
@@ -238,8 +244,15 @@ function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
 
                 {error && <p className="text-xs text-red-400" data-testid="autocron-error">{error}</p>}
                 <div className="flex gap-2">
-                    <button type="button" disabled={saving} onClick={save} className="px-3 py-1.5 rounded bg-purple-500/80 hover:bg-purple-500 text-xs text-white disabled:opacity-50" data-testid="autocron-save">
-                        {saving ? 'Saving…' : 'Save'}
+                    {/* A new job is saved and run once by default, so the person sees it work before
+                        the first scheduled time. Editing is not a reason to run again — Save only. */}
+                    {!initial && (
+                        <button type="button" disabled={saving} onClick={() => save(true)} className={PRIMARY_BUTTON} data-testid="autocron-save-run">
+                            {saving ? 'Saving…' : 'Save & run now'}
+                        </button>
+                    )}
+                    <button type="button" disabled={saving} onClick={() => save(false)} className={initial ? PRIMARY_BUTTON : SECONDARY_BUTTON} data-testid="autocron-save">
+                        {saving && initial ? 'Saving…' : 'Save'}
                     </button>
                     <button type="button" onClick={onCancel} className="px-3 py-1.5 rounded border border-white/10 text-xs text-gray-400 hover:text-gray-200">Cancel</button>
                 </div>
@@ -252,38 +265,78 @@ function CronForm({ initial, loopProjects, onCancel, onSaved }: FormProps) {
 // Detail: one job and its runs
 // -------------------------------------------------------
 
-function CronDetail({ cron, runs, onEdit }: { cron: CronView; runs: CronRun[]; onEdit: () => void }) {
+interface DetailProps {
+    cron: CronView
+    runs: CronRun[]
+    onEdit: () => void
+    /** the job was just made with «Save & run now»: run it once as soon as the detail shows */
+    runOnOpen: boolean
+    onRanOnOpen: () => void
+    /** an attach job's loop: talking to it happens in the Loops tab's terminal */
+    onShowLoop: (loopProjectId: string) => void
+}
+
+/** The run «Chat» opens on by default: the newest one whose session is still open (any, before the first read). */
+function newestSessionRun(runs: CronRun[], openSessionIds: Set<string> | null): CronRun | undefined {
+    return runs.find((run) => run.status === 'started' && run.sessionId && (!openSessionIds || openSessionIds.has(run.sessionId)))
+}
+
+function CronDetail({ cron, runs, onEdit, runOnOpen, onRanOnOpen, onShowLoop }: DetailProps) {
     const [busy, setBusy] = useState(false)
     const [message, setMessage] = useState<string | null>(null)
+    const [view, setView] = useState<'details' | 'chat'>('details')
+    // null = follow the newest run with a session; a run's «Talk here» pins one
+    const [chatSessionId, setChatSessionId] = useState<string | null>(null)
 
-    const runNow = async () => {
+    const runNow = useCallback(async () => {
         setBusy(true)
         setMessage(null)
         const r = await window.api.runCron(cron.id)
         setBusy(false)
         if (!r.success) setMessage(r.error ?? 'Could not run')
+    }, [cron.id])
+
+    // a ref, not only the parent's flag: React may run this effect twice for one mount (StrictMode),
+    // and a second Run now would open a second session
+    const ranOnOpen = useRef(false)
+    useEffect(() => {
+        if (!runOnOpen || ranOnOpen.current) return
+        ranOnOpen.current = true
+        onRanOnOpen()
+        void runNow()
+    }, [runOnOpen, onRanOnOpen, runNow])
+
+    const talkHere = (sessionId: string) => {
+        setChatSessionId(sessionId)
+        setView('chat')
     }
     const toggle = () => window.api.updateCron(cron.id, { enabled: !cron.enabled })
     const remove = async () => {
         if (window.confirm(`Delete "${cron.name}" and its run history?`)) await window.api.removeCron(cron.id)
     }
-    const open = async (sessionId: string) => {
-        const r = await window.api.openCronSession(sessionId)
+    const open = async (sessionId: string, terminal?: { command?: string }) => {
+        const r = await window.api.openCronSession(sessionId, terminal)
         if (!r.success || !r.data) setMessage('That session is closed.')
     }
+
+    // a pinned run («Talk here») stays even when its session closed — that run's notice says so
+    const openSessionIds = useOpenSessionIds()
+    const chatSession = chatSessionId ?? newestSessionRun(runs, openSessionIds)?.sessionId ?? null
+    const tabClass = (active: boolean) => `px-2 py-0.5 rounded text-xs ${active ? 'bg-white/10 text-gray-200' : 'text-gray-500 hover:text-gray-300'}`
 
     const what = cron.mode === 'new' ? `New ${cron.template ? `"${cron.template}"` : cron.agent} session in ${cron.cwd}` : 'Types into a loop'
     const btn = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-white/10 text-xs text-gray-300 hover:text-white hover:border-white/25 disabled:opacity-50'
 
-    return (
-        <div className="flex-1 overflow-y-auto p-5" data-testid="autocron-detail">
+    // the job's name, buttons, problem line and the Details · Chat switch — shown above either view
+    const header = (
+        <div>
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                     <h2 className="text-base font-semibold text-gray-100 truncate">{cron.name}</h2>
                     <p className="text-xs text-gray-500 mt-0.5 truncate">{what}</p>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                    <button className={btn} disabled={busy} onClick={runNow} data-testid="autocron-run-now"><Play size={12} /> Run now</button>
+                    <button className={btn} disabled={busy} onClick={runNow} data-testid="autocron-run-now"><Play size={12} /> {busy ? 'Starting…' : 'Run now'}</button>
                     <button className={btn} onClick={toggle} data-testid="autocron-toggle">{cron.enabled ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}</button>
                     <button className={btn} onClick={onEdit}><Pencil size={12} /> Edit</button>
                     <button className={btn} onClick={remove} title="Delete"><Trash2 size={12} /></button>
@@ -292,6 +345,36 @@ function CronDetail({ cron, runs, onEdit }: { cron: CronView; runs: CronRun[]; o
 
             {cron.problem && <p className="mt-3 text-xs text-red-400" data-testid="autocron-problem">{cron.problem}</p>}
             {message && <p className="mt-3 text-xs text-amber-400">{message}</p>}
+
+            {/* An attach job types into a loop; that loop's terminal in the Loops tab is where to talk. */}
+            {cron.mode === 'new' && (
+                <div className="flex gap-1 mt-4" role="tablist">
+                    <button role="tab" aria-selected={view === 'details'} className={tabClass(view === 'details')} onClick={() => setView('details')} data-testid="autocron-view-details">Details</button>
+                    <button role="tab" aria-selected={view === 'chat'} className={tabClass(view === 'chat')} onClick={() => setView('chat')} data-testid="autocron-view-chat">
+                        <span className="inline-flex items-center gap-1"><MessageSquareText size={11} /> Chat</span>
+                    </button>
+                </div>
+            )}
+            {cron.mode === 'attach' && cron.loopProjectId && (
+                <button className="mt-4 inline-flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200" onClick={() => onShowLoop(cron.loopProjectId!)} data-testid="autocron-show-loop">
+                    <Repeat size={11} /> Talk in the loop&apos;s terminal
+                </button>
+            )}
+        </div>
+    )
+
+    if (view === 'chat' && cron.mode === 'new') {
+        return (
+            <div className="flex flex-col flex-1 min-h-0" data-testid="autocron-detail">
+                <div className="p-5 pb-3 shrink-0">{header}</div>
+                <AutocronChat sessionId={chatSession} onOpenInMain={(id, terminal) => void open(id, terminal)} />
+            </div>
+        )
+    }
+
+    return (
+        <div className="flex-1 overflow-y-auto p-5" data-testid="autocron-detail">
+            {header}
 
             <dl className="grid grid-cols-[120px_1fr] gap-y-1.5 mt-4 text-xs">
                 <dt className="text-gray-500">Schedule</dt><dd className="text-gray-300 font-mono">{cron.schedule}</dd>
@@ -317,9 +400,16 @@ function CronDetail({ cron, runs, onEdit }: { cron: CronView; runs: CronRun[]; o
                                 <td className="py-1.5 pr-3 text-gray-500">{runDetail(run)}</td>
                                 <td className="py-1.5 text-right">
                                     {run.sessionId && (
-                                        <button className="inline-flex items-center gap-1 text-purple-300 hover:text-purple-200" onClick={() => open(run.sessionId!)} data-testid="autocron-open-session">
-                                            <ExternalLink size={11} /> Open session
-                                        </button>
+                                        <span className="inline-flex items-center gap-3">
+                                            {cron.mode === 'new' && (
+                                                <button className="inline-flex items-center gap-1 text-purple-300 hover:text-purple-200" onClick={() => talkHere(run.sessionId!)} data-testid="autocron-talk-here">
+                                                    <MessageSquareText size={11} /> Talk here
+                                                </button>
+                                            )}
+                                            <button className="inline-flex items-center gap-1 text-purple-300 hover:text-purple-200" onClick={() => open(run.sessionId!)} data-testid="autocron-open-session">
+                                                <ExternalLink size={11} /> Open session
+                                            </button>
+                                        </span>
                                     )}
                                 </td>
                             </tr>
@@ -335,10 +425,13 @@ function CronDetail({ cron, runs, onEdit }: { cron: CronView; runs: CronRun[]; o
 // Panel
 // -------------------------------------------------------
 
-export function AutocronPanel({ loopProjects }: { loopProjects: LoopProject[] }) {
+export function AutocronPanel({ loopProjects, onShowLoop }: { loopProjects: LoopProject[]; onShowLoop: (loopProjectId: string) => void }) {
     const { crons, runs } = useCrons()
     const [selectedId, setSelectedId] = useState<string | null>(null)
     const [editing, setEditing] = useState<'new' | string | null>(null)
+    // the job «Save & run now» just made — its detail runs it once, then clears this
+    const [runOnOpenId, setRunOnOpenId] = useState<string | null>(null)
+    const clearRunOnOpen = useCallback(() => setRunOnOpenId(null), [])
 
     useEffect(() => {
         if (selectedId && !crons.some((c) => c.id === selectedId)) setSelectedId(null)
@@ -390,13 +483,22 @@ export function AutocronPanel({ loopProjects }: { loopProjects: LoopProject[] })
                     initial={editing === 'new' ? undefined : crons.find((c) => c.id === editing)}
                     loopProjects={loopProjects}
                     onCancel={() => setEditing(null)}
-                    onSaved={(cron) => {
+                    onSaved={(cron, runNow) => {
                         setEditing(null)
                         setSelectedId(cron.id)
+                        if (runNow) setRunOnOpenId(cron.id)
                     }}
                 />
             ) : selected ? (
-                <CronDetail cron={selected} runs={runsFor(selected.id)} onEdit={() => setEditing(selected.id)} />
+                <CronDetail
+                    key={selected.id}
+                    cron={selected}
+                    runs={runsFor(selected.id)}
+                    onEdit={() => setEditing(selected.id)}
+                    runOnOpen={runOnOpenId === selected.id}
+                    onRanOnOpen={clearRunOnOpen}
+                    onShowLoop={onShowLoop}
+                />
             ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
                     <CalendarClock size={36} className="text-purple-400/40" />
