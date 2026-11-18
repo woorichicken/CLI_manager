@@ -24,7 +24,7 @@ import type { TranscriptReader } from './TranscriptReader'
 import { BackgroundTaskReader, settleBackground } from './transcript/backgroundTasks'
 import type { AliasResolver } from '../shared/agentCommand'
 import type { SessionRelationAnchor } from '../shared/types'
-import { forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName } from './chatFork'
+import { claudePermissionMode, forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName, withPermissionMode } from './chatFork'
 import { replyForThread, replyQuote } from '../renderer/src/components/ChatView/threadTurns'
 
 /**
@@ -149,6 +149,8 @@ export interface ConversationMirror {
     /** TerminalMirror.asksQuestion — the Chat's own, stricter test; showsAwaitingInput without it */
     asksQuestion?(id: string): boolean
     inputBox(id: string): { typed: string; suggestion?: string; clipped?: boolean; typedRows?: number } | null
+    /** TerminalMirror.codexInput — Codex's `›` line; Codex has no box for inputBox to read. */
+    codexInput(id: string): { typed: string; suggestion?: string; clipped?: boolean; typedRows?: number } | null
 }
 
 export interface ConversationServiceDeps {
@@ -370,8 +372,11 @@ export class ConversationService {
         const message = typeof request?.message === 'string' ? request.message : ''
         if (message.length > MAX_TEXT_LENGTH) return { status: 'rejected', reason: 'too_large', message: `The message is limited to ${MAX_TEXT_LENGTH} characters.` }
         let turns
+        let transcriptMode: string | null = null
         try {
-            turns = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)?.turns ?? null
+            const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
+            turns = read?.turns ?? null
+            transcriptMode = read?.meta?.mode ?? null
         } catch (error) {
             console.error('[conversation] fork read failed', sessionId, error)
             turns = null
@@ -389,10 +394,13 @@ export class ConversationService {
         }
         const scope = request.scope === 'excerpt' ? 'excerpt' : 'whole'
         const name = forkSessionName(info.name ?? '')
+        const mode = agent === 'claude' ? await this.currentClaudeMode(sessionId, transcriptMode) : null
         const base = forkBaseCommand(agent, info.cliCommand, this.deps.resolveAlias)
+        // the child keeps the mode it starts in for its own restart, like the rest of its start command
+        const stored = withPermissionMode(base.stored, mode, this.deps.resolveAlias)
         let command: string
         try {
-            command = scope === 'whole' ? forkCommand(agent, info.cliCommand, info.cliSessionId, this.deps.resolveAlias) : base.input
+            command = scope === 'whole' ? forkCommand(agent, info.cliCommand, info.cliSessionId, this.deps.resolveAlias, mode) : withPermissionMode(base.input, mode, this.deps.resolveAlias)
         } catch {
             return { status: 'rejected', reason: 'no_conversation', message: 'The linked conversation id cannot be forked.' }
         }
@@ -406,7 +414,7 @@ export class ConversationService {
                 agent,
                 name,
                 command,
-                cliCommand: base.stored,
+                cliCommand: stored,
                 prompt,
                 watchCodex: scope === 'whole' && agent === 'codex',
                 ...(sender ? { allowed: sender.allowed } : {}),
@@ -420,6 +428,26 @@ export class ConversationService {
             console.error('[conversation] fork failed', sessionId, error)
             return { status: 'rejected', reason: 'failed', message: error instanceof Error ? error.message : String(error) }
         }
+    }
+
+    /**
+     * The parent's permission mode now, as a `--permission-mode` value: the screen's mode row (what a
+     * Shift+Tab switched to since the last prompt), else the transcript's last prompt. Null: not known —
+     * the fork keeps the start command's own mode (fb-1117 d2b9bf31).
+     */
+    private async currentClaudeMode(sessionId: string, transcriptMode: string | null): Promise<string | null> {
+        let screenMode: string | null = null
+        if (this.deps.hasTerminal(sessionId) && !this.deps.mirror.hasExited(sessionId)) {
+            const entry = this.entry(sessionId)
+            try {
+                await this.refreshScreen(sessionId, entry, true)
+                screenMode = entry.screenMode
+            } catch (error) {
+                console.error('[conversation] fork mode read failed', sessionId, error)
+            }
+            this.dropIfIdle(sessionId, entry)
+        }
+        return claudePermissionMode(screenMode) ?? claudePermissionMode(transcriptMode)
     }
 
     /** `from`: who sends it, when not this Mac (ChatSender). */
@@ -853,9 +881,13 @@ export class ConversationService {
                 message: 'The agent is asking a question. Answer it first — Enter would pick the highlighted option.'
             }
         }
-        const box = this.deps.mirror.inputBox(sessionId)
-        const claude = agentOf(this.deps.session(sessionId)) === 'claude'
-        // Only Claude's box is read from its rules; a lone rule on a Codex screen is its output.
+        const agent = agentOf(this.deps.session(sessionId))
+        const claude = agent === 'claude'
+        // Only Claude's box is read from its rules. Codex has no box: rules on its screen are its output
+        // (a table's separators read as one — fb-1117 1d15e1c2), and its input is the `›` line.
+        // After the question test above, on purpose: a Codex approval menu's `› 1. Yes, proceed` row reads
+        // as typed text to codexInput, and Enter would pick it — it must be refused as awaiting_input.
+        const box = agent === 'codex' ? mirror.codexInput(sessionId) : mirror.inputBox(sessionId)
         const clipped = box?.clipped === true && claude
         if (box?.typed.trim() || clipped) {
             const draft = claude ? clearableDraft(box) : null

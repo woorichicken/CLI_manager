@@ -783,13 +783,15 @@ export class ControlApiService {
      * prompt stays in the input box (T19). Nothing is typed while the box already holds text a
      * person left there (the Chat's input_busy rule): the draft and the prompt would go out as one.
      * Only typed text counts — the dim next-prompt suggestion does not. The question/menu guard is
-     * the caller's (index.ts loopRefusal).
+     * the caller's (index.ts loopRefusal). `agent`: the loop's cliToolName — Codex has no box, its
+     * input is the `›` line (a table's rules read as Claude's box made every Codex loop busy, fb-1117).
      */
-    async typeIntoLoop(terminalId: string, text: string): Promise<LoopTypeResult> {
+    async typeIntoLoop(terminalId: string, text: string, agent?: string): Promise<LoopTypeResult> {
         const running = (): boolean => this.deps.terminals.hasTerminal(terminalId) && !this.deps.mirror.hasExited(terminalId)
         if (!running()) return 'gone'
         await this.deps.mirror.flush(terminalId)
-        if (this.deps.mirror.inputBox(terminalId)?.typed.trim()) return 'busy'
+        const box = agent === 'codex' ? this.deps.mirror.codexInput(terminalId) : this.deps.mirror.inputBox(terminalId)
+        if (box?.typed.trim()) return 'busy'
         const line = text.replace(/[\r\n]+/g, ' ')
         await this.settleAfterEscape(terminalId)
         this.write(terminalId, line)

@@ -293,8 +293,13 @@
 .chat-attachment button { color: var(--chat-faint); padding: 1px; }
 .chat-attachment button:hover { color: var(--chat-fg); }
 .chat-drop-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(37, 99, 235, 0.12); color: #93c5fd; pointer-events: none; font-size: 0.9em; }
-.chat-quick { display: flex; gap: 6px; flex-wrap: wrap; }
-.chat-quick-reply { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--chat-line); font-size: 0.82em; color: var(--chat-dim); }
+/* one line, scrolled sideways — no scrollbar; the faded end says chips are past it (29993485, QuickReplyRow) */
+.chat-quick { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding-block: 2px; }
+.chat-quick::-webkit-scrollbar { display: none; }
+.chat-quick[data-hidden="end"] { mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+.chat-quick[data-hidden="start"] { mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); }
+.chat-quick[data-hidden="both"] { mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+.chat-quick-reply { flex: none; white-space: nowrap; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--chat-line); font-size: 0.82em; color: var(--chat-dim); }
 .chat-quick-reply:hover { color: var(--chat-fg); border-color: rgba(96, 165, 250, 0.6); }
 /* one reply on its way: the tapped chip says so, the others wait (b17fa869) */
 .chat-quick-reply:disabled { opacity: 0.45; cursor: default; }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronRight, Gauge, Laptop, Layers, MessageSquareWarning } from 'lucide-react'
+import { ChevronRight, Gauge, Layers, MessageSquareWarning } from 'lucide-react'
 import type { PhoneDockItem, PhoneMe, PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { getMe, getSessions, PhoneApiError } from './api'
 import { AlertsMenu } from './AlertsMenu'
@@ -33,6 +33,8 @@ const LIST_POLL_MS = 3000
 const EDGE_PX = 24
 const SWIPE_PX = 60
 const LENS_KEY = 'phone-session-lens'
+/** the app icon the phone server already serves for the home screen (phone.html apple-touch-icon) */
+const APP_LOGO = '/phone/icon-180.png'
 
 /** `history.state` of the entry opening the Dock panel pushed: ✕ can go back to where it was instead of adding one. */
 const DOCK_PANEL_ENTRY = 'phone-dock-panel'
@@ -423,7 +425,8 @@ export function PhoneApp() {
             {showList && (
                 <aside className={`phone-sidebar ${!wide && session ? 'phone-drawer' : ''}`} data-testid="phone-sidebar">
                     <div className="phone-sidebar-head">
-                        <Laptop size={16} />
+                        {/* the app's own icon (df190888) — the one the home screen already shows, served beside phone.html */}
+                        <img src={APP_LOGO} alt="" width={18} height={18} className="phone-sidebar-logo" data-testid="phone-app-logo" />
                         <span className="phone-sidebar-title">CLI Manager</span>
                         <span className="phone-who" data-testid="phone-who">
                             {me.via === 'tailscale' ? me.login : me.deviceLabel}
