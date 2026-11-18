@@ -11,7 +11,7 @@ import { MENU_Z_INDEX } from '../../constants/styles'
  * had no listener at all. Both listen in the capture phase on window, so nothing under the pointer —
  * the terminal, a drag handle that cancels its pointerdown — sees the event first.
  */
-function useCloseOnOutside(onClose: () => void): React.RefObject<HTMLDivElement | null> {
+export function useCloseOnOutside(onClose: () => void): React.RefObject<HTMLDivElement | null> {
     const menuRef = useRef<HTMLDivElement>(null)
     const closeRef = useRef(onClose)
     closeRef.current = onClose

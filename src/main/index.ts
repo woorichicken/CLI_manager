@@ -40,6 +40,7 @@ import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
 import { allChatThreads, chatThreadParentIds, chatThreadsFor, pollChatThreadChanges, ReplyCounter } from './chatThreads'
 import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
+import { SessionTabs } from './SessionTabs'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
 import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText } from './ChecklistStore'
 import { CronStore } from './CronStore'
@@ -418,6 +419,7 @@ const readChatThreads = (parentId: string): ChatThread[] => anchoredChatParents.
 ) : []
 const sessionFolders = new SessionFolders(store)
 const recentSessions = new RecentSessions(store)
+const sessionTabs = new SessionTabs(store)
 /** sessionsInSidebarOrder as the renderer last computed it; null until the window has drawn its sidebar */
 let sidebarSessionOrder: string[] | null = null
 /** The feedback widget is shown on this Mac (the renderer reports it); the phone page follows it. */
@@ -464,6 +466,7 @@ const controlApiService = new ControlApiService({
         scrollbackStore.forget(sessionId)
         terminalEventLog.forget(sessionId)
         recentSessions.forget(sessionId)
+        sessionTabs.forget(sessionId)
         inbox.forget(sessionId)
         conversationService.forget(sessionId)
         stopCodexCapture(sessionId)
@@ -3622,6 +3625,9 @@ app.whenReady().then(async () => {
     ipcMain.handle('push-recent-session', (_e, sessionId: string): void => {
         if (typeof sessionId === 'string' && sessionId) recentSessions.push(sessionId)
     })
+    // The tab row at the top of the main area: the renderer owns the order and saves the whole list.
+    ipcMain.handle('get-session-tabs', () => sessionTabs.get())
+    ipcMain.handle('set-session-tabs', (_e, state: unknown): void => sessionTabs.set(state))
     // The order the sidebar draws sessions in. Its workspace order lives in the renderer (a drag
     // reorders it there; a restart loads Home, then by createdAt), so the phone's list takes it from here.
     ipcMain.on('sidebar-session-order', (_e, sessionIds: unknown) => {
@@ -4011,6 +4017,7 @@ app.whenReady().then(async () => {
     )
     sessionRelations.prune(existingSessionIds)
     recentSessions.prune(existingSessionIds)
+    sessionTabs.prune(existingSessionIds)
     inbox.prune(existingSessionIds)
     checklists.prune(new Set(((store.get('workspaces') as Workspace[] | undefined) ?? []).map((w) => w.id)))
     // prune() only announces a change; the badge must show what survived the restart either way.

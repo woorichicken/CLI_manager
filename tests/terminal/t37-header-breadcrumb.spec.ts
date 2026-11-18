@@ -181,7 +181,7 @@ test.describe('T37 split panes (fb-1114)', () => {
         const page = await launchSplit(['s-a', 's-b', 's-c'])
         await page.setViewportSize({ width: 1800, height: 950 })
         await page.locator('[data-session-item="s-a"]').click()
-        const single = page.locator('div.flex-1.glass-panel > div.draggable')
+        const single = page.locator('div.flex-1.glass-panel > div.draggable:not([data-testid="session-tab-bar"])')
         const singleHeight = (await single.boundingBox())!.height
         const singleSearch = (await single.locator('button[title^="Search Files"]').boundingBox())!
 
@@ -265,11 +265,11 @@ test.describe('T37 header breadcrumb', () => {
             { id: 'ws-b', name: 'T37LOOSE', sessions: [{ id: 's-b', name: 'T37OTHER' }] }
         ])
         await page.locator('[data-session-item="s-a"]').click()
-        await expect.poll(() => crumbs(page, 'div.flex-1.glass-panel > div.draggable'))
+        await expect.poll(() => crumbs(page, 'div.flex-1.glass-panel > div.draggable:not([data-testid="session-tab-bar"])'))
             .toEqual(['folder:T37FOLDER', 'project:T37PROJ', 'session:T37SESS'])
 
         await page.locator('[data-session-item="s-b"]').click()
-        await expect.poll(() => crumbs(page, 'div.flex-1.glass-panel > div.draggable'))
+        await expect.poll(() => crumbs(page, 'div.flex-1.glass-panel > div.draggable:not([data-testid="session-tab-bar"])'))
             .toEqual(['project:T37LOOSE', 'session:T37OTHER'])
     })
 
@@ -301,7 +301,7 @@ test.describe('T37 header breadcrumb', () => {
             { id: 'ws-a', name: 'T37PROJ-' + pad, folderId: 'f-a', sessions: [{ id: 's-a', name: 'T37SESS' }] }
         ], 'T37FOLDER-' + pad)
         await page.locator('[data-session-item="s-a"]').click()
-        const header = 'div.flex-1.glass-panel > div.draggable'
+        const header = 'div.flex-1.glass-panel > div.draggable:not([data-testid="session-tab-bar"])'
         await expect.poll(() => crumbs(page, header)).toHaveLength(3)
         await expect(page.locator(`${header} [data-crumb-more]`)).toHaveCount(0)
 
@@ -335,7 +335,7 @@ test.describe('T37 header breadcrumb', () => {
             { id: 'ws-a', name: 'Project-with-a-really-long-name-' + 'z'.repeat(60), folderId: 'f-a', sessions: [{ id: 's-a', name: 'T37REALSESS' }] }
         ], 'Long-folder-name-' + 'y'.repeat(60))
         await page.locator('[data-session-item="s-a"]').click()
-        const header = 'div.flex-1.glass-panel > div.draggable'
+        const header = 'div.flex-1.glass-panel > div.draggable:not([data-testid="session-tab-bar"])'
         await expect.poll(() => page.locator(`${header} [data-crumb-more]`).count()).toBe(1)
         const kinds = (await crumbs(page, header)).map(c => c.split(':')[0])
         expect(kinds[kinds.length - 1]).toBe('session')
@@ -354,7 +354,7 @@ test.describe('T37 header breadcrumb', () => {
             { id: 'ws-h', name: 'someone@some-long-host-name.local', isHome: true, sessions: [{ id: 's-h', name: 'T37HOMESESS' }] }
         ])
         await page.locator('[data-session-item="s-h"]').click()
-        const header = 'div.flex-1.glass-panel > div.draggable'
+        const header = 'div.flex-1.glass-panel > div.draggable:not([data-testid="session-tab-bar"])'
         await expect.poll(() => crumbs(page, header)).toEqual(['project:~', 'session:T37HOMESESS'])
         const home = page.locator(`${header} [data-crumb="project"]`)
         await expect(home.locator('svg')).toHaveCount(1)

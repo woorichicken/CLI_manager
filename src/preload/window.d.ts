@@ -245,6 +245,9 @@ declare global {
             moveSessionToSessionFolder: (sessionId: string, folderId: string | null) => Promise<boolean>
             getRecentSessions: () => Promise<string[]>
             pushRecentSession: (sessionId: string) => Promise<void>
+            /** The tab row at the top of the main area (shared/sessionTabs.ts). */
+            getSessionTabs: () => Promise<import('../shared/sessionTabs').SessionTabsState>
+            setSessionTabs: (state: import('../shared/sessionTabs').SessionTabsState) => Promise<void>
             /** The ids in the order the sidebar draws sessions (sessionsInSidebarOrder) — the phone's list starts from it. */
             reportSidebarSessionOrder: (sessionIds: string[]) => void
             getInbox: () => Promise<InboxRequest[]>

@@ -6,6 +6,7 @@ import type { AgentConversationList, AgentConversationConnectInput, AgentConvers
 import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
 import type { DocPreviewOpenResult } from '../shared/docPreview'
+import type { SessionTabsState } from '../shared/sessionTabs'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 // Custom APIs for renderer
@@ -359,6 +360,8 @@ const api = {
     moveSessionToSessionFolder: (sessionId: string, folderId: string | null): Promise<boolean> => ipcRenderer.invoke('move-session-to-session-folder', sessionId, folderId),
     getRecentSessions: (): Promise<string[]> => ipcRenderer.invoke('get-recent-sessions'),
     pushRecentSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('push-recent-session', sessionId),
+    getSessionTabs: (): Promise<SessionTabsState> => ipcRenderer.invoke('get-session-tabs'),
+    setSessionTabs: (state: SessionTabsState): Promise<void> => ipcRenderer.invoke('set-session-tabs', state),
     reportSidebarSessionOrder: (sessionIds: string[]): void => ipcRenderer.send('sidebar-session-order', sessionIds),
     getInbox: (): Promise<InboxRequest[]> => ipcRenderer.invoke('get-inbox'),
     onInbox: (callback: (requests: InboxRequest[]) => void) => {

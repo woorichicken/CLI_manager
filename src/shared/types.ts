@@ -212,6 +212,11 @@ export interface UserSettings {
     /** Offer the Tree layout (sessions under the session that opened them) in the sidebar's All sessions view (default: true). Off shows the list only. */
     showSessionTree?: boolean
     /**
+     * The tab row at the top of the main area (default: true): the sessions the person opened, apart from
+     * the sidebar. Closing a tab keeps the session; ⌘W still ends it. Off hides the row and stops recording tabs.
+     */
+    showSessionTabs?: boolean
+    /**
      * Status dots on sidebar session rows, read from each screen in main
      * (default: false). Off stops the reader entirely — no timer, no IPC.
      * Independent of Settings > Hooks (the renderer heuristic) and of agent hooks.
@@ -349,6 +354,7 @@ export interface FullscreenTerminalLayout {
 
 export type ShortcutAction =
     | 'nextSession' | 'prevSession'
+    | 'nextTab' | 'prevTab'
     | 'nextWorkspace' | 'prevWorkspace'
     | 'nextSplitPane' | 'prevSplitPane'
     | 'toggleSidebar' | 'toggleSettings'
@@ -373,6 +379,9 @@ export type KeyboardShortcutMap = Record<ShortcutAction, KeyBinding>
 export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     nextSession:     { key: ']', modifiers: ['mod'], code: ']' },
     prevSession:     { key: '[', modifiers: ['mod'], code: '[' },
+    // ⌘> / ⌘<: Shift+. and Shift+, — matched on the unshifted key (`keyFromCode`), so any layout works.
+    nextTab:         { key: '>', modifiers: ['mod', 'shift'], code: '.' },
+    prevTab:         { key: '<', modifiers: ['mod', 'shift'], code: ',' },
     nextWorkspace:   { key: ']', modifiers: ['mod', 'shift'], code: ']' },
     prevWorkspace:   { key: '[', modifiers: ['mod', 'shift'], code: '[' },
     nextSplitPane:   { key: '`', modifiers: ['mod'], code: '`' },
@@ -434,8 +443,10 @@ export interface ShortcutInfo {
 }
 
 export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
-    nextSession:     { label: 'Next Tab',            description: 'Switch to the next tab in workspace',      group: 'navigation' },
-    prevSession:     { label: 'Previous Tab',        description: 'Switch to the previous tab in workspace',  group: 'navigation' },
+    nextSession:     { label: 'Next Session',        description: 'Switch to the next session in sidebar order', group: 'navigation' },
+    prevSession:     { label: 'Previous Session',    description: 'Switch to the previous session in sidebar order', group: 'navigation' },
+    nextTab:         { label: 'Next Tab',            description: 'Switch to the next tab in the tab row',    group: 'navigation' },
+    prevTab:         { label: 'Previous Tab',        description: 'Switch to the previous tab in the tab row', group: 'navigation' },
     nextWorkspace:   { label: 'Next Workspace',      description: 'Switch to the next workspace',             group: 'navigation' },
     prevWorkspace:   { label: 'Previous Workspace',  description: 'Switch to the previous workspace',         group: 'navigation' },
     nextSplitPane:   { label: 'Next Split Pane',     description: 'Focus next pane in split view',            group: 'splitView' },
@@ -445,7 +456,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
     fileSearch:      { label: 'File Search',         description: 'Search files by name',                     group: 'search' },
     contentSearch:   { label: 'Content Search',      description: 'Search inside file contents',              group: 'search' },
     newSession:      { label: 'New Tab',             description: 'Create a new terminal tab',                group: 'actions' },
-    closeSession:    { label: 'Close Tab',           description: 'Close current tab and go to previous',     group: 'actions' },
+    closeSession:    { label: 'Close Session',       description: 'End the current session and go to the tab beside it', group: 'actions' },
     clearSession:    { label: 'Clear Terminal',      description: 'Clear terminal scrollback buffer',         group: 'actions' },
     renameSession:   { label: 'Rename Tab',          description: 'Rename the current tab',                   group: 'actions' },
     toggleMemo:      { label: 'Toggle Memo',         description: 'Open or close session memo',               group: 'memo' },
