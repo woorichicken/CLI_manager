@@ -1801,6 +1801,7 @@ function App() {
                                 >
                                     <Search size={16} className="text-gray-400" />
                                 </button>
+                                {(settings.showSourceControl ?? true) && (
                                 <button
                                     onClick={() => setGitPanelOpen(true)}
                                     className="p-2 hover:bg-white/10 rounded transition-colors no-drag"
@@ -1813,6 +1814,7 @@ function App() {
                                         <path d="M18 9a9 9 0 0 1-9 9"></path>
                                     </svg>
                                 </button>
+                                )}
                                 <button
                                     onClick={() => {
                                         if (activeWorkspace) setDiffModalOpen(true)
@@ -1975,7 +1977,7 @@ function App() {
                                                     isActive={index === activeSplitIndex}
                                                     onRemove={handleRemoveFromSplit}
                                                     onOpenSearch={handleOpenSearchForWorkspace}
-                                                    onOpenGit={handleOpenGitForWorkspace}
+                                                    onOpenGit={(settings.showSourceControl ?? true) ? handleOpenGitForWorkspace : undefined}
                                                     onOpenSettings={() => handleOpenSettings('general')}
                                                     onOpenFullscreen={() => {
                                                         if (splitLayout) {

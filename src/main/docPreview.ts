@@ -118,8 +118,10 @@ export function docPreviewContentSecurityPolicy(base: string): string {
 /**
  * Put in front of every document. A report was written for a browser tab: kits keep comments in `localStorage`, which
  * throws in an opaque origin and stops the page's script. This stands in for storage (kept in the page, gone when it
- * closes), passes Escape and a press inside the page up (closing the preview, making a pane active), hands a link to another page of the folder to
+ * closes), passes a press inside the page up (making a pane active), hands a link to another page of the folder to
  * the window (which opens it, so the path shown follows), and keeps other links from leaving.
+ * Escape stays the page's (b6a75106): a review page closes its enlarged photo with it, and passing it up closed the
+ * preview — and the comments kept in the page with it. The window's × (or Escape with the focus outside the page) closes.
  * It adds no power: the page could post the same message itself. ASCII only, no closing script tag.
  */
 export const DOC_PREVIEW_BRIDGE = String.raw`(function () {
@@ -140,9 +142,6 @@ export const DOC_PREVIEW_BRIDGE = String.raw`(function () {
     try { Object.defineProperty(window, 'localStorage', { value: makeStore(), configurable: true }) } catch (e) {}
     try { Object.defineProperty(window, 'sessionStorage', { value: makeStore(), configurable: true }) } catch (e) {}
     try { Object.defineProperty(document, 'cookie', { get: function () { return '' }, set: function () {}, configurable: true }) } catch (e) {}
-    window.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape' && !event.defaultPrevented) post({ key: 'Escape' })
-    })
     // a press inside the page: the window cannot see it, and it makes this pane the active one
     window.addEventListener('pointerdown', function () { post({ pressed: true }) }, true)
     var base = location.pathname.split('/').slice(0, 2).join('/') + '/'

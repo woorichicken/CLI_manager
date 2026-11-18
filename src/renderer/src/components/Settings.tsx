@@ -699,6 +699,36 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 </button>
                                             </div>
 
+                                            {/* Source Control header button toggle (fb-1117 0e6c4a0a) */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Show Source Control</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        The Source Control (Git panel) button in the header and in split panes.
+                                                        Off only hides the buttons.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    data-testid="settings-show-source-control"
+                                                    aria-pressed={settings.showSourceControl ?? true}
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        showSourceControl: !(prev.showSourceControl ?? true)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
+                                                        (settings.showSourceControl ?? true)
+                                                            ? 'bg-emerald-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.showSourceControl ?? true)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
                                             {/* Sidebar status dots read from the screen */}
                                             <div className="flex items-center justify-between">
                                                 <div>

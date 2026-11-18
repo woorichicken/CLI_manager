@@ -23,6 +23,34 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 화면 줄 읽기 — Codex(및 답 속) 표 구분선 `────  ────` 을 입력 상자 윗선으로 읽는다
+- Date: 2026-11-17
+- Where: `src/main/screenLines.ts` `BOX_LABELED_RULE`(`^─{2,}\s.*─$`, /rename 한 Claude 상자 윗선용) — `linesUnderInputBox`(사이드바 상태 점의 질문 판정 범위) · `screenBackground` · `screenSummary`(Related 마지막 줄) · `screenAgentMode` 가 같은 규칙을 쓴다.
+- What: Codex 0.166 은 답의 표 행 사이에 `────────  ────────` 를 그리고, 이 줄이 「이름 붙은 상자 윗선」에 맞는다. Chat 보내기·Autocron 붙기는 #161 에서 Codex 를 상자 리더에서 빼 고쳤지만(제보 1d15e1c2), 나머지 화면 읽기는 Codex 화면의 표 구분선을 여전히 상자 선으로 본다.
+- Surfaced by: fb-1117 2회차 작업 세션 D(`_batches/fb-1117/reports/D.md` 발견 1). 재현 fixture `tests/terminal/fixtures/prompts/codex-0.166-table-idle.ans`.
+- Fix direction: 레이블 뒤 첫 글자가 `─` 가 아니게(`^─{2,}\s+[^─\s].*─$`) — 표 구분선은 빠지고 `──── 이름 ─` 줄은 남는다.
+
+### 🐛 Codex 여러 줄 초안 — 첫 줄이 빈칸이면 입력줄이 빈 것으로 읽힌다
+- Date: 2026-11-17
+- Where: `src/main/TerminalMirror.ts` `codexInput()` — 맨 아래 밝은 `›` 줄 하나만 읽는다(#161).
+- What: Shift+Enter 로 빈 줄에서 시작한 Codex 초안(첫 줄 공백, 둘째 줄부터 글)은 typed 가 `''` 라 Chat 보내기·Autocron 붙기가 통과해 초안과 섞일 수 있다.
+- Surfaced by: #161 독립 diff 리뷰 · 작업 세션 D.
+- Fix direction: `›` 줄부터 커서 행까지(빈 줄 전) 읽는다 — 실제 Codex 는 입력 중 커서가 입력줄에 있다(녹화 확인). chat-mock 은 커서가 hint 줄에 남아 같이 고친다.
+
+### 🐛 앱 안 HTML 미리보기 — 닫으면 페이지에 남긴 코멘트가 사라진다
+- Date: 2026-11-17
+- Where: `src/main/docPreview.ts` `DOC_PREVIEW_BRIDGE` — `localStorage`·`sessionStorage` 를 페이지 메모리(`makeStore`)로 바꾼다.
+- What: before-after 리뷰처럼 코멘트를 브라우저 저장소에 쓰는 페이지를 앱 미리보기로 열고 ×(또는 예전엔 Esc)로 닫으면, 다시 열 때 빈 상태다. 제보 b6a75106 의 Esc 쪽은 #157 에서 막았지만(문서 안 Esc 는 문서 몫) × 로 닫으면 같다.
+- Surfaced by: fb-1117 작업 세션 B 보고(`_batches/fb-1117/reports/B.md` 발견 1).
+- Fix direction: 토큰 폴더·문서 경로별로 main 이 앱 실행 동안 저장소 내용을 들고 있다가 다시 열 때 돌려준다(디스크에는 안 씀 — 결정 0013 의 「저장하지 않음」과 맞춤).
+
+### 🐛 재시작(resume)하면 Shift+Tab 으로 바꾼 권한 모드가 풀린다
+- Date: 2026-11-17
+- Where: 앱 재시작 resume 이 저장된 `cliCommand` 를 그대로 친다(`--permission-mode default …` 로 연 세션이면 default 로 돌아감).
+- What: 사람이 세션 안에서 auto·bypass 로 바꿔 두어도 앱을 재시작하면 시작 명령의 모드로 다시 뜬다. Control API 로 `--permission-mode default` 를 넣어 연 세션(총괄·팀장 배치)이 모두 해당. Fork 쪽은 #158 에서 부모 화면 모드를 붙이도록 고쳤다(제보 d2b9bf31).
+- Surfaced by: fb-1117 작업 세션 A 실측(`_batches/fb-1117/reports/A.md` 발견 1).
+- Fix direction: fork 에 쓴 `withPermissionMode`(화면 모드 → `--permission-mode <값>`)를 재시작 직전에도 적용하거나, 모드가 바뀔 때 저장 명령을 갱신.
+
 ### 🐛 Chat 스레드 칸 — 1280 에서 세션 메모 토글(빈 네모)이 칸 머리의 ✕ 옆에 겹친다
 - Date: 2026-11-16
 - Where: `components/SessionMemo.tsx:325` 의 메모 토글(`absolute top-2 right-14`, 세션 칸 오른쪽 위 고정)과 `ChatView/ThreadPanel.tsx` 머리의 닫기 ✕(칸의 오른쪽 위).

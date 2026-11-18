@@ -103,7 +103,8 @@ function serviceOn(terminal: { screen(): string[]; lastOutputAt(): number; write
             lastOutputAt: () => terminal.lastOutputAt(),
             hasExited: () => false,
             showsAwaitingInput: () => false,
-            inputBox: () => ({ typed: '' })
+            inputBox: () => ({ typed: '' }),
+            codexInput: () => ({ typed: '' })
         },
         hasTerminal: () => true,
         writeInput: (id, data) => terminal.writeInput(id, data),

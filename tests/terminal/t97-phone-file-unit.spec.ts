@@ -692,7 +692,7 @@ test.describe('T97 what a chat names', () => {
         const service = new ConversationService({
             session: () => ({ cwd: CWD, cliSessionId: 'c1', cliToolName: 'claude' }),
             reader,
-            mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }) },
+            mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }), codexInput: () => ({ typed: '' }) },
             hasTerminal: () => true,
             writeInput: () => undefined,
             type: async () => true,
@@ -725,7 +725,7 @@ test.describe('T97 what a chat names', () => {
         const service = new ConversationService({
             session: () => ({ cwd: CWD, cliSessionId: 'c1', cliToolName: 'claude' }),
             reader,
-            mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }) },
+            mirror: { screen: () => [], flush: async () => undefined, lastOutputAt: () => 0, hasExited: () => false, showsAwaitingInput: () => false, inputBox: () => ({ typed: '' }), codexInput: () => ({ typed: '' }) },
             hasTerminal: () => true,
             writeInput: () => undefined,
             type: async () => true,

@@ -196,9 +196,12 @@ export function SplitTerminalHeader({
                 <button onClick={handleSearchClick} className={buttonClass} title="Search Files" disabled={!workspace?.path}>
                     <Search size={16} className="text-gray-400" />
                 </button>
-                <button onClick={handleGitClick} className={buttonClass} title="Git Panel" disabled={!workspace?.path}>
-                    <GitBranch size={16} className="text-gray-400" />
-                </button>
+                {/* No handler = Settings > General "Show Source Control" is off */}
+                {onOpenGit && (
+                    <button onClick={handleGitClick} className={buttonClass} title="Git Panel" disabled={!workspace?.path}>
+                        <GitBranch size={16} className="text-gray-400" />
+                    </button>
+                )}
                 <button onClick={handleFullscreenClick} className={buttonClass} title="Open in Grid Window">
                     <LayoutGrid size={16} className="text-gray-400" />
                 </button>
@@ -234,14 +237,16 @@ export function SplitTerminalHeader({
                 >
                     <LayoutGrid size={12} className="text-gray-400" />
                 </button>
-                <button
-                    onClick={handleGitClick}
-                    className="p-1 hover:bg-white/10 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Git Panel"
-                    disabled={!workspace?.path}
-                >
-                    <GitBranch size={12} className="text-gray-400" />
-                </button>
+                {onOpenGit && (
+                    <button
+                        onClick={handleGitClick}
+                        className="p-1 hover:bg-white/10 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Git Panel"
+                        disabled={!workspace?.path}
+                    >
+                        <GitBranch size={12} className="text-gray-400" />
+                    </button>
+                )}
                 <button
                     onClick={handleSettingsClick}
                     className="p-1 hover:bg-white/10 rounded transition-colors"

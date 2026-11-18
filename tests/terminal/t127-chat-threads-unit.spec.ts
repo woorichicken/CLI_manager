@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { chatThreadParentIds, chatThreadSnapshot, chatThreadsFor, pollChatThreadChanges } from '../../src/main/chatThreads'
+import { chatThreadParentIds, chatThreadSnapshot, chatThreadsFor, pollChatThreadChanges, ReplyCounter, REPLY_SETTLE_MS } from '../../src/main/chatThreads'
+import { repliesLabel, threadChipLabel } from '../../src/renderer/src/components/ChatView/ThreadChip'
 import type { SessionRelation } from '../../src/shared/types'
 
 const TS = '2026-11-14T10:00:00.000Z'
@@ -59,6 +60,55 @@ test('T127: renamed children are read afresh and closing either side removes the
     expect(chatThreadsFor('parent', relations, sessions.filter((session) => session.id !== 'one'), screen)).toEqual([])
     expect(chatThreadsFor('parent', relations, sessions.filter((session) => session.id !== 'parent'), screen)).toEqual([])
     expect(chatThreadsFor('parent', [], sessions, screen)).toEqual([])
+})
+
+// fb-1117 2c8bc2b5: the chip says how far a branch went («3 replies»), not only when it last printed
+test('T127 replies: the child\'s turns since the fork reach the thread; its transcript is read only when its output moved', () => {
+    let clock = 1_000_000
+    const reads: string[] = []
+    const counts: Record<string, number> = { one: 3, two: 0 }
+    const counter = new ReplyCounter((childId, forkedAt) => { reads.push(`${childId}@${forkedAt}`); return counts[childId] }, () => clock)
+    const output: Record<string, number> = { one: clock - 60_000, two: 0 }
+    const withReplies = { ...screen, lastOutputAt: (id: string) => output[id] ?? 0, replies: (id: string, at: number, out: number) => counter.count(id, at, out) }
+    const rows = chatThreadsFor('parent', [fork('one'), fork('two')], sessions, withReplies)
+    expect(rows.map((row) => [row.childId, row.replies])).toEqual([['one', 3], ['two', 0]])
+    expect(reads).toEqual(['one@100', 'two@100'])
+    // quiet children: every later tick reuses the count — no transcript read at all
+    for (let tick = 0; tick < 5; tick++) chatThreadsFor('parent', [fork('one'), fork('two')], sessions, withReplies)
+    expect(reads).toHaveLength(2)
+    // new output from one child: only that one is read, again while its record may still be landing, then never
+    output.one = clock
+    counts.one = 5
+    expect(chatThreadsFor('parent', [fork('one'), fork('two')], sessions, withReplies).find((row) => row.childId === 'one')?.replies).toBe(5)
+    clock += 1_000
+    chatThreadsFor('parent', [fork('one'), fork('two')], sessions, withReplies)
+    expect(reads.filter((read) => read.startsWith('one'))).toHaveLength(3)
+    clock += REPLY_SETTLE_MS
+    chatThreadsFor('parent', [fork('one'), fork('two')], sessions, withReplies)
+    chatThreadsFor('parent', [fork('one'), fork('two')], sessions, withReplies)
+    expect(reads.filter((read) => read.startsWith('one'))).toHaveLength(3)
+    expect(reads.filter((read) => read.startsWith('two'))).toHaveLength(1)
+    // a count change is a change the chip is told about
+    const before = chatThreadSnapshot(chatThreadsFor('parent', [fork('one')], sessions, { ...screen, replies: () => 3 }))
+    expect(chatThreadSnapshot(chatThreadsFor('parent', [fork('one')], sessions, { ...screen, replies: () => 4 }))).not.toBe(before)
+    // no counter (or an unreadable transcript): no count on the row
+    expect('replies' in chatThreadsFor('parent', [fork('one')], sessions, screen)[0]).toBe(false)
+    expect('replies' in chatThreadsFor('parent', [fork('one')], sessions, { ...screen, replies: () => undefined })[0]).toBe(false)
+})
+
+test('T127 replies: the chip reads «3 replies · 2m ago · working», several threads add their counts', () => {
+    const now = 10_000_000
+    const thread = (childId: string, extra: Partial<ReturnType<typeof chatThreadsFor>[number]> = {}) => ({
+        childId, name: childId, turnTs: TS, forkedAt: 0, status: 'idle' as const, lastActivityAt: now - 120_000, ...extra
+    })
+    expect(threadChipLabel([thread('a', { replies: 3, status: 'working' })], now)).toBe('3 replies · 2m ago · working')
+    expect(threadChipLabel([thread('a', { replies: 1 })], now)).toBe('1 reply · 2m ago · idle')
+    expect(threadChipLabel([thread('a', { replies: 0, lastActivityAt: now })], now)).toBe('No replies yet · just now · idle')
+    expect(threadChipLabel([thread('a', { replies: 2 }), thread('b', { replies: 3, status: 'waiting' })], now)).toBe('2 threads · 5 replies · 2m ago · waiting for you')
+    // a count not read yet: the old words
+    expect(threadChipLabel([thread('a')], now)).toBe('1 thread · 2m ago · idle')
+    expect(repliesLabel([thread('a'), thread('b', { replies: 2 })])).toBe('2 replies')
+    expect(repliesLabel([thread('a')])).toBeNull()
 })
 
 test('T127 polling: several subscribed parents share one read of each store value per tick', () => {

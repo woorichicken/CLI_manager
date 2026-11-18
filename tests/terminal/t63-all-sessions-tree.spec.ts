@@ -60,9 +60,11 @@ test.describe('T63 All sessions tree', () => {
         for (const dir of temps.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
     })
 
-    async function launch(): Promise<LaunchResult> {
+    // The CLIMANAGER_HOME of the last launch — where the Control API writes its discovery file.
+    let home = ''
+    async function launch(extra: { controlApi?: boolean } = {}): Promise<LaunchResult> {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t63-'))
-        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t63-home-'))
+        home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t63-home-'))
         temps.push(root, home)
         // A long path, so the label has to be cut; its last folder must stay in view.
         const deep = path.join(root, 'a-rather-long-parent-folder', 'another-long-folder-name', 'CLImanger-worktrees', 'd1027-api')
@@ -77,7 +79,11 @@ test.describe('T63 All sessions tree', () => {
                 { id: LEAD_A, name: 'T63 lead A' }, { id: LEAD_B, name: 'T63 lead B' },
                 { id: WORKER, name: 'T63 worker' }, { id: HELPER, name: 'T63 helper' }, { id: HAND, name: 'T63 hand' }
             ] }
-        ], { settings: { showHomeWorkspace: false }, config: { sessionRelations: RELATIONS }, env: { CLIMANAGER_HOME: home } })
+        ], {
+            settings: { showHomeWorkspace: false, ...(extra.controlApi ? { controlApi: { enabled: true, port: 0 } } : {}) },
+            config: { sessionRelations: RELATIONS },
+            env: { CLIMANAGER_HOME: home }
+        })
     }
 
     test('Tree puts each session under its parent, cuts paths at the front and goes to a clicked row', async () => {
@@ -111,6 +117,70 @@ test.describe('T63 All sessions tree', () => {
 
         await page.locator(`[data-session-item="${HELPER}"]`).getByText('T63 helper', { exact: true }).click()
         await expect.poll(() => visibleTerminals(page)).toContain(HELPER)
+    })
+
+    // fb-1117 (사람 구두 11-17): 「왜 팀장이 엠금융 팀장으로 엮여 있는지」 — a lead that only looked at
+    // another session's screen became its parent. Reading, waiting and focusing set the AI mark only;
+    // typing into the session is what relates the two.
+    test('a session another one only read, waited on or focused stays where it was; typing into it moves it under', async () => {
+        ctx = await launch({ controlApi: true })
+        const { page, userDataDir } = ctx
+        await resizeMainWindow(ctx.app, 1280, 800)
+        await page.getByTestId('sidebar-view-toggle').click()
+        await page.getByTestId('all-sessions-layout-tree').click()
+        const original = [CHIEF, LEAD_A, WORKER, HELPER, LEAD_B, TALK, LOOSE, HAND]
+        await expect.poll(() => treeIds(page, 'session-tree-rows')).toEqual(original)
+
+        const discoveryPath = path.join(home, 'control-api.json')
+        await expect.poll(() => fs.existsSync(discoveryPath), { timeout: 15_000 }).toBe(true)
+        const discovery = JSON.parse(fs.readFileSync(discoveryPath, 'utf-8')) as { url: string; token: string }
+        const api = async (method: string, route: string, body?: unknown): Promise<number> => {
+            const res = await fetch(discovery.url + route, {
+                method,
+                headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't63', 'X-Caller-Session': LEAD_B },
+                body: body === undefined ? undefined : JSON.stringify(body)
+            })
+            await res.text()
+            return res.status
+        }
+        const pairWithLoose = (): SessionRelation[] =>
+            ((JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8')).sessionRelations ?? []) as SessionRelation[])
+                .filter(r => (r.from === LEAD_B && r.to === LOOSE) || (r.from === LOOSE && r.to === LEAD_B))
+        const looseRow = page.locator(`[data-testid="session-tree-rows"] [data-session-item="${LOOSE}"]`)
+        const related = page.locator('[data-related-modal]')
+
+        // Lead B checks on LOOSE three ways, the way a chief or lead watches a session it does not drive.
+        expect(await api('GET', `/v1/sessions/${LOOSE}/output`)).toBe(200)
+        expect(await api('POST', `/v1/sessions/${LOOSE}/wait`, { timeoutMs: 3_000, quietMs: 300 })).toBe(200)
+        expect(await api('POST', `/v1/sessions/${LOOSE}/focus`, {})).toBe(200)
+        await page.waitForTimeout(2500) // long enough for a recorded pair to reach the sidebar
+        await looseRow.getByText('T63 loose', { exact: true }).click()
+        // Review shots before any check, so the old code leaves its "before" here too.
+        const shots = process.env.T63_SHOTS
+        if (shots) {
+            fs.mkdirSync(shots, { recursive: true })
+            await page.screenshot({ path: path.join(shots, 'tree-after-reads-1280.png') })
+            await page.locator(`[data-related-button="${LOOSE}"]`).click()
+            await expect(related).toBeVisible()
+            await page.waitForTimeout(800)
+            await page.screenshot({ path: path.join(shots, 'related-loose-after-reads-1280.png') })
+            await page.keyboard.press('Escape')
+            await expect(related).toHaveCount(0)
+        }
+
+        expect(pairWithLoose()).toEqual([])
+        expect(await treeIds(page, 'session-tree-rows')).toEqual(original)
+        await expect(looseRow).not.toHaveAttribute('data-tree-depth', /.*/) // a root carries no depth
+        await expect(page.locator(`[data-related-button="${LOOSE}"]`)).toHaveAttribute('data-related-count', '1')
+        await page.locator(`[data-related-button="${LOOSE}"]`).click()
+        await expect(related.locator(`[data-related-row="${HAND}"]`)).toBeVisible()
+        await expect(related.locator(`[data-related-row="${LEAD_B}"]`)).toHaveCount(0)
+        await page.keyboard.press('Escape')
+
+        // Typing into it is work in it: now LOOSE hangs under lead B.
+        expect(await api('POST', `/v1/sessions/${LOOSE}/input`, { text: 'true' })).toBe(200)
+        await expect.poll(pairWithLoose).toMatchObject([{ from: LEAD_B, to: LOOSE, kind: 'connected' }])
+        await expect(looseRow).toHaveAttribute('data-tree-depth', '2', { timeout: 10_000 })
     })
 
     test('Settings turns the tree off (list only, no switch) and back on', async () => {

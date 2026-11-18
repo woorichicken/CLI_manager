@@ -8,6 +8,7 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  * T122 — fb-1110 a0ba98c4 in the app: under Claude's answer the chat shows the turn-end line («Took 29s ·
  * done …», record `turn_duration`) and the idle recap («※ recap …», record `away_summary`), and the
  * composer row counts what runs in the background («1 shell · 1 agent», the row under Claude's input box).
+ * Who answered («Claude») sits on the turn-end line, not over the answer (e9756d90).
  * The terminal shows a copied Claude screen (an executable named «claude», as T120). T122_SHOTS=<dir> +
  * T122_LABEL saves the chat before the checks.
  */
@@ -88,6 +89,19 @@ test('T122 the turn-end line, the recap and the background count show in the cha
         return date.toDateString() === new Date().toDateString() ? time : `${date.toLocaleDateString([], { month: 'numeric', day: 'numeric' })} ${time}`
     }, doneAt)
     await expect(view.getByTestId('chat-turn-done')).toHaveText(`Took 29s · done ${doneTime}`)
+    // who answered is on that line, before the time — no header line over the answer (e9756d90)
+    const foot = view.getByTestId('chat-turn-foot')
+    await expect(foot.getByTestId('chat-turn-agent')).toHaveText('Claude')
+    await expect(foot.getByTestId('chat-turn-done')).toHaveCount(1)
+    await expect(view.locator('[data-role="assistant"] > :first-child')).toHaveAttribute('data-testid', /^(chat-answer|chat-work)/)
+    const [answerBox, agentBox, doneBox] = await Promise.all([
+        view.getByTestId('chat-answer').last().boundingBox(),
+        foot.getByTestId('chat-turn-agent').boundingBox(),
+        foot.getByTestId('chat-turn-done').boundingBox()
+    ])
+    expect(agentBox!.y, 'under the answer').toBeGreaterThanOrEqual(answerBox!.y + answerBox!.height - 1)
+    expect(Math.abs(agentBox!.y + agentBox!.height / 2 - (doneBox!.y + doneBox!.height / 2)), 'one line').toBeLessThan(3)
+    expect(agentBox!.x).toBeLessThan(doneBox!.x)
     await expect(view.getByTestId('chat-recap')).toHaveText(`※ recap ${RECAP}`)
     await expect(view.getByTestId('chat-background-chip')).toHaveText('1 shell · 1 agent')
     // the table in the answer is a table, as before
