@@ -19,6 +19,77 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### Control API — 입력·fork 가 거절돼도 관계(`connected`)는 이미 남는다
+- Discovered: 2026-11-17 fb-1117 3회차 `feat/fb-1117-relations-on-input` 독립 diff 리뷰.
+- Evidence: `ControlApiService.sendInput`·`forkSession` 이 실제 동작 전에 `connect(…, 'record')` 를 부른다 — 입력이 409(질문 대기·초안)로 막히거나 fork 가 거절돼도 caller → 대상 짝이 남아 Tree 부모가 된다. 대화 연결은 `beforeWrite` 안이라 해당 없음. 이번 변경 전부터 같은 동작.
+- Why deferred: 3회차 범위는 「읽기만 해도 관계」였다.
+- Trigger: 거절된 입력 뒤 Tree 에 엉뚱한 부모가 보인다는 제보가 오거나 그 경로를 고칠 때 — 성공 뒤에 `recordConnected` 를 부르게 옮긴다.
+- Owner: 없음
+
+### 폰 ⋯ → Memo 패널 머리에 세션 이름이 없다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E(`feat/fb-1117-phone-list`).
+- Evidence: 서랍의 ⋯ → Memo 로 연 메모 패널(세션 화면 📝 와 같은 부품)이 어느 세션 메모인지 이름을 보이지 않는다. 서랍에서는 보던 세션과 다른 세션 메모를 열 수 있어 헷갈린다.
+- Why deferred: 리뷰 후 배포 브랜치가 사람 리뷰 대기 중 — 리뷰 결과와 같이 고친다.
+- Trigger: `feat/fb-1117-phone-list` 승인 뒤 — 패널 머리에 세션 이름 한 줄.
+- Owner: 없음
+
+### 폰 세션 목록 Tree 계산 — 3초 폴링 비용 미측정
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E.
+- Evidence: 목록 응답(폰이 3초마다 읽음)에 `sessionForestFor` 계산이 더해졌다. 세션 34개 규모의 비용을 재지 않았다.
+- Why deferred: 화면 리뷰 대기 중인 브랜치.
+- Trigger: `feat/fb-1117-phone-list` 머지 전 — 세션 40개 시드로 목록 응답 시간 중앙값을 전후로 잰다(T144 방식).
+- Owner: 없음
+
+### Codex 녹화 — 시작 업데이트 메뉴가 첫 입력을 먹는다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 D.
+- Evidence: codex-cli 0.166 → 0.169 업데이트 알림이 시작 때 떠서 첫 녹화의 입력이 그 메뉴로 갔다.
+- Why deferred: 이번 녹화는 다시 떠서 끝냈다.
+- Trigger: `scripts/mock-cli/record-claude.cjs` 로 Codex 를 다시 녹화할 때 — `-c check_for_update_on_startup=false` 안내 한 줄을 스크립트·`scripts/CLAUDE.md` 에.
+- Owner: 없음
+
+### 시험 — Settings 는 마지막에 본 분류로 열린다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E(T153).
+- Evidence: T63 처럼 `settings-show-session-tree` 를 바로 누르는 시험은 앞 시험이 다른 분류를 열어 두면 막힌다(T153 은 General 을 먼저 누름). 같은 화면에서 `button[title^="Settings"]` 가 2개로 잡혀 `.first()` 가 필요했다.
+- Why deferred: 지금 시험은 통과한다.
+- Trigger: Settings 를 여는 시험을 새로 쓸 때 — 하네스에 「분류를 골라 여는」 도움 함수를 둔다.
+- Owner: 없음
+
+### 시험 캡처에 이 Mac 의 열린 포트·폴더 이름이 찍힌다
+- Discovered: 2026-11-17 fb-1117 작업 세션 B 캡처(`_batches/fb-1117/review/CLImanger/r1/B/quick-row-mac-*.png`).
+- Evidence: 하단 「Active Ports」가 테스트 모드에서도 실제 `lsof` 를 읽어 `jeong-gyeonghun`·`brand`·`orch-console` 같은 폴더 이름이 리뷰 캡처에 남는다.
+- Why deferred: 이번 제보 범위 밖. 캡처가 외부로 나가는 일은 아직 없다.
+- Trigger: 리뷰 캡처를 밖에 공유하거나 문서(공개 사이트)에 쓸 때. 테스트 모드에서 포트 모니터를 끄거나 가짜 목록을 쓴다.
+- Owner: 없음
+
+### Codex fork — 세션 중 `/approvals` 로 바꾼 권한이 자식에 따라가는지 미실측
+- Discovered: 2026-11-17 fb-1117 작업 세션 A(제보 d2b9bf31 고침 중).
+- Evidence: `codex … fork <id>` 는 사람의 시작 옵션(`-a`·`-s`·`--yolo`)은 유지한다. 세션 중 바꾼 승인 모드는 확인하지 않았다(토큰·시간).
+- Why deferred: 제보는 Claude 세션이었다.
+- Trigger: Codex 스레드에서 권한이 풀린다는 제보가 오면 — 실제 codex 로 fork 해 자식 화면의 승인 모드를 잰다.
+- 같이 볼 것(#158 diff 리뷰 minor): Claude `don't ask` 모드의 화면 문구가 미실측이라 그 모드는 fork 에 안 붙고 예전 동작으로 떨어진다 · 구분자가 있는 별칭(`prepare && claude --dangerously-skip-permissions`) 안의 skip 플래그는 빼지 못해 그 플래그가 이긴다.
+- Owner: 없음
+
+### T58 「a folder made from the All view menu…」 실제 마우스 끌기 — 묶음 실행에서 간헐 실패
+- Discovered: 2026-11-17 fb-1117 작업 세션 C.
+- Evidence: 묶음 첫 실행에서 1회 `data-drop-state` idle 로 실패, 단독 3회 반복 3/3 통과, 옛 코드 실행에서도 통과.
+- Why deferred: 코드 변경과 무관한 부하 간헐로 판단.
+- Trigger: 같은 시험이 다시 떨어질 때 — `--repeat-each=10` 으로 부하 아래 재현해 끌기 사이 대기를 상태 기반으로 바꾼다.
+- Owner: 없음
+
+### 시험 하네스 `launchAppWithWorkspaces` 기본 경로가 저장소 루트 — 이 머신의 워크트리를 세션으로 붙인다
+- Discovered: 2026-11-17 fb-1117 작업 세션 C(T150 에서 세션 수 14).
+- Evidence: 기본 워크스페이스 경로가 저장소 루트라 시작 때 워크트리 스캔이 이 머신의 git 워크트리를 전부 세션으로 붙인다. 세션 수를 세는 시험은 기대값을 config 에서 읽어야 한다.
+- Why deferred: 지금 시험들은 config 에서 기대값을 읽어 통과한다.
+- Trigger: 세션 수·목록 길이를 고정값으로 보는 시험을 새로 쓸 때. 기본 경로를 임시 폴더로 바꾼다.
+- Owner: 없음
+
+### 세션 활동 판정 규칙 두 벌 — `countSessionActivity` 와 `SessionScreenStatusPoller.judge`
+- Discovered: 2026-11-17 fb-1117 #156(시스템 모니터 「Now N working · M waiting」).
+- Evidence: `countSessionActivity` 가 사이드바 점 판정(`SessionScreenStatusPoller.judge`)의 3줄 규칙을 다시 쓴다. 한쪽만 고치면 모니터 숫자와 사이드바 점이 갈라진다.
+- Why deferred: 공용 함수로 묶는 것은 모듈화라 사람 컨펌 대상.
+- Trigger: 둘 중 하나의 판정 규칙을 고칠 때 — 그 전에 공용 함수(예 `judgeSessionActivity`)로 묶는 안을 컨펌받는다.
+- Owner: 없음
+
 ### Autocron attach 를 일반 세션에도 — 쓰던 세션에 정해진 시각에 프롬프트 넣기
 - Discovered: 2026-11-16 루프 활용 기획 세션. 사람: 「현재, 내가 사용하는 세션에도 cron 혹은 schedule 로 예약이 가능한지」 → 「일반 세션 사용은 백로그로」.
 - Evidence: attach 모드는 Loop Dashboard 프로젝트(`loopProjectId`)의 터미널만 고른다 — 폼 `autocron-loop` 선택지가 `loopProjects`, 실행은 `ControlApiService.typeIntoLoop`. 사이드바 세션(총괄·팀장 등)은 고를 수 없다. 지금 길은 세션 안의 Claude Code `/loop`(간격 반복, 정시 아님, 세션이 살아 있어야 함)뿐.

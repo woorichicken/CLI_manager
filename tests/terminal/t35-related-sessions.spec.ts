@@ -114,6 +114,13 @@ test.describe('T35 related sessions', () => {
         // A request that does not say who it is, or names nothing, relates nothing.
         expect((await api('GET', `/v1/sessions/${SHELL}/output`)).status).toBe(200)
         expect((await api('GET', `/v1/sessions/${SHELL}/output`, undefined, 'no-such-session')).status).toBe(200)
+        // Only looking does not relate either (fb-1117): LEAD reads, waits on and focuses SHELL —
+        // SHELL gets the AI mark, but no pair, so a lead that checked on it is not its parent.
+        expect((await api('GET', `/v1/sessions/${SHELL}/output`, undefined, LEAD)).status).toBe(200)
+        expect((await api('POST', `/v1/sessions/${SHELL}/wait`, { timeoutMs: 3_000, quietMs: 300 }, LEAD)).status).toBe(200)
+        expect((await api('POST', `/v1/sessions/${SHELL}/focus`, {}, LEAD)).status).toBe(200)
+        await activateSession(page, LEAD_NAME)
+        expect(relationsOnDisk(ctx.userDataDir)).toEqual([])
 
         const opened = await api<{ session: { id: string } }>(
             'POST',

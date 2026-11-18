@@ -38,7 +38,8 @@ export class SessionRelations {
     }
 
     /**
-     * `from` read or typed into `to` through the API. Only the first contact
+     * `from` typed into `to` through the API (input, connecting a
+     * conversation, a fork — not a read, wait or focus). Only the first contact
      * counts: an existing record — any kind, removed by the user or not — wins.
      */
     recordConnected(from: string, to: string, now = Date.now()): void {

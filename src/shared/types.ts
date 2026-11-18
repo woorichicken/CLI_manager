@@ -321,6 +321,10 @@ export interface SystemInfo {
     terminal: {
         activeSessionCount: number
         workspaceCount: number
+        /** Sessions mid-turn right now (the sidebar's blue dot rule), counted when the popover opens */
+        workingCount: number
+        /** Sessions waiting on the person right now (the amber dot rule) */
+        waitingCount: number
     }
 }
 
@@ -1010,7 +1014,7 @@ export interface FeedbackTerminalContext {
 /**
  * How two sessions came to be related.
  * - opened: `from` opened `to` through the Control API, saying who it was (X-Caller-Session).
- * - connected: `from` first read or typed into `to` through the API, saying who it was.
+ * - connected: `from` first typed into `to` through the API (input, a conversation connect, a fork), saying who it was. Reads, waits and focus do not relate.
  * - manual: the user added it in the Related sessions dialog of `from`.
  * Terminal output never creates one: it is untrusted text.
  */

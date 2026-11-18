@@ -16,6 +16,28 @@ function activityTime(at: number, now: number): string {
     return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`
 }
 
+/** «3 replies», «No replies yet»; null while no thread's count is known. */
+export function repliesLabel(threads: ChatThread[]): string | null {
+    const known = threads.filter((thread) => thread.replies !== undefined)
+    if (known.length === 0) return null
+    const total = known.reduce((sum, thread) => sum + (thread.replies ?? 0), 0)
+    if (total === 0) return 'No replies yet'
+    return `${total} ${total === 1 ? 'reply' : 'replies'}`
+}
+
+/**
+ * The chip's words, as a Slack thread shows its replies (fb-1117 2c8bc2b5): how far the branch went,
+ * then when, then what it is doing — «3 replies · 2m ago · working». Several threads lead with their count.
+ */
+export function threadChipLabel(threads: ChatThread[], now: number): string {
+    const newest = Math.max(...threads.map((thread) => thread.lastActivityAt))
+    const active = (['waiting', 'working'] as const).filter((state) => threads.some((thread) => thread.status === state))
+    const status = active.length ? active.map((state) => STATUS_WORDS[state]).join(' · ') : STATUS_WORDS.idle
+    const replies = repliesLabel(threads)
+    const count = threads.length === 1 ? (replies ? null : '1 thread') : `${threads.length} threads`
+    return [count, replies, activityTime(newest, now), status].filter(Boolean).join(' · ')
+}
+
 /** One reply's branches; a single thread opens directly, several offer a small list. */
 export function ThreadChip({ threads, onOpen }: { threads: ChatThread[]; onOpen: (childId: string) => void }) {
     const [open, setOpen] = useState(false)
@@ -80,23 +102,21 @@ export function ThreadChip({ threads, onOpen }: { threads: ChatThread[]; onOpen:
         if (threads.length < 2) setOpen(false)
     }, [threads.length])
 
-    const newest = Math.max(...threads.map((thread) => thread.lastActivityAt))
     const priority = threadStatus(threads)
-    const active = (['waiting', 'working'] as const).filter((state) => threads.some((thread) => thread.status === state))
-    const status = active.length ? active.map((state) => STATUS_WORDS[state]).join(' · ') : STATUS_WORDS.idle
     return (
         <div className="chat-chip-anchor chat-thread-anchor" ref={anchor}>
             <button
                 type="button"
                 className="chat-meta-chip chat-thread-chip"
                 data-testid="chat-thread-chip"
+                data-status={priority}
                 aria-label={`Open ${threads.length} ${threads.length === 1 ? 'thread' : 'threads'}`}
                 aria-expanded={threads.length > 1 ? open : undefined}
                 onClick={() => threads.length === 1 ? onOpen(threads[0].childId) : setOpen(!open)}
             >
                 <MessagesSquare size={13} aria-hidden="true" />
                 <span className="chat-thread-status-dot" data-testid="chat-thread-status-dot" data-status={priority} aria-hidden="true" />
-                <span>{threads.length} {threads.length === 1 ? 'thread' : 'threads'} · {activityTime(newest, now)} · {status}</span>
+                <span className="chat-thread-chip-label">{threadChipLabel(threads, now)}</span>
             </button>
             {open && host && createPortal(<div className="chat-popover chat-thread-list" ref={panel} style={position} role="dialog" aria-label="Threads from this reply" data-testid="chat-thread-list">
                 <div className="chat-menu-list" aria-label="Threads from this reply">
@@ -113,7 +133,7 @@ export function ThreadChip({ threads, onOpen }: { threads: ChatThread[]; onOpen:
                                 <span className="chat-thread-status-dot" data-testid="chat-thread-status-dot" data-status={thread.status} aria-hidden="true" />
                                 <span className="chat-thread-name">{thread.name}</span>
                             </span>
-                            <span className="chat-menu-note">{STATUS_WORDS[thread.status]} · {activityTime(thread.lastActivityAt, now)}</span>
+                            <span className="chat-menu-note">{[repliesLabel([thread]), STATUS_WORDS[thread.status], activityTime(thread.lastActivityAt, now)].filter(Boolean).join(' · ')}</span>
                         </button>
                     ))}
                 </div>
