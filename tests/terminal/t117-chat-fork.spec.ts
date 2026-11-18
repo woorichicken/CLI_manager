@@ -187,7 +187,30 @@ test('T117 Mac: threads open beside the parent, hide inherited turns, and send o
     const relation = readConfig().sessionRelations!.find((row) => row.from === PARENT && row.to === child.id)!
     expect(relation.anchor).toEqual({ turnTs: lastReplyTs(), turnIndex: Number(await reply.getAttribute('data-turn-index')) })
     const chip = reply.getByTestId('chat-thread-chip')
-    await expect(chip).toContainText('1 thread')
+    await expect(chip).toHaveAttribute('aria-label', 'Open 1 thread')
+    // fb-1117 13730ed5: a button that reads as one — a border and fill, the chat's text colour, 12px+ type,
+    // text contrast 4.5:1 over the chat (soft: the before capture comes from the old build in the same run)
+    const look = await chip.evaluate((element) => {
+        const style = getComputedStyle(element)
+        const rgba = (value: string): number[] => (value.match(/[\d.]+/g) ?? []).map(Number)
+        const over = (top: number[], under: number[]): number[] => {
+            const alpha = top[3] ?? 1
+            return [0, 1, 2].map((i) => top[i] * alpha + under[i] * (1 - alpha))
+        }
+        const chat = rgba(getComputedStyle(element.closest('.chat-view')!).backgroundColor)
+        const back = over(rgba(style.backgroundColor), chat)
+        const text = over(rgba(style.color), back)
+        const luminance = (rgb: number[]): number => {
+            const [r, g, b] = rgb.map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 })
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b
+        }
+        const [hi, lo] = [luminance(text), luminance(back)].sort((a, b) => b - a)
+        return { contrast: (hi + 0.05) / (lo + 0.05), border: rgba(style.borderTopColor)[3] ?? 1, fontSize: parseFloat(style.fontSize), status: element.getAttribute('data-status') }
+    })
+    expect.soft(look.contrast).toBeGreaterThanOrEqual(4.5)
+    expect.soft(look.border).toBeGreaterThan(0)
+    expect.soft(look.fontSize).toBeGreaterThanOrEqual(12)
+    expect.soft(look.status).toBe('idle')
     await chip.click()
     const panel = page.getByTestId('chat-thread-panel')
     await expect(panel).toBeVisible()
@@ -215,17 +238,77 @@ test('T117 Mac: threads open beside the parent, hide inherited turns, and send o
     await expect(childChat).not.toContainText('Add a guard to src/a.ts')
     await shot(page, 't117-2-thread-panel-1280')
 
+    // fb-1117 9a135707: the panel's left edge drags; the chat beside it never goes under it; the width is kept;
+    // a double-click resets it (soft where the old build has no handle, so its before capture is still taken)
+    const handle = panel.getByTestId('chat-thread-panel-resize')
+    const chatMain = view.locator(':scope > .chat-main')
+    const edges = async (): Promise<{ main: number; panel: number; width: number }> => {
+        const [mainBox, box] = [await chatMain.boundingBox(), await panel.boundingBox()]
+        return { main: mainBox!.x + mainBox!.width, panel: box!.x, width: box!.width }
+    }
+    const before = await edges()
+    expect.soft(await handle.count()).toBe(1)
+    if (await handle.count()) {
+        const grip = (await handle.boundingBox())!
+        await page.mouse.move(grip.x + grip.width / 2, grip.y + 200)
+        await page.mouse.down()
+        await page.mouse.move(grip.x + grip.width / 2 - 120, grip.y + 200, { steps: 6 })
+        await page.mouse.up()
+        const wider = await edges()
+        expect(wider.width).toBeGreaterThan(before.width + 100)
+        expect(wider.main).toBeLessThanOrEqual(wider.panel + 1)
+        const saved = await page.evaluate(() => localStorage.getItem('chat-thread-panel-width'))
+        expect(Math.abs(Number(saved) - wider.width)).toBeLessThanOrEqual(2)
+        await shot(page, 't117-A4-panel-widened-1280')
+        // far left: the chat keeps its 360px; far right: the panel keeps its 300px
+        const now = (await handle.boundingBox())!
+        await page.mouse.move(now.x + now.width / 2, now.y + 200)
+        await page.mouse.down()
+        await page.mouse.move(5, now.y + 200, { steps: 6 })
+        await page.mouse.up()
+        const widest = await edges()
+        expect(widest.main - (await chatMain.boundingBox())!.x).toBeGreaterThanOrEqual(359)
+        expect(widest.main).toBeLessThanOrEqual(widest.panel + 1)
+        const at = (await handle.boundingBox())!
+        await page.mouse.move(at.x + at.width / 2, at.y + 200)
+        await page.mouse.down()
+        await page.mouse.move(1275, at.y + 200, { steps: 6 })
+        await page.mouse.up()
+        expect((await edges()).width).toBeGreaterThanOrEqual(299)
+        // the keyboard moves it too
+        await handle.focus()
+        const keyed = (await edges()).width
+        await page.keyboard.press('ArrowLeft')
+        await expect.poll(async () => (await edges()).width).toBeGreaterThan(keyed + 20)
+        // closed and opened again: the same width
+        const kept = (await edges()).width
+        await panel.getByTestId('chat-thread-panel-close').click()
+        await chip.click()
+        await expect(panel).toBeVisible()
+        expect(Math.abs((await edges()).width - kept)).toBeLessThanOrEqual(1)
+        // double-click: back to the default, and nothing kept
+        await handle.dblclick()
+        await expect.poll(async () => Math.abs((await edges()).width - before.width)).toBeLessThanOrEqual(1)
+        expect(await page.evaluate(() => localStorage.getItem('chat-thread-panel-width'))).toBeNull()
+        await panel.getByPlaceholder('Reply in thread…').focus()
+    }
+
     const childComposer = panel.getByPlaceholder('Reply in thread…')
     await childComposer.fill('Only the thread gets this')
     await childComposer.press('Enter')
     await expect.poll(() => terminalLines(page, child.id), { timeout: 20_000 }).toContain('ANSWER[1]: Only the thread gets this')
     await expect(childChat).toContainText('Echo: Only the thread gets this', { timeout: 15_000 })
+    // fb-1117 2c8bc2b5: the chip counts the thread's turns since the fork — the question and its answer
+    await shot(page, 't117-A0-chip-idle')
+    await expect.soft(chip).toContainText('2 replies', { timeout: 15_000 })
     expect(await terminalLines(page, PARENT)).not.toContain('Only the thread gets this')
     await expect(view.getByTestId('chat-scroll').first()).not.toContainText('Echo: Only the thread gets this')
     // The composer's Escape stops the child before the enclosing panel can treat it as close.
     await childComposer.fill('Stop this thread turn')
     await childComposer.press('Enter')
     await expect(childChat.getByTestId('chat-working')).toBeVisible({ timeout: 15_000 })
+    await expect.soft(chip).toHaveAttribute('data-status', 'working', { timeout: 3_000 })
+    await shot(page, 't117-A1-chip-working')
     await childComposer.press('Escape')
     await expect(panel).toBeVisible()
     await expect.poll(() => terminalLines(page, child.id), { timeout: 15_000 }).toContain('INTERRUPTED')
@@ -256,6 +339,8 @@ test('T117 Mac: threads open beside the parent, hide inherited turns, and send o
     const second = forks().find((session) => session.id !== child.id)!
     await expect.poll(() => terminalLines(page, second.id), { timeout: 20_000 }).toContain(`ARGS: --resume ${CLAUDE_ID} --fork-session`)
     await expect(chip).toContainText('2 threads')
+    await shot(page, 't117-A2-chip-two-threads')
+    await expect.soft(chip).toContainText(/2 threads · \d+ replies ·/)
     await page.evaluate((id) => window.api.writeTerminal(id, 'ASK\r'), child.id)
     await expect(chip).toContainText('waiting for you', { timeout: 15_000 })
     await expect(chip.getByTestId('chat-thread-status-dot')).toHaveAttribute('data-status', 'waiting')
@@ -318,13 +403,15 @@ test('T117 Mac: threads open beside the parent, hide inherited turns, and send o
     const panelBox = await panel.boundingBox()
     expect(panelBox!.x).toBeGreaterThanOrEqual(0)
     expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(390)
+    // the panel covers the chat here: no edge to drag
+    await expect(panel.getByTestId('chat-thread-panel-resize')).toBeHidden()
     await expect(panel.getByPlaceholder('Reply in thread…')).toBeVisible()
     await shot(page, 't117-3b-thread-panel-390', 390)
 
     // Closing the selected child also closes its panel; all closed children disappear from the chip.
     await page.evaluate((id) => window.api.removeSession('w-t117', id), second.id)
     await expect(panel).toHaveCount(0)
-    await expect(chip).toContainText('1 thread')
+    await expect(chip).toHaveAttribute('aria-label', 'Open 1 thread')
     await page.evaluate((id) => window.api.removeSession('w-t117', id), child.id)
     await expect(reply.getByTestId('chat-thread-chip')).toHaveCount(0)
 })
@@ -480,7 +567,7 @@ test('T117 API: REST and MCP fork — the latest reply by default, an AI mark on
     await expect.poll(() => terminalLines(page, first.id), { timeout: 30_000 }).toContain(`ARGS: --resume ${CLAUDE_ID} --fork-session`)
     await expect.poll(() => freshPrompts(fresh), { timeout: 30_000 }).toEqual(['API branch: only the docs'])
 
-    await expect(reply.getByTestId('chat-thread-chip')).toContainText('1 thread')
+    await expect(reply.getByTestId('chat-thread-chip')).toHaveAttribute('aria-label', 'Open 1 thread')
     expect(readConfig().sessionRelations!.find((relation) => relation.to === first.id)!.anchor?.turnTs).toBe(lastReplyTs())
 
     // MCP: the tool is listed, the instructions say when to use it, an excerpt fork goes through

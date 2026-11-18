@@ -37,7 +37,7 @@ import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
-import { allChatThreads, chatThreadParentIds, chatThreadsFor, pollChatThreadChanges } from './chatThreads'
+import { allChatThreads, chatThreadParentIds, chatThreadsFor, pollChatThreadChanges, ReplyCounter } from './chatThreads'
 import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
@@ -395,17 +395,26 @@ const sessionRelations = new SessionRelations(store, (visible) => {
     refreshChatThreadSubscriptions()
 })
 anchoredChatParents = chatThreadParentIds(sessionRelations.list())
+// Each thread's reply count reads the child's transcript only when its output moved (fb-1117 2c8bc2b5).
+// conversationService is made further down; the counter only runs from IPC and the thread tick, after both exist.
+const threadReplyCounter = new ReplyCounter((childId, forkedAt) => conversationService.threadReplies(childId, forkedAt))
+const chatThreadScreen = {
+    hasExited: (id: string) => terminalMirror.hasExited(id),
+    screenStatus: (id: string) => terminalMirror.screenStatus(id),
+    lastOutputAt: (id: string) => terminalMirror.lastOutputAt(id),
+    replies: (childId: string, forkedAt: number, lastOutputAt: number) => threadReplyCounter.count(childId, forkedAt, lastOutputAt)
+}
 const chatThreadSources = {
     relations: () => sessionRelations.list(),
     sessions: () => (store.get('workspaces') as Workspace[]).flatMap((workspace) =>
         workspace.sessions.map((session) => ({ id: session.id, name: session.name, workspaceName: workspace.name }))),
-    screen: terminalMirror
+    screen: chatThreadScreen
 }
 const readChatThreads = (parentId: string): ChatThread[] => anchoredChatParents.has(parentId) ? chatThreadsFor(
     parentId,
     chatThreadSources.relations(),
     chatThreadSources.sessions(),
-    terminalMirror
+    chatThreadScreen
 ) : []
 const sessionFolders = new SessionFolders(store)
 const recentSessions = new RecentSessions(store)
@@ -3770,7 +3779,7 @@ app.whenReady().then(async () => {
     }
     // `quotes: false` is the closed list's badge count: statuses only, no transcript reads.
     ipcMain.handle('chat-threads-all', (_event, quotes: unknown): ChatThreadEntry[] =>
-        allChatThreads(anchoredChatParents, chatThreadSources.relations(), chatThreadSources.sessions(), terminalMirror)
+        allChatThreads(anchoredChatParents, chatThreadSources.relations(), chatThreadSources.sessions(), chatThreadScreen)
             .map((row) => ({ ...row, quote: quotes === false ? '' : quoteFor(row.parentId, row) }))
     )
     ipcMain.handle('chat-threads-all-subscribe', (event): void => {

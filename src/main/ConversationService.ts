@@ -25,7 +25,7 @@ import { BackgroundTaskReader, settleBackground } from './transcript/backgroundT
 import type { AliasResolver } from '../shared/agentCommand'
 import type { SessionRelationAnchor } from '../shared/types'
 import { claudePermissionMode, forkBaseCommand, forkCommand, forkFirstMessage, forkSessionName, withPermissionMode } from './chatFork'
-import { replyForThread, replyQuote } from '../renderer/src/components/ChatView/threadTurns'
+import { replyForThread, replyQuote, turnsAfterFork } from '../renderer/src/components/ChatView/threadTurns'
 
 /**
  * The Chat view's main-process side: one conversation per terminal session,
@@ -353,6 +353,31 @@ export class ConversationService {
         } finally {
             // a parent read only for its quote is let go like any unwatched chat
             this.dropIfIdle(sessionId, entry)
+        }
+    }
+
+    /**
+     * A thread's reply count: the child's turns since the fork, as its thread panel shows them
+     * (fb-1117 2c8bc2b5). Undefined when its conversation is not linked or cannot be read.
+     */
+    threadReplies(childId: string, forkedAt: number): number | undefined {
+        const info = this.deps.session(childId)
+        const agent = agentOf(info)
+        if (agent === null || !info) return undefined
+        // a fork whose conversation is not found yet has written nothing of its own
+        if (!info.cliSessionId) return 0
+        const entry = this.entry(childId)
+        try {
+            const read = this.deps.reader.read(childId, agent, info.cliSessionId, info.cwd)
+            if (!read) return undefined
+            // this read took the new records: an open thread panel's poll will see nothing new, so it is told here
+            if (read.changed) this.bump(childId, entry)
+            return turnsAfterFork(read.turns, forkedAt).length
+        } catch (error) {
+            console.warn('[conversation] thread reply count read failed', childId, error)
+            return undefined
+        } finally {
+            this.dropIfIdle(childId, entry)
         }
     }
 
