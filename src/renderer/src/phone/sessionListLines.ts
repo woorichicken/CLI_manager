@@ -10,7 +10,7 @@ import type { PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 export type ListLine =
     | { kind: 'folder'; key: string; title: string; folderId: string | null }
     | { kind: 'divider'; key: string }
-    | { kind: 'row'; key: string; session: PhoneSession }
+    | { kind: 'row'; key: string; session: PhoneSession; /** Tree only: levels under its root (0 = a root) */ depth?: number }
 
 /** The rows with the Mac's folder headings and pinned lines between them; the order is untouched. */
 export function listLines(data: PhoneSessionsResponse): ListLine[] {
@@ -36,6 +36,26 @@ export function listLines(data: PhoneSessionsResponse): ListLine[] {
         }
         lines.push({ kind: 'row', key: session.id, session })
     }
+    return lines
+}
+
+/**
+ * The Mac's All sessions Tree (7c4165af) as lines: main sends the forest the sidebar draws
+ * (`sessionForestFor`), so this only looks each id up — each row under its parent at its depth, then
+ * «Not in a tree» and the rest, as the sidebar's SidebarSessionTree. A session gone since is skipped.
+ * No tree in the response (the Mac's «Show Session Tree» off): null.
+ */
+export function treeLines(data: PhoneSessionsResponse): ListLine[] | null {
+    if (!data.tree) return null
+    const byId = new Map(data.sessions.map((session) => [session.id, session]))
+    const lines: ListLine[] = []
+    for (const { id, depth } of data.tree.rows) {
+        const session = byId.get(id)
+        if (session) lines.push({ kind: 'row', key: id, session, depth })
+    }
+    const unlinked = data.tree.unlinked.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []))
+    if (unlinked.length > 0 && lines.length > 0) lines.push({ kind: 'folder', key: 'tree-unlinked', title: 'Not in a tree', folderId: null })
+    for (const session of unlinked) lines.push({ kind: 'row', key: session.id, session, depth: 0 })
     return lines
 }
 

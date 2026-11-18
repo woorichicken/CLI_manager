@@ -98,6 +98,12 @@ export interface PhoneSessionsResponse {
     /** the All sessions folders, in order — the phone marks where each one's sessions start */
     sessionFolders: Array<{ id: string; name: string }>
     /**
+     * The Mac's All sessions Tree (7c4165af), made by the sidebar's own `sessionForestFor`: rows each
+     * under its parent (`depth` 0 = a root), then the sessions in no tree. Absent while the Mac's
+     * «Show Session Tree» is off — the phone then offers no Tree either.
+     */
+    tree?: { rows: Array<{ id: string; depth: number }>; unlinked: string[] }
+    /**
      * Template id → logo (a 32×32 PNG data URL), once per template a listed session uses — not
      * once per row: the list is polled and a logo is a few KB. Absent when no row draws one.
      */
