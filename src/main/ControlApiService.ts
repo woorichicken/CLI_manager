@@ -463,7 +463,7 @@ export class ControlApiService {
     }
 
     async connectAgentConversation(sessionId: string, input: AgentConversationConnectInput, client?: string, caller?: string): Promise<AgentConversationConnectResult> {
-        return this.conversationAction((service) => service.connect(sessionId, input, { beforeWrite: () => { this.connect(sessionId, client, caller) } }))
+        return this.conversationAction((service) => service.connect(sessionId, input, { beforeWrite: () => { this.connect(sessionId, client, caller, 'record') } }))
     }
 
     private async conversationAction<T>(action: (service: AgentConversations) => Promise<T>): Promise<T> {
@@ -521,7 +521,7 @@ export class ControlApiService {
         sessionId: string,
         options: { lines?: number; mode?: 'screen' | 'tail'; client?: string; caller?: string } = {}
     ): Promise<ApiOutput> {
-        const { workspace, session } = this.connect(sessionId, options.client, options.caller)
+        const { workspace, session } = this.connect(sessionId, options.client, options.caller, 'none')
         await this.deps.mirror.flush(sessionId)
         const mode = options.mode ?? 'screen'
         const lines = clampLines(options.lines)
@@ -742,7 +742,7 @@ export class ControlApiService {
         if (input.message !== undefined && input.message.length > MAX_TEXT_LENGTH) {
             throw new ControlApiError(413, 'too_large', `message is limited to ${MAX_TEXT_LENGTH} characters.`)
         }
-        this.connect(sessionId, input.client, input.caller)
+        this.connect(sessionId, input.client, input.caller, 'record')
         if (!this.deps.forkConversation) throw new ControlApiError(503, 'unavailable', 'Forking is unavailable.')
         const result = await this.deps.forkConversation(
             sessionId,
@@ -754,7 +754,7 @@ export class ControlApiService {
     }
 
     async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession> {
-        this.connect(sessionId, input.client, input.caller)
+        this.connect(sessionId, input.client, input.caller, 'record')
         await this.typeAndSubmit(sessionId, input)
         const { workspace, session } = this.requireSession(sessionId)
         return this.describe(workspace, session)
@@ -783,13 +783,15 @@ export class ControlApiService {
      * prompt stays in the input box (T19). Nothing is typed while the box already holds text a
      * person left there (the Chat's input_busy rule): the draft and the prompt would go out as one.
      * Only typed text counts — the dim next-prompt suggestion does not. The question/menu guard is
-     * the caller's (index.ts loopRefusal).
+     * the caller's (index.ts loopRefusal). `agent`: the loop's cliToolName — Codex has no box, its
+     * input is the `›` line (a table's rules read as Claude's box made every Codex loop busy, fb-1117).
      */
-    async typeIntoLoop(terminalId: string, text: string): Promise<LoopTypeResult> {
+    async typeIntoLoop(terminalId: string, text: string, agent?: string): Promise<LoopTypeResult> {
         const running = (): boolean => this.deps.terminals.hasTerminal(terminalId) && !this.deps.mirror.hasExited(terminalId)
         if (!running()) return 'gone'
         await this.deps.mirror.flush(terminalId)
-        if (this.deps.mirror.inputBox(terminalId)?.typed.trim()) return 'busy'
+        const box = agent === 'codex' ? this.deps.mirror.codexInput(terminalId) : this.deps.mirror.inputBox(terminalId)
+        if (box?.typed.trim()) return 'busy'
         const line = text.replace(/[\r\n]+/g, ' ')
         await this.settleAfterEscape(terminalId)
         this.write(terminalId, line)
@@ -913,7 +915,7 @@ export class ControlApiService {
      * Returns the screen either way, flagged `timedOut` when it never settled.
      */
     async waitForIdle(sessionId: string, input: WaitInput = {}): Promise<ApiWaitResult> {
-        this.connect(sessionId, input.client, input.caller)
+        this.connect(sessionId, input.client, input.caller, 'none')
         const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 120_000, 0), MAX_WAIT_MS)
         const quietMs = Math.max(input.quietMs ?? DEFAULT_QUIET_MS, 200)
         const started = Date.now()
@@ -953,7 +955,7 @@ export class ControlApiService {
     }
 
     focusSession(sessionId: string, client?: string, caller?: string, terminal?: { command?: string }): ApiSession {
-        const { workspace, session } = this.connect(sessionId, client, caller)
+        const { workspace, session } = this.connect(sessionId, client, caller, 'none')
         this.emit({ type: 'focus', workspaceId: workspace.id, sessionId, ...(terminal ? { terminal } : {}) })
         return this.describe(workspace, session)
     }
@@ -1638,10 +1640,15 @@ export class ControlApiService {
      * Marks a session as AI-driven the first time the API works in it, so the
      * user sees which of their terminals something else may type into. A
      * session that already carries the mark keeps its original client and time.
-     * When the request said which session it came from, the two become related
-     * (first contact only — see SessionRelations.recordConnected).
+     * When the request said which session it came from and `relation` is
+     * 'record', the two become related (first contact only — see
+     * SessionRelations.recordConnected). Only work in the session records:
+     * input, connecting a conversation, a fork. Reading, waiting and focusing
+     * pass 'none' — a chief or lead that only checked on a session would
+     * otherwise become its parent in the sidebar tree (fb-1117: a lead showed
+     * under another lead that had only looked at its screen).
      */
-    private connect(sessionId: string, client?: string, caller?: string): { workspace: Workspace; session: TerminalSession } {
+    private connect(sessionId: string, client: string | undefined, caller: string | undefined, relation: 'record' | 'none'): { workspace: Workspace; session: TerminalSession } {
         const workspaces = this.workspaces()
         for (const workspace of workspaces) {
             const session = workspace.sessions.find((s) => s.id === sessionId)
@@ -1653,7 +1660,7 @@ export class ControlApiService {
             }
             // Covers a session whose terminal has not started yet.
             this.deps.mirror.attach(sessionId)
-            if (caller && caller !== sessionId && this.hasSession(caller)) {
+            if (relation === 'record' && caller && caller !== sessionId && this.hasSession(caller)) {
                 this.deps.relations.recordConnected(caller, sessionId)
             }
             return { workspace, session }

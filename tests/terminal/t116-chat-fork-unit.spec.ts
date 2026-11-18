@@ -204,7 +204,8 @@ test.describe('ConversationService.fork', () => {
                 lastOutputAt: () => 0,
                 hasExited: () => false,
                 showsAwaitingInput: () => false,
-                inputBox: () => null
+                inputBox: () => null,
+                codexInput: () => null
             },
             hasTerminal: () => true,
             writeInput: () => {},

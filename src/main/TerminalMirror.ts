@@ -450,6 +450,39 @@ export class TerminalMirror {
         }
     }
 
+    /**
+     * Codex's input line (fb-1117 1d15e1c2). Codex draws no box: its composer is the lowest row that
+     * starts with a bright `›` at the left edge (a past prompt's `›` in the transcript is dim). Only
+     * bright cells count as typed — its placeholder ("Ask Codex to do anything") is dim. Only that row
+     * is read: a draft that wraps has text there too, and the rows under it are Codex's hints and
+     * status (`? for shortcuts`), which a reader of wrapped rows would take for typed text. Reading
+     * Codex by Claude's box rules took a table's `────────  ────────` separators for the box and the
+     * table row between them for typed text — every Chat send was refused (codex-cli 0.166.0, recorded).
+     * Null when no composer is on screen.
+     */
+    codexInput(id: string): InputBox | null {
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return null
+        const buffer = mirror.term.buffer.active
+        const cell = buffer.getNullCell()
+        for (let row = mirror.term.rows - 1; row >= 0; row--) {
+            const line = buffer.getLine(buffer.viewportY + row)
+            if (!line?.translateToString(true).startsWith(CODEX_PROMPT_GLYPH)) continue
+            line.getCell(0, cell)
+            if (cell.isDim()) continue
+            let typed = ''
+            for (let col = 1; col < line.length; col++) {
+                line.getCell(col, cell)
+                if (cell.getWidth() === 0) continue
+                const chars = cell.getChars()
+                typed += chars.trim() === '' || cell.isDim() ? ' ' : chars
+            }
+            const text = collapseSpaces(typed)
+            return { typed: text, typedRows: text ? 1 : 0, suggestion: '' }
+        }
+        return null
+    }
+
     /** The screen currently shows an agent turn in progress. */
     showsBusy(id: string): boolean {
         return this.screen(id).some((line) => isBusyRow(line))
@@ -567,6 +600,9 @@ function idePillCells(afterPrompt: string): number {
 
 /** Stands in for Claude's drawn cursor until the box tells typed from suggested. */
 const CURSOR_MARK = '\u0000'
+
+/** Codex's composer glyph at the left edge (codex-cli 0.166.0); bold there, dim on a past prompt. */
+const CODEX_PROMPT_GLYPH = '›'
 
 /**
  * Claude's new-session tip as the box's whole row (`Try "how does <filepath> work?"`). Dim

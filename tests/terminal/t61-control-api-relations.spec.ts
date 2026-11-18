@@ -105,10 +105,13 @@ test.describe('T61 Control API relations', () => {
         expect(memo.memo).toBe('page one')
         expect((await api('GET', '/v1/sessions/s-nomemo')).json.memoPages).toEqual([''])
 
-        // --- an API open and a first read add two more pairs to OLD ------------
+        // --- an API open and a first input add two more pairs to OLD -----------
+        // A read alone relates nothing (fb-1117); the input after it does.
         const child = await api<{ session: { id: string } }>('POST', '/v1/sessions', { path: folder, name: 'T61CHILD' }, OLD)
         expect(child.status, JSON.stringify(child.json)).toBe(200)
         expect((await api('GET', `/v1/sessions/${OTHER}/output`, undefined, OLD)).status).toBe(200)
+        expect(disk().some((r) => r.to === OTHER || r.from === OTHER)).toBe(false)
+        expect((await api('POST', `/v1/sessions/${OTHER}/input`, { text: 'true' }, OLD)).status).toBe(200)
 
         // --- read: kind, direction, no removed pair -----------------------------
         const old = await relationsOf(OLD)
