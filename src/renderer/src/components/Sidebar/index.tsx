@@ -14,7 +14,8 @@ import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatch
 import { SidebarSessionList } from './SidebarSessionList'
 import { SidebarAllSessions } from './SidebarAllSessions'
 import { SidebarSessionTree } from './SidebarSessionTree'
-import { sessionForestFor, wouldMakeLoop, handParentsInTheWay } from '../../utils/relatedSessions'
+import { sessionForestFor, sessionTreeFor, wouldMakeLoop, handParentsInTheWay } from '../../utils/relatedSessions'
+import { relatedForAgent } from '../../utils/relatedForAgent'
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, sidebarWorkspaceOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { isOrderHeldFor, setAllSessionsListElement } from '../../utils/allSessionsNav'
@@ -778,7 +779,10 @@ export function Sidebar({
     const allSessionEntries = sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground)
     // All sessions' "New session" (c63a93c0) offers the projects the sidebar shows, in its order.
     const [newSessionOpen, setNewSessionOpen] = useState(false)
+    // Opened from a session folder's right-click menu: the new session is filed there (b9038a0e).
+    const [newSessionFolderId, setNewSessionFolderId] = useState<string | null>(null)
     const closeNewSession = useCallback(() => setNewSessionOpen(false), [])
+    const newSessionFolderName = newSessionFolderId ? sessionFolders.find(f => f.id === newSessionFolderId)?.name : undefined
     const newSessionWorkspaces = viewMode === 'all'
         ? sidebarWorkspaceOrder(workspaces, folders, showWorktrees, showPlayground)
         : []
@@ -995,6 +999,17 @@ export function Sidebar({
                         isPinned={menuSession?.isPinned === true}
                         onTogglePin={() => onToggleSessionPin(sessionMenuOpen.workspaceId, sessionMenuOpen.sessionId)}
                         onCopy={copy}
+                        onCopyForAgent={menuSession ? () => {
+                            // The Related dialog's text with its defaults (newest first, every related session),
+                            // states read once now instead of the dialog's polling.
+                            const tree = sessionTreeFor(sessionRelations, menuSession.id, workspaces)
+                            const ids = [...tree.descendants, ...tree.ancestors, ...tree.siblings, ...tree.other].map(entry => entry.session.id)
+                            const peeks = ids.length > 0 ? window.api.peekSessions(ids).catch(() => []) : Promise.resolve([])
+                            void peeks.then(list => copy(
+                                relatedForAgent({ id: menuSession.id, name: menuSession.name }, tree, new Map(list.map(peek => [peek.sessionId, peek]))),
+                                'for agent'
+                            ))
+                        } : undefined}
                         onRename={() => {
                             setRenamingSessionId(sessionMenuOpen.sessionId)
                             setSessionMenuOpen(null)
@@ -1036,11 +1051,12 @@ export function Sidebar({
                         const created = await onAddSession(workspaceId, 'regular', undefined, template.command, name || template.name, template.id)
                         // App resolves to nothing when main could not start it: the dialog stays and says so.
                         if (!created) return false
+                        if (newSessionFolderId && sessionFolderActions) await sessionFolderActions.moveSession(created.id, newSessionFolderId)
                         setNewSessionOpen(false)
                         return true
                     }}
                     onCancel={closeNewSession}
-                    note="Opens it in the chosen project."
+                    note={newSessionFolderName ? `Opens it in the chosen project, filed in ${newSessionFolderName}.` : 'Opens it in the chosen project.'}
                 />
             )}
 
@@ -1285,7 +1301,7 @@ export function Sidebar({
                             layout={allSessionsLayout}
                             onChooseLayout={chooseAllSessionsLayout}
                             canCreate={newSessionWorkspaces.length > 0}
-                            onNewSession={() => setNewSessionOpen(true)}
+                            onNewSession={() => { setNewSessionFolderId(null); setNewSessionOpen(true) }}
                             newSessionOpen={newSessionOpen}
                             threadsOpen={threadsView.threadsOpen}
                             onToggleThreads={() => threadsView.setThreadsOpen(!threadsView.threadsOpen)}
@@ -1311,6 +1327,7 @@ export function Sidebar({
                                 fontSize={fontSize}
                                 showSessionCount={showSessionCount}
                                 onCopy={copy}
+                                onNewSessionIn={(folderId) => { setNewSessionFolderId(folderId); setNewSessionOpen(true) }}
                             />
                         ) : (
                             <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} dividePinned {...allSessionsListProps} />

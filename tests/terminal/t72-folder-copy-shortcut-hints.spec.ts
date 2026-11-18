@@ -12,6 +12,9 @@ import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult } fro
  * - 386b0c76: a button that has a keyboard shortcut names it in its tooltip ("New page (⌘⌥N)"),
  *   and a binding changed in Settings › Keyboard shows the new key, not the default.
  *
+ * - fb-1117 69f47a30: a session row's right-click "Copy for agent" puts the Related dialog's
+ *   Copy for agent text for that session on the clipboard.
+ *
  * Judged from the clipboard in main and the buttons' `title`. `T72_SHOTS=<dir>` leaves the folder
  * menu capture and the tooltips as `titles.json` there — written before the checks, so the old code
  * leaves its "before" in the same run.
@@ -89,6 +92,56 @@ test.describe('T72 folder copy and shortcut hints (fb-1031)', () => {
             await expect(page.getByTestId('folder-menu-copy-ids')).toBeDisabled()
             await page.keyboard.press('Escape')
             await expect(folderMenu).toHaveCount(0)
+        } finally {
+            await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved)
+        }
+    })
+
+    test('a session row\'s right-click Copy for agent copies what the Related dialog\'s Copy for agent does (fb-1117 69f47a30)', async () => {
+        ctx = await launchAppWithWorkspaces([
+            { id: 'ws-t72', name: 'T72WS', sessions: [
+                { id: A1, name: 'T72 lead' },
+                { id: A2, name: 'T72 two' },
+                { id: A3, name: 'T72 three' }
+            ] }
+        ], {
+            settings: { showHomeWorkspace: false },
+            config: { sessionRelations: [
+                { from: A1, to: A2, kind: 'opened', at: 1 },
+                { from: A1, to: A3, kind: 'opened', at: 2 }
+            ] }
+        })
+        const { app, page } = ctx
+        await resizeMainWindow(app, 1280, 800)
+        const saved = await app.evaluate(({ clipboard }) => clipboard.readText())
+        const readClipboard = () => app.evaluate(({ clipboard }) => clipboard.readText())
+        const sessionMenu = page.locator('[data-sidebar-menu="session"]')
+
+        try {
+            await page.locator(`[data-session-item="${A1}"]`).first().click()
+            await page.getByTestId('sidebar-view-toggle').click()
+            await page.getByTestId('all-sessions-layout-list').click()
+            const row = page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${A1}"]`)
+            await row.click({ button: 'right' })
+            await expect(sessionMenu).toBeVisible()
+            await saveShot(page, `session-menu-1280-${process.env.T72_LABEL ?? 'after'}`)
+
+            await app.evaluate(({ clipboard }) => clipboard.writeText('T72 before copy'))
+            await page.getByTestId('session-menu-copy-for-agent').click()
+            await expect(sessionMenu).toHaveCount(0)
+            await expect.poll(readClipboard).not.toBe('T72 before copy')
+            const fromMenu = await readClipboard()
+            await expect(page.getByTestId('sidebar-copy-notice')).toContainText('Copied for agent')
+            expect(fromMenu).toContain(`Sessions related to "T72 lead" (id ${A1})`)
+            expect(fromMenu).toContain(`id ${A2}`)
+            expect(fromMenu).toContain(`id ${A3}`)
+
+            // The Related dialog's own button, same session: the same text.
+            await app.evaluate(({ clipboard }) => clipboard.writeText('T72 before copy'))
+            await page.locator(`[data-related-button="${A1}"]`).click()
+            await page.getByRole('button', { name: 'Copy for agent' }).click()
+            await expect.poll(readClipboard).not.toBe('T72 before copy')
+            expect(await readClipboard()).toBe(fromMenu)
         } finally {
             await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved)
         }

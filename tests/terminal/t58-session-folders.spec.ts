@@ -2,7 +2,7 @@ import { test, expect, Page, Locator } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, LaunchResult, SeedWorkspace } from './helpers'
+import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult, SeedWorkspace } from './helpers'
 
 /**
  * T58 — session folders in the sidebar's All sessions view (report 078ee766).
@@ -11,6 +11,10 @@ import { launchAppWithWorkspaces, closeApp, LaunchResult, SeedWorkspace } from '
  * from the All view's "…" menu, filled by dragging a session row onto the
  * folder heading (a real mouse drag, not synthetic events), emptied by dropping
  * on "No folder". Judged in the DOM and in config.json.
+ *
+ * fb-1117 b9038a0e: a folder's right-click "New Session…" opens the New session dialog and files the
+ * session in that folder; on "No folder" it stays unfiled. `T58_SHOTS=<dir>` (+ T58_LABEL) leaves the
+ * menu and dialog captures. Fails on the code before it: the menu has no New Session….
  */
 
 type StoredSession = { id: string; sessionFolderId?: string }
@@ -140,6 +144,82 @@ test.describe('T58 session folders', () => {
         await expect(page.getByTestId('sidebar-add-workspace')).toBeVisible()
         expect((await toggle.boundingBox())!.x, 'the toggle does not move').toBe(allX)
         await toggle.click()
+    })
+
+    test('right-click New Session… on a folder starts a session filed in it; on No folder, unfiled (fb-1117 b9038a0e)', async () => {
+        ctx = await launchAppWithWorkspaces(
+            seed(dir()).map(w => w.id === 'ws-one' ? { ...w, sessions: w.sessions.map(s => s.id === 's-a1' ? { ...s, sessionFolderId: 'sf-t58n' } : s) } : w),
+            {
+                settings: { showHomeWorkspace: false },
+                config: { sessionFolders: [{ id: 'sf-t58n', name: 'T58 filed', isExpanded: true, createdAt: 1 }] }
+            }
+        )
+        const { app, page } = ctx
+        await resizeMainWindow(app, 1280, 800)
+        const shots = process.env.T58_SHOTS
+        const label = process.env.T58_LABEL ?? 'after'
+        const shot = async (name: string): Promise<void> => {
+            if (!shots) return
+            fs.mkdirSync(shots, { recursive: true })
+            await page.waitForTimeout(300)
+            await page.screenshot({ path: path.join(shots, `${name}-1280-${label}.png`) })
+        }
+        const menu = page.locator('[data-sidebar-menu="folder"]')
+        const form = page.locator('[data-new-session-dialog="all-sessions"] [data-related-new-form]')
+        const sessionNamed = (name: string) => {
+            for (const workspace of readConfig(ctx!.userDataDir).workspaces) {
+                const found = workspace.sessions.find((s: { name: string }) => s.name === name)
+                if (found) return found as StoredSession & { name: string }
+            }
+            return undefined
+        }
+
+        await page.locator('[data-session-item="s-a2"]').first().click()
+        await page.getByTestId('sidebar-view-toggle').click()
+        await page.getByTestId('all-sessions-layout-list').click()
+        const header = page.getByTestId('session-folder-header-sf-t58n')
+        await expect(header).toBeVisible()
+
+        await header.click({ button: 'right' })
+        await expect(menu).toBeVisible()
+        await shot('folder-menu')
+        await expect(menu.locator('button').first()).toHaveAttribute('data-testid', 'folder-menu-new-session')
+        await page.getByTestId('folder-menu-new-session').click()
+        await expect(menu).toHaveCount(0)
+        await expect(form).toBeVisible()
+        await expect(form).toContainText('filed in T58 filed')
+        await expect(form.locator('[data-related-new-name]')).toBeFocused()
+
+        // Esc makes nothing.
+        await page.keyboard.press('Escape')
+        await expect(form).toHaveCount(0)
+
+        await header.click({ button: 'right' })
+        await page.getByTestId('folder-menu-new-session').click()
+        await form.locator('[data-related-new-workspace]').selectOption('ws-two')
+        await form.locator('[data-related-new-name]').fill('T58 new filed')
+        await shot('new-session-dialog-folder')
+        await form.locator('[data-related-new-create]').click()
+        await expect(form).toHaveCount(0)
+
+        await expect.poll(() => sessionNamed('T58 new filed')?.sessionFolderId, { timeout: 10_000 }).toBe('sf-t58n')
+        const filedId = sessionNamed('T58 new filed')!.id
+        await expect(page.locator(`[data-session-folder-body="sf-t58n"] [data-session-item="${filedId}"]`)).toBeVisible()
+        await expect(page.locator('[data-session-folder-body="sf-t58n"] [data-session-item]')).toHaveCount(2)
+        await shot('folder-new-session-created')
+
+        // "No folder": only New Session…, and the session stays out of every folder.
+        await page.getByTestId('session-folder-none').click({ button: 'right' })
+        await expect(menu).toBeVisible()
+        await expect(menu.locator('button')).toHaveCount(1)
+        await page.getByTestId('folder-menu-new-session').click()
+        await expect(form).not.toContainText('filed in')
+        await form.locator('[data-related-new-name]').fill('T58 new loose')
+        await form.locator('[data-related-new-create]').click()
+        await expect(form).toHaveCount(0)
+        await expect.poll(() => sessionNamed('T58 new loose')?.id ?? '', { timeout: 10_000 }).not.toBe('')
+        expect(sessionNamed('T58 new loose')?.sessionFolderId).toBeUndefined()
+        await expect(page.locator('[data-session-folder-body="sf-t58n"] [data-session-item]')).toHaveCount(2)
     })
 
     test('renaming and deleting a folder; deleting keeps its sessions; a folder that is gone counts as none', async () => {

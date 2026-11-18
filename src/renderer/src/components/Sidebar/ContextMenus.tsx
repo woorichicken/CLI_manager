@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash, Link2 } from 'lucide-react'
+import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash, Link2, Plus, Bot } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { TemplateIcon } from '../TemplateIcon'
 import { MENU_Z_INDEX } from '../../constants/styles'
@@ -651,6 +651,8 @@ interface SessionContextMenuProps {
     onTogglePin: () => void
     /** Writes to the clipboard and shows the sidebar's "Copied" notice. */
     onCopy: (text: string, label: string) => void
+    /** The Related dialog's "Copy for agent" text for this session (69f47a30). */
+    onCopyForAgent?: () => void
     onRename: () => void
     onDelete: () => void
     onClear: () => void
@@ -673,6 +675,7 @@ export function SessionContextMenu({
     isPinned,
     onTogglePin,
     onCopy,
+    onCopyForAgent,
     onRename,
     onDelete,
     onClear,
@@ -753,6 +756,20 @@ export function SessionContextMenu({
                 <Hash size={12} className="text-gray-400 shrink-0" />
                 <span className="truncate">Copy Session ID</span>
             </button>
+            {onCopyForAgent && (
+                <button
+                    data-testid="session-menu-copy-for-agent"
+                    className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                    onClick={() => {
+                        onCopyForAgent()
+                        onClose()
+                    }}
+                    title="This session, its ID, its related sessions and how an agent reaches them — the Related dialog's Copy for agent"
+                >
+                    <Bot size={12} className="text-gray-400 shrink-0" />
+                    <span className="truncate">Copy for agent</span>
+                </button>
+            )}
             <button
                 data-testid="connect-agent-conversation"
                 className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
@@ -805,9 +822,12 @@ export function SessionContextMenu({
 interface FolderContextMenuProps {
     x: number
     y: number
-    onRename: () => void
-    onDelete: () => void
+    /** Absent on All sessions' "No folder" row, which can only start a session (b9038a0e). */
+    onRename?: () => void
+    onDelete?: () => void
     onClose: () => void
+    /** Session folders: start a session that goes straight into this folder (b9038a0e). */
+    onNewSession?: () => void
     /** Session folders only: copy the folder name / its sessions' IDs (report 88d69c82). */
     onCopyName?: () => void
     onCopySessionIds?: () => void
@@ -827,7 +847,8 @@ export function FolderContextMenu({
     onClose,
     onCopyName,
     onCopySessionIds,
-    sessionCount = 0
+    sessionCount = 0,
+    onNewSession
 }: FolderContextMenuProps) {
     const menuRef = useCloseOnOutside(onClose)
     const hasCopy = Boolean(onCopyName || onCopySessionIds)
@@ -839,6 +860,23 @@ export function FolderContextMenu({
             style={{ top: y, left: x }}
             onClick={e => e.stopPropagation()}
         >
+            {onNewSession && (
+                <>
+                    <button
+                        data-testid="folder-menu-new-session"
+                        className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                        onClick={() => {
+                            onNewSession()
+                            onClose()
+                        }}
+                    >
+                        <Plus size={12} className="text-gray-400 shrink-0" />
+                        <span className="truncate">New Session…</span>
+                    </button>
+                    {onRename && <div className="border-t border-white/10 my-0.5"></div>}
+                </>
+            )}
+            {onRename && (
             <button
                 className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
                 onClick={() => {
@@ -849,6 +887,7 @@ export function FolderContextMenu({
                 <Edit2 size={12} className="text-gray-400 shrink-0" />
                 <span className="truncate">Rename</span>
             </button>
+            )}
             {hasCopy && (
                 <>
                     <div className="border-t border-white/10 my-0.5"></div>
@@ -885,6 +924,7 @@ export function FolderContextMenu({
                     <div className="border-t border-white/10 my-0.5"></div>
                 </>
             )}
+            {onDelete && (
             <button
                 className="w-full text-left px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-colors flex items-center gap-2"
                 onClick={() => {
@@ -895,6 +935,7 @@ export function FolderContextMenu({
                 <Trash2 size={12} className="text-red-400 shrink-0" />
                 <span className="truncate">Delete Folder</span>
             </button>
+            )}
         </div>,
         document.body
     )

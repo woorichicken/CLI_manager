@@ -204,6 +204,11 @@ export interface UserSettings {
     showWorktrees?: boolean
     /** Show the Playground section at the bottom of the sidebar (default: true). Off only hides it; running sessions are left alone. */
     showPlayground?: boolean
+    /**
+     * Show the Source Control (Git panel) button in the main header and in split-pane headers
+     * (default: true). Off only hides the buttons; nothing about git changes (fb-1117 0e6c4a0a).
+     */
+    showSourceControl?: boolean
     /** Offer the Tree layout (sessions under the session that opened them) in the sidebar's All sessions view (default: true). Off shows the list only. */
     showSessionTree?: boolean
     /**
