@@ -1875,6 +1875,12 @@ function App() {
                         compact={Boolean(splitLayout)}
                     />
                 )}
+                {/* With no tab yet the row's height stays reserved. Hidden terminals take their pty size from this
+                    box when they start; if the first tab then pushed the terminals down two rows, each hidden session
+                    would be resized (SIGWINCH, full Claude redraw) the first time it is shown — T41. */}
+                {sessionTabsEnabled && sessionTabEntries.length === 0 && (
+                    <div className={`${splitLayout ? 'h-6' : 'h-9'} shrink-0`} data-session-tab-spacer aria-hidden />
+                )}
                 <div className="flex-1 pt-4 px-4 pb-0 flex flex-col overflow-hidden min-h-0">
                     {/* Terminal container with relative positioning for absolute children */}
                     <div
