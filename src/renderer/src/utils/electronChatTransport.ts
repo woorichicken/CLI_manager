@@ -1,4 +1,4 @@
-import type { AttachResult, ChatTransport, ConversationSnapshot } from '../../../shared/conversation'
+import type { AttachResult, ChatOpenMode, ChatTransport, ConversationSnapshot } from '../../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../../shared/conversation'
 
 /**
@@ -29,7 +29,7 @@ const cwdBySession = new Map<string, string>()
  * pictures and text, the Mac's own app for the rest). Unset (a window without a preview),
  * the file opens in the Mac's own app.
  */
-type FileOpener = (path: string, line?: number, sessionId?: string) => void
+type FileOpener = (path: string, line?: number, sessionId?: string, mode?: ChatOpenMode) => void
 let fileOpener: FileOpener | null = null
 export function setChatFileOpener(opener: FileOpener | null): void {
     fileOpener = opener
@@ -102,8 +102,8 @@ export const electronChatTransport: ChatTransport = {
         const result = await window.api.searchFiles(cwd, query)
         return result.success ? result.files.slice(0, SEARCH_RESULTS).map((file) => file.relativePath) : []
     },
-    openFile(sessionId, path, line) {
-        if (fileOpener) fileOpener(path, line, sessionId)
+    openFile(sessionId, path, line, mode) {
+        if (fileOpener) fileOpener(path, line, sessionId, mode)
         else void window.api.openChatPath(path, sessionId)
     },
     openLink(url) {

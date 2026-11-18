@@ -3,8 +3,9 @@ import { BookOpen, ChevronDown, ChevronRight, FileText, Image as ImageIcon, Laye
 import type { ConversationPart, TaskResult } from '../../../../shared/conversation'
 import { LinkedText, Markdown } from './markdown/Markdown'
 import { ChatImageStrip } from './ChatImages'
-import { foldUserMessage, INTERRUPTED_TEXT, splitAppAttachments, type AppAttachmentMention } from './chatLib'
+import { chatOpenMode, foldUserMessage, INTERRUPTED_TEXT, splitAppAttachments, type AppAttachmentMention } from './chatLib'
 import { useChatActions } from './chatContext'
+import { isMac } from '../../utils/platform'
 
 /** What the person's seat holds: their words, a `!` command, a notice, a subagent's result. */
 export const UserParts = memo(function UserParts({ parts }: { parts: ConversationPart[] }) {
@@ -103,7 +104,7 @@ function AttachmentChip({ attachment }: { attachment: AppAttachmentMention }) {
     )
     if (actions?.canOpenPaths) {
         return (
-            <button type="button" className="chat-attachment-chip" data-testid="chat-attachment-chip" title={`Open ${attachment.path}`} onClick={() => actions.openPath(attachment.path)}>
+            <button type="button" className="chat-attachment-chip" data-testid="chat-attachment-chip" title={actions.openTitle(attachment.path)} onClick={(event) => actions.openPath(attachment.path, chatOpenMode(event, isMac))}>
                 {content}
             </button>
         )

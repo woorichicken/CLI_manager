@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon } from 'lucide-react'
-import type { ChatCommand, ChatForkRequest, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
+import type { ChatCommand, ChatForkRequest, ChatOpenMode, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
+import { isMac } from '../../utils/platform'
 import { ChatTurn } from './ChatTurn'
 import { endedOnAnswer } from './workBlocks'
 import { appendDraft, Composer, type ComposerHandle } from './Composer'
@@ -18,7 +19,7 @@ import { groupThreadsByTurn, threadsForTurn, type ThreadGroups } from './threadG
 import { hasEarlierThreadReplies, replyForThread, replyQuote, turnsAfterFork } from './threadTurns'
 import { ThreadPanel } from './ThreadPanel'
 import { onOpenThreadChange, openThreadOf, setOpenThread } from './threadSelection'
-import { artifactLinks, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
+import { artifactLinks, chatOpenTitle, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
 import './chat.css'
 
 /**
@@ -344,15 +345,17 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         () => ({
             sessionId,
             transport,
-            openPath: (target: string) => {
+            openPath: (target: string, mode?: ChatOpenMode) => {
                 const { path, line } = fileLineTarget(target)
-                transport.openFile(sessionId, resolveChatPath(path, cwd, home), line ?? undefined)
+                transport.openFile(sessionId, resolveChatPath(path, cwd, home), line ?? undefined, mode)
             },
+            // a touch screen has no ⌘ or ⌥ to press: its links say only what they open
+            openTitle: (target: string) => (touch ? `Open ${target}` : chatOpenTitle(target, isMac)),
             canOpenPaths: canOpenFiles,
             openSessionLink: onSessionLink,
             openGallery: (images, index) => setGallery({ images, index })
         }),
-        [sessionId, transport, cwd, home, canOpenFiles, onSessionLink]
+        [sessionId, transport, cwd, home, canOpenFiles, onSessionLink, touch]
     )
 
     const sendText = useCallback(

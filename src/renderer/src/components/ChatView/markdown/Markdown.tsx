@@ -7,8 +7,10 @@
 import { memo, useMemo, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { useChatActions } from '../chatContext'
-import { codeIsFilePath, codeIsSessionLink, FILE_LINK_COUNT, FILE_LINK_LIMIT, splitFilePaths, splitSessionLinks } from '../chatLib'
+import { chatOpenMode, codeIsFilePath, codeIsSessionLink, FILE_LINK_COUNT, FILE_LINK_LIMIT, splitFilePaths, splitSessionLinks } from '../chatLib'
 import { parseSessionLink } from '../../../utils/sessionLink'
+import { isMac } from '../../../utils/platform'
+import type { ChatOpenMode } from '../../../../../shared/conversation'
 import { foldCode, parseMarkdown, type InlineNode, type ListBlock, type MarkdownBlock } from './parseMarkdown'
 import { languageForFence } from './highlight'
 import { HighlightedCode } from './HighlightedCode'
@@ -24,7 +26,7 @@ export function endsADrag(): boolean {
  * button role, not a <button>: a drag that starts on a button selects nothing — the person could not
  * copy a line with a path in it (d05e93fc). Enter and Space open it as a button would.
  */
-export function ChatLink({ className = 'chat-file-link', title, testId, onOpen, children }: { className?: string; title: string; testId: string; onOpen: () => void; children: ReactNode }) {
+export function ChatLink({ className = 'chat-file-link', title, testId, onOpen, children }: { className?: string; title: string; testId: string; onOpen: (mode: ChatOpenMode) => void; children: ReactNode }) {
     return (
         <span
             role="button"
@@ -32,13 +34,13 @@ export function ChatLink({ className = 'chat-file-link', title, testId, onOpen, 
             className={className}
             title={title}
             data-testid={testId}
-            onClick={() => {
-                if (!endsADrag()) onOpen()
+            onClick={(event) => {
+                if (!endsADrag()) onOpen(chatOpenMode(event, isMac))
             }}
             onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
                 event.preventDefault()
-                onOpen()
+                onOpen(chatOpenMode(event, isMac))
             }}
         >
             {children}
@@ -47,9 +49,9 @@ export function ChatLink({ className = 'chat-file-link', title, testId, onOpen, 
 }
 
 /** A file path the chat can open: reads as the text or code it replaced. */
-export function FilePathLink({ path, code, open }: { path: string; code: boolean; open: (path: string) => void }) {
+export function FilePathLink({ path, code, open, title }: { path: string; code: boolean; open: (path: string, mode: ChatOpenMode) => void; title?: string }) {
     return (
-        <ChatLink className={`chat-file-link${code ? ' is-code' : ''}`} title={`Open ${path}`} testId="chat-file-link" onOpen={() => open(path)}>
+        <ChatLink className={`chat-file-link${code ? ' is-code' : ''}`} title={title ?? `Open ${path}`} testId="chat-file-link" onOpen={(mode) => open(path, mode)}>
             {code ? <code>{path}</code> : path}
         </ChatLink>
     )
@@ -110,7 +112,7 @@ function FilePathText({ text }: { text: string }) {
     return (
         <>
             {parts.map((part, index) =>
-                typeof part === 'string' ? <span key={index}>{part}</span> : <FilePathLink key={index} path={part.path} code={false} open={actions.openPath} />
+                typeof part === 'string' ? <span key={index}>{part}</span> : <FilePathLink key={index} path={part.path} code={false} open={actions.openPath} title={actions.openTitle(part.path)} />
             )}
         </>
     )
@@ -131,7 +133,7 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                             return <SessionLinkButton key={key} uri={node.value.trim()} code open={actions.openSessionLink} />
                         }
                         if (interactive && actions?.canOpenPaths && codeIsFilePath(node.value)) {
-                            return <FilePathLink key={key} path={node.value} code open={actions.openPath} />
+                            return <FilePathLink key={key} path={node.value} code open={actions.openPath} title={actions.openTitle(node.value)} />
                         }
                         // agents often put an address in backticks: it stays code to the eye, and opens
                         if (interactive && /^https?:\/\/\S+$/i.test(node.value)) {
@@ -185,7 +187,7 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
                     case 'file':
                         if (interactive && actions?.canOpenPaths) {
                             return (
-                                <ChatLink key={key} title={`Open ${node.path}`} testId="chat-file-link" onOpen={() => actions.openPath(node.path)}>
+                                <ChatLink key={key} title={actions.openTitle(node.path)} testId="chat-file-link" onOpen={(mode) => actions.openPath(node.path, mode)}>
                                     <Inline nodes={node.children} interactive={false} />
                                 </ChatLink>
                             )

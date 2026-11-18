@@ -3,7 +3,8 @@
 // (lineDiff, verbatim), src/lib/userMessageFold.ts (verbatim), src/lib/modelName.ts (modelLabel, verbatim),
 // src/lib/todos.ts (todoSnapshot · todoCallSummary for Claude TodoWrite and Codex update_plan only — the
 // omp/omo/gjc operation lists are left out). Gathered in one file; the chat's own helpers follow at the end.
-import type { ChatCommand, ConversationPart, ToolPart } from '../../../../shared/conversation'
+import type { ChatCommand, ChatOpenMode, ConversationPart, ToolPart } from '../../../../shared/conversation'
+import { BROWSER_PAGE_EXTENSIONS, SYSTEM_TYPES } from '../../../../shared/fileKinds'
 import { SESSION_LINK_REGEX } from '../../utils/sessionLink'
 
 // ---------------------------------------------------------------- file paths (src/lib/filePaths.ts)
@@ -65,6 +66,22 @@ export function codeIsFilePath(code: string): boolean {
 }
 
 /** Split a viewer target; columns and range ends are ignored, and only positive safe lines are marked. */
+/** What a click on a file the chat names asked for: ⌘ (Ctrl off the Mac) opens it outside the app, ⌥ (Alt) beside the session. */
+export function chatOpenMode(event: { metaKey: boolean; ctrlKey: boolean; altKey: boolean }, mac: boolean): ChatOpenMode {
+    if (mac ? event.metaKey : event.ctrlKey) return 'outside'
+    if (event.altKey) return 'beside'
+    return 'preview'
+}
+
+/** A file link's tooltip: the path, then what a modified click does with that kind of file. */
+export function chatOpenTitle(target: string, mac: boolean): string {
+    const extension = fileLineTarget(target).path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? ''
+    const [primary, alt] = mac ? ['⌘', '⌥'] : ['Ctrl+', 'Alt+']
+    if (BROWSER_PAGE_EXTENSIONS.has(extension)) return `Open ${target} — ${primary}click: browser · ${alt}click: side by side`
+    if (SYSTEM_TYPES.has(extension)) return `Open ${target}`
+    return `Open ${target} — ${primary}click: default app`
+}
+
 export function fileLineTarget(target: string): { path: string; line: number | null } {
     const suffix = LINE_SUFFIX.exec(target)
     if (suffix === null) return { path: target, line: null }
