@@ -97,7 +97,7 @@ rules stay in the root; this file is the inventory.
 
 #### 14. 관련 세션 (Related sessions)
 - 세션 헤더(단일 화면 오른쪽 「Related」, 분할 칸 헤더의 아이콘)에서 그 세션과 관련된 세션을 모달로 본다 — 0개여도 버튼은 보인다(손으로 추가하는 곳이라서)
-- 자동 등록: 에이전트가 `X-Caller-Session` 을 붙여 세션을 **열 때**(`opened`)와 다른 세션을 **처음 읽거나 입력할 때**(`connected`). 터미널 출력(링크 글자)으로는 등록하지 않는다
+- 자동 등록: 에이전트가 `X-Caller-Session` 을 붙여 세션을 **열 때**(`opened`)와 다른 세션에 **처음 입력할 때**(`connected` — 입력·대화 연결·fork). **읽기·대기·포커스는 관계를 만들지 않는다** — AI 표시(`aiControl`)만 붙는다. 상태만 확인한 총괄·팀장이 Tree 부모가 되던 것을 막았다(fb-1117). 그 전에 읽기로 생긴 짝은 남아 있다(읽기·입력을 구분할 기록이 없어 정리하지 않음 — Related 창 × 로 뺀다). 터미널 출력(링크 글자)으로는 등록하지 않는다
 - Fork 관계는 선택 필드 `anchor: { turnTs: string | null, turnIndex?: number }`로 부모 답 위치를 저장한다. 옛 관계는 anchor 없이 그대로 읽는다. 손으로 빼면 dismissed 표지만 남기고 anchor도 지우며, 어느 쪽이 닫혀도 관계와 함께 사라진다.
 - 손으로 추가·빼기. 뺀 쌍은 표시(`dismissed`)를 남겨 에이전트의 다음 호출이 다시 넣지 않게 하고, 손으로 다시 넣으면 풀린다
 - 모달은 **관계만** 보인다(1.20 에서 Recent·All 탭을 뺐다 — 제보 c17aa9c4 · 모든 세션 목록은 사이드바 All sessions 에 있다). 탭 자리에는 Sort 만 남고, 관계가 하나도 없으면 그 줄도 없다. 「Recently viewed」 정렬은 그대로 `getRecentSessions` 를 읽는다. 관계 나무는 `sessionTreeFor`(`relatedSessions.ts`)가 `from` 을 부모로 삼아(`opened`·`connected` 둘 다) 위(나를 연 쪽, 여러 겹 · 뿌리가 맨 위)·옆(같은 부모가 연 형제)·아래(내가 연 것, 손자까지 들여쓰기)를 한 나무로 그린다. 방향 없는 `manual` 은 나무 밖 「Added by hand」. 고리는 한 번 놓은 세션을 건너뛰어 끊고(아래 → 위 → 옆 순으로 놓음), 깊이는 `MAX_TREE_DEPTH = 6`. 중간 세션이 닫히면 그 아래는 안 보인다(알려진 한계). 구역 속성 `data-related-tree="up|side|down|manual"` 에 옛 묶음 이름 `data-related-group="toHere|side|fromHere|manual"` 을 함께 둔다 — T35 가 그걸로 본다. 줄 끝 「#」는 세션 ID 복사
@@ -403,6 +403,7 @@ User Action (Renderer)
 - `get-session-relations` → 보이는 관계(`dismissed` 제외) · `session-relations` (main → renderer): 바뀔 때마다 전체 목록
 - `add-session-relation(from, to)` / `remove-session-relation(a, b)`: 손으로 추가·빼기(빼기는 `dismissed` 표시)
 - `get-recent-sessions` → 최근 본 세션 id(최신이 앞, 최대 20 — `RECENT_SESSIONS_MAX`) · `push-recent-session(id)`: 렌더러가 보는 세션(분할이면 포커스된 칸)이 바뀔 때 보고. 저장 키 `recentSessions`(config.json). 닫힘·시작 때 정리, 없는 세션은 탭이 숨김
+- `get-session-tabs` → `{ ids, activeId }`(메인 칸 맨 위 탭 줄, 왼쪽부터) · `set-session-tabs(state)`: 렌더러가 순서를 갖고 통째로 저장. 저장 키 `sessionTabs`(config.json, `SessionTabs.ts` · 규칙은 `shared/sessionTabs.ts`). 세션이 닫히면 그 탭을 지우고(보던 탭이면 `activeId` 도), 시작 때 없는 세션을 정리. 메인 창만 읽고 쓴다(그리드 창은 같은 App 을 그리지만 건드리지 않음)
 - `sidebar-session-order(ids)`(renderer → main, `send`): 사이드바가 세션을 그리는 순서(`sessionsInSidebarOrder`)의 id. 순서가 바뀔 때만, 주 창만 보낸다. main 은 메모리에만 두고 폰 세션 목록의 첫 단계로 쓴다
 - `peek-sessions(ids)` → `SessionPeek[]`: 상태·질문 대기·마지막 줄. 읽기만 한다 — API 읽기와 달리 AI 표시를 붙이지 않는다
 

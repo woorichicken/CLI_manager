@@ -12,7 +12,7 @@ import { closeApp, launchAppWithWorkspaces, type LaunchResult, REPO_ROOT, resize
  *
  *  A: a click on `report.html` opens the preview window drawing the page (925 KB, its script and its picture run in a
  *     sandboxed frame), not the browser — `shell.openPath` 0 times; Preview/Source; `:line` opens on the source; Escape
- *     (from the window or from inside the page) closes it and gives the focus back to the Chat; Browser still opens the
+ *     inside the page stays the page's (b6a75106), Escape from the window closes it and gives the focus back to the Chat; Browser still opens the
  *     Mac's browser (no Artifact Dock here → `shell.openPath`).
  *  probe: what the frame's code tries is judged where it would land — main's `webRequest` and a real HTTP server. A
  *     control request from a window of the app proves both see requests at all.
@@ -219,8 +219,22 @@ test('T147 A: a report opens drawn in the preview window — Source, :line, Esca
     await expect(details.locator('#title')).toHaveText('Release details')
     await expect(preview(page)).toContainText('project/details.html')
 
-    // Escape from inside the page closes it (the bridge), focus back in the Chat
+    // Escape inside the page is the page's (b6a75106): a review page closes its enlarged photo with it, without
+    // preventDefault — it used to close the preview too, and the comments the page kept went with it
     await details.locator('#title').click()
+    await details.evaluate(() => {
+        localStorage.setItem('comment', 'kept')
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') document.body.dataset.escapes = String(Number(document.body.dataset.escapes ?? 0) + 1)
+        })
+    })
+    await page.keyboard.press('Escape')
+    await expect.poll(() => details.evaluate(() => document.body.dataset.escapes ?? '0')).toBe('1')
+    await page.waitForTimeout(300)
+    await expect(preview(page)).toHaveCount(1)
+    expect(await details.evaluate(() => localStorage.getItem('comment')), 'the same page, its comment still there').toBe('kept')
+    // the window's own Escape still closes: the focus out of the page (its header), focus back in the Chat
+    await preview(page).getByText('project/details.html').first().click()
     await page.keyboard.press('Escape')
     await expect(preview(page)).toHaveCount(0)
     await expect.poll(() => focusInChat(page)).toBe(true)

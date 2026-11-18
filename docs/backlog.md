@@ -19,6 +19,77 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### Control API — 입력·fork 가 거절돼도 관계(`connected`)는 이미 남는다
+- Discovered: 2026-11-17 fb-1117 3회차 `feat/fb-1117-relations-on-input` 독립 diff 리뷰.
+- Evidence: `ControlApiService.sendInput`·`forkSession` 이 실제 동작 전에 `connect(…, 'record')` 를 부른다 — 입력이 409(질문 대기·초안)로 막히거나 fork 가 거절돼도 caller → 대상 짝이 남아 Tree 부모가 된다. 대화 연결은 `beforeWrite` 안이라 해당 없음. 이번 변경 전부터 같은 동작.
+- Why deferred: 3회차 범위는 「읽기만 해도 관계」였다.
+- Trigger: 거절된 입력 뒤 Tree 에 엉뚱한 부모가 보인다는 제보가 오거나 그 경로를 고칠 때 — 성공 뒤에 `recordConnected` 를 부르게 옮긴다.
+- Owner: 없음
+
+### 폰 ⋯ → Memo 패널 머리에 세션 이름이 없다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E(`feat/fb-1117-phone-list`).
+- Evidence: 서랍의 ⋯ → Memo 로 연 메모 패널(세션 화면 📝 와 같은 부품)이 어느 세션 메모인지 이름을 보이지 않는다. 서랍에서는 보던 세션과 다른 세션 메모를 열 수 있어 헷갈린다.
+- Why deferred: 리뷰 후 배포 브랜치가 사람 리뷰 대기 중 — 리뷰 결과와 같이 고친다.
+- Trigger: `feat/fb-1117-phone-list` 승인 뒤 — 패널 머리에 세션 이름 한 줄.
+- Owner: 없음
+
+### 폰 세션 목록 Tree 계산 — 3초 폴링 비용 미측정
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E.
+- Evidence: 목록 응답(폰이 3초마다 읽음)에 `sessionForestFor` 계산이 더해졌다. 세션 34개 규모의 비용을 재지 않았다.
+- Why deferred: 화면 리뷰 대기 중인 브랜치.
+- Trigger: `feat/fb-1117-phone-list` 머지 전 — 세션 40개 시드로 목록 응답 시간 중앙값을 전후로 잰다(T144 방식).
+- Owner: 없음
+
+### Codex 녹화 — 시작 업데이트 메뉴가 첫 입력을 먹는다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 D.
+- Evidence: codex-cli 0.166 → 0.169 업데이트 알림이 시작 때 떠서 첫 녹화의 입력이 그 메뉴로 갔다.
+- Why deferred: 이번 녹화는 다시 떠서 끝냈다.
+- Trigger: `scripts/mock-cli/record-claude.cjs` 로 Codex 를 다시 녹화할 때 — `-c check_for_update_on_startup=false` 안내 한 줄을 스크립트·`scripts/CLAUDE.md` 에.
+- Owner: 없음
+
+### 시험 — Settings 는 마지막에 본 분류로 열린다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E(T153).
+- Evidence: T63 처럼 `settings-show-session-tree` 를 바로 누르는 시험은 앞 시험이 다른 분류를 열어 두면 막힌다(T153 은 General 을 먼저 누름). 같은 화면에서 `button[title^="Settings"]` 가 2개로 잡혀 `.first()` 가 필요했다.
+- Why deferred: 지금 시험은 통과한다.
+- Trigger: Settings 를 여는 시험을 새로 쓸 때 — 하네스에 「분류를 골라 여는」 도움 함수를 둔다.
+- Owner: 없음
+
+### 시험 캡처에 이 Mac 의 열린 포트·폴더 이름이 찍힌다
+- Discovered: 2026-11-17 fb-1117 작업 세션 B 캡처(`_batches/fb-1117/review/CLImanger/r1/B/quick-row-mac-*.png`).
+- Evidence: 하단 「Active Ports」가 테스트 모드에서도 실제 `lsof` 를 읽어 `jeong-gyeonghun`·`brand`·`orch-console` 같은 폴더 이름이 리뷰 캡처에 남는다.
+- Why deferred: 이번 제보 범위 밖. 캡처가 외부로 나가는 일은 아직 없다.
+- Trigger: 리뷰 캡처를 밖에 공유하거나 문서(공개 사이트)에 쓸 때. 테스트 모드에서 포트 모니터를 끄거나 가짜 목록을 쓴다.
+- Owner: 없음
+
+### Codex fork — 세션 중 `/approvals` 로 바꾼 권한이 자식에 따라가는지 미실측
+- Discovered: 2026-11-17 fb-1117 작업 세션 A(제보 d2b9bf31 고침 중).
+- Evidence: `codex … fork <id>` 는 사람의 시작 옵션(`-a`·`-s`·`--yolo`)은 유지한다. 세션 중 바꾼 승인 모드는 확인하지 않았다(토큰·시간).
+- Why deferred: 제보는 Claude 세션이었다.
+- Trigger: Codex 스레드에서 권한이 풀린다는 제보가 오면 — 실제 codex 로 fork 해 자식 화면의 승인 모드를 잰다.
+- 같이 볼 것(#158 diff 리뷰 minor): Claude `don't ask` 모드의 화면 문구가 미실측이라 그 모드는 fork 에 안 붙고 예전 동작으로 떨어진다 · 구분자가 있는 별칭(`prepare && claude --dangerously-skip-permissions`) 안의 skip 플래그는 빼지 못해 그 플래그가 이긴다.
+- Owner: 없음
+
+### T58 「a folder made from the All view menu…」 실제 마우스 끌기 — 묶음 실행에서 간헐 실패
+- Discovered: 2026-11-17 fb-1117 작업 세션 C.
+- Evidence: 묶음 첫 실행에서 1회 `data-drop-state` idle 로 실패, 단독 3회 반복 3/3 통과, 옛 코드 실행에서도 통과.
+- Why deferred: 코드 변경과 무관한 부하 간헐로 판단.
+- Trigger: 같은 시험이 다시 떨어질 때 — `--repeat-each=10` 으로 부하 아래 재현해 끌기 사이 대기를 상태 기반으로 바꾼다.
+- Owner: 없음
+
+### 시험 하네스 `launchAppWithWorkspaces` 기본 경로가 저장소 루트 — 이 머신의 워크트리를 세션으로 붙인다
+- Discovered: 2026-11-17 fb-1117 작업 세션 C(T150 에서 세션 수 14).
+- Evidence: 기본 워크스페이스 경로가 저장소 루트라 시작 때 워크트리 스캔이 이 머신의 git 워크트리를 전부 세션으로 붙인다. 세션 수를 세는 시험은 기대값을 config 에서 읽어야 한다.
+- Why deferred: 지금 시험들은 config 에서 기대값을 읽어 통과한다.
+- Trigger: 세션 수·목록 길이를 고정값으로 보는 시험을 새로 쓸 때. 기본 경로를 임시 폴더로 바꾼다.
+- Owner: 없음
+
+### 세션 활동 판정 규칙 두 벌 — `countSessionActivity` 와 `SessionScreenStatusPoller.judge`
+- Discovered: 2026-11-17 fb-1117 #156(시스템 모니터 「Now N working · M waiting」).
+- Evidence: `countSessionActivity` 가 사이드바 점 판정(`SessionScreenStatusPoller.judge`)의 3줄 규칙을 다시 쓴다. 한쪽만 고치면 모니터 숫자와 사이드바 점이 갈라진다.
+- Why deferred: 공용 함수로 묶는 것은 모듈화라 사람 컨펌 대상.
+- Trigger: 둘 중 하나의 판정 규칙을 고칠 때 — 그 전에 공용 함수(예 `judgeSessionActivity`)로 묶는 안을 컨펌받는다.
+- Owner: 없음
+
 ### Autocron attach 를 일반 세션에도 — 쓰던 세션에 정해진 시각에 프롬프트 넣기
 - Discovered: 2026-11-16 루프 활용 기획 세션. 사람: 「현재, 내가 사용하는 세션에도 cron 혹은 schedule 로 예약이 가능한지」 → 「일반 세션 사용은 백로그로」.
 - Evidence: attach 모드는 Loop Dashboard 프로젝트(`loopProjectId`)의 터미널만 고른다 — 폼 `autocron-loop` 선택지가 `loopProjects`, 실행은 `ControlApiService.typeIntoLoop`. 사이드바 세션(총괄·팀장 등)은 고를 수 없다. 지금 길은 세션 안의 Claude Code `/loop`(간격 반복, 정시 아님, 세션이 살아 있어야 함)뿐.
@@ -81,13 +152,15 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - 2번째(2026-11-12 fb-1112 90043d9d 「렌더링이 안됨」): 사람 답 「html climanager 안에서 열거나 누르면 크롬에서 볼수 있도록」 → 이번엔 뒤쪽만 했다 — Chat 의 `.html` 은 기본 브라우저(`shell.openPath`), `:줄` 이면 미리보기 + Browser 버튼(T96). 앱 안에서 그리기는 그대로 이 항목.
 - Trigger: 사람이 시작하자고 할 때, 또는 큰 HTML 보고서를 앱 밖으로 여는 일이 계속 불편하다는 말이 다시 나올 때.
 - Fix direction: 먼저 (a) — `.html` 은 기본으로 그려서 보이고 Source 전환 · 「Open in browser」 버튼, 한도는 폰과 같은 64MB. (b) 는 그 뒤 따로 결정 기록을 쓰고.
-- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` H-A·H-B 3차 승인): (a) 를 착수. 사람: 「기본적으로 A 로 나오되 B 로도 볼 수 있고, 세션·문서로 나누는 게 아니라 저렇게 나오는 건 분할 화면」 — 탭 줄(VS Code 식 편집기 탭)은 만들지 않는다. (b) 진짜 브라우저 탭은 그대로 이 항목에 남는다.
+- Decided 2026-11-16(기획 세션, 목업 리뷰 `~/Downloads/_batches/plan-backlog-1116/review/data.html` H-A·H-B 3차 승인): (a) 를 착수. 사람: 「기본적으로 A 로 나오되 B 로도 볼 수 있고, 세션·문서로 나누는 게 아니라 저렇게 나오는 건 분할 화면」 — ~~탭 줄(VS Code 식 편집기 탭)은 만들지 않는다~~ **(2026-11-17 정정: 잘못 읽은 것이다.** 사람은 1차에 「세션들도 저렇게 볼 수 있었으면」으로 탭을 원했고, 2차 코멘트는 「세션 칸·문서 칸으로 갈라 묶지 말라 — 두 칸이 나란히 나오는 건 분할 화면」이라는 뜻이었다. 세션 탭 줄은 아래 Update 2026-11-17 로 따로 만든다.) (b) 진짜 브라우저 탭은 그대로 이 항목에 남는다.
 - Spec:
   - A(기본): Chat 의 `.html` 경로를 누르면 기본 브라우저 대신 미리보기 창(`ChatFilePreview.tsx`·`FilePreview.tsx` 의 창)을 크게 열어 **그려서** 보인다. 머리: 경로 · `[Preview | Source]` · `Side by side` · `Browser`(지금 동작) · 닫기. `:줄` 이면 Source 로 열고 그 줄. 그리기는 폰과 같은 분리 칸(결정 0011 — sandbox iframe, `connect-src 'none'`, 바깥 자원 막힘, 한도 64MB). 지금 글 미리보기의 500KB 한도(`read-file-content`)는 HTML 그리기에 쓰지 않는다. 아래 줄 「Sandboxed · no network」.
   - B(옆으로): `Side by side` 를 누르면 창이 닫히고 문서가 지금 분할 화면(`showSessions`, 최대 4칸 `MAX_LINKED_SESSIONS`)에 세션처럼 한 칸으로 들어간다. 칸 머리는 세션 칸과 같은 경로 머리 + `Preview/Source` · 브라우저 · 닫기. 칸이 이미 4개면 버튼을 끄고 이유를 툴팁으로. 문서 칸은 저장하지 않는다(재시작 뒤에는 없음) — 저장 여부는 써 보고 정한다.
   - 끝 조건: 925KB 보고서가 A·B 둘 다에서 그려짐 · 문서 안 스크립트가 앱 IPC·네트워크에 닿지 않음(폰 T102 탐침과 같은 판정을 Mac 에서) · B 칸 옆 세션에 바로 입력 가능 · Esc/닫기 뒤 포커스가 Chat 으로.
   - 시험: E2E — chat-mock 답에 `.html` 경로 → 클릭 → 창 iframe 이 그려짐(`shell.openPath` 0번, main 에서 가로챔) · Source 전환 · `:줄` 은 Source · Side by side → 분할 칸 2개(세션 + 문서) · 4칸이면 버튼 꺼짐 · 탐침 페이지의 fetch·beacon·폼이 main `webRequest` 에 안 잡힘 · Browser 버튼은 지금처럼 `shell.openPath`. 1280 캡처.
 - Update 2026-11-16: A·B 구현(`feat/html-preview-1116` — 결정 [0013](decisions/0013-mac-documents-on-a-custom-scheme.md), T146 유닛·T147 앱). 남은 것: (b) 진짜 브라우저 탭, 문서 칸 저장 여부(써 보고 정함), Source 의 500KB 한도(큰 문서는 「File too large」), 문서 칸 끌어 옮기기·⌘W 로 닫기는 없음.
+- Update 2026-11-17: 세션 탭 줄(`feat/session-tabs-1117`, T149 유닛·앱). 사람이 정한 것: ① 화면 맨 위(메인 칸 첫 줄, 사이드바 머리와 같은 높이) ② ⌘W 는 지금처럼 세션 종료 + 탭도 닫히고 옆 탭(오른쪽, 없으면 왼쪽)으로 ③ ⌘> ⌘<(⌘⇧. ⌘⇧,)로 탭 이동, 끝에서 돌아 감 ④ 재시작하면 탭·보던 탭 그대로. 사이드바와 별개 — 화면에 뜬 세션(분할 칸 포함)이 지금 탭 오른쪽에 탭으로 열리고, 탭 ×·가운데 클릭은 탭만 닫는다(세션·사이드바는 그대로). 끌어서 순서 바꿈. Settings › General 「Show Session Tabs」(기본 켬). 저장 키 `sessionTabs`(`{ ids, activeId }`). 문서 칸(`doc:`)은 탭이 아니다. 남은 것: 문서도 탭으로 둘지, 탭을 끌어 분할 칸으로, 탭 메뉴의 Rename·Pin·Copy(사이드바 메뉴에 있음 — 복사 알림이 사이드바 안에만 있어 이번엔 뺐다).
+- Update 2026-11-17 리뷰 1회차(T-1 코멘트 「설정 등 부분보다 내려가야」·「여러 개면 작아지는 부분」·「우클릭 & 어디까지」): ① 탭 줄을 헤더(경로·설정 버튼 줄) **아래**로 옮겼다 — 헤더는 예전처럼 사이드바 머리와 같은 줄, 탭 줄은 창 끌기 영역이 아니다. ② 탭이 많으면 VS Code 「shrink」처럼 이름 폭(최대 200px)에서 80px 까지 줄고, 그래도 넘치면 가로 스크롤(보던 탭은 보이게). ③ 우클릭 메뉴: Close Tab · Close Other Tabs · Close Tabs to the Right · Close All Tabs · Open Side by Side · End Session(⌘W 와 같은 착지, 프로세스가 돌면 묻는다).
 - Decided 2026-11-17(사람, PR #152 머지 승인 때): 문서 칸은 재시작 뒤 **남기지 않는다** — 기본값(메모리만, `useDocPanes`) 그대로. 재시작 뒤 다시 여는 일이 불편하다는 말이 나오면 다시 정한다.
 - Owner: 없음
 

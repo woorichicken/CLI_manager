@@ -456,7 +456,8 @@ test.describe('T73 r2 ConversationService: stop, queued messages one by one, com
                 lastOutputAt: () => Date.now(),
                 hasExited: () => false,
                 showsAwaitingInput: () => false,
-                inputBox: () => ({ typed })
+                inputBox: () => ({ typed }),
+                codexInput: () => ({ typed })
             },
             hasTerminal: () => true,
             writeInput: (_id, data) => writes.push(data),

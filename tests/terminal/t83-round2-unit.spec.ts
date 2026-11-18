@@ -41,7 +41,8 @@ function serviceOn(terminal: FakeTerminal, overrides: Partial<ConversationServic
             lastOutputAt: () => terminal.lastOutputAt(),
             hasExited: () => false,
             showsAwaitingInput: () => false,
-            inputBox: () => ({ typed: '' })
+            inputBox: () => ({ typed: '' }),
+            codexInput: () => ({ typed: '' })
         },
         hasTerminal: () => true,
         writeInput: (id, data) => terminal.writeInput(id, data),

@@ -19,6 +19,8 @@ interface SidebarAllSessionsProps {
     showSessionCount?: boolean
     /** Writes to the clipboard and shows the sidebar's "Copied" notice. */
     onCopy?: (text: string, label: string) => void
+    /** Right-click "New Session…" on a folder (`null` = the "No folder" row): the sidebar opens New session for it (b9038a0e). */
+    onNewSessionIn?: (folderId: string | null) => void
 }
 
 /**
@@ -27,8 +29,9 @@ interface SidebarAllSessionsProps {
  * heading goes into that folder; dropped on "No folder" it comes out (078ee766).
  * Dropped on another session row it relates the two instead (SessionItem).
  */
-export function SidebarAllSessions({ entries, sessionFolders, folderActions, listProps, fontSize = 14, showSessionCount = true, onCopy }: SidebarAllSessionsProps) {
-    const [menu, setMenu] = useState<{ x: number; y: number; folderId: string } | null>(null)
+export function SidebarAllSessions({ entries, sessionFolders, folderActions, listProps, fontSize = 14, showSessionCount = true, onCopy, onNewSessionIn }: SidebarAllSessionsProps) {
+    // folderId null = the "No folder" row's menu, which only starts a session.
+    const [menu, setMenu] = useState<{ x: number; y: number; folderId: string | null } | null>(null)
     const [renamingId, setRenamingId] = useState<string | null>(null)
     // Esc unmounts the input, which may blur it: that blur must not save what Esc threw away.
     const renameCancelledRef = useRef(false)
@@ -113,16 +116,30 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
                     onDropSession={id => void folderActions.moveSession(id, null)}
                     className="mt-2 mb-0.5 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider text-gray-500"
                     testId="session-folder-none"
+                    onContextMenu={onNewSessionIn ? (e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setMenu({ x: e.clientX, y: e.clientY, folderId: null })
+                    } : undefined}
                 >
                     No folder
                 </FolderDropRow>
             )}
             {unfiled.length > 0 && <SidebarSessionList entries={unfiled} dividePinned {...listProps} />}
 
-            {menu && (
+            {menu && menu.folderId === null && onNewSessionIn && (
                 <FolderContextMenu
                     x={menu.x}
                     y={menu.y}
+                    onClose={() => setMenu(null)}
+                    onNewSession={() => onNewSessionIn(null)}
+                />
+            )}
+            {menu && menu.folderId !== null && (
+                <FolderContextMenu
+                    x={menu.x}
+                    y={menu.y}
+                    onNewSession={onNewSessionIn ? () => onNewSessionIn(menu.folderId) : undefined}
                     onRename={() => {
                         // Esc may have left the flag set: a removed input gets no blur to clear it.
                         renameCancelledRef.current = false
@@ -131,7 +148,7 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
                     }}
                     onDelete={() => {
                         // Deleting the folder never closes a session: they go back to "No folder".
-                        void folderActions.remove(menu.folderId)
+                        if (menu.folderId) void folderActions.remove(menu.folderId)
                         setMenu(null)
                     }}
                     onClose={() => setMenu(null)}

@@ -7,10 +7,12 @@ import {
     EXCERPT_MAX_CHARS,
     EXCERPT_MAX_TURNS,
     EXCERPT_TURN_MAX_CHARS,
+    claudePermissionMode,
     forkCommand,
     forkFirstMessage,
     forkSessionName,
-    FORK_NAME_SUFFIX
+    FORK_NAME_SUFFIX,
+    withPermissionMode
 } from '../../src/main/chatFork'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { TranscriptReader, claudeProjectSlug } from '../../src/main/TranscriptReader'
@@ -59,6 +61,29 @@ test.describe('forkCommand', () => {
         expect(forkCommand('codex', 'codex', ID)).toBe(`codex fork ${ID}`)
         expect(forkCommand('codex', `codex -m gpt-6 resume ${OTHER}`, ID)).toBe(`codex -m gpt-6 fork ${ID}`)
         expect(forkCommand('codex', 'cdx', ID, resolve)).toBe(`cdx fork ${ID}`)
+    })
+
+    // fb-1117 d2b9bf31: a parent opened with `--permission-mode default` and switched to auto (Shift+Tab) forked a
+    // child in manual mode. Measured on claude 2.1.326: the last --permission-mode wins, --dangerously-skip-permissions
+    // beats every --permission-mode — so the old flags go and the parent's mode now is named once.
+    test('Claude: the parent\'s permission mode now replaces the one the start command names', () => {
+        const saved = 'claude --permission-mode default --add-dir /work/details --add-dir /work'
+        expect(forkCommand('claude', saved, ID, resolve, 'auto')).toBe(`claude --add-dir /work/details --add-dir /work --permission-mode auto --resume ${ID} --fork-session`)
+        expect(forkCommand('claude', 'claude --permission-mode=plan --model opus', ID, resolve, 'bypassPermissions')).toBe(
+            `claude --model opus --permission-mode bypassPermissions --resume ${ID} --fork-session`
+        )
+        // the skip flag would win over auto: it goes, in the command and inside an alias (typed expanded)
+        expect(forkCommand('claude', 'claude --dangerously-skip-permissions --model opus', ID, resolve, 'auto')).toBe(`claude --model opus --permission-mode auto --resume ${ID} --fork-session`)
+        expect(forkCommand('claude', 'glm-on && cldy --model opus', ID, resolve, 'auto')).toBe(`glm-on && claude --model opus --permission-mode auto --resume ${ID} --fork-session`)
+        // an alias without a mode flag stays an alias
+        expect(withPermissionMode('cldo', 'auto', (name) => (name === 'cldo' ? 'claude --model opus' : undefined))).toBe('cldo --permission-mode auto')
+        // mode unknown: the command as it was; Codex has no --permission-mode
+        expect(forkCommand('claude', saved, ID, resolve, null)).toBe(`${saved} --resume ${ID} --fork-session`)
+        expect(forkCommand('codex', 'codex', ID, resolve, 'auto')).toBe(`codex fork ${ID}`)
+        // the screen's and the transcript's words (2.1.326 shows default as «manual mode»)
+        expect(['bypass', 'auto', 'plan', 'accept edits', "don't ask", 'manual mode', 'something else', null].map(claudePermissionMode)).toEqual([
+            'bypassPermissions', 'auto', 'plan', 'acceptEdits', 'dontAsk', 'default', null, null
+        ])
     })
 
     test('a command it cannot read safely falls back to the agent name; a non-UUID id is refused', () => {
@@ -150,7 +175,7 @@ test.describe('forkFirstMessage', () => {
 })
 
 test.describe('ConversationService.fork', () => {
-    function setup(sessionOverrides: Record<string, unknown> = {}) {
+    function setup(sessionOverrides: Record<string, unknown> = {}, options: { screen?: string[]; permissionMode?: string } = {}) {
         const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t116-'))
         const cwd = path.join(home, 'project')
         fs.mkdirSync(cwd)
@@ -161,7 +186,7 @@ test.describe('ConversationService.fork', () => {
         let parent: string | null = null
         const line = (type: 'user' | 'assistant', content: unknown, ts: string): void => {
             const uuid = `u-${rows.length}`
-            rows.push({ type, uuid, parentUuid: parent, timestamp: ts, sessionId: ID, cwd, message: { role: type, content } })
+            rows.push({ type, uuid, parentUuid: parent, timestamp: ts, sessionId: ID, cwd, ...(type === 'user' && options.permissionMode ? { permissionMode: options.permissionMode } : {}), message: { role: type, content } })
             parent = uuid
         }
         line('user', 'first question', '2026-11-10T10:00:00.000Z')
@@ -174,12 +199,13 @@ test.describe('ConversationService.fork', () => {
             session: () => ({ cwd, cliSessionId: ID, cliToolName: 'claude', cliCommand: `cldy --resume ${ID}`, name: 'T116 parent', ...sessionOverrides }),
             reader: new TranscriptReader({ claudeConfigDir: () => claudeDir, codexHome: () => path.join(home, 'codex') }),
             mirror: {
-                screen: () => [],
+                screen: () => options.screen ?? [],
                 flush: async () => {},
                 lastOutputAt: () => 0,
                 hasExited: () => false,
                 showsAwaitingInput: () => false,
-                inputBox: () => null
+                inputBox: () => null,
+                codexInput: () => null
             },
             hasTerminal: () => true,
             writeInput: () => {},
@@ -209,6 +235,26 @@ test.describe('ConversationService.fork', () => {
         expect(calls).toEqual([
             { parentId: 'parent', anchor: { turnTs: '2026-11-10T10:00:05.000Z', turnIndex: 1 }, agent: 'claude', name: 'T116 parent · fork', command: `cldy --resume ${ID} --fork-session`, cliCommand: 'cldy', prompt: 'Branch here', watchCodex: false }
         ])
+    })
+
+    test('the child starts in the parent\'s mode now: the screen\'s mode row first, else the transcript\'s last prompt (fb-1117 d2b9bf31)', async () => {
+        const saved = 'claude --permission-mode default --add-dir /work'
+        const box = ['  answer text', '─'.repeat(40), '❯ ', '─'.repeat(40)]
+        // the parent was opened in default and switched to auto with Shift+Tab: the screen says so, the transcript does not yet
+        const switched = setup({ cliCommand: saved }, { screen: [...box, '  ⏵⏵ auto mode on (shift+tab to cycle)'], permissionMode: 'default' })
+        await switched.service.fork('parent', request())
+        expect(switched.calls[0]).toMatchObject({ command: `claude --add-dir /work --permission-mode auto --resume ${ID} --fork-session`, cliCommand: 'claude --add-dir /work --permission-mode auto' })
+        // the excerpt opens a new conversation in the same mode
+        await switched.service.fork('parent', request({ scope: 'excerpt' }))
+        expect(switched.calls[1]).toMatchObject({ command: 'claude --add-dir /work --permission-mode auto' })
+        // no mode row on screen (the terminal is not drawing one): the transcript's last prompt
+        const fromTranscript = setup({ cliCommand: 'cldy' }, { permissionMode: 'acceptEdits' })
+        await fromTranscript.service.fork('parent', request())
+        expect(fromTranscript.calls[0]).toMatchObject({ command: `claude --permission-mode acceptEdits --resume ${ID} --fork-session` })
+        // nothing names a mode: the start command as before
+        const unknown = setup({ cliCommand: saved })
+        await unknown.service.fork('parent', request())
+        expect(unknown.calls[0]).toMatchObject({ command: `${saved} --resume ${ID} --fork-session`, cliCommand: saved })
     })
 
     test('excerpt: the agent\'s plain start command, and the turns up to that reply in the first message', async () => {

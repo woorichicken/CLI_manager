@@ -27,6 +27,8 @@ interface UseKeyboardShortcutsConfig {
     fileSearchOpen: boolean
     templates: TerminalTemplate[]  // Custom templates for chord shortcuts
     onSelectSession: (workspace: Workspace, session: TerminalSession) => void
+    /** ⌘> / ⌘<: the next or previous tab in the tab row at the top (wraps round). */
+    onStepTab: (direction: 1 | -1) => void
     onSetActiveSplitIndex: (index: number) => void
     onSetFileSearchOpen: (open: boolean) => void
     onSetFileSearchMode: (mode: 'files' | 'content') => void
@@ -118,6 +120,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         fileSearchOpen,
         templates,
         onSelectSession,
+        onStepTab,
         onSetActiveSplitIndex,
         onSetFileSearchOpen,
         onSetFileSearchMode,
@@ -415,6 +418,8 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
             const actionHandlers: Partial<Record<ShortcutAction, () => void>> = {
                 nextSession: () => navigateSession(1),
                 prevSession: () => navigateSession(-1),
+                nextTab: () => onStepTab(1),
+                prevTab: () => onStepTab(-1),
                 nextWorkspace: () => navigateWorkspace(1),
                 prevWorkspace: () => navigateWorkspace(-1),
                 nextSplitPane: () => navigateSplitPane(1),
@@ -500,6 +505,7 @@ export function useKeyboardShortcuts(config: UseKeyboardShortcutsConfig): void {
         navigateSession,
         navigateWorkspace,
         navigateSplitPane,
+        onStepTab,
         onToggleSidebar,
         onToggleSettings,
         onToggleRelated,

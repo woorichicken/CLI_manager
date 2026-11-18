@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { MessageSquareText, Pin, TerminalSquare } from 'lucide-react'
+import { Bot, Crown, MessageSquareText, Pin, TerminalSquare } from 'lucide-react'
 import type { PhoneSession } from '../../../shared/phone'
 import { createLongPress } from './longPress'
 import { PhoneRenameBar } from './PhoneRenameBar'
@@ -51,8 +51,21 @@ function swallowPressEnd(): void {
     timer = window.setTimeout(done, AT_MOST_MS)
 }
 
+/**
+ * The icon in the row's slot, as the Mac sidebar row draws it (59886f9c): the crown of a session
+ * orchestrating through the Control API, its template's logo, the robot of an AI-driven session —
+ * and otherwise the phone's own mark of where a tap opens it (Chat or Terminal).
+ */
+function RowIcon({ session, logo }: { session: PhoneSession; logo?: string }) {
+    if (session.icon === 'master') return <Crown size={14} className="phone-row-icon phone-row-icon-master" data-row-icon="master" />
+    if (session.icon === 'logo' && logo) return <img src={logo} alt="" draggable={false} className="phone-row-icon phone-row-logo" data-row-icon="logo" />
+    if (session.icon === 'ai') return <Bot size={14} className="phone-row-icon phone-row-icon-ai" data-row-icon="ai" />
+    return session.agent ? <MessageSquareText size={14} className="phone-row-icon" data-row-icon="chat" /> : <TerminalSquare size={14} className="phone-row-icon" data-row-icon="terminal" />
+}
+
 export function SessionRow({
     session,
+    logo,
     active,
     renaming,
     canRename,
@@ -62,6 +75,8 @@ export function SessionRow({
     onCancelRename
 }: {
     session: PhoneSession
+    /** the template logo for `session.icon === 'logo'` (the response's `templateLogos`) */
+    logo?: string
     active: boolean
     renaming: boolean
     canRename: boolean
@@ -134,7 +149,7 @@ export function SessionRow({
             }}
         >
             <span className={`phone-dot phone-dot-${session.state}`} aria-hidden="true" />
-            {session.agent ? <MessageSquareText size={14} className="phone-row-icon" /> : <TerminalSquare size={14} className="phone-row-icon" />}
+            <RowIcon session={session} logo={logo} />
             <span className="phone-row-text">
                 <span className="phone-row-name">
                     {session.pinned && <Pin size={11} className="phone-row-pin" />}

@@ -204,8 +204,18 @@ export interface UserSettings {
     showWorktrees?: boolean
     /** Show the Playground section at the bottom of the sidebar (default: true). Off only hides it; running sessions are left alone. */
     showPlayground?: boolean
+    /**
+     * Show the Source Control (Git panel) button in the main header and in split-pane headers
+     * (default: true). Off only hides the buttons; nothing about git changes (fb-1117 0e6c4a0a).
+     */
+    showSourceControl?: boolean
     /** Offer the Tree layout (sessions under the session that opened them) in the sidebar's All sessions view (default: true). Off shows the list only. */
     showSessionTree?: boolean
+    /**
+     * The tab row at the top of the main area (default: true): the sessions the person opened, apart from
+     * the sidebar. Closing a tab keeps the session; ⌘W still ends it. Off hides the row and stops recording tabs.
+     */
+    showSessionTabs?: boolean
     /**
      * Status dots on sidebar session rows, read from each screen in main
      * (default: false). Off stops the reader entirely — no timer, no IPC.
@@ -316,6 +326,10 @@ export interface SystemInfo {
     terminal: {
         activeSessionCount: number
         workspaceCount: number
+        /** Sessions mid-turn right now (the sidebar's blue dot rule), counted when the popover opens */
+        workingCount: number
+        /** Sessions waiting on the person right now (the amber dot rule) */
+        waitingCount: number
     }
 }
 
@@ -340,6 +354,7 @@ export interface FullscreenTerminalLayout {
 
 export type ShortcutAction =
     | 'nextSession' | 'prevSession'
+    | 'nextTab' | 'prevTab'
     | 'nextWorkspace' | 'prevWorkspace'
     | 'nextSplitPane' | 'prevSplitPane'
     | 'toggleSidebar' | 'toggleSettings'
@@ -364,6 +379,9 @@ export type KeyboardShortcutMap = Record<ShortcutAction, KeyBinding>
 export const DEFAULT_SHORTCUTS: KeyboardShortcutMap = {
     nextSession:     { key: ']', modifiers: ['mod'], code: ']' },
     prevSession:     { key: '[', modifiers: ['mod'], code: '[' },
+    // ⌘> / ⌘<: Shift+. and Shift+, — matched on the unshifted key (`keyFromCode`), so any layout works.
+    nextTab:         { key: '>', modifiers: ['mod', 'shift'], code: '.' },
+    prevTab:         { key: '<', modifiers: ['mod', 'shift'], code: ',' },
     nextWorkspace:   { key: ']', modifiers: ['mod', 'shift'], code: ']' },
     prevWorkspace:   { key: '[', modifiers: ['mod', 'shift'], code: '[' },
     nextSplitPane:   { key: '`', modifiers: ['mod'], code: '`' },
@@ -425,8 +443,10 @@ export interface ShortcutInfo {
 }
 
 export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
-    nextSession:     { label: 'Next Tab',            description: 'Switch to the next tab in workspace',      group: 'navigation' },
-    prevSession:     { label: 'Previous Tab',        description: 'Switch to the previous tab in workspace',  group: 'navigation' },
+    nextSession:     { label: 'Next Session',        description: 'Switch to the next session in sidebar order', group: 'navigation' },
+    prevSession:     { label: 'Previous Session',    description: 'Switch to the previous session in sidebar order', group: 'navigation' },
+    nextTab:         { label: 'Next Tab',            description: 'Switch to the next tab in the tab row',    group: 'navigation' },
+    prevTab:         { label: 'Previous Tab',        description: 'Switch to the previous tab in the tab row', group: 'navigation' },
     nextWorkspace:   { label: 'Next Workspace',      description: 'Switch to the next workspace',             group: 'navigation' },
     prevWorkspace:   { label: 'Previous Workspace',  description: 'Switch to the previous workspace',         group: 'navigation' },
     nextSplitPane:   { label: 'Next Split Pane',     description: 'Focus next pane in split view',            group: 'splitView' },
@@ -436,7 +456,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, ShortcutInfo> = {
     fileSearch:      { label: 'File Search',         description: 'Search files by name',                     group: 'search' },
     contentSearch:   { label: 'Content Search',      description: 'Search inside file contents',              group: 'search' },
     newSession:      { label: 'New Tab',             description: 'Create a new terminal tab',                group: 'actions' },
-    closeSession:    { label: 'Close Tab',           description: 'Close current tab and go to previous',     group: 'actions' },
+    closeSession:    { label: 'Close Session',       description: 'End the current session and go to the tab beside it', group: 'actions' },
     clearSession:    { label: 'Clear Terminal',      description: 'Clear terminal scrollback buffer',         group: 'actions' },
     renameSession:   { label: 'Rename Tab',          description: 'Rename the current tab',                   group: 'actions' },
     toggleMemo:      { label: 'Toggle Memo',         description: 'Open or close session memo',               group: 'memo' },
@@ -1005,7 +1025,7 @@ export interface FeedbackTerminalContext {
 /**
  * How two sessions came to be related.
  * - opened: `from` opened `to` through the Control API, saying who it was (X-Caller-Session).
- * - connected: `from` first read or typed into `to` through the API, saying who it was.
+ * - connected: `from` first typed into `to` through the API (input, a conversation connect, a fork), saying who it was. Reads, waits and focus do not relate.
  * - manual: the user added it in the Related sessions dialog of `from`.
  * Terminal output never creates one: it is untrusted text.
  */

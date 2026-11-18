@@ -1,0 +1,106 @@
+import React, { useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { Columns2, SquareX, Trash2, X } from 'lucide-react'
+import { useCloseOnOutside } from '../Sidebar/ContextMenus'
+import { MENU_Z_INDEX } from '../../constants/styles'
+import { tabsToClose, type TabCloseScope } from '../../../../shared/sessionTabs'
+import { useShortcutHint } from '../../utils/shortcutHints'
+
+/** What the tab menu can do beyond the row itself — App owns split view and ending sessions. */
+export interface SessionTabMenuActions {
+    /** Closes these tabs (sessions keep running); `focusId` is shown if the one on screen goes. */
+    onCloseMany: (ids: string[], focusId: string | null) => void
+    /** Why the tab cannot go beside the screen, or null when it can (split view holds 4, already there…). */
+    sideBySideBlocked: (id: string) => string | null
+    onOpenSideBySide: (id: string) => void
+    /** Ends the session, as ⌘W does for the one on screen (asks first while a process runs). */
+    onEndSession: (id: string) => void
+}
+
+interface SessionTabMenuProps {
+    x: number
+    y: number
+    tabId: string
+    tabIds: string[]
+    actions: SessionTabMenuActions
+    onCloseTab: (id: string) => void
+    onClose: () => void
+}
+
+const ITEM = 'w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default'
+/** Keeps the menu off the window edge; it opens under the pointer like the sidebar's. */
+const EDGE_MARGIN_PX = 8
+
+/** Right-click on a tab: the VS Code tab menu's close group, plus split view and ending the session. */
+export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onClose }: SessionTabMenuProps): React.ReactElement {
+    const menuRef = useCloseOnOutside(onClose)
+    const hint = useShortcutHint()
+    useLayoutEffect(() => {
+        const menu = menuRef.current
+        if (!menu) return
+        const { width, height } = menu.getBoundingClientRect()
+        menu.style.left = `${Math.max(EDGE_MARGIN_PX, Math.min(x, window.innerWidth - width - EDGE_MARGIN_PX))}px`
+        menu.style.top = `${Math.max(EDGE_MARGIN_PX, Math.min(y, window.innerHeight - height - EDGE_MARGIN_PX))}px`
+    }, [x, y])
+
+    const run = (action: () => void) => (): void => {
+        action()
+        onClose()
+    }
+    const closeScope = (scope: TabCloseScope): void => {
+        actions.onCloseMany(tabsToClose(tabIds, tabId, scope), scope === 'all' ? null : tabId)
+    }
+    const others = tabsToClose(tabIds, tabId, 'others').length
+    const right = tabsToClose(tabIds, tabId, 'right').length
+    const blocked = actions.sideBySideBlocked(tabId)
+
+    return createPortal(
+        <div
+            ref={menuRef}
+            data-session-tab-menu={tabId}
+            role="menu"
+            className="fixed bg-[#1e1e20] border border-white/10 rounded shadow-xl py-0.5 w-48 backdrop-blur-md"
+            style={{ top: y, left: x, zIndex: MENU_Z_INDEX }}
+            onClick={(event) => event.stopPropagation()}
+        >
+            <button className={ITEM} data-tab-menu-item="close" title="Close the tab — the session keeps running" onClick={run(() => onCloseTab(tabId))}>
+                <X size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Close Tab</span>
+            </button>
+            <button className={ITEM} data-tab-menu-item="close-others" disabled={others === 0} onClick={run(() => closeScope('others'))}>
+                <SquareX size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Close Other Tabs</span>
+            </button>
+            <button className={ITEM} data-tab-menu-item="close-right" disabled={right === 0} onClick={run(() => closeScope('right'))}>
+                <SquareX size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Close Tabs to the Right</span>
+            </button>
+            <button className={ITEM} data-tab-menu-item="close-all" onClick={run(() => closeScope('all'))}>
+                <SquareX size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Close All Tabs</span>
+            </button>
+            <div className="border-t border-white/10 my-0.5" />
+            <button
+                className={ITEM}
+                data-tab-menu-item="side-by-side"
+                disabled={blocked !== null}
+                title={blocked ?? 'Show it beside the session on screen (split view)'}
+                onClick={run(() => actions.onOpenSideBySide(tabId))}
+            >
+                <Columns2 size={12} className="text-gray-400 shrink-0" />
+                <span className="truncate">Open Side by Side</span>
+            </button>
+            <div className="border-t border-white/10 my-0.5" />
+            <button
+                className={`${ITEM} text-red-300 hover:bg-red-500/20 hover:text-red-200`}
+                data-tab-menu-item="end-session"
+                title={hint('End the session and close its tab', 'closeSession')}
+                onClick={run(() => actions.onEndSession(tabId))}
+            >
+                <Trash2 size={12} className="text-red-400 shrink-0" />
+                <span className="truncate">End Session</span>
+            </button>
+        </div>,
+        document.body
+    )
+}

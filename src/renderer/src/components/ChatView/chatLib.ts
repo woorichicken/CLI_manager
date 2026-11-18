@@ -376,6 +376,24 @@ export function commandPieces(text: string, commands: ChatCommand[], codex: bool
     return pieces
 }
 
+/**
+ * One quick-reply list serves both agents, but each runs a skill its own way — Claude `/eli5`, Codex `$eli5`
+ * (e624ef79). The reply's opening word is retyped for this session's agent when this agent has a skill (or the
+ * person's own command) of that name. A built-in `/` command, a name it does not know, and a word later in
+ * the text stay as written.
+ */
+export function skillTriggerFor(text: string, commands: ChatCommand[], codex: boolean): string {
+    const match = /^(\s*)([/$])([\w:.-]+)(?=\s|$)/.exec(text)
+    if (!match) return text
+    const [opening, space, prefix, name] = match
+    const wanted = codex ? '$' : '/'
+    if (prefix === wanted) return text
+    // what is typed already runs here (a Codex built-in `/review`): left alone
+    if (commands.some((command) => command.name === name && (command.trigger ?? '/') === prefix)) return text
+    const known = commands.some((command) => command.name === name && (command.trigger ?? '/') === wanted && command.source !== 'builtin')
+    return known ? `${space}${wanted}${name}${text.slice(opening.length)}` : text
+}
+
 /** `@path`, quoted when the path holds a space (the mention ends at a space otherwise). */
 export function fileMention(path: string): string {
     return /\s/.test(path) ? `@"${path}"` : `@${path}`

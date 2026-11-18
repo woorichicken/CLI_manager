@@ -1,5 +1,5 @@
 import type { ChatForkScope, ConversationAgent, ConversationTurn } from '../shared/conversation'
-import { decideAgentCommand, type AliasResolver } from '../shared/agentCommand'
+import { decideAgentCommand, lastCommandWords, type AliasResolver } from '../shared/agentCommand'
 // the chat's own reading of a reply (pure): the excerpt carries what Copy answer copies
 import { turnSegments } from '../renderer/src/components/ChatView/workBlocks'
 import { maskSecretLines } from './maskSecrets'
@@ -46,11 +46,78 @@ export function forkBaseCommand(agent: ConversationAgent, savedCommand: string |
     return { input: decision.inputCommand, stored: decision.confident ? decision.storedCommand.trim() : decision.inputCommand }
 }
 
-/** Whole: the agent's own fork of conversation `id` — Claude `--resume <id> --fork-session`, Codex `fork <id>`. */
-export function forkCommand(agent: ConversationAgent, savedCommand: string | undefined, id: string, resolveAlias?: AliasResolver): string {
+/**
+ * Claude Code's `--permission-mode` value for a mode in the chat's words — the screen's mode row
+ * (`screenAgentMode`) or the transcript's last `permissionMode` (metadata.ts) — or null when unknown.
+ * 2.1.326 shows `default` as «⏸ manual mode on» (measured, fb-1117 d2b9bf31).
+ */
+const CLAUDE_PERMISSION_MODES: Record<string, string> = {
+    bypass: 'bypassPermissions',
+    auto: 'auto',
+    plan: 'plan',
+    'accept edits': 'acceptEdits',
+    "don't ask": 'dontAsk',
+    'manual mode': 'default'
+}
+export function claudePermissionMode(words: string | null | undefined): string | null {
+    return (words && CLAUDE_PERMISSION_MODES[words.trim().toLowerCase()]) || null
+}
+
+const SKIP_PERMISSIONS = '--dangerously-skip-permissions'
+const PERMISSION_MODE = '--permission-mode'
+
+/** The command's words without the flags that pick a start mode; null when there were none to take out. */
+function withoutModeFlags(words: { text: string; raw: string }[]): { text: string; raw: string }[] | null {
+    const kept: { text: string; raw: string }[] = []
+    let dropped = false
+    for (let i = 0; i < words.length; i++) {
+        const text = words[i].text
+        if (text === SKIP_PERMISSIONS || text.startsWith(`${PERMISSION_MODE}=`)) {
+            dropped = true
+            continue
+        }
+        if (text === PERMISSION_MODE) {
+            dropped = true
+            i++ // its value
+            continue
+        }
+        kept.push(words[i])
+    }
+    return dropped ? kept : null
+}
+
+/**
+ * `command` started in permission mode `mode` (a `--permission-mode` value) instead of the one it names
+ * (fb-1117 d2b9bf31): a fork kept the parent's start command, so a parent opened with
+ * `--permission-mode default` and switched to auto with Shift+Tab forked a child that asked for every tool.
+ * Measured on 2.1.326: the last `--permission-mode` wins, but `--dangerously-skip-permissions` beats any of
+ * them — so both are taken out of the agent's own words (and out of an alias that hides them, which is
+ * then typed expanded) before `--permission-mode <mode>` is added. A command it cannot read gets the flag
+ * added as it is. `mode` null: the command as it was.
+ */
+export function withPermissionMode(command: string, mode: string | null, resolveAlias?: AliasResolver): string {
+    if (!mode) return command
+    const last = lastCommandWords(command)
+    if (!last) return `${command} ${PERMISSION_MODE} ${mode}`
+    const prefix = command.slice(0, last.start)
+    let words = withoutModeFlags(last.words) ?? last.words
+    // an alias carrying a mode flag (`cldy` = claude --dangerously-skip-permissions): its expansion is typed instead
+    const executable = words[0]
+    const expansion = executable && executable.text !== 'claude' ? resolveAlias?.(executable.text) : undefined
+    const expanded = expansion ? lastCommandWords(expansion) : null
+    const expandedWords = expanded && expanded.start === 0 ? withoutModeFlags(expanded.words) : null
+    if (expandedWords && expandedWords.length > 0) words = [...expandedWords, ...words.slice(1)]
+    return `${prefix}${words.map((word) => word.raw).join(' ')} ${PERMISSION_MODE} ${mode}`
+}
+
+/**
+ * Whole: the agent's own fork of conversation `id` — Claude `--resume <id> --fork-session`, Codex `fork <id>`.
+ * `claudeMode`: the parent's mode now (a `--permission-mode` value), which the child starts in.
+ */
+export function forkCommand(agent: ConversationAgent, savedCommand: string | undefined, id: string, resolveAlias?: AliasResolver, claudeMode: string | null = null): string {
     if (!UUID.test(id)) throw new Error('The conversation id is not a UUID.')
     const base = forkBaseCommand(agent, savedCommand, resolveAlias).input
-    return agent === 'codex' ? `${base} fork ${id}` : `${base} --resume ${id} --fork-session`
+    return agent === 'codex' ? `${base} fork ${id}` : `${withPermissionMode(base, claudeMode, resolveAlias)} --resume ${id} --fork-session`
 }
 
 /** A turn as words: the person's text (a picture as «[image]»), or the agent's final answer — not its work. */

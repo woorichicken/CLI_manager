@@ -9,17 +9,19 @@ import type { TerminalEventLog } from '../TerminalEventLog'
 import type { TerminalManager } from '../TerminalManager'
 import type { TerminalMirror } from '../TerminalMirror'
 import type { PhoneSession, PhoneSessionsResponse, PhoneSessionState, PhoneUsageResponse } from '../../shared/phone'
-import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, UsageSnapshot, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
+import type { AgentStatusUpdate, AppConfig, PhoneSettings, PhoneState, SessionFolder, SessionRelation, TerminalTemplate, UsageSnapshot, UserSettings, Workspace, WorkspaceFolder } from '../../shared/types'
 import { DEFAULT_PHONE } from '../../shared/types'
 import { DEFAULT_QUICK_REPLIES, keepQuickReplyColors } from '../../shared/conversation'
 // The sidebar's own ordering functions (pure, types only): the phone's list is the Mac's All
 // sessions List exactly because it is computed by the same code, not a copy of it.
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder, type SessionEntry } from '../../renderer/src/utils/sessionNavigation'
+import { sessionForestFor } from '../../renderer/src/utils/relatedSessions'
 import { workspacesInLoadOrder } from '../workspaceLoadOrder'
 import { PhoneDevices } from './PhoneDevices'
 import { dockHostFiles, dockLocation, PhoneDock } from './phoneDock'
 import { PhonePush } from './PhonePush'
 import { PhoneServer } from './PhoneServer'
+import { phoneTemplateLogo } from './templateLogos'
 import { TailscaleStatus } from './tailscaleStatus'
 import { phoneQueueHooks } from './phoneQueue'
 import { AgentSwapReader, appUsageForPhone, runAgentSwapInLoginShell, type AgentSwapRun } from './phoneUsage'
@@ -56,6 +58,10 @@ export interface PhoneSetupDeps {
     staticDir: string
     /** recently viewed session ids, newest first (RecentSessions) — the All sessions order */
     recentSessions(): string[]
+    /** the Related sessions pairs (SessionRelations) — the phone's Tree is the sidebar's (7c4165af) */
+    sessionRelations?(): SessionRelation[]
+    /** sessions orchestrating through the Control API — the Mac row's crown (59886f9c) */
+    masterSessionIds?(): string[]
     /** the ids in the order the sidebar draws sessions, as the renderer last reported it (null before it has) */
     sidebarSessionOrder(): string[] | null
     /** the feedback widget on the phone page: main's relay and terminal context (phoneFeedback.ts) */
@@ -131,6 +137,15 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         const entries = orderForAllSessions(drawn, deps.recentSessions())
         const grouped = groupBySessionFolder(entries, sessionFolders)
         const ordered = [...grouped.folders.flatMap((group) => group.rows), ...grouped.unfiled]
+        // The Mac row's icon slot (SessionItem roleIcon): crown, else the template's logo, else the AI robot.
+        const masters = new Set(deps.masterSessionIds?.() ?? [])
+        const logoOf = new Map(
+            ((deps.store.get('customTemplates') as TerminalTemplate[] | undefined) ?? []).flatMap((template) => {
+                const logo = phoneTemplateLogo(template.logo)
+                return logo ? [[template.id, logo] as const] : []
+            })
+        )
+        const templateLogos: Record<string, string> = {}
         const sessions = ordered.map(({ workspace, session }): PhoneSession => {
             const dot = dots.get(session.id)
             let state: PhoneSessionState = 'idle'
@@ -140,6 +155,13 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
             else if (dot?.state === 'working') state = 'working'
             const agent = session.cliToolName === 'claude' ? 'claude' : session.cliToolName === 'codex' ? 'codex' : null
             const folderId = session.sessionFolderId && sessionFolders.some((f) => f.id === session.sessionFolderId) ? session.sessionFolderId : undefined
+            const logo = session.templateId ? logoOf.get(session.templateId) : undefined
+            let icon: PhoneSession['icon']
+            if (masters.has(session.id)) icon = 'master'
+            else if (logo && session.templateId) {
+                icon = 'logo'
+                templateLogos[session.templateId] = logo
+            } else if (session.aiControl) icon = 'ai'
             return {
                 id: session.id,
                 name: session.name,
@@ -150,12 +172,26 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
                 ...(state === 'waiting' && dot?.question ? { question: maskLine(dot.question) } : {}),
                 ...(folderId ? { sessionFolderId: folderId } : {}),
                 ...(session.isPinned ? { pinned: true } : {}),
-                ...(filledMemoPages(session) > 0 ? { memoPages: filledMemoPages(session) } : {})
+                ...(filledMemoPages(session) > 0 ? { memoPages: filledMemoPages(session) } : {}),
+                ...(icon ? { icon } : {}),
+                ...(icon === 'logo' ? { templateId: session.templateId } : {})
             }
         })
+        // The sidebar's Tree (Sidebar/index.tsx sessionForest): the same function over the same entries —
+        // the sidebar's order with pinned first and no recently viewed order, so a look never moves a row.
+        const forest = settings?.showSessionTree === false ? null : sessionForestFor(deps.sessionRelations?.() ?? [], orderForAllSessions(drawn, []))
         return {
             sessions,
-            sessionFolders: grouped.folders.filter((group) => group.rows.length > 0).map(({ folder }) => ({ id: folder.id, name: folder.name }))
+            ...(Object.keys(templateLogos).length > 0 ? { templateLogos } : {}),
+            sessionFolders: grouped.folders.filter((group) => group.rows.length > 0).map(({ folder }) => ({ id: folder.id, name: folder.name })),
+            ...(forest
+                ? {
+                      tree: {
+                          rows: forest.rows.map((row) => ({ id: row.session.id, depth: row.depth })),
+                          unlinked: forest.unlinked.map((entry) => entry.session.id)
+                      }
+                  }
+                : {})
         }
     }
     const sessionExists = (id: string): boolean => findSession(id) !== null

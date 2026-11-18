@@ -1,4 +1,6 @@
 import { test, expect, Page } from '@playwright/test'
+import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { REPO_ROOT, LaunchResult, closeApp, launchAppForLoop, openLoopWindow, termState, termText, writeToTerminal } from './helpers'
 import type { CronRun, CronView } from '../../src/shared/autocron'
@@ -16,6 +18,7 @@ import type { CronRun, CronView } from '../../src/shared/autocron'
  */
 
 const AGENT_MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/agent-mock.cjs')
+const CHAT_MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
 const PROJECT = 'lp-t130'
 const TERM = 'term-t130-loop'
 
@@ -86,4 +89,35 @@ test.describe('T130 autocron attach', () => {
         expect(mine.filter((r) => r.status === 'started').length).toBe(2)
         expect(ctx.pageErrors).toEqual([])
     })
+
+    // fb-1117 1d15e1c2: a Codex loop whose last answer has a table. Its `────────  ────────` rows read
+    // as Claude's input box made the table row «typed text», and every attach failed as a draft.
+    test('a Codex loop with a table on screen: the rows are output, the prompt is typed', async () => {
+        test.setTimeout(180_000)
+        ctx = await launchAppForLoop({
+            loopProjects: [{ id: PROJECT, name: 'T130Loop', path: REPO_ROOT }],
+            loopSessions: [{ id: 'ls-t130-codex', loopProjectId: PROJECT, terminalId: TERM, cliToolName: 'codex' }]
+        })
+        const loop = await openLoopWindow(ctx.app, ctx.page)
+        await expect.poll(() => termState(loop, TERM), { timeout: 30_000 }).not.toBeNull()
+        const job = await call<CronView>(loop, 'createCron', { name: 'T130 codex', schedule: '0 3 * * *', mode: 'attach', loopProjectId: PROJECT, prompt: 'hello loop' })
+
+        const rollout = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 't130-codex-')), 'rollout.jsonl')
+        await writeToTerminal(loop, TERM, `node ${CHAT_MOCK} --agent codex --transcript ${rollout} --work-ms 300\r`)
+        await expect.poll(() => termText(loop, TERM), { timeout: 30_000 }).toContain('OpenAI Codex (mock)')
+        await writeToTerminal(loop, TERM, 'FRUITS')
+        await loop.waitForTimeout(300)
+        await writeToTerminal(loop, TERM, '\r')
+        await expect.poll(() => termText(loop, TERM), { timeout: 15_000 }).toContain('Grape')
+        expect(await termText(loop, TERM)).toContain('────────  ────────')
+
+        const result = await run(loop, job.id)
+        expect(result, 'the table is not a draft').toMatchObject({ status: 'started' })
+        await expect.poll(() => termText(loop, TERM), { timeout: 15_000 }).toContain('ANSWER[2]: hello loop')
+        expect(ctx.pageErrors).toEqual([])
+    })
 })
+
+function run(loop: Page, id: string): Promise<CronRun> {
+    return call<CronRun>(loop, 'runCron', id)
+}

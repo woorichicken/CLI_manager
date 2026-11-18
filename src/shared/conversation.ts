@@ -329,6 +329,8 @@ export interface ChatThread {
     forkedAt: number
     status: 'working' | 'waiting' | 'idle'
     lastActivityAt: number
+    /** the child's turns since the fork (the person's and the agent's); absent while its transcript is unread */
+    replies?: number
 }
 
 /** One row of the sidebar's Threads list: a thread of any parent, with where it came from. */

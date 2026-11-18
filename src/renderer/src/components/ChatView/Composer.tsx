@@ -4,7 +4,8 @@ import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, Cha
 import { InputBusyNote } from './InputBusyNote'
 import { ComposerSuggestion } from './ComposerSuggestion'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH, quickReplyColorOf } from '../../../../shared/conversation'
-import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands } from './chatLib'
+import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands, skillTriggerFor } from './chatLib'
+import { QuickReplyRow } from './QuickReplyRow'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 import { DictationButton } from './DictationButton'
 import { useDictation } from './useDictation'
@@ -288,7 +289,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     // ---- completion menu -------------------------------------------------------------------
     const trigger = menuDismissed ? null : activeTrigger(text, caret, codex)
     // the menu needs the list, and so does telling which words in the draft are commands
-    const wantsCommands = trigger?.kind === 'slash' || mayNameCommand(text)
+    // once each: a list saved with the same phrase twice draws one chip (the chip is keyed by its text)
+    const quickReplies = [...new Set((preferences.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim()))]
+    // a reply that names a skill is typed the way this agent runs it (e624ef79): the chip shows that too
+    const quickNamesSkill = preferences.showQuickReplies === true && quickReplies.some(mayNameCommand)
+    const wantsCommands = trigger?.kind === 'slash' || mayNameCommand(text) || quickNamesSkill
     useEffect(() => {
         if (!wantsCommands || commands !== null) return
         let live = true
@@ -406,7 +411,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         quickInFlightRef.current = reply
         setQuickInFlight(reply)
         try {
-            await send(reply)
+            // the list may still be on its way (it is asked for when the chips first show)
+            const known = commands ?? (mayNameCommand(reply) ? await transport.listCommands(sessionId).catch(() => []) : [])
+            await send(skillTriggerFor(reply, known, codex))
         } finally {
             quickInFlightRef.current = null
             setQuickInFlight(null)
@@ -530,8 +537,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }
     }
 
-    // once each: a list saved with the same phrase twice draws one chip (the chip is keyed by its text)
-    const quickReplies = [...new Set((preferences.quickReplies ?? DEFAULT_QUICK_REPLIES).filter((reply) => reply.trim()))]
     // also while the agent works: a tap then waits for the turn to end, as a typed message does
     const showQuick = preferences.showQuickReplies === true && !promptOptions && text === '' && attachments.length === 0 && quickReplies.length > 0
     const hint =
@@ -576,23 +581,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }}
         >
             {showQuick && (
-                <div className="chat-quick" role="group" aria-label="Quick replies" data-testid="chat-quick-replies" aria-busy={quickInFlight !== null}>
-                    {quickReplies.map((reply) => (
+                <QuickReplyRow busy={quickInFlight !== null}>
+                    {quickReplies.map((reply) => {
+                        const outgoing = commands ? skillTriggerFor(reply, commands, codex) : reply
+                        return (
                         <button
                             key={reply}
                             type="button"
                             className={`chat-quick-reply${quickInFlight === reply ? ' is-sending' : ''}`}
-                            title={quickInFlight === reply ? 'Sending…' : `Send “${reply}”`}
+                            title={quickInFlight === reply ? 'Sending…' : `Send “${outgoing}”`}
                             disabled={quickInFlight !== null}
                             data-sending={quickInFlight === reply ? 'true' : undefined}
                             data-color={quickReplyColorOf(preferences.quickReplyColors, reply)}
                             onClick={() => void sendQuick(reply)}
                         >
                             {quickInFlight === reply && <Loader2 size={11} className="animate-spin chat-quick-spin" aria-hidden="true" />}
-                            {reply}
+                            {outgoing}
                         </button>
-                    ))}
-                </div>
+                        )
+                    })}
+                </QuickReplyRow>
             )}
             {busyDraft !== null && (
                 <InputBusyNote

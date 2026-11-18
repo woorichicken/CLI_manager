@@ -61,27 +61,9 @@ export const ChatTurn = memo(function ChatTurn({
         .filter((segment) => segment.kind === 'answer')
         .flatMap((segment) => segment.parts.map((part) => part.text))
         .join('\n\n')
+    const settled = !(live && last)
     return (
         <div className="chat-turn chat-turn-assistant" data-testid="chat-turn" data-role="assistant" data-turn-index={index}>
-            <div className="chat-turn-label">
-                <span title={turnTime(turn.end_ts ?? turn.ts)}>{AGENT_NAMES[agent]}</span>
-                {answer && !(live && last) && <CopyAnswer markdown={answer} />}
-                {answer && !(live && last) && onFork && (
-                    <span className="chat-copy-answer">
-                        <button
-                            type="button"
-                            data-testid="chat-fork"
-                            title="Reply in thread (Shift+click for options)"
-                            aria-label="Reply in thread"
-                            // the keyboard stays where it was (the message box): the dialog gives it back there on close
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={(event) => onFork(index, event.shiftKey)}
-                        >
-                            <GitFork size={12} />
-                        </button>
-                    </span>
-                )}
-            </div>
             {segments.map((segment, segmentIndex) => {
                 const lastSegment = segmentIndex === segments.length - 1
                 if (segment.kind === 'answer') {
@@ -105,12 +87,36 @@ export const ChatTurn = memo(function ChatTurn({
                     />
                 )
             })}
-            {turn.done && !(live && last) && (
-                // Claude's own turn-end line: how long the turn took and when it ended (fb-1110 a0ba98c4)
-                <div className="chat-turn-done" data-testid="chat-turn-done" title={new Date(turn.done.at).toLocaleString()}>
-                    Took {formatElapsed(turn.done.ms)} · done {clockTime(turn.done.at)}
-                </div>
-            )}
+            {/* Who answered sits on the turn's last line, beside how long it took (e9756d90) — no header line over
+                the answer. A turn without Claude's turn-end record (working, Codex, an older record) still says who. */}
+            <div className="chat-turn-foot" data-testid="chat-turn-foot">
+                <span className="chat-turn-agent" data-testid="chat-turn-agent" title={turnTime(turn.end_ts ?? turn.ts)}>{AGENT_NAMES[agent]}</span>
+                {turn.done && settled && (
+                    <>
+                        <span aria-hidden="true">·</span>
+                        {/* Claude's own turn-end line: how long the turn took and when it ended (fb-1110 a0ba98c4) */}
+                        <span className="chat-turn-done" data-testid="chat-turn-done" title={new Date(turn.done.at).toLocaleString()}>
+                            Took {formatElapsed(turn.done.ms)} · done {clockTime(turn.done.at)}
+                        </span>
+                    </>
+                )}
+                {answer && settled && <CopyAnswer markdown={answer} />}
+                {answer && settled && onFork && (
+                    <span className="chat-copy-answer">
+                        <button
+                            type="button"
+                            data-testid="chat-fork"
+                            title="Reply in thread (Shift+click for options)"
+                            aria-label="Reply in thread"
+                            // the keyboard stays where it was (the message box): the dialog gives it back there on close
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={(event) => onFork(index, event.shiftKey)}
+                        >
+                            <GitFork size={12} />
+                        </button>
+                    </span>
+                )}
+            </div>
             {turn.recap && (
                 <div className="chat-recap" data-testid="chat-recap">
                     <span className="chat-recap-label">※ recap</span> {turn.recap}
