@@ -19,6 +19,41 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### Control API — 입력·fork 가 거절돼도 관계(`connected`)는 이미 남는다
+- Discovered: 2026-11-17 fb-1117 3회차 `feat/fb-1117-relations-on-input` 독립 diff 리뷰.
+- Evidence: `ControlApiService.sendInput`·`forkSession` 이 실제 동작 전에 `connect(…, 'record')` 를 부른다 — 입력이 409(질문 대기·초안)로 막히거나 fork 가 거절돼도 caller → 대상 짝이 남아 Tree 부모가 된다. 대화 연결은 `beforeWrite` 안이라 해당 없음. 이번 변경 전부터 같은 동작.
+- Why deferred: 3회차 범위는 「읽기만 해도 관계」였다.
+- Trigger: 거절된 입력 뒤 Tree 에 엉뚱한 부모가 보인다는 제보가 오거나 그 경로를 고칠 때 — 성공 뒤에 `recordConnected` 를 부르게 옮긴다.
+- Owner: 없음
+
+### 폰 ⋯ → Memo 패널 머리에 세션 이름이 없다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E(`feat/fb-1117-phone-list`).
+- Evidence: 서랍의 ⋯ → Memo 로 연 메모 패널(세션 화면 📝 와 같은 부품)이 어느 세션 메모인지 이름을 보이지 않는다. 서랍에서는 보던 세션과 다른 세션 메모를 열 수 있어 헷갈린다.
+- Why deferred: 리뷰 후 배포 브랜치가 사람 리뷰 대기 중 — 리뷰 결과와 같이 고친다.
+- Trigger: `feat/fb-1117-phone-list` 승인 뒤 — 패널 머리에 세션 이름 한 줄.
+- Owner: 없음
+
+### 폰 세션 목록 Tree 계산 — 3초 폴링 비용 미측정
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E.
+- Evidence: 목록 응답(폰이 3초마다 읽음)에 `sessionForestFor` 계산이 더해졌다. 세션 34개 규모의 비용을 재지 않았다.
+- Why deferred: 화면 리뷰 대기 중인 브랜치.
+- Trigger: `feat/fb-1117-phone-list` 머지 전 — 세션 40개 시드로 목록 응답 시간 중앙값을 전후로 잰다(T144 방식).
+- Owner: 없음
+
+### Codex 녹화 — 시작 업데이트 메뉴가 첫 입력을 먹는다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 D.
+- Evidence: codex-cli 0.166 → 0.169 업데이트 알림이 시작 때 떠서 첫 녹화의 입력이 그 메뉴로 갔다.
+- Why deferred: 이번 녹화는 다시 떠서 끝냈다.
+- Trigger: `scripts/mock-cli/record-claude.cjs` 로 Codex 를 다시 녹화할 때 — `-c check_for_update_on_startup=false` 안내 한 줄을 스크립트·`scripts/CLAUDE.md` 에.
+- Owner: 없음
+
+### 시험 — Settings 는 마지막에 본 분류로 열린다
+- Discovered: 2026-11-17 fb-1117 2회차 작업 세션 E(T153).
+- Evidence: T63 처럼 `settings-show-session-tree` 를 바로 누르는 시험은 앞 시험이 다른 분류를 열어 두면 막힌다(T153 은 General 을 먼저 누름). 같은 화면에서 `button[title^="Settings"]` 가 2개로 잡혀 `.first()` 가 필요했다.
+- Why deferred: 지금 시험은 통과한다.
+- Trigger: Settings 를 여는 시험을 새로 쓸 때 — 하네스에 「분류를 골라 여는」 도움 함수를 둔다.
+- Owner: 없음
+
 ### 시험 캡처에 이 Mac 의 열린 포트·폴더 이름이 찍힌다
 - Discovered: 2026-11-17 fb-1117 작업 세션 B 캡처(`_batches/fb-1117/review/CLImanger/r1/B/quick-row-mac-*.png`).
 - Evidence: 하단 「Active Ports」가 테스트 모드에서도 실제 `lsof` 를 읽어 `jeong-gyeonghun`·`brand`·`orch-console` 같은 폴더 이름이 리뷰 캡처에 남는다.

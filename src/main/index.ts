@@ -490,7 +490,8 @@ const cronService: CronService = new CronService({
         return { sessionId: result.session.id, terminalStarted: result.terminalStarted, promptSent: result.promptSent, note: result.note }
     },
     loops: () => loopManager.getState(),
-    typeIntoLoop: (terminalId, text) => controlApiService.typeIntoLoop(terminalId, text),
+    typeIntoLoop: (terminalId, text) =>
+        controlApiService.typeIntoLoop(terminalId, text, loopManager.getState().sessions.find((s) => s.terminalId === terminalId)?.cliToolName),
     hasTerminal: (terminalId) => terminalManager.hasTerminal(terminalId),
     loopRefusal: async (terminalId) => {
         if (terminalMirror.hasExited(terminalId)) return 'the shell in the loop terminal has exited'
@@ -4050,6 +4051,8 @@ app.whenReady().then(async () => {
         staticDir: join(__dirname, '../renderer'),
         recentSessions: () => recentSessions.list(),
         sidebarSessionOrder: () => sidebarSessionOrder,
+        sessionRelations: () => sessionRelations.list(),
+        masterSessionIds: () => Object.keys(controlApiService.mastersSnapshot().masters),
         feedback: {
             enabled: () => feedbackMode.enabled(),
             appVersion: () => app.getVersion(),
