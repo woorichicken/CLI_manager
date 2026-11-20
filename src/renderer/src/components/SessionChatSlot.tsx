@@ -20,7 +20,8 @@ export function SessionChatSlot({
     enabled,
     fontSize,
     preferences,
-    onSessionLink
+    onSessionLink,
+    onRenameSession
 }: {
     sessionId: string
     visible: boolean
@@ -30,6 +31,8 @@ export function SessionChatSlot({
     preferences?: ChatPreferences
     /** a session link clicked in the chat — the same handler the terminal's links use */
     onSessionLink?: (uri: string) => void
+    /** a session renamed from the chat (a thread panel's name) */
+    onRenameSession?: (sessionId: string, name: string) => Promise<boolean>
 }) {
     const mode = useSessionViewMode(sessionId)
     const peek = useSessionPeek(sessionId)
@@ -57,6 +60,7 @@ export function SessionChatSlot({
             fontSize={fontSize}
             preferences={preferences}
             onSessionLink={onSessionLink}
+            onRenameSession={onRenameSession}
             onOpenSessionTerminal={(childId, command) => {
                 setSessionViewMode(childId, 'terminal')
                 if (command) setSessionPeek(childId, command)

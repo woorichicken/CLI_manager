@@ -1313,6 +1313,7 @@ export function Sidebar({
                                 selectedChildId={threadsView.selectedChildId}
                                 activeSessionId={activeSessionId}
                                 onOpen={threadsView.openThreadRow}
+                                onOpenBeside={threadsView.openThreadBeside}
                             />
                         ) : allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>

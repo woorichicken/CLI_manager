@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Sidebar } from './components/Sidebar/index'
 import { PhoneBadge } from './components/PhoneBadge'
 import { TerminalView, requestOpenTerminalPath, requestTerminalPage } from './components/TerminalView'
@@ -1064,7 +1064,7 @@ function App() {
         })
     }
 
-    const handleRenameSession = async (workspaceId: string, sessionId: string, newName: string) => {
+    const handleRenameSession = async (workspaceId: string, sessionId: string, newName: string): Promise<boolean> => {
         const success = await window.api.renameSession(workspaceId, sessionId, newName)
         if (success) {
             setWorkspaces(prev => prev.map(w => {
@@ -1079,7 +1079,23 @@ function App() {
                 return w
             }))
         }
+        return success
     }
+    // A session renamed from outside the sidebar (the thread panel's name, b808043e): found by id.
+    const workspacesForRename = useRef(workspaces)
+    workspacesForRename.current = workspaces
+    const renameSessionById = useCallback(async (sessionId: string, newName: string): Promise<boolean> => {
+        const owner = workspacesForRename.current.find(w => w.sessions.some(s => s.id === sessionId))
+        if (!owner) return false
+        const success = await window.api.renameSession(owner.id, sessionId, newName)
+        if (success) {
+            setWorkspaces(prev => prev.map(w => w.id !== owner.id ? w : {
+                ...w,
+                sessions: w.sessions.map(s => s.id === sessionId ? { ...s, name: newName } : s)
+            }))
+        }
+        return success
+    }, [])
 
     // Debounce timers for reorder IPC saves
     // Prevents rapid electron-store writes during drag (onReorder fires every pointer move)
@@ -2166,6 +2182,7 @@ function App() {
                                             fontSize={settings.fontSize}
                                             preferences={settings.chat}
                                             onSessionLink={handleSessionLink}
+                                            onRenameSession={renameSessionById}
                                         />
                                         <SessionMemo
                                             ref={(handle) => {

@@ -215,9 +215,22 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     await expect(row(CHILD_WAIT).getByTestId('sidebar-thread-parent')).toHaveText('in Release prep · T145 project', { timeout: 3000 })
     await expect(icon.getByTestId('all-sessions-threads-badge')).toHaveText('2')
 
-    // a row opens the parent's Chat with that thread's panel beside it
+    // fb-1120b 8a858cc3: a row opens the thread as its own session (in Chat)
     const before = await rowOrder(page)
     await row(CHILD_WORK).click()
+    await expect(macChat(page)).toHaveAttribute('data-session-id', CHILD_WORK, { timeout: 15_000 })
+    await expect(page.getByTestId('chat-thread-panel')).toHaveCount(0)
+    await expect(row(CHILD_WORK)).toHaveAttribute('data-selected', 'true')
+    expect(await rowOrder(page)).toEqual(before)
+    // its small split icon opens the parent's Chat with that thread's panel beside it
+    const beside = (id: string) => page.locator(`[data-child-id="${id}"] ~ [data-testid="sidebar-thread-open-beside"]`)
+    // the icon shows on a row that is not selected only while the pointer is over it
+    await page.mouse.move(5, 5)
+    await expect(beside(CHILD_WAIT)).toHaveCSS('opacity', '0')
+    await row(CHILD_WAIT).hover()
+    await expect(beside(CHILD_WAIT)).toHaveCSS('opacity', '1')
+    await row(CHILD_WORK).hover()
+    await beside(CHILD_WORK).click()
     const panel = page.getByTestId('chat-thread-panel')
     await expect(panel).toBeVisible({ timeout: 15_000 })
     await expect(panel).toHaveAttribute('data-session-id', CHILD_WORK)
@@ -235,8 +248,9 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     await expect(main.getByTestId('chat-composer')).toBeVisible()
     await shot(page, 't145-3-thread-open-1280')
 
-    // a row of the other parent switches parent and panel
-    await row(CHILD_WAIT).click()
+    // the other parent's split icon switches parent and panel
+    await row(CHILD_WAIT).hover()
+    await beside(CHILD_WAIT).click()
     await expect(macChat(page)).toHaveAttribute('data-session-id', PARENT_A)
     await expect(panel).toHaveAttribute('data-session-id', CHILD_WAIT)
     await expect(row(CHILD_WAIT)).toHaveAttribute('data-selected', 'true')

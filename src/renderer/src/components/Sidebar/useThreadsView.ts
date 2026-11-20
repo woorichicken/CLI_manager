@@ -37,16 +37,31 @@ export function useThreadsView({ inAllSessions, workspaces, onSelect }: {
         } catch { /* storage blocked: the choice just won't survive a restart */ }
     }, [])
 
+    const find = useCallback((sessionId: string) => {
+        const workspace = workspaces.find((candidate) => candidate.sessions?.some((session) => session.id === sessionId))
+        const session = workspace?.sessions.find((candidate) => candidate.id === sessionId)
+        return workspace && session ? { workspace, session } : null
+    }, [workspaces])
+
+    /** A row: the thread as a session of its own, in Chat (8a858cc3 — «open as session by default»). */
     const openThreadRow = useCallback((thread: ChatThreadEntry) => {
-        const workspace = workspaces.find((candidate) => candidate.sessions?.some((session) => session.id === thread.parentId))
-        const parent = workspace?.sessions.find((session) => session.id === thread.parentId)
-        if (!workspace || !parent) return
+        const child = find(thread.childId)
+        if (!child) return
+        switchSessionView(thread.childId, 'chat')
+        setSelectedChildId(thread.childId)
+        onSelect(child.workspace, child.session)
+    }, [find, onSelect])
+
+    /** The row's small split icon: the parent's Chat with that thread's panel beside it. */
+    const openThreadBeside = useCallback((thread: ChatThreadEntry) => {
+        const parent = find(thread.parentId)
+        if (!parent) return
         // The panel choice first: a parent Chat view mounting now reads it, one on screen follows it.
         setOpenThread(thread.parentId, thread.childId)
         switchSessionView(thread.parentId, 'chat')
         setSelectedChildId(thread.childId)
-        onSelect(workspace, parent)
-    }, [workspaces, onSelect])
+        onSelect(parent.workspace, parent.session)
+    }, [find, onSelect])
 
-    return { threadsOpen: inAllSessions && threadsOpen, setThreadsOpen, threads, waitingThreads, selectedChildId, openThreadRow }
+    return { threadsOpen: inAllSessions && threadsOpen, setThreadsOpen, threads, waitingThreads, selectedChildId, openThreadRow, openThreadBeside }
 }
