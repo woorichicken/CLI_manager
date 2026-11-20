@@ -19,6 +19,7 @@ import { groupThreadsByTurn, threadsForTurn, type ThreadGroups } from './threadG
 import { hasEarlierThreadReplies, replyForThread, replyQuote, turnsAfterFork } from './threadTurns'
 import { ThreadPanel } from './ThreadPanel'
 import { onOpenThreadChange, openThreadOf, setOpenThread } from './threadSelection'
+import { draftBackAfterStop } from './draftHandoff'
 import { artifactLinks, chatOpenTitle, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
 import './chat.css'
 
@@ -74,6 +75,8 @@ export interface ChatViewProps {
     onRenameSession?: (sessionId: string, name: string) => Promise<boolean>
 }
 
+/** After Stop, when to look for the prompt Claude puts back in its input box (ms after the last look). */
+const STOP_DRAFT_LOOKS = [400, 800, 1500]
 /** A thread «Show» waits this long for the new thread to reach the list before it opens the session instead. */
 const SHOW_THREAD_WAIT_MS = 4_000
 
@@ -405,6 +408,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 setSent((current) => [...current, bubble])
             }
             const result = await transport.send(sessionId, text, options)
+            if (result.status === 'sent') lastSentText.current = text
             // refused, or waiting in the queue (shown there): not on its way
             if (bubble && result.status !== 'sent') setSent((current) => current.filter((item) => item.id !== bubble.id))
             if (result.status === 'sent' && !bubble) {
@@ -417,10 +421,38 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         [onOpenTerminal, refresh, sessionId, transport]
     )
 
+    // which agent, and what this chat last sent, for Stop's follow-up
+    const agentRef = useRef<ConversationAgent | null>(null)
+    agentRef.current = snapshot?.agent ?? null
+    const lastSentText = useRef('')
+    const stopLook = useRef<number | null>(null)
+    const stopRound = useRef(0)
+    // a look still pending belongs to the session it started on: leaving it (or unmounting) ends the round
+    useEffect(() => () => {
+        stopRound.current++
+        if (stopLook.current !== null) window.clearTimeout(stopLook.current)
+        stopLook.current = null
+    }, [sessionId])
     const interrupt = useCallback(async (): Promise<string | null> => {
         try {
             const result = await transport.interrupt(sessionId)
             refresh()
+            // Claude puts a prompt it had not answered back in its input box: bring it here (682ea4de)
+            if (result.status === 'stopped' && agentRef.current === 'claude' && lastSentText.current) {
+                const sent = lastSentText.current
+                const round = ++stopRound.current
+                let tries = 0
+                const look = (): void => {
+                    stopLook.current = null
+                    if (round !== stopRound.current) return
+                    void draftBackAfterStop(transport, sessionId, sent).then((outcome) => {
+                        if (round !== stopRound.current) return
+                        if (outcome === 'none' && ++tries < STOP_DRAFT_LOOKS.length) stopLook.current = window.setTimeout(look, STOP_DRAFT_LOOKS[tries])
+                    })
+                }
+                if (stopLook.current !== null) window.clearTimeout(stopLook.current)
+                stopLook.current = window.setTimeout(look, STOP_DRAFT_LOOKS[0])
+            }
             return result.status === 'stopped' ? null : result.message
         } catch (error) {
             return error instanceof Error ? error.message : String(error)

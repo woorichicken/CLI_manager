@@ -74,6 +74,26 @@ export async function draftFromTerminal(transport: ChatTransport, sessionId: str
     } else if (result.status === 'left') showHandoffNotice(sessionId, result.reason === 'several_lines' ? HANDOFF_TEXT.severalLines : HANDOFF_TEXT.kept)
 }
 
+/**
+ * After Stop in Chat (682ea4de): Claude Code, stopped before it answered, puts the prompt back in its input
+ * box — the chat's box gets it instead, as a view switch would carry it. Only while the chat box is empty
+ * and only a one-line draft (the same rule as draftFromTerminal); nothing is said when there is none.
+ */
+export async function draftBackAfterStop(transport: ChatTransport, sessionId: string, sentText: string): Promise<'moved' | 'none' | 'other'> {
+    if (!transport.takeTerminalDraft || !sentText.trim() || readDraft(sessionId).trim()) return 'none'
+    const result = await transport.takeTerminalDraft(sessionId).catch(() => null)
+    if (result?.status !== 'moved') return 'none'
+    // something the person was writing in the terminal, not the prompt Claude gave back: it goes back there
+    if (result.text.trim() !== sentText.trim()) {
+        await transport.placeDraftInTerminal?.(sessionId, result.text).catch(() => null)
+        return 'other'
+    }
+    // typed in the chat meanwhile: theirs goes first, the old prompt under it
+    const before = readDraft(sessionId)
+    replaceDraft(sessionId, before.trim() ? `${before}\n${result.text}` : result.text)
+    return 'moved'
+}
+
 /** Runs the carry for a switch between the two views; nothing for a switch to the same one. */
 export function carryDraft(transport: ChatTransport, sessionId: string, from: 'terminal' | 'chat', to: 'terminal' | 'chat'): void {
     if (from === to) return

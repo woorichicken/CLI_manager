@@ -17,6 +17,8 @@
  *   --suggest <text>      (Claude) a next-prompt suggestion in the empty input box, drawn as Claude Code 2.1.3xx draws it:
  *                         its cursor inverse on the first letter, the rest dim (T19 · T88 edge-audit 2). Typing hides it,
  *                         Tab takes it into the box (as Claude does), a submitted prompt drops it (ba2ae0cb, T143)
+ *   --restore-on-esc      (Claude) Esc while the turn works puts the sent prompt back in the input box, as Claude Code
+ *                         does when a turn is stopped before it answered (682ea4de, T156)
  *   --continue            new records follow the transcript's last entry (a resumed session), so its history stays on the branch
  *   --show-args           print the start's own arguments (`ARGS: --resume <id> --fork-session`) — what the app typed after
  *                         the saved command (T117 Fork)
@@ -359,9 +361,11 @@ function answerTurn(text, answer = null) {
     }, WORK_MS)
 }
 
+let lastPrompt = ''
 function interrupt() {
     endWork()
     held.length = 0
+    if (AGENT !== 'codex' && process.argv.includes('--restore-on-esc') && !input) input = lastPrompt
     say('  ⎿  Interrupted · What should Claude do instead?')
     say('INTERRUPTED')
     if (AGENT === 'codex') record({ timestamp: now(), type: 'event_msg', payload: { type: 'turn_aborted', reason: 'interrupted' } })
@@ -532,6 +536,7 @@ function choose() {
 function submit(text) {
     // a new turn: the old suggestion goes
     suggestion = null
+    lastPrompt = text
     submitted++
     say(`> ${text}`)
     say(`ANSWER[${submitted}]: ${text.includes('\n') ? `lines=${text.split('\n').length}` : text}`)
