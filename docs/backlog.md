@@ -19,6 +19,12 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### t150 디스크 기대값이 10GB 미만 여유에서 틀린다 — 시험의 반올림이 앱과 다르다
+- Discovered: 2026-11-20 fb-1120b 상태 패널(t157) 작업 중 회귀 확인으로 t150 을 돌렸을 때.
+- Evidence: 여유 9.9GB(`df -k /System/Volumes/Data` 사용 가능 9,655,596 KiB)에서 `Expected: "10 GB free" · Received: "9.9 GB free"`. 시험의 `expectedDisk()` 는 늘 `Math.round` 로 정수 GB 를 만들고, 앱 `formatStorage` 는 10GB 미만이면 `toFixed(1)` 이다. 앞선 회차는 사용량이 측정 사이에 1GB 바뀌어 `985 GB` vs `986 GB` 로도 실패했다(다른 세션이 디스크를 쓰는 중).
+- Why deferred: 이번 변경은 디스크 코드를 건드리지 않았다(`git diff origin/main -- src/main/systemMonitorInfo.ts` 0줄). 고칠 때는 시험이 `formatStorage` 와 같은 규칙으로 만들고, 사용량은 ±1GB 를 허용한다.
+- Trigger: 디스크 여유가 10GB 아래인 기계에서 t150 을 돌릴 때.
+
 ### Antigravity CLI(`agy`) 세션 파싱 — Claude·Codex 처럼 상태·대화·사용량을 읽기
 - Discovered: 2026-11-20 brand 총괄 세션 — 사람 「climanager 에 백로그로 안티그래비티 파싱도 넣어줘」.
 - Evidence: `agy` 1.5.13(`~/.local/bin/agy`)이 Claude·Codex 와 같은 터미널 에이전트다 — `-p --output-format json` 한 번 실행이 7.2초에 `"status":"SUCCESS"`(conversation_id 포함), `--conversation <id>` 이어 하기, `--dangerously-skip-permissions`, `agy models` 6개(Gemini 3.8 Flash high·medium·low · Claude Sonnet 4.6 · Opus 4.6 thinking · GPT-OSS 120B). 대화 기록은 JSONL 이 아니라 `~/.gemini/antigravity-cli/conversations/<id>.db`(SQLite — `steps`·`trajectory_meta`·`gen_metadata` 표, 본문은 blob) + 목록 `conversation_summaries.db`(FTS) · 실행 중 표시는 `presence/<id>.lock`. 지금 앱의 읽는 쪽은 Claude·Codex 전용이다(`src/main/transcript/claudeTranscript.ts`·`codexTranscript.ts`·`CodexSessionLocator.ts`·`UsageTracker.ts`, 화면 판정 `SessionScreenStatus.ts`·`promptScreen.ts`).
