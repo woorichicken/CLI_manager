@@ -19,6 +19,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### Antigravity CLI(`agy`) 세션 파싱 — Claude·Codex 처럼 상태·대화·사용량을 읽기
+- Discovered: 2026-11-20 brand 총괄 세션 — 사람 「climanager 에 백로그로 안티그래비티 파싱도 넣어줘」.
+- Evidence: `agy` 1.5.13(`~/.local/bin/agy`)이 Claude·Codex 와 같은 터미널 에이전트다 — `-p --output-format json` 한 번 실행이 7.2초에 `"status":"SUCCESS"`(conversation_id 포함), `--conversation <id>` 이어 하기, `--dangerously-skip-permissions`, `agy models` 6개(Gemini 3.8 Flash high·medium·low · Claude Sonnet 4.6 · Opus 4.6 thinking · GPT-OSS 120B). 대화 기록은 JSONL 이 아니라 `~/.gemini/antigravity-cli/conversations/<id>.db`(SQLite — `steps`·`trajectory_meta`·`gen_metadata` 표, 본문은 blob) + 목록 `conversation_summaries.db`(FTS) · 실행 중 표시는 `presence/<id>.lock`. 지금 앱의 읽는 쪽은 Claude·Codex 전용이다(`src/main/transcript/claudeTranscript.ts`·`codexTranscript.ts`·`CodexSessionLocator.ts`·`UsageTracker.ts`, 화면 판정 `SessionScreenStatus.ts`·`promptScreen.ts`).
+- Why deferred: 이번 일은 공모전 운영이었고, `steps.metadata` blob 이 protobuf 로 보여 형식을 아직 재지 않았다.
+- Trigger: agy 를 템플릿·`clim open --agent` 로 상시 쓰기 시작하거나 「agy 세션이 Chat·상태·사용량에 안 보인다」는 제보가 오면 — ① 세션 ↔ conversation id 찾기(presence lock) ② `.db` steps 를 Chat 기록으로 ③ 화면 상태(일하는 중·질문 대기) 문구 ④ 사용량 순서로 잰다.
+- Owner: 없음
+
 ### Control API — 입력·fork 가 거절돼도 관계(`connected`)는 이미 남는다
 - Discovered: 2026-11-17 fb-1117 3회차 `feat/fb-1117-relations-on-input` 독립 diff 리뷰.
 - Evidence: `ControlApiService.sendInput`·`forkSession` 이 실제 동작 전에 `connect(…, 'record')` 를 부른다 — 입력이 409(질문 대기·초안)로 막히거나 fork 가 거절돼도 caller → 대상 짝이 남아 Tree 부모가 된다. 대화 연결은 `beforeWrite` 안이라 해당 없음. 이번 변경 전부터 같은 동작.
