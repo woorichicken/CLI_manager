@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Columns2 } from 'lucide-react'
+import { RENAME_FOCUS_GRACE_MS } from '../SessionTabs/SessionTabBar'
 import type { ChatThread, ChatThreadEntry } from '../../../../shared/conversation'
 
 const TIME_REFRESH_MS = 30_000
@@ -29,13 +30,56 @@ interface SidebarThreadsProps {
     onOpen: (thread: ChatThreadEntry) => void
     /** the row's split icon: the parent's Chat with the thread beside it */
     onOpenBeside: (thread: ChatThreadEntry) => void
+    /** the row whose name is being edited — ⌘R on the thread on screen, or a double-click (f8a6577f) */
+    renamingChildId?: string | null
+    onStartRename?: (childId: string) => void
+    /** the typed name, or null when cancelled */
+    onFinishRename?: (childId: string, name: string | null) => void
+}
+
+function RowNameInput({ name, onFinish }: { name: string; onFinish: (name: string | null) => void }) {
+    const field = useRef<HTMLInputElement>(null)
+    const done = useRef(false)
+    const openedAt = useRef(Date.now())
+    useEffect(() => { field.current?.select() }, [])
+    const finish = (value: string | null): void => {
+        if (done.current) return
+        done.current = true
+        const next = value?.trim()
+        onFinish(next && next !== name ? next : null)
+    }
+    return (
+        <input
+            ref={field}
+            data-testid="sidebar-thread-rename"
+            aria-label="Thread name"
+            defaultValue={name}
+            className="flex-1 min-w-0 bg-black/50 border border-blue-500/50 rounded px-1 py-0.5 text-xs text-white focus:outline-none"
+            onClick={(event) => event.stopPropagation()}
+            onBlur={(event) => {
+    // A double-click's first click shows the session, which then takes the focus (its terminal or chat box):
+    // a blur this soon after opening is that, not the person leaving — the field takes the focus back.
+                if (Date.now() - openedAt.current < RENAME_FOCUS_GRACE_MS) {
+                    const input = event.currentTarget
+                    window.setTimeout(() => input.isConnected && input.focus(), 0)
+                    return
+                }
+                finish(event.currentTarget.value)
+            }}
+            onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return
+                if (event.key === 'Enter') { event.preventDefault(); finish(event.currentTarget.value) }
+                if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(null) }
+            }}
+        />
+    )
 }
 
 /**
  * All sessions › Threads: every reply's thread in the app, newest activity first (the order main
  * gives — opening a row adds no output, so the rows stay put). Unread marks are not part of v1.
  */
-export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOpen, onOpenBeside }: SidebarThreadsProps) {
+export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOpen, onOpenBeside, renamingChildId, onStartRename, onFinishRename }: SidebarThreadsProps) {
     const [now, setNow] = useState(Date.now)
     useEffect(() => {
         const tick = window.setInterval(() => setNow(Date.now()), TIME_REFRESH_MS)
@@ -50,6 +94,14 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                 const selected = thread.childId === selectedChildId && (thread.childId === activeSessionId || thread.parentId === activeSessionId)
                 const statusWord = STATUS_WORDS[thread.status]
                 const where = thread.workspaceName ? `${thread.parentName} · ${thread.workspaceName}` : thread.parentName
+                if (thread.childId === renamingChildId && onFinishRename) {
+                    return (
+                        <div key={thread.childId} role="listitem" className="px-2 py-1.5 rounded-md bg-white/5 flex items-center gap-[7px] min-w-0">
+                            <span aria-hidden="true" className={`shrink-0 w-2 h-2 rounded-full border ${DOT_CLASSES[thread.status]}`} />
+                            <RowNameInput name={thread.name} onFinish={(name) => onFinishRename(thread.childId, name)} />
+                        </div>
+                    )
+                }
                 return (
                     <div key={thread.childId} role="listitem" className="relative group/thread">
                     <button
@@ -62,6 +114,7 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                         data-selected={selected ? 'true' : undefined}
                         aria-current={selected ? 'true' : undefined}
                         onClick={() => onOpen(thread)}
+                        onDoubleClick={onStartRename ? () => onStartRename(thread.childId) : undefined}
                         className={`w-full min-w-0 text-left px-2 py-1.5 rounded-md transition-colors ${
                             selected ? 'bg-blue-500/20' : 'hover:bg-white/5'
                         }`}

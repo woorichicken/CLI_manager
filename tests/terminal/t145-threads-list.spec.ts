@@ -256,6 +256,14 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     await expect(row(CHILD_WAIT)).toHaveAttribute('data-selected', 'true')
     await expect(row(CHILD_WORK)).not.toHaveAttribute('data-selected', 'true')
 
+    // fb-1120b f8a6577f: a double-click on a row renames that thread session in place
+    await row(CHILD_IDLE).dblclick()
+    const rename = page.getByTestId('sidebar-thread-rename')
+    await expect(rename).toBeFocused({ timeout: 5000 })
+    await rename.fill('Idle thread renamed')
+    await rename.press('Enter')
+    await expect(row(CHILD_IDLE)).toContainText('Idle thread renamed', { timeout: 5000 })
+
     // 390 with the sidebar open: nothing spills out of the sidebar
     await resizeMainWindow(result!.app, 390, 800)
     await expect(rows(page)).toHaveCount(3)

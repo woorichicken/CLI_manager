@@ -1314,6 +1314,13 @@ export function Sidebar({
                                 activeSessionId={activeSessionId}
                                 onOpen={threadsView.openThreadRow}
                                 onOpenBeside={threadsView.openThreadBeside}
+                                renamingChildId={renamingSessionId}
+                                onStartRename={setRenamingSessionId}
+                                onFinishRename={(childId, name) => {
+                                    const owner = workspaces.find((w) => w.sessions?.some((s) => s.id === childId))
+                                    if (owner && name) handleRenameSubmit(owner.id, childId, name)
+                                    else setRenamingSessionId(null)
+                                }}
                             />
                         ) : allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
