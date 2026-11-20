@@ -53,6 +53,10 @@ export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, o
     const draggingRef = useRef<string | null>(null)
     const [menuAt, setMenuAt] = useState<{ id: string; x: number; y: number } | null>(null)
     const [renamingId, setRenamingId] = useState<string | null>(null)
+    // a tab closed mid-rename takes its edit with it — reopened later it is a plain tab
+    useEffect(() => {
+        if (renamingId && !tabs.some((tab) => tab.id === renamingId)) setRenamingId(null)
+    }, [renamingId, tabs])
 
     // The tab on screen stays in view when the row overflows — also when the window narrows.
     useEffect(() => {

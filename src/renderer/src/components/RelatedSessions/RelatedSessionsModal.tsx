@@ -175,7 +175,8 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
         onClose()
     }
     // The ticked rows when there are any, else what the filter lists — every related session under All (df23dbd0).
-    const agentPicks = shownSelection.length > 0 ? shownSelection : filter === 'all' ? [] : shownIds
+    // with nothing ticked: everything under All, else what the filter and the name filter show
+    const agentPicks = shownSelection.length > 0 ? shownSelection : filter === 'all' && !nameQuery.trim() ? [] : shownIds
     const copyForAgent = async (): Promise<void> => {
         await navigator.clipboard.writeText(relatedForAgent({ id: sessionId, name: owner.name }, tree, peeks, agentPicks))
         setCopiedForAgent(true)
@@ -308,6 +309,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                         onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
                         onCopyId={id => void copy(id, 'session ID')}
                         filter={filter}
+                        hideEmptyNote={Boolean(nameQuery.trim())}
                     />
                 </div>
 

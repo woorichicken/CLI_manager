@@ -16,6 +16,8 @@ interface RelationTreeProps {
     onCopyId: (sessionId: string) => void
     /** Only this part of the tree; `all` (the default) is every section. */
     filter?: RelationFilterKey
+    /** The name filter has its own «no match» note: the part's empty note would say something untrue then. */
+    hideEmptyNote?: boolean
 }
 
 type Section = {
@@ -47,7 +49,7 @@ const EMPTY_FILTER_TEXT: Record<Exclude<RelationFilterKey, 'all'>, string> = {
  * sessions the tree places elsewhere. Only for the Related dialog, hence not a
  * shared component.
  */
-export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, filter = 'all' }: RelationTreeProps) {
+export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, onToggle, onShow, onRemove, onCopyId, filter = 'all', hideEmptyNote = false }: RelationTreeProps) {
     const deepestAbove = tree.ancestors.reduce((max, entry) => Math.max(max, entry.depth), 0)
     const withIndent = (entries: TreeEntry[], indentOf: (entry: TreeEntry) => number) =>
         entries.map(entry => ({ ...entry, indent: indentOf(entry) }))
@@ -83,7 +85,7 @@ export function RelationTree({ tree, ownerName, peeks, selected, selectionFull, 
 
     return (
         <>
-            {filter !== 'all' && shown.every(section => section.entries.length === 0) && (
+            {filter !== 'all' && !hideEmptyNote && shown.every(section => section.entries.length === 0) && (
                 <div className="px-4 py-6 text-center text-xs text-gray-500" data-related-filter-empty={filter}>
                     {EMPTY_FILTER_TEXT[filter]}
                 </div>
