@@ -192,22 +192,26 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     /** a fork's «Show» pressed before the new thread reached the list (551ee952) */
     const [showingFork, setShowingFork] = useState<string | null>(null)
     useEffect(() => {
-        if (threadsLoaded && selectedThreadId && !selectedThread && selectedThreadId !== showingFork) closeThread()
-    }, [threadsLoaded, selectedThreadId, selectedThread, closeThread, showingFork])
+        if (threadsLoaded && selectedThreadId && !selectedThread) closeThread()
+    }, [threadsLoaded, selectedThreadId, selectedThread, closeThread])
+    // the latest link handler without restarting the wait on every render (App passes a new one each time)
+    const sessionLink = useRef(onSessionLink)
+    sessionLink.current = onSessionLink
     useEffect(() => {
-        if (!showingFork) return
-        if (threads.some((thread) => thread.childId === showingFork)) {
+        if (showingFork && threads.some((thread) => thread.childId === showingFork)) {
             openThread(showingFork)
             setShowingFork(null)
-            return
         }
-        // a fork the list never shows (no answer to hang it on): the session itself, as before
+    }, [showingFork, threads, openThread])
+    // a fork the list never shows (no answer to hang it on): the session itself, as before — armed once per Show
+    useEffect(() => {
+        if (!showingFork) return
         const timer = window.setTimeout(() => {
             setShowingFork(null)
-            onSessionLink?.(`climanager://session/${showingFork}`)
+            sessionLink.current?.(`climanager://session/${showingFork}`)
         }, SHOW_THREAD_WAIT_MS)
         return () => window.clearTimeout(timer)
-    }, [showingFork, threads, openThread, onSessionLink])
+    }, [showingFork])
     /** «Show» on a new fork: its thread panel beside this chat (551ee952), not a jump to the session. */
     const showFork = useCallback((childId: string): void => {
         if (embedded || touch || !transport.getThreads) {

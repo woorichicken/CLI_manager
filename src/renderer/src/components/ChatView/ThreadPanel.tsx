@@ -44,6 +44,8 @@ function ThreadName({ name, onRename }: { name: string; onRename?: (name: string
     const [draft, setDraft] = useState(name)
     const [saved, setSaved] = useState<string | null>(null)
     const field = useRef<HTMLInputElement>(null)
+    // Enter or Escape unmounts the focused field, and its blur must not save a second time
+    const finished = useRef(false)
     useEffect(() => setSaved(null), [name])
     useLayoutEffect(() => {
         if (editing) field.current?.select()
@@ -53,12 +55,14 @@ function ThreadName({ name, onRename }: { name: string; onRename?: (name: string
     if (!editing) {
         return (
             <button type="button" className="chat-thread-panel-name" data-testid="chat-thread-rename" title={`${shown} — click to rename`}
-                onClick={() => { setDraft(shown); setEditing(true) }}>
+                onClick={() => { finished.current = false; setDraft(shown); setEditing(true) }}>
                 {shown}
             </button>
         )
     }
     const finish = (save: boolean): void => {
+        if (finished.current) return
+        finished.current = true
         setEditing(false)
         const next = draft.trim()
         if (!save || !next || next === shown) return

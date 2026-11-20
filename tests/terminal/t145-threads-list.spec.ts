@@ -224,8 +224,12 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     expect(await rowOrder(page)).toEqual(before)
     // its small split icon opens the parent's Chat with that thread's panel beside it
     const beside = (id: string) => page.locator(`[data-child-id="${id}"] ~ [data-testid="sidebar-thread-open-beside"]`)
+    // the icon shows on a row that is not selected only while the pointer is over it
+    await page.mouse.move(5, 5)
+    await expect(beside(CHILD_WAIT)).toHaveCSS('opacity', '0')
+    await row(CHILD_WAIT).hover()
+    await expect(beside(CHILD_WAIT)).toHaveCSS('opacity', '1')
     await row(CHILD_WORK).hover()
-    await expect(beside(CHILD_WORK)).toHaveCSS('opacity', '1')
     await beside(CHILD_WORK).click()
     const panel = page.getByTestId('chat-thread-panel')
     await expect(panel).toBeVisible({ timeout: 15_000 })

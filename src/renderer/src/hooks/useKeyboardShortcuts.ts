@@ -110,8 +110,9 @@ const CHORD_TIMEOUT_MS = 500
 /**
  * Keys a text box answers to with ⌘ (select all, copy, paste, cut, undo, the caret's line/word moves,
  * send). A binding on one of these stays the box's while the chat's message box has the caret.
+ * K too: ⌘K clears the terminal's history, which the person in Chat would not see go.
  */
-const TEXT_EDIT_KEYS = new Set(['a', 'c', 'v', 'x', 'z', 'y', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backspace', 'Delete', 'Home', 'End', 'Enter'])
+const TEXT_EDIT_KEYS = new Set(['a', 'c', 'v', 'x', 'z', 'y', 'k', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backspace', 'Delete', 'Home', 'End', 'Enter'])
 
 export function editsText(e: Pick<KeyboardEvent, 'key' | 'code'>): boolean {
     return TEXT_EDIT_KEYS.has(e.key.length === 1 ? e.key.toLowerCase() : e.key) || TEXT_EDIT_KEYS.has(keyFromCode(e.code) ?? '')
