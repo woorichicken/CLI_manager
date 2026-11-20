@@ -23,6 +23,13 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 탭 이름 칸 — 칸 안에서 마우스로 끌어도 글자가 선택되지 않는다
+- Date: 2026-11-20
+- Where: `src/renderer/src/components/SessionTabs/SessionTabBar.tsx` `TabNameInput`(탭 우클릭 Rename… · 탭 더블클릭, 13968765).
+- What: mousedown 은 input 에 닿고 막히지 않는데(defaultPrevented false · dragstart·selectstart 없음), 끄는 동안 선택이 늘지 않고 커서만 마우스를 따라간다(`0-13 → 8-8 → 13-13`). 같은 앱의 Related 거르기 칸·사이드바 이름 칸은 같은 Playwright 끌기로 선택된다. 탭의 `select-none`·`draggable`·줄의 `overflow-x` 를 바꿔도 같았다.
+- Surfaced by: fb-1120b T155 작성 중(시험은 이 단언을 빼고 0.8초 포커스 유지만 본다). 칸은 열릴 때 글 전체가 선택돼 바로 덮어쓸 수는 있다.
+- Fix direction: 원인부터 — 탭 줄 위 다른 요소의 mousemove 처리·창 끌기 영역(app-region) 계산을 의심. 이름 칸 공용화(사이드바·Threads 줄 칸과 같은 부품)는 사람 컨펌 뒤.
+
 ### 🐛 화면 줄 읽기 — Codex(및 답 속) 표 구분선 `────  ────` 을 입력 상자 윗선으로 읽는다
 - Date: 2026-11-17
 - Where: `src/main/screenLines.ts` `BOX_LABELED_RULE`(`^─{2,}\s.*─$`, /rename 한 Claude 상자 윗선용) — `linesUnderInputBox`(사이드바 상태 점의 질문 판정 범위) · `screenBackground` · `screenSummary`(Related 마지막 줄) · `screenAgentMode` 가 같은 규칙을 쓴다.
