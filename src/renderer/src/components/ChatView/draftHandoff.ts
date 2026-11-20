@@ -79,14 +79,19 @@ export async function draftFromTerminal(transport: ChatTransport, sessionId: str
  * box — the chat's box gets it instead, as a view switch would carry it. Only while the chat box is empty
  * and only a one-line draft (the same rule as draftFromTerminal); nothing is said when there is none.
  */
-export async function draftBackAfterStop(transport: ChatTransport, sessionId: string): Promise<boolean> {
-    if (!transport.takeTerminalDraft || readDraft(sessionId).trim()) return false
+export async function draftBackAfterStop(transport: ChatTransport, sessionId: string, sentText: string): Promise<'moved' | 'none' | 'other'> {
+    if (!transport.takeTerminalDraft || !sentText.trim() || readDraft(sessionId).trim()) return 'none'
     const result = await transport.takeTerminalDraft(sessionId).catch(() => null)
-    if (result?.status !== 'moved') return false
+    if (result?.status !== 'moved') return 'none'
+    // something the person was writing in the terminal, not the prompt Claude gave back: it goes back there
+    if (result.text.trim() !== sentText.trim()) {
+        await transport.placeDraftInTerminal?.(sessionId, result.text).catch(() => null)
+        return 'other'
+    }
     // typed in the chat meanwhile: theirs goes first, the old prompt under it
     const before = readDraft(sessionId)
     replaceDraft(sessionId, before.trim() ? `${before}\n${result.text}` : result.text)
-    return true
+    return 'moved'
 }
 
 /** Runs the carry for a switch between the two views; nothing for a switch to the same one. */

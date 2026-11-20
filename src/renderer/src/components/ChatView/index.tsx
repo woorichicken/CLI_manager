@@ -408,6 +408,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 setSent((current) => [...current, bubble])
             }
             const result = await transport.send(sessionId, text, options)
+            if (result.status === 'sent') lastSentText.current = text
             // refused, or waiting in the queue (shown there): not on its way
             if (bubble && result.status !== 'sent') setSent((current) => current.filter((item) => item.id !== bubble.id))
             if (result.status === 'sent' && !bubble) {
@@ -420,22 +421,37 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         [onOpenTerminal, refresh, sessionId, transport]
     )
 
-    // which agent, for Stop's follow-up (the snapshot is read further down)
+    // which agent, and what this chat last sent, for Stop's follow-up
     const agentRef = useRef<ConversationAgent | null>(null)
     agentRef.current = snapshot?.agent ?? null
+    const lastSentText = useRef('')
+    const stopLook = useRef<number | null>(null)
+    const stopRound = useRef(0)
+    // a look still pending belongs to the session it started on: leaving it (or unmounting) ends the round
+    useEffect(() => () => {
+        stopRound.current++
+        if (stopLook.current !== null) window.clearTimeout(stopLook.current)
+        stopLook.current = null
+    }, [sessionId])
     const interrupt = useCallback(async (): Promise<string | null> => {
         try {
             const result = await transport.interrupt(sessionId)
             refresh()
             // Claude puts a prompt it had not answered back in its input box: bring it here (682ea4de)
-            if (result.status === 'stopped' && agentRef.current === 'claude') {
+            if (result.status === 'stopped' && agentRef.current === 'claude' && lastSentText.current) {
+                const sent = lastSentText.current
+                const round = ++stopRound.current
                 let tries = 0
                 const look = (): void => {
-                    void draftBackAfterStop(transport, sessionId).then((moved) => {
-                        if (!moved && ++tries < STOP_DRAFT_LOOKS.length) window.setTimeout(look, STOP_DRAFT_LOOKS[tries])
+                    stopLook.current = null
+                    if (round !== stopRound.current) return
+                    void draftBackAfterStop(transport, sessionId, sent).then((outcome) => {
+                        if (round !== stopRound.current) return
+                        if (outcome === 'none' && ++tries < STOP_DRAFT_LOOKS.length) stopLook.current = window.setTimeout(look, STOP_DRAFT_LOOKS[tries])
                     })
                 }
-                window.setTimeout(look, STOP_DRAFT_LOOKS[0])
+                if (stopLook.current !== null) window.clearTimeout(stopLook.current)
+                stopLook.current = window.setTimeout(look, STOP_DRAFT_LOOKS[0])
             }
             return result.status === 'stopped' ? null : result.message
         } catch (error) {
