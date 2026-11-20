@@ -54,15 +54,20 @@
 .chat-thread-panel-title { grid-column: 1 / -1; padding-right: 84px; display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.88em; font-weight: 600; }
 .chat-thread-panel-title svg { flex-shrink: 0; color: var(--chat-dim); }
 .chat-thread-panel-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+button.chat-thread-panel-name { padding: 1px 4px; margin-left: -4px; border-radius: 4px; font: inherit; color: inherit; text-align: left; cursor: text; }
+button.chat-thread-panel-name:hover { background: var(--chat-soft); }
+.chat-thread-panel-name-input { flex: 1; min-width: 0; padding: 1px 4px; margin-left: -4px; border: 1px solid var(--chat-line); border-radius: 4px; background: var(--chat-soft); color: var(--chat-fg); font: inherit; outline: none; }
+.chat-thread-panel-name-input:focus { border-color: var(--chat-dim); }
 .chat-thread-panel-actions { grid-row: 2; grid-column: 2; display: flex; align-items: center; gap: 5px; }
 .chat-thread-panel-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border-radius: 5px; color: var(--chat-dim); }
 .chat-thread-panel-actions button:hover { color: var(--chat-fg); background: var(--chat-soft); }
 .chat-thread-open-session { padding: 4px 5px; font-size: 0.72em; white-space: nowrap; }
 .chat-thread-panel-close { position: absolute; top: 8px; right: 8px; padding: 5px; }
 .chat-thread-panel-status { grid-row: 2; grid-column: 1; display: flex; align-items: center; gap: 7px; color: var(--chat-dim); font-size: 0.76em; }
-.chat-thread-quote { padding: 10px 12px; border-bottom: 1px solid var(--chat-line); font-size: 0.8em; }
-.chat-thread-quote-label { color: var(--chat-faint); margin-bottom: 5px; }
-.chat-thread-quote blockquote { margin: 0; padding-left: 9px; border-left: 2px solid var(--chat-line); color: var(--chat-dim); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-thread-quote { padding: 12px 14px 10px; border-bottom: 1px solid var(--chat-line); }
+/* the parent's reply reads like a reply in the chat beside it: its text colour and size, the agent under it */
+.chat-thread-quote-text { margin: 0; color: var(--chat-fg); font-size: 0.92em; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-thread-quote-label { margin-top: 4px; color: var(--chat-dim); font-size: 0.72em; }
 .chat-thread-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
 .chat-thread-body > .chat-view[data-thread-embedded] { inset: 0; }
 @container chat-layout (max-width: 759px) {

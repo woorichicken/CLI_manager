@@ -70,7 +70,12 @@ export interface ChatViewProps {
     embedded?: boolean
     placeholder?: string
     onOpenSessionTerminal?: (sessionId: string, command?: string) => void
+    /** Rename a session from the chat — the thread panel's name (b808043e). Absent: the name is only shown. */
+    onRenameSession?: (sessionId: string, name: string) => Promise<boolean>
 }
+
+/** A thread «Show» waits this long for the new thread to reach the list before it opens the session instead. */
+const SHOW_THREAD_WAIT_MS = 4_000
 
 /** Within this many pixels of the end, new turns keep the view pinned to the bottom. */
 const STICK_PX = 80
@@ -116,7 +121,7 @@ interface SentWaiting {
 let sentSequence = 0
 let forkSequence = 0
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink, turnPage, forkedAt, embedded = false, placeholder, onOpenSessionTerminal }: ChatViewProps) {
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink, turnPage, forkedAt, embedded = false, placeholder, onOpenSessionTerminal, onRenameSession }: ChatViewProps) {
     const firstTurns = turnPage ?? CHAT_TURN_LIMIT
     const moreTurns = turnPage ?? MORE_TURNS
     const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? firstTurns)
@@ -184,9 +189,38 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         window.setTimeout(() => composer.current?.focus(), 0)
     }, [sessionId])
     const selectedThread = !embedded && !touch ? threads.find((thread) => thread.childId === selectedThreadId) : undefined
+    /** a fork's «Show» pressed before the new thread reached the list (551ee952) */
+    const [showingFork, setShowingFork] = useState<string | null>(null)
     useEffect(() => {
-        if (threadsLoaded && selectedThreadId && !selectedThread) closeThread()
-    }, [threadsLoaded, selectedThreadId, selectedThread, closeThread])
+        if (threadsLoaded && selectedThreadId && !selectedThread && selectedThreadId !== showingFork) closeThread()
+    }, [threadsLoaded, selectedThreadId, selectedThread, closeThread, showingFork])
+    useEffect(() => {
+        if (!showingFork) return
+        if (threads.some((thread) => thread.childId === showingFork)) {
+            openThread(showingFork)
+            setShowingFork(null)
+            return
+        }
+        // a fork the list never shows (no answer to hang it on): the session itself, as before
+        const timer = window.setTimeout(() => {
+            setShowingFork(null)
+            onSessionLink?.(`climanager://session/${showingFork}`)
+        }, SHOW_THREAD_WAIT_MS)
+        return () => window.clearTimeout(timer)
+    }, [showingFork, threads, openThread, onSessionLink])
+    /** «Show» on a new fork: its thread panel beside this chat (551ee952), not a jump to the session. */
+    const showFork = useCallback((childId: string): void => {
+        if (embedded || touch || !transport.getThreads) {
+            onSessionLink?.(`climanager://session/${childId}`)
+            return
+        }
+        if (threads.some((thread) => thread.childId === childId)) {
+            openThread(childId)
+            return
+        }
+        setShowingFork(childId)
+        refreshThreads.current?.()
+    }, [embedded, touch, transport, threads, openThread, onSessionLink])
     const [railRoom, setRailRoom] = useState(false)
     /** the person's last message has scrolled off the top (edf2aef3) */
     const [lastAbove, setLastAbove] = useState(false)
@@ -522,7 +556,8 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ))}
                     </nav>
                 )}
-                {lastSaid && lastAbove && <PinnedLastMessage key={lastSaid.index} words={lastSaid.words} onGo={() => jumpTo(lastSaid.index)} />}
+                {/* a thread, or a chat with its thread open, does without it (66e5ad19) */}
+                {!embedded && !selectedThread && lastSaid && lastAbove && <PinnedLastMessage key={lastSaid.index} words={lastSaid.words} onGo={() => jumpTo(lastSaid.index)} />}
                 <div className="chat-scroll" ref={scroller} onScroll={onScroll} data-testid="chat-scroll">
                     <div className="chat-column" ref={column}>
                         {snapshot === null ? (
@@ -647,13 +682,14 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 {forkProgress && (
                     <ForkNotice
                         progress={forkProgress}
-                        onShow={onSessionLink ? (id) => onSessionLink(`climanager://session/${id}`) : undefined}
+                        onShow={onSessionLink || (!embedded && !touch && transport.getThreads) ? showFork : undefined}
                         onDismiss={dismissFork}
                     />
                 )}
                 </div>
                 {selectedThread && (
                     <ThreadPanel thread={selectedThread} agentName={agentName} quote={quotedReply} onClose={closeThread}
+                        onRename={onRenameSession && !readOnly ? (name) => onRenameSession(selectedThread.childId, name) : undefined}
                         onOpenSession={onSessionLink ? () => onSessionLink(`climanager://session/${selectedThread.childId}`) : undefined}>
                         <ChatView key={selectedThread.childId} sessionId={selectedThread.childId} transport={transport}
                             onOpenTerminal={(command) => onOpenSessionTerminal ? onOpenSessionTerminal(selectedThread.childId, command) : onSessionLink?.(`climanager://session/${selectedThread.childId}`)}

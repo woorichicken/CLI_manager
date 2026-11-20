@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { ExternalLink, MessagesSquare, X } from 'lucide-react'
 import type { ChatThread } from '../../../../shared/conversation'
 
@@ -35,13 +35,56 @@ function widestFor(viewWidth: number): number {
     return Math.max(THREAD_PANEL_MIN_WIDTH, Math.min(THREAD_PANEL_MAX_WIDTH, viewWidth - THREAD_PANEL_MAIN_MIN_WIDTH))
 }
 
+/**
+ * The thread's name; a click edits it in place (b808043e) — Enter or leaving the field saves, Escape keeps
+ * the old one. Until the thread list catches up the saved name stays on screen.
+ */
+function ThreadName({ name, onRename }: { name: string; onRename?: (name: string) => Promise<boolean> }) {
+    const [editing, setEditing] = useState(false)
+    const [draft, setDraft] = useState(name)
+    const [saved, setSaved] = useState<string | null>(null)
+    const field = useRef<HTMLInputElement>(null)
+    useEffect(() => setSaved(null), [name])
+    useLayoutEffect(() => {
+        if (editing) field.current?.select()
+    }, [editing])
+    const shown = saved ?? name
+    if (!onRename) return <span className="chat-thread-panel-name" title={shown}>{shown}</span>
+    if (!editing) {
+        return (
+            <button type="button" className="chat-thread-panel-name" data-testid="chat-thread-rename" title={`${shown} — click to rename`}
+                onClick={() => { setDraft(shown); setEditing(true) }}>
+                {shown}
+            </button>
+        )
+    }
+    const finish = (save: boolean): void => {
+        setEditing(false)
+        const next = draft.trim()
+        if (!save || !next || next === shown) return
+        setSaved(next)
+        void onRename(next).then((ok) => { if (!ok) setSaved(null) }, () => setSaved(null))
+    }
+    return (
+        <input ref={field} className="chat-thread-panel-name-input" data-testid="chat-thread-rename-input" aria-label="Thread name" value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => finish(true)}
+            onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return
+                if (event.key === 'Enter') { event.preventDefault(); finish(true) }
+                if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(false) }
+            }} />
+    )
+}
+
 /** A shell around a child ChatView: keeping it as children avoids a recursive view import. */
-export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, children }: {
+export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, onRename, children }: {
     thread: ChatThread
     agentName: string
     quote: string
     onClose: () => void
     onOpenSession?: () => void
+    onRename?: (name: string) => Promise<boolean>
     children: ReactNode
 }) {
     const panel = useRef<HTMLElement>(null)
@@ -136,7 +179,7 @@ export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, 
             <header className="chat-thread-panel-header">
                 <div className="chat-thread-panel-title">
                     <MessagesSquare size={15} aria-hidden="true" />
-                    <span className="chat-thread-panel-name" title={thread.name}>{thread.name}</span>
+                    <ThreadName name={thread.name} onRename={onRename} />
                 </div>
                 <div className="chat-thread-panel-actions">
                     {onOpenSession && <button type="button" className="chat-thread-open-session" data-testid="chat-thread-open-session" onClick={onOpenSession} title="Open as session">
@@ -151,9 +194,10 @@ export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, 
                     <span>{STATUS_WORDS[thread.status]}</span>
                 </div>
             </header>
+            {/* the reply it hangs on, as a message like the chat's own (c04532a6) */}
             <div className="chat-thread-quote" data-testid="chat-thread-quote">
+                {quote && <blockquote className="chat-thread-quote-text">{quote}</blockquote>}
                 <div className="chat-thread-quote-label">Replying to {agentName}</div>
-                {quote && <blockquote>{quote}</blockquote>}
             </div>
             <div className="chat-thread-body">{children}</div>
         </aside>

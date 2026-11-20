@@ -693,6 +693,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         value={text}
                         maxLength={MAX_CHAT_TEXT_LENGTH}
                         data-testid="chat-composer"
+                        data-app-shortcuts="true"
                         className={painted ? 'is-painted' : undefined}
                         data-command={painted ? 'true' : undefined}
                         onScroll={(event) => {

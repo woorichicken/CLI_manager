@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Columns2 } from 'lucide-react'
 import type { ChatThread, ChatThreadEntry } from '../../../../shared/conversation'
 
 const TIME_REFRESH_MS = 30_000
@@ -21,17 +22,20 @@ function shortActivityTime(at: number, now: number): string {
 
 interface SidebarThreadsProps {
     threads: ChatThreadEntry[]
-    /** the row last opened from here; drawn selected while its parent is the session on screen */
+    /** the row last opened from here; drawn selected while it, or its parent, is the session on screen */
     selectedChildId: string | null
     activeSessionId?: string
+    /** the row: the thread as its own session */
     onOpen: (thread: ChatThreadEntry) => void
+    /** the row's split icon: the parent's Chat with the thread beside it */
+    onOpenBeside: (thread: ChatThreadEntry) => void
 }
 
 /**
  * All sessions › Threads: every reply's thread in the app, newest activity first (the order main
  * gives — opening a row adds no output, so the rows stay put). Unread marks are not part of v1.
  */
-export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOpen }: SidebarThreadsProps) {
+export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOpen, onOpenBeside }: SidebarThreadsProps) {
     const [now, setNow] = useState(Date.now)
     useEffect(() => {
         const tick = window.setInterval(() => setNow(Date.now()), TIME_REFRESH_MS)
@@ -43,14 +47,14 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
     return (
         <div className="space-y-0.5" data-testid="sidebar-threads" role="list" aria-label="Threads">
             {threads.map((thread) => {
-                const selected = thread.childId === selectedChildId && thread.parentId === activeSessionId
+                const selected = thread.childId === selectedChildId && (thread.childId === activeSessionId || thread.parentId === activeSessionId)
                 const statusWord = STATUS_WORDS[thread.status]
                 const where = thread.workspaceName ? `${thread.parentName} · ${thread.workspaceName}` : thread.parentName
                 return (
+                    <div key={thread.childId} role="listitem" className="relative group/thread">
                     <button
-                        key={thread.childId}
                         type="button"
-                        role="listitem"
+                        title={`Open «${thread.name}» as a session`}
                         data-testid="sidebar-thread-row"
                         data-child-id={thread.childId}
                         data-parent-id={thread.parentId}
@@ -70,6 +74,8 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                                 className={`shrink-0 w-2 h-2 rounded-full border ${DOT_CLASSES[thread.status]}`}
                             />
                             <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-gray-200" title={thread.name}>{thread.name}</span>
+                            {/* room for the split icon over this corner */}
+                            <span className="shrink-0 w-5" aria-hidden="true" />
                             <span className="shrink-0 text-[11px] text-gray-500" data-testid="sidebar-thread-time" title={new Date(thread.lastActivityAt).toLocaleString()}>
                                 {shortActivityTime(thread.lastActivityAt, now)}
                             </span>
@@ -89,6 +95,17 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                             </span>
                         )}
                     </button>
+                    <button
+                        type="button"
+                        data-testid="sidebar-thread-open-beside"
+                        title="Open beside its parent's chat"
+                        aria-label={`Open «${thread.name}» beside its parent's chat`}
+                        onClick={() => onOpenBeside(thread)}
+                        className={`absolute top-1 right-9 p-0.5 rounded text-gray-500 hover:text-gray-200 hover:bg-white/10 focus:opacity-100 ${selected ? 'opacity-100' : 'opacity-0 group-hover/thread:opacity-100'}`}
+                    >
+                        <Columns2 size={13} aria-hidden="true" />
+                    </button>
+                    </div>
                 )
             })}
         </div>
