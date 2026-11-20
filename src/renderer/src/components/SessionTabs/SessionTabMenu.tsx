@@ -1,6 +1,6 @@
 import React, { useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Columns2, SquareX, Trash2, X } from 'lucide-react'
+import { Columns2, Pencil, SquareX, Trash2, X } from 'lucide-react'
 import { useCloseOnOutside } from '../Sidebar/ContextMenus'
 import { MENU_Z_INDEX } from '../../constants/styles'
 import { tabsToClose, type TabCloseScope } from '../../../../shared/sessionTabs'
@@ -24,6 +24,8 @@ interface SessionTabMenuProps {
     tabIds: string[]
     actions: SessionTabMenuActions
     onCloseTab: (id: string) => void
+    /** Rename in place on the tab (13968765). Absent: no Rename item. */
+    onRenameTab?: (id: string) => void
     onClose: () => void
 }
 
@@ -32,7 +34,7 @@ const ITEM = 'w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-whit
 const EDGE_MARGIN_PX = 8
 
 /** Right-click on a tab: the VS Code tab menu's close group, plus split view and ending the session. */
-export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onClose }: SessionTabMenuProps): React.ReactElement {
+export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onRenameTab, onClose }: SessionTabMenuProps): React.ReactElement {
     const menuRef = useCloseOnOutside(onClose)
     const hint = useShortcutHint()
     useLayoutEffect(() => {
@@ -63,6 +65,15 @@ export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onClo
             style={{ top: y, left: x, zIndex: MENU_Z_INDEX }}
             onClick={(event) => event.stopPropagation()}
         >
+            {onRenameTab && (
+                <>
+                    <button className={ITEM} data-tab-menu-item="rename" title={hint('Rename the session', 'renameSession')} onClick={run(() => onRenameTab(tabId))}>
+                        <Pencil size={12} className="text-gray-400 shrink-0" />
+                        <span className="truncate">Rename…</span>
+                    </button>
+                    <div className="border-t border-white/10 my-0.5" />
+                </>
+            )}
             <button className={ITEM} data-tab-menu-item="close" title="Close the tab — the session keeps running" onClick={run(() => onCloseTab(tabId))}>
                 <X size={12} className="text-gray-400 shrink-0" />
                 <span className="truncate">Close Tab</span>

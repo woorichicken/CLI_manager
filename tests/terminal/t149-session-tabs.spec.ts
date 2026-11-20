@@ -254,7 +254,8 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => tabOrder(page), { timeout: 10_000 }).toEqual(['s-1', 's-3'])
     })
 
-    test('many tabs shrink before the row scrolls; at 390 they stop at the minimum and the one on screen stays in view', async () => {
+    // fb-1120b 8cc1128f: tabs keep their names' width (no shrinking to 80px) and the row scrolls sideways
+    test('many tabs keep their names and the row scrolls sideways; the one on screen stays in view', async () => {
         const ids = Array.from({ length: 12 }, (_, i) => `m-${String(i + 1).padStart(2, '0')}`)
         ctx = await launchAppWithWorkspaces([{
             id: 'ws-m', name: 'T149MANY', path: tempDir(),
@@ -266,29 +267,33 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => tabOrder(page), { timeout: 15_000 }).toEqual(ids)
         await expect.poll(() => visibleSession(page)).toBe('m-12')
 
-        const measure = (): Promise<{ widths: number[]; overflow: boolean; activeInView: boolean }> => page.evaluate(() => {
+        const measure = (): Promise<{ widths: number[]; cut: string[]; overflow: boolean; activeInView: boolean }> => page.evaluate(() => {
             const row = document.querySelector('[data-testid="session-tab-bar"]') as HTMLElement
             const rowBox = row.getBoundingClientRect()
             const tabs = Array.from(row.querySelectorAll('[data-session-tab]')) as HTMLElement[]
             const active = row.querySelector('[data-session-tab][data-active="true"]')!.getBoundingClientRect()
             return {
                 widths: tabs.map((tab) => Math.round(tab.getBoundingClientRect().width)),
+                cut: tabs.map((tab) => tab.querySelector('[data-session-tab-name]') as HTMLElement).filter((name) => name.scrollWidth > name.clientWidth + 1).map((name) => name.textContent ?? ''),
                 overflow: row.scrollWidth > row.clientWidth + 1,
-                activeInView: active.left >= rowBox.left - 1 && active.right <= rowBox.right + 1
+                // in view: whole, or — a tab wider than a narrow row — its start
+                activeInView: active.left >= rowBox.left - 1 && (active.right <= rowBox.right + 1 || active.width > rowBox.width)
             }
         })
-        // 1280: twelve tabs fit by shrinking — narrower than their 200px names, no scrolling.
-        await expect.poll(async () => (await measure()).overflow).toBe(false)
+        // 1280: every name whole (before: twelve tabs shrank and cut their names)
+        await expect.poll(async () => (await measure()).cut).toEqual([])
         const wide = await measure()
-        expect(Math.max(...wide.widths)).toBeLessThan(200)
+        expect(wide.cut).toEqual([])
+        expect(wide.activeInView).toBe(true)
         expect(Math.min(...wide.widths)).toBeGreaterThanOrEqual(80)
+        expect(Math.max(...wide.widths)).toBeLessThanOrEqual(200)
         await shot(page, 'after-many-1280')
 
-        // 390: no room even at the minimum — tabs stop at 80px and the row scrolls to the one on screen.
+        // 390: the same — whole names, the row scrolls to the one on screen
         await page.setViewportSize({ width: 390, height: 800 })
         await expect.poll(async () => {
             const narrow = await measure()
-            return narrow.overflow && narrow.activeInView && narrow.widths.every((width) => width === 80)
+            return narrow.overflow && narrow.activeInView && narrow.cut.length === 0
         }).toBe(true)
         await shot(page, 'after-many-390')
     })

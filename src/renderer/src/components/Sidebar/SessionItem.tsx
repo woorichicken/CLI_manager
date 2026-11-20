@@ -434,7 +434,8 @@ export function SessionItem({
         <div
             className="relative"
             ref={itemRef}
-            draggable
+            // while the name is being edited a drag in it selects letters, not the row (0444a98b)
+            draggable={!isRenaming}
             onDragStart={(e) => {
                 // HTML5 drag of the whole row: onto the terminal area for split view, onto another
                 // row to relate the two, onto a session folder in the All sessions view to file it

@@ -24,20 +24,27 @@ interface SessionTabBarProps {
     menu?: SessionTabMenuActions
     /** Split view: the header above shrinks to h-6, and the row follows. */
     compact?: boolean
+    /** Rename a tab's session in place: right-click › Rename, or a double-click (13968765). */
+    onRename?: (id: string, name: string) => Promise<boolean>
 }
 
-/** VS Code 「shrink」 sizing: name width up to 200px, giving way to 80px before the row scrolls. */
-const TAB_WIDTH = 'flex-[0_1_auto] min-w-[80px] max-w-[200px]'
+/**
+ * Each tab keeps its name's width (80–200px) and the row scrolls sideways when they do not fit
+ * (8cc1128f — shrinking to 80px cut every name to a few letters).
+ */
+const TAB_WIDTH = 'flex-none min-w-[80px] max-w-[200px]'
 
 /** A drag in this row carries this type, so a tab is not mistaken for a sidebar row dropped on split view. */
 const TAB_DRAG_TYPE = 'application/x-climanager-tab'
+/** A rename field ignores a blur this soon after it opened (see TabNameInput). */
+export const RENAME_FOCUS_GRACE_MS = 600
 
 /**
- * The tab row under the main header, over the terminals. Tabs shrink as more open (VS Code's
- * 「shrink」 sizing): each keeps its name width up to 200px and gives way down to 80px, after
- * which the row scrolls sideways and the tab on screen is scrolled into view.
+ * The tab row under the main header, over the terminals. Each tab keeps its name width (up to
+ * 200px); when they do not fit the row scrolls sideways (wheel, trackpad) and the tab on screen is
+ * scrolled into view.
  */
-export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, onMove, menu, compact = false }: SessionTabBarProps): React.ReactElement | null {
+export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, onMove, menu, compact = false, onRename }: SessionTabBarProps): React.ReactElement | null {
     const rowRef = useRef<HTMLDivElement>(null)
     const [dropIndex, setDropIndexState] = useState<number | null>(null)
     // The drop reads the ref: dragover and drop can come before a render in between.
@@ -45,6 +52,11 @@ export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, o
     const setDropIndex = (index: number | null): void => { dropIndexRef.current = index; setDropIndexState(index) }
     const draggingRef = useRef<string | null>(null)
     const [menuAt, setMenuAt] = useState<{ id: string; x: number; y: number } | null>(null)
+    const [renamingId, setRenamingId] = useState<string | null>(null)
+    // a tab closed mid-rename takes its edit with it — reopened later it is a plain tab
+    useEffect(() => {
+        if (renamingId && !tabs.some((tab) => tab.id === renamingId)) setRenamingId(null)
+    }, [renamingId, tabs])
 
     // The tab on screen stays in view when the row overflows — also when the window narrows.
     useEffect(() => {
@@ -101,6 +113,13 @@ export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, o
                     dropAfter={dropIndex === tabs.length && index === tabs.length - 1}
                     onSelect={onSelect}
                     onClose={onClose}
+                    renaming={renamingId === tab.id}
+                    onStartRename={onRename ? () => setRenamingId(tab.id) : undefined}
+                    onFinishRename={(name) => {
+                        setRenamingId(null)
+                        const next = name?.trim()
+                        if (onRename && next && next !== tab.name) void onRename(tab.id, next)
+                    }}
                     onDragStart={(event) => {
                         draggingRef.current = tab.id
                         event.dataTransfer.setData(TAB_DRAG_TYPE, tab.id)
@@ -124,6 +143,7 @@ export function SessionTabBar({ tabs, activeId, visibleIds, onSelect, onClose, o
                     tabIds={tabs.map((tab) => tab.id)}
                     actions={menu}
                     onCloseTab={onClose}
+                    onRenameTab={onRename ? (id) => setRenamingId(id) : undefined}
                     onClose={() => setMenuAt(null)}
                 />
             )}
@@ -143,9 +163,50 @@ interface SessionTabProps {
     onDragOver: (event: React.DragEvent) => void
     onDragEnd: () => void
     onContextMenu: (event: React.MouseEvent) => void
+    renaming: boolean
+    onStartRename?: () => void
+    /** the typed name, or null when the edit was cancelled */
+    onFinishRename: (name: string | null) => void
 }
 
-function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onClose, onDragStart, onDragOver, onDragEnd, onContextMenu }: SessionTabProps): React.ReactElement {
+function TabNameInput({ name, onFinish }: { name: string; onFinish: (name: string | null) => void }): React.ReactElement {
+    const field = useRef<HTMLInputElement>(null)
+    const done = useRef(false)
+    const openedAt = useRef(Date.now())
+    useEffect(() => { field.current?.select() }, [])
+    const finish = (value: string | null): void => {
+        if (done.current) return
+        done.current = true
+        onFinish(value)
+    }
+    return (
+        <input
+            ref={field}
+            data-session-tab-rename
+            aria-label="Session name"
+            defaultValue={name}
+            className="flex-1 min-w-0 select-text bg-black/40 border border-white/20 rounded px-1 text-xs text-white outline-none focus:border-blue-400"
+            onClick={(event) => event.stopPropagation()}
+            onBlur={(event) => {
+    // A double-click's first click shows the session, which then takes the focus (its terminal or chat box):
+    // a blur this soon after opening is that, not the person leaving — the field takes the focus back.
+                if (Date.now() - openedAt.current < RENAME_FOCUS_GRACE_MS) {
+                    const input = event.currentTarget
+                    window.setTimeout(() => input.isConnected && input.focus(), 0)
+                    return
+                }
+                finish(event.currentTarget.value)
+            }}
+            onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return
+                if (event.key === 'Enter') { event.preventDefault(); finish(event.currentTarget.value) }
+                if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(null) }
+            }}
+        />
+    )
+}
+
+function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onClose, onDragStart, onDragOver, onDragEnd, onContextMenu, renaming, onStartRename, onFinishRename }: SessionTabProps): React.ReactElement {
     const screenStatus = useSessionScreenStatus(tab.id)
     const status = screenStatus.enabled ? screenStatus.status : null
     const dot = status && status.state !== 'idle' && !active ? status : null
@@ -158,16 +219,18 @@ function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onC
             role="tab"
             aria-selected={active}
             title={`${tab.name} — ${tab.workspaceName}`}
-            draggable
+            // while renaming, a drag in the field selects its letters instead of moving the tab
+            draggable={!renaming}
             onDragStart={onDragStart}
             onDragOver={onDragOver}
             onDragEnd={onDragEnd}
             onContextMenu={onContextMenu}
-            onClick={() => onSelect(tab.id)}
+            onClick={() => { if (!renaming) onSelect(tab.id) }}
+            onDoubleClick={onStartRename ? (event) => { event.preventDefault(); onStartRename() } : undefined}
             // Middle click closes, as in a browser or VS Code.
             onAuxClick={(event) => { if (event.button === 1) { event.preventDefault(); onClose(tab.id) } }}
             onMouseDown={(event) => { if (event.button === 1) event.preventDefault() }}
-            className={`group relative no-drag flex items-center gap-1.5 pl-3 pr-1.5 ${TAB_WIDTH} cursor-pointer select-none border-r border-white/10 text-xs transition-colors ${
+            className={`group relative no-drag flex items-center gap-1.5 pl-3 pr-1.5 ${TAB_WIDTH} ${renaming ? '' : 'cursor-pointer select-none'} border-r border-white/10 text-xs transition-colors ${
                 active
                     ? 'bg-white/10 text-white'
                     : visible
@@ -185,7 +248,9 @@ function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onC
                     title={dot.state === 'waiting' ? `Waiting for you${dot.question ? ` — ${dot.question}` : ''}` : 'Working'}
                 />
             )}
-            <span className="truncate flex-1 min-w-0" data-session-tab-name>{tab.name}</span>
+            {renaming
+                ? <TabNameInput name={tab.name} onFinish={onFinishRename} />
+                : <span className="truncate flex-1 min-w-0" data-session-tab-name>{tab.name}</span>}
             <button
                 type="button"
                 data-session-tab-close={tab.id}

@@ -819,6 +819,11 @@ export function Sidebar({
 
     // All sessions › Threads (its own icon beside List / Tree): every thread in the app.
     const threadsView = useThreadsView({ inAllSessions: isAllSessionsView, workspaces, onSelect })
+    // ⌘R while the Threads list is shown names a row there; a session with no row is left alone — else
+    // its sidebar row would open in rename mode later, unasked
+    useEffect(() => {
+        if (threadsView.threadsOpen && renamingSessionId && !threadsView.threads.some((thread) => thread.childId === renamingSessionId)) setRenamingSessionId(null)
+    }, [threadsView.threadsOpen, threadsView.threads, renamingSessionId])
     const chooseAllSessionsLayout = (next: AllSessionsLayout) => {
         // Picking a layout while Threads is on goes back to the session list in that layout.
         threadsView.setThreadsOpen(false)
@@ -1314,6 +1319,13 @@ export function Sidebar({
                                 activeSessionId={activeSessionId}
                                 onOpen={threadsView.openThreadRow}
                                 onOpenBeside={threadsView.openThreadBeside}
+                                renamingChildId={renamingSessionId}
+                                onStartRename={setRenamingSessionId}
+                                onFinishRename={(childId, name) => {
+                                    const owner = workspaces.find((w) => w.sessions?.some((s) => s.id === childId))
+                                    if (owner && name) handleRenameSubmit(owner.id, childId, name)
+                                    else setRenamingSessionId(null)
+                                }}
                             />
                         ) : allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>

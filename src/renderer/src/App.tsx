@@ -1889,6 +1889,7 @@ function App() {
                         onMove={sessionTabs.moveTab}
                         menu={tabMenu}
                         compact={Boolean(splitLayout)}
+                        onRename={renameSessionById}
                     />
                 )}
                 {/* With no tab yet the row's height stays reserved. Hidden terminals take their pty size from this

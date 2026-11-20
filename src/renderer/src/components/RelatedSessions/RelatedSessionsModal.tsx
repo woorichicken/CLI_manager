@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Columns2, Copy, Info, Plus, Waypoints, X } from 'lucide-react'
+import { Check, Columns2, Copy, Info, Plus, Search, Waypoints, X } from 'lucide-react'
 import { SessionRelation, TerminalTemplate, Workspace } from '../../../../shared/types'
 import { RELATED_ORDERS, RelatedEntry, RelatedOrder, sessionTreeFor } from '../../utils/relatedSessions'
-import { RelationFilter, RelationFilterKey, entriesForFilter, storeRelationFilter, storedRelationFilter } from './RelationFilter'
+import { RelationFilter, RelationFilterKey, entriesForFilter, storeRelationFilter, storedRelationFilter, treeMatchingName } from './RelationFilter'
 import { MAX_LINKED_SESSIONS } from '../../utils/sessionLink'
 import { relatedForAgent } from '../../utils/relatedForAgent'
 import { useSessionPeeks } from '../../hooks/useSessionPeeks'
@@ -70,6 +70,8 @@ const HELP_LINES: Array<[string, string]> = [
 export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose, onShowSessions, templates, onCreateSession }: RelatedSessionsModalProps) {
     const [order, setOrder] = useState<RelatedOrder>(storedOrder)
     const [filter, setFilter] = useState<RelationFilterKey>(storedRelationFilter)
+    /** words typed to narrow the rows by name (4c2d2e9c) — not kept: a new dialog starts with every row */
+    const [nameQuery, setNameQuery] = useState('')
     const [recentIds, setRecentIds] = useState<string[]>([])
     const [creating, setCreating] = useState(false)
     const [helpPinned, setHelpPinned] = useState(false)
@@ -111,7 +113,8 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
     const liveSelection = selected.filter(id => visibleIds.includes(id))
     // What the filter lists. Ticks on rows it hides are kept for when they show again, but the count,
     // the limit, Open side by side and Copy for agent go by the ticks on screen (PR #141 review).
-    const shownIds = useMemo(() => entriesForFilter(tree, filter).map(entry => entry.session.id), [tree, filter])
+    const shownTree = useMemo(() => treeMatchingName(tree, nameQuery), [tree, nameQuery])
+    const shownIds = useMemo(() => entriesForFilter(shownTree, filter).map(entry => entry.session.id), [shownTree, filter])
     const shownSelection = liveSelection.filter(id => shownIds.includes(id))
     const hiddenPicks = liveSelection.length - shownSelection.length
 
@@ -136,12 +139,14 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                 // Esc peels one layer: the New session box, then the help panel, then the Related dialog.
                 if (creating) setCreating(false)
                 else if (helpPinned || helpHover) { setHelpPinned(false); setHelpHover(false) }
+                // then the name filter's words (4c2d2e9c)
+                else if (nameQuery) setNameQuery('')
                 else onClose()
             }
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
-    }, [onClose, creating, helpPinned, helpHover])
+    }, [onClose, creating, helpPinned, helpHover, nameQuery])
 
     // A pinned help panel closes on a click anywhere else.
     useEffect(() => {
@@ -170,7 +175,8 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
         onClose()
     }
     // The ticked rows when there are any, else what the filter lists — every related session under All (df23dbd0).
-    const agentPicks = shownSelection.length > 0 ? shownSelection : filter === 'all' ? [] : shownIds
+    // with nothing ticked: everything under All, else what the filter and the name filter show
+    const agentPicks = shownSelection.length > 0 ? shownSelection : filter === 'all' && !nameQuery.trim() ? [] : shownIds
     const copyForAgent = async (): Promise<void> => {
         await navigator.clipboard.writeText(relatedForAgent({ id: sessionId, name: owner.name }, tree, peeks, agentPicks))
         setCopiedForAgent(true)
@@ -251,7 +257,19 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-1.5 border-b border-white/10" data-related-toolbar>
                         {/* Where the Relations · Recent · All tabs were (reports c17aa9c4, 33f92744): which part of the tree to list. */}
                         <RelationFilter value={filter} counts={filterCounts} onChange={changeFilter} />
-                        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-gray-500">
+                        <label className="ml-auto flex items-center gap-1 text-[11px] text-gray-500">
+                            <Search size={11} aria-hidden="true" />
+                            <input
+                                type="search"
+                                value={nameQuery}
+                                onChange={e => setNameQuery(e.target.value)}
+                                placeholder="Filter by name"
+                                aria-label="Filter related sessions by name"
+                                className="w-32 bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[11px] text-gray-200 outline-none focus:border-blue-500/50"
+                                data-related-name-filter
+                            />
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
                             Sort
                             <select
                                 value={order}
@@ -275,8 +293,13 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                             Control API show up on their own; add one by hand below.
                         </div>
                     )}
+                    {entries.length > 0 && nameQuery.trim() && shownIds.length === 0 && (
+                        <div className="px-4 py-6 text-center text-xs text-gray-500" data-related-name-empty>
+                            No related session matches «{nameQuery.trim()}».
+                        </div>
+                    )}
                     <RelationTree
-                        tree={tree}
+                        tree={shownTree}
                         ownerName={owner.name}
                         peeks={peeks}
                         selected={shownSelection}
@@ -286,6 +309,7 @@ export function RelatedSessionsModal({ sessionId, workspaces, relations, onClose
                         onRemove={id => void window.api.removeSessionRelation(sessionId, id)}
                         onCopyId={id => void copy(id, 'session ID')}
                         filter={filter}
+                        hideEmptyNote={Boolean(nameQuery.trim())}
                     />
                 </div>
 

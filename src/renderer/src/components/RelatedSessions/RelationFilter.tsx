@@ -21,6 +21,21 @@ export function entriesForFilter(tree: SessionTree, filter: RelationFilterKey): 
     }
 }
 
+/**
+ * The rows whose session or workspace name holds every word typed (4c2d2e9c), in each part of the tree.
+ * An empty query keeps the tree as it is.
+ */
+export function treeMatchingName(tree: SessionTree, query: string): SessionTree {
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+    if (words.length === 0) return tree
+    const hits = <T extends RelatedEntry>(rows: T[]): T[] =>
+        rows.filter(row => {
+            const text = `${row.session.name} ${row.workspace.name}`.toLowerCase()
+            return words.every(word => text.includes(word))
+        })
+    return { ancestors: hits(tree.ancestors), siblings: hits(tree.siblings), descendants: hits(tree.descendants), other: hits(tree.other) }
+}
+
 /** The choice is a preference, like Sort: it outlives the dialog and a restart. */
 const FILTER_STORAGE_KEY = 'climanager.related.filter'
 
