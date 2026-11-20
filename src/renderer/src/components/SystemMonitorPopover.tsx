@@ -1,8 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Cpu, MemoryStick, HardDrive, Battery, Clock, Terminal, RefreshCw, X } from 'lucide-react'
 import { SystemInfo } from '../../../shared/types'
 import { MENU_Z_INDEX } from '../constants/styles'
+import { StatusPanelSection } from './StatusPanelSection'
+
+const WIDTH = 260
+// Queue rows carry a name, a state and a summary on one line — they need more room than the meters.
+const WIDTH_WITH_STATUS = 380
 
 interface SystemMonitorPopoverProps {
     anchorRef: React.RefObject<HTMLButtonElement | null>
@@ -19,6 +24,10 @@ export function SystemMonitorPopover({ anchorRef, onClose }: SystemMonitorPopove
     const [info, setInfo] = useState<SystemInfo | null>(null)
     const [loading, setLoading] = useState(true)
     const popoverRef = useRef<HTMLDivElement>(null)
+    const [statusRefreshKey, setStatusRefreshKey] = useState(0)
+    const [hasStatus, setHasStatus] = useState(false)
+    const width = hasStatus ? WIDTH_WITH_STATUS : WIDTH
+    const handleStatusConfigured = useCallback((configured: boolean) => setHasStatus(configured), [])
 
     // Fetch system info when popover opens
     const fetchInfo = async () => {
@@ -72,7 +81,8 @@ export function SystemMonitorPopover({ anchorRef, onClose }: SystemMonitorPopove
         const rect = anchorRef.current.getBoundingClientRect()
         return {
             top: rect.bottom + 6,
-            left: Math.max(8, rect.left - 200 + rect.width)
+            // Right edge stays near the button; clamp so a wide popover never leaves the window.
+            left: Math.max(8, Math.min(rect.left - (width - 60) + rect.width, window.innerWidth - width - 8))
         }
     }
 
@@ -81,8 +91,8 @@ export function SystemMonitorPopover({ anchorRef, onClose }: SystemMonitorPopove
     return createPortal(
         <div
             ref={popoverRef}
-            className="fixed bg-[#1e1e20] border border-white/10 rounded-lg shadow-xl backdrop-blur-md w-[260px]"
-            style={{ top: pos.top, left: pos.left, zIndex: MENU_Z_INDEX }}
+            className="fixed bg-[#1e1e20] border border-white/10 rounded-lg shadow-xl backdrop-blur-md"
+            style={{ top: pos.top, left: pos.left, width, zIndex: MENU_Z_INDEX }}
             onClick={e => e.stopPropagation()}
         >
             {/* Header */}
@@ -90,7 +100,7 @@ export function SystemMonitorPopover({ anchorRef, onClose }: SystemMonitorPopove
                 <span className="text-xs font-semibold text-gray-300">System Monitor</span>
                 <div className="flex items-center gap-1">
                     <button
-                        onClick={fetchInfo}
+                        onClick={() => { fetchInfo(); setStatusRefreshKey(k => k + 1) }}
                         disabled={loading}
                         className="p-1 hover:bg-white/10 rounded transition-colors disabled:opacity-50"
                         title="Refresh"
@@ -197,6 +207,8 @@ export function SystemMonitorPopover({ anchorRef, onClose }: SystemMonitorPopove
                     </div>
                 )}
             </div>
+
+            <StatusPanelSection refreshKey={statusRefreshKey} onConfiguredChange={handleStatusConfigured} />
         </div>,
         document.body
     )

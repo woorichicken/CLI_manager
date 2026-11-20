@@ -17,6 +17,7 @@ import { rgPath } from '@vscode/ripgrep'
 import { TerminalManager } from './TerminalManager'
 import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
+import { registerStatusCommandIpc } from './statusCommand'
 import { countSessionActivity } from './systemMonitorInfo'
 import { CLISessionTracker } from './CLISessionTracker'
 import { codexResumeFromArgv, CodexSessionLocator } from './CodexSessionLocator'
@@ -249,6 +250,8 @@ const portManager = new PortManager(() => {
 })
 // The mirror and the resolver are created further down; the popover only asks after startup.
 const systemMonitor = new SystemMonitor(store, () => countSessionActivity(terminalMirror, (id) => agentStatusResolver.getStatus(id)))
+// Status panel inside the System Monitor: runs settings.statusCommand only when the popover opens.
+registerStatusCommandIpc(() => (store.get('settings') as UserSettings | undefined)?.statusCommand)
 
 // LoopManager: instantiated after terminalManager so it can register onOutput.
 // The broadcast callback sends LOOP_UPDATE to loopWindow whenever state changes.

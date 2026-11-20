@@ -165,6 +165,14 @@ export interface UserSettings {
      * (see utils/terminalLinks.ts).
      */
     terminalLinkSchemes?: string[]
+    /**
+     * Command the System Monitor runs when it opens, to show the machine's work queues and locks
+     * (Status panel). It must print a StatusReport (version 1) as JSON; a non-zero exit is fine if
+     * the JSON is there (`queues status --json` exits 3 when something is blocked). Empty or unset
+     * hides the section. Runs in the user's login shell, read from the store in main — the renderer
+     * never passes a command (see main/statusCommand.ts).
+     */
+    statusCommand?: string
     portFilter?: {
         enabled: boolean
         minPort: number
@@ -290,6 +298,40 @@ export interface PortInfo {
 // ============================================
 // System Monitor Types
 // ============================================
+
+/** One row's verdict in a StatusReport — worse ones win when a row has several. */
+export type StatusState = 'ok' | 'busy' | 'attention' | 'blocked' | 'error'
+
+export interface StatusItem {
+    text: string
+    state?: StatusState
+}
+
+/** One queue or lock the status command looked at. */
+export interface StatusSource {
+    id: string
+    name: string
+    what?: string
+    state: StatusState
+    summary: string
+    items: StatusItem[]
+    /** The command a person runs to see more, shown as-is. */
+    see?: string
+}
+
+/** What `statusCommand` prints (contract version 1). The app knows this shape, never the queue names. */
+export interface StatusReport {
+    version: 1
+    generatedAt: string
+    counts: Record<StatusState, number>
+    sources: StatusSource[]
+}
+
+export type StatusCommandResult =
+    | { configured: false }
+    | { configured: true; ok: true; report: StatusReport; durationMs: number }
+    | { configured: true; ok: false; error: string; durationMs: number }
+
 
 export interface SystemInfo {
     cpu: {

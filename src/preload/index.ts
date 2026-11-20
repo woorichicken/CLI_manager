@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, StatusCommandResult, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
 import { CRON_CHANNELS, CronInput, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatForkRequest, ChatForkResult, ChatThread, ChatThreadEntry, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
@@ -182,6 +182,7 @@ const api = {
 
     // System Monitor
     getSystemInfo: (): Promise<SystemInfo> => ipcRenderer.invoke('get-system-info'),
+    getStatusReport: (): Promise<StatusCommandResult> => ipcRenderer.invoke('get-status-report'),
 
     // Ports
     onPortUpdate: (callback: (ports: any[]) => void): () => void => {

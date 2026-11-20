@@ -12,6 +12,7 @@ import { PhoneSettings } from './PhoneSettings'
 import { CHANGELOG_URL } from '../constants/links'
 import { FeedbackModeSetting } from './Feedback/FeedbackModeSetting'
 import { TerminalLinkSchemesSetting } from './TerminalLinkSchemesSetting'
+import { StatusCommandSetting } from './StatusCommandSetting'
 import { ThirdPartyNotices } from './ThirdPartyNotices'
 import { TemplateLogoField } from './TemplateLogoField'
 
@@ -803,6 +804,11 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                             )}
                                         </div>
                                     </div>
+
+                                    <StatusCommandSetting
+                                        command={settings.statusCommand}
+                                        onChange={next => setSettings(prev => ({ ...prev, statusCommand: next }))}
+                                    />
                                 </>
                             )}
 
