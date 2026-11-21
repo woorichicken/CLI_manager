@@ -35,6 +35,15 @@ export function FeedbackGate({ reportsMode = true }: { reportsMode?: boolean } =
         return () => document.removeEventListener(FEEDBACK_TOGGLE_EVENT, onToggle)
     }, [devHost])
 
+    // another window (main ↔ Loop) turned it on or off: the same storage, so follow it here too
+    useEffect(() => {
+        const onStorage = (event: StorageEvent): void => {
+            if (event.storageArea === localStorage) setUnlocked(readUnlocked())
+        }
+        window.addEventListener('storage', onStorage)
+        return () => window.removeEventListener('storage', onStorage)
+    }, [])
+
     useEffect(() => {
         if (promptOpen) inputRef.current?.focus()
     }, [promptOpen])

@@ -108,9 +108,7 @@ test('T157 4e4103ff: the Loop window has the feedback widget', async () => {
     const loop = await openLoopWindow(app, page)
     await expect(loop.locator(FLOATING_BUTTON)).toBeVisible({ timeout: 15_000 })
     await shot(loop, 't157-3-loop-feedback')
-    // locked again: none there either
+    // locked again in the main window: the open Loop window follows without a reload
     await page.evaluate((key) => localStorage.removeItem(key), storageKey)
-    await loop.reload()
-    await loop.waitForTimeout(2000)
-    await expect(loop.locator(FLOATING_BUTTON)).toHaveCount(0)
+    await expect(loop.locator(FLOATING_BUTTON)).toHaveCount(0, { timeout: 5000 })
 })
