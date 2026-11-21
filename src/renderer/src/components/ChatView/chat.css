@@ -394,7 +394,11 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-pinned-last-go { align-self: flex-end; color: #60a5fa; font-size: 0.85em; padding: 0 2px; }
 .chat-pinned-last-go:hover { text-decoration: underline; }
 .chat-copy-answer { display: inline-flex; gap: 2px; margin-left: 8px; opacity: 0; transition: opacity 0.15s; }
-.chat-turn-assistant:hover .chat-copy-answer, .chat-copy-answer:focus-within { opacity: 1; }
+.chat-turn-assistant:hover .chat-copy-answer, .chat-turn-user:hover .chat-copy-mine, .chat-copy-answer:focus-within { opacity: 1; }
+.chat-copy-mine { margin-left: 0; margin-top: -4px; }
+.chat-mine-toggle { cursor: pointer; }
+.chat-mine-toggle:hover { color: var(--chat-fg); }
+.chat-mine-toggle[aria-pressed="true"] { color: var(--chat-fg); border-color: var(--chat-dim); background: var(--chat-soft); }
 .chat-copy-answer button { color: var(--chat-faint); padding: 2px; border-radius: 4px; }
 .chat-copy-answer button:hover { color: var(--chat-fg); background: var(--chat-soft); }
 

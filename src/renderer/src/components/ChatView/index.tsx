@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon } from 'lucide-react'
+import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon, UserRound } from 'lucide-react'
 import type { ChatCommand, ChatForkRequest, ChatOpenMode, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { isMac } from '../../utils/platform'
@@ -152,6 +152,9 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const [threads, setThreads] = useState<ChatThread[]>([])
     const [threadsLoaded, setThreadsLoaded] = useState(false)
     const [selectedThreadId, setSelectedThreadId] = useState<string | null>(() => openThreadOf(sessionId))
+    /** «Mine»: only the person's own messages on screen (96d478ed) — per view, off again in another session */
+    const [onlyMine, setOnlyMine] = useState(false)
+    useEffect(() => setOnlyMine(false), [sessionId])
     const refreshThreads = useRef<(() => void) | null>(null)
     const forkReturnFocus = useRef<HTMLElement | null>(null)
     useEffect(() => {
@@ -401,6 +404,11 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
 
     const sendText = useCallback(
         async (text: string, options?: ChatSendOptions): Promise<ChatSendResult> => {
+            // a new message ends Stop's look for the old prompt: that look would read the input box while
+            // these words are being typed into it (T74 r2 — the queue lost a message)
+            stopRound.current++
+            if (stopLook.current !== null) window.clearTimeout(stopLook.current)
+            stopLook.current = null
             // the person's words show at once, faded, while they are typed into the terminal
             const bubble = isCommandText(text) ? null : { id: ++sentSequence, text, at: Date.now() }
             if (bubble) {
@@ -609,7 +617,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} />
+                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} onlyMine={onlyMine} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -696,6 +704,11 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                     <ArtifactsChip links={artifacts} onOpen={(url) => transport.openLink(url)} />
                                     <ModeChip agent={agent} meta={snapshot?.meta ?? null} />
                                     <BackgroundChip meta={snapshot?.meta ?? null} transport={transport} sessionId={sessionId} />
+                                    {/* only what the person said, to read back over it (96d478ed) */}
+                                    <button type="button" className="chat-chip chat-mine-toggle" data-testid="chat-only-mine" aria-pressed={onlyMine}
+                                        title={onlyMine ? 'Show the whole conversation' : 'Show only your messages'} onClick={() => setOnlyMine((on) => !on)}>
+                                        <UserRound size={12} aria-hidden="true" /> {onlyMine ? 'Only mine' : 'Mine'}
+                                    </button>
                                     <span className="chat-status-spacer" />
                                     <ModelChip agent={agent} meta={snapshot?.meta ?? null} working={working} onCommand={(text) => void sendText(text)} />
                                     <ContextChip meta={snapshot?.meta ?? null} canCompact={!working && !prompt} onCompact={() => void sendText('/compact')} />
@@ -801,7 +814,7 @@ function PinnedLastMessage({ words, onGo }: { words: string; onGo: () => void })
     )
 }
 
-function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThread, threadView, hasEarlierThreadReplies }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void; threadView?: boolean; hasEarlierThreadReplies?: boolean }) {
+function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThread, threadView, hasEarlierThreadReplies, onlyMine = false }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void; threadView?: boolean; hasEarlierThreadReplies?: boolean; onlyMine?: boolean }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
     const previousGroups = useRef<ThreadGroups>(new Map())
@@ -827,7 +840,7 @@ function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThrea
                 </div>
             )}
             {snapshot.turns.length === 0 && <NoTurnsYet />}
-            {snapshot.turns.map((turn, index) => (
+            {snapshot.turns.map((turn, index) => onlyMine && turn.role !== 'user' ? null : (
                 <ChatTurn
                     key={`${snapshot.totalTurns - snapshot.turns.length + index}-${turn.ts ?? ''}`}
                     turn={turn}

@@ -5,7 +5,7 @@ import { Markdown } from './markdown/Markdown'
 import { UserParts } from './TurnParts'
 import { WorkBlock } from './WorkBlock'
 import { isLiveWorkTurn, turnSegments, workBlockStartsOpen } from './workBlocks'
-import { formatElapsed } from './chatLib'
+import { formatElapsed, INTERRUPTED_TEXT } from './chatLib'
 import { ThreadChip } from './ThreadChip'
 
 const AGENT_NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
@@ -49,9 +49,14 @@ export const ChatTurn = memo(function ChatTurn({
     onOpenThread?: (childId: string) => void
 }) {
     if (turn.role === 'user') {
+        // the person's own words, to copy back (16f1402e) — not the «Stopped» marker
+        const said = turn.parts
+            .flatMap((part) => (part.kind === 'text' && !INTERRUPTED_TEXT.test(part.text.trim()) ? [part.text] : []))
+            .join('\n\n')
         return (
             <div className="chat-turn chat-turn-user" data-testid="chat-turn" data-role="user" data-turn-index={index} title={turnTime(turn.ts)}>
                 <UserParts parts={turn.parts} />
+                {said.trim() && <CopyMine text={said} />}
             </div>
         )
     }
@@ -133,6 +138,27 @@ function clockTime(ts: string): string {
     if (Number.isNaN(date.getTime())) return ''
     const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     return date.toDateString() === new Date().toDateString() ? time : `${date.toLocaleDateString([], { month: 'numeric', day: 'numeric' })} ${time}`
+}
+
+/** Copy what the person sent, as they wrote it. */
+function CopyMine({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false)
+    const copy = async (): Promise<void> => {
+        try {
+            await navigator.clipboard.writeText(text)
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), COPIED_MS)
+        } catch {
+            setCopied(false)
+        }
+    }
+    return (
+        <span className="chat-copy-answer chat-copy-mine">
+            <button type="button" data-testid="chat-copy-mine" title="Copy your message" aria-label="Copy your message" onClick={() => void copy()}>
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+        </span>
+    )
 }
 
 /**
