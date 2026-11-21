@@ -92,7 +92,8 @@ export default function FeedbackWidget() {
                     // The real URL is file:///…/app.asar/… — not HTTP(S), so the ingest would answer 400.
                     getUrl: feedbackPageUrl,
                     getDiagnostics: () => withTerminalEvents(sharedDiagnostics.snapshot(), terminal),
-                    extra: { appVersion: appVersionRef.current, ...terminalExtra(target, terminal) }
+                    // which window it came from: the Loop window (`?mode=loop`) or the main one (4e4103ff)
+                    extra: { appVersion: appVersionRef.current, window: new URLSearchParams(window.location.search).get('mode') ?? 'main', ...terminalExtra(target, terminal) }
                 })
             },
             getPathname: () => APP_ROUTE

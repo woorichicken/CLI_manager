@@ -13,7 +13,7 @@ const FeedbackWidget = lazy(() => import('./FeedbackWidget'))
  * Mounts the feedback widget when this build and machine may show it (see utils/feedbackGate).
  * Settings > Feedback dispatches FEEDBACK_TOGGLE_EVENT; this component owns the password prompt.
  */
-export function FeedbackGate() {
+export function FeedbackGate({ reportsMode = true }: { reportsMode?: boolean } = {}) {
     const devHost = isDevFeedbackHost(window.location.hostname)
     const [unlocked, setUnlocked] = useState(() => readUnlocked())
     const [promptOpen, setPromptOpen] = useState(false)
@@ -35,6 +35,15 @@ export function FeedbackGate() {
         return () => document.removeEventListener(FEEDBACK_TOGGLE_EVENT, onToggle)
     }, [devHost])
 
+    // another window (main ↔ Loop) turned it on or off: the same storage, so follow it here too
+    useEffect(() => {
+        const onStorage = (event: StorageEvent): void => {
+            if (event.storageArea === localStorage) setUnlocked(readUnlocked())
+        }
+        window.addEventListener('storage', onStorage)
+        return () => window.removeEventListener('storage', onStorage)
+    }, [])
+
     useEffect(() => {
         if (promptOpen) inputRef.current?.focus()
     }, [promptOpen])
@@ -42,8 +51,8 @@ export function FeedbackGate() {
     // main passes this on to the phone page (/api/phone/me), which cannot tell a development build by its host
     const shown = isFeedbackConfigured() && (devHost || unlocked)
     useEffect(() => {
-        window.api.reportFeedbackMode?.(shown)
-    }, [shown])
+        if (reportsMode) window.api.reportFeedbackMode?.(shown)
+    }, [shown, reportsMode])
 
     if (!isFeedbackConfigured()) return null
 
