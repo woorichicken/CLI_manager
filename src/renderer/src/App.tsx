@@ -270,7 +270,7 @@ function App() {
     // window in the meantime reads as a hang.
     const [sessionsRestored, setSessionsRestored] = useState(false)
 
-    // The tab row at the top of the main area (Settings › General 「Show Session Tabs」, default on).
+    // The tab row at the top of the main area (Settings › Sidebar 「Show Session Tabs」, default on).
     // Only the main window keeps tabs: grid/fullscreen windows render this App too.
     const isMainAppWindow = useMemo(() => new URLSearchParams(window.location.search).get('mode') !== 'fullscreen', [])
     const sessionTabsEnabled = settings.showSessionTabs ?? true

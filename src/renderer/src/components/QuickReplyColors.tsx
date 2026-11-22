@@ -29,7 +29,7 @@ interface QuickReplyColorsProps {
 }
 
 /**
- * Settings › Terminal › Chat view: one row per quick reply with a few fixed colours to pick from, or none
+ * Settings › Chat: one row per quick reply with a few fixed colours to pick from, or none
  * (report 93bd4834). A fixed set keeps every chip readable on the chat; a free picker could not promise that.
  */
 export function QuickReplyColors({ replies, colors, onChange }: QuickReplyColorsProps) {

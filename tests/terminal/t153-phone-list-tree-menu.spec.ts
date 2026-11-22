@@ -183,7 +183,7 @@ test('T153 phone list: Tree is the Mac sidebar\'s tree, kept on this phone, gone
 
     // the Mac's «Show Session Tree» off: no switch on the phone, the Mac's List order
     await page.locator('button[title^="Settings"]').first().click()
-    await page.getByTestId('settings-category-general').click()
+    await page.getByTestId('settings-category-sidebar').click()
     await page.getByTestId('settings-show-session-tree').click()
     await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.getByTestId('all-sessions-layout-tree')).toHaveCount(0, { timeout: 15_000 })

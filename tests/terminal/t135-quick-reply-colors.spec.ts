@@ -7,7 +7,7 @@ import { closeApp, launchAppWithWorkspaces, type LaunchResult, REPO_ROOT, resize
 /**
  * T135 — a colour per quick reply (report 93bd4834, fb-1114b).
  *
- * Settings › Terminal › Chat view: each reply gets one of a few fixed colours (or none). The Mac Chat's
+ * Settings › Chat: each reply gets one of a few fixed colours (or none). The Mac Chat's
  * chips and the phone's chips (390×844, scale 3, owner header — the T96 way) wear that colour, readable on
  * the dark chat (contrast ≥ 4.5 against the chip's own background over the chat's). The stored list stays a
  * list of strings — a saved value from before (strings only) opens as it was, and `/me` still sends strings,
@@ -257,7 +257,7 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
 
     // --- Settings: green for the first, red for the second ---------------------
     await page.locator('button[title^="Settings"]').first().click()
-    await page.getByTestId('settings-category-terminal').click()
+    await page.getByTestId('settings-category-chat').click()
     const settings = page.getByTestId('chat-view-settings')
     await settings.scrollIntoViewIfNeeded()
     await settings.getByTestId('quick-reply-color-0-green').click()
@@ -331,7 +331,7 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
 
     // --- The keyboard: a radio group per row — ← / → move the choice, Tab stops once per row (PR #139 review) ----
     await page2.locator('button[title^="Settings"]').first().click()
-    await page2.getByTestId('settings-category-terminal').click()
+    await page2.getByTestId('settings-category-chat').click()
     const row0 = page2.getByTestId('quick-reply-color-0')
     await expect(row0.getByRole('radiogroup')).toHaveCount(1)
     await expect(row0.locator('[aria-pressed]')).toHaveCount(0)
@@ -362,7 +362,7 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
 
     // --- Editing the list drops colours of replies that are gone ---------------------
     await page2.locator('button[title^="Settings"]').first().click()
-    await page2.getByTestId('settings-category-terminal').click()
+    await page2.getByTestId('settings-category-chat').click()
     const list = page2.getByTestId('chat-setting-quick-list')
     // the same phrase twice is saved once (one chip, one row)
     await list.fill([PHRASES[1], PHRASES[2], PHRASES[1]].join('\n'))

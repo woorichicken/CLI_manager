@@ -11,7 +11,7 @@ import {
 interface UseSessionTabsConfig {
     /** The main window only: grid and fullscreen windows render App too and must not write the tabs. */
     active: boolean
-    /** Settings › General 「Show Session Tabs」. Off: the row is hidden and nothing new is recorded. */
+    /** Settings › Sidebar 「Show Session Tabs」. Off: the row is hidden and nothing new is recorded. */
     enabled: boolean
     /** Sessions are loaded — before that every tab would look like a deleted session. */
     ready: boolean

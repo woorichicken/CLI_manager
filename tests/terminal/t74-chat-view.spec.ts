@@ -660,14 +660,14 @@ test('T74 r2: shortcuts, files, stop, send now, model chip, plan, completion, te
     // the card goes with the menu, though nothing more is printed (the screen is read after it is drawn)
     await expect(card).toHaveCount(0, { timeout: 10_000 })
 
-    // --- Settings › Terminal › Chat view: Enter starts a line, ⌘Enter sends ---------------------
+    // --- Settings › Chat: Enter starts a line, ⌘Enter sends ---------------------
     await page.keyboard.press(`${mod}+Comma`)
     if (process.env.CHAT_VIEW_SHOTS) {
         await page.getByTestId('settings-category-keyboard').click()
         await page.getByText('Chat View', { exact: true }).scrollIntoViewIfNeeded()
         await shotBoth(app, page, 'r2-keyboard-settings')
     }
-    await page.getByTestId('settings-category-terminal').click()
+    await page.getByTestId('settings-category-chat').click()
     await page.getByTestId('chat-view-settings').scrollIntoViewIfNeeded()
     await shotBoth(app, page, 'r2-chat-settings')
     await page.getByTestId('chat-setting-enter-sends').click()

@@ -19,7 +19,7 @@ sound — their voice. The recognizer itself runs on the device (`requiresOnDevi
 
 ## Decision
 
-- **Off by default.** Settings › Terminal › Chat view › «Keep dictation log». «Also keep audio» is a second switch, off, usable
+- **Off by default.** Settings › Chat › «Keep dictation log». «Also keep audio» is a second switch, off, usable
   only with the log on; turning the log off turns it off too.
 - **This Mac only.** `userData/dictation-log/YYYY-MM-DD.jsonl` and `audio/<id>.wav`, folders 0700, files 0600. Nothing reads it
   back into the app: not the feedback widget's report, not the phone server, not the Control API.

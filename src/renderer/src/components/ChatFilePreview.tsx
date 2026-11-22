@@ -15,7 +15,7 @@ interface ChatFilePreviewProps {
  * Files the Chat view names (a path in an answer, a tool's file): pictures, text and web pages in the app's own preview
  * (the one ⌘P file search uses), anything else — a PDF, a video, a sound, an office file — in the Mac's own app, as ovis's
  * file viewer shows them. A web page is drawn in a sandboxed frame (decision 0013), its source and the browser one press
- * away; with a line it opens on the source. With Settings › Terminal › Chat view's switch off (0a17912b), everything goes
+ * away; with a line it opens on the source. With Settings › Chat's switch off (0a17912b), everything goes
  * to the Mac's own app. ⌘-click skips the preview: a web page goes to the browser (Artifact Dock), anything else to the
  * Mac's own app. ⌥-click puts a web page beside the session in split view (when the split is full, the preview opens).
  */
