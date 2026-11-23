@@ -1,4 +1,4 @@
-import { closeSync, fstatSync, openSync, readSync } from 'fs'
+import { closeSync, openSync, readSync, statSync } from 'fs'
 
 /**
  * Whether a Claude conversation's last turn ended on an API error (fb-1123 3239a243: the Wi-Fi dropped and the
@@ -55,10 +55,11 @@ export class ApiErrorTails {
     read(file: string): string | null {
         let fd: number | null = null
         try {
-            fd = openSync(file, 'r')
-            const { size, mtimeMs } = fstatSync(fd)
+            // one stat for an unchanged file (the common case: every idle session, every second)
+            const { size, mtimeMs } = statSync(file)
             const seen = this.known.get(file)
             if (seen && seen.size === size && seen.mtimeMs === mtimeMs) return seen.error
+            fd = openSync(file, 'r')
             const length = Math.min(size, TAIL_BYTES)
             const buffer = Buffer.alloc(length)
             readSync(fd, buffer, 0, length, size - length)

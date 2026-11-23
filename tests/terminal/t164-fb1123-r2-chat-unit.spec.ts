@@ -126,8 +126,14 @@ function quietTerminal(first: string[]) {
     let screen = first
     let outputAt = Date.now() - 20_000
     return {
+        /** what the agent's input box holds (a not-submitted message stays there) */
+        box: '',
         set(lines: string[]): void {
             screen = lines
+            outputAt += 1
+        },
+        /** output came (the agent redrew): the next refresh reads the screen again */
+        tick(): void {
             outputAt += 1
         },
         screen: (): string[] => screen,
@@ -135,7 +141,7 @@ function quietTerminal(first: string[]) {
     }
 }
 
-function serviceOn(terminal: { screen(): string[]; lastOutputAt(): number }, overrides: Partial<ConversationServiceDeps> = {}) {
+function serviceOn(terminal: { screen(): string[]; lastOutputAt(): number; box?: string }, overrides: Partial<ConversationServiceDeps> = {}) {
     const typed: string[] = []
     const deps: ConversationServiceDeps = {
         session: () => ({ cwd: '/w', cliSessionId: 'c1', cliToolName: 'claude' }),
@@ -146,7 +152,7 @@ function serviceOn(terminal: { screen(): string[]; lastOutputAt(): number }, ove
             lastOutputAt: () => terminal.lastOutputAt(),
             hasExited: () => false,
             showsAwaitingInput: () => false,
-            inputBox: () => ({ typed: '' }),
+            inputBox: () => ({ typed: terminal.box ?? '' }),
             codexInput: () => ({ typed: '' })
         },
         hasTerminal: () => true,
@@ -182,10 +188,18 @@ test.describe('T164 f7bff999 the Chat reads the dialog, not words above it', () 
 })
 
 test.describe('T164 019248e1 a queued message that did not go stays, with the reason', () => {
-    test('left unsubmitted in the input box: a «Not sent» row; Retry goes through the guarded send; ✕ removes it', async () => {
+    test('left unsubmitted in the input box: a «Not sent» row, never typed again; gone from the box → «left the input line», Retry refused', async () => {
         const terminal = quietTerminal(WORKING)
+        const PLACEHOLDER = '[Pasted text #1 +2 lines]'
         let submits = false
-        const { conversations, typed } = serviceOn(terminal, { type: async (_id, text) => (typed.push(text), submits) })
+        const { conversations, typed } = serviceOn(terminal, {
+            type: async (_id, text) => {
+                typed.push(text)
+                // left in the box as Claude Code folds a long paste
+                if (!submits) terminal.box = PLACEHOLDER
+                return submits
+            }
+        })
         conversations.subscribe('s')
         expect(await conversations.send('s', 'line one\nline two\nline three')).toEqual({ status: 'queued' })
         terminal.set(IDLE)
@@ -199,42 +213,63 @@ test.describe('T164 019248e1 a queued message that did not go stays, with the re
         expect(row.reason).toBe('not_submitted')
         expect(row.message).toMatch(/not submitted/i)
 
-        // the next poll does not type it again on its own
+        // later polls never type it again, and the row stays while the box holds it
+        terminal.tick()
+        await poll(conversations)
+        terminal.tick()
         await poll(conversations)
         expect(typed).toHaveLength(1)
-        // a new message is not held back by it
-        submits = true
-        expect(await conversations.send('s', 'another')).toEqual({ status: 'sent' })
-
-        // Retry while it still does not go: refused, the row stays (same id)
-        submits = false
-        expect(await conversations.sendQueuedNow('s', row.id)).toMatchObject({ status: 'rejected', reason: 'not_submitted' })
-        snapshot = await conversations.getConversation('s')
-        expect(snapshot.unsent?.map((item) => item.id)).toEqual([row.id])
-        // Retry refused before typing (a question on screen): nothing typed, the row stays
-        const before = typed.length
-        terminal.set(FOUR_TABS)
-        expect(await conversations.sendQueuedNow('s', row.id)).toMatchObject({ status: 'rejected', reason: 'awaiting_input' })
-        expect(typed).toHaveLength(before)
+        expect((await conversations.getConversation('s')).unsent?.map((item) => item.reason)).toEqual(['not_submitted'])
+        // Retry while it sits there: refused by the guarded send (the box has text), the row stays (same id)
+        expect(await conversations.sendQueuedNow('s', row.id)).toMatchObject({ status: 'rejected', reason: 'input_busy' })
+        expect(typed).toHaveLength(1)
         expect((await conversations.getConversation('s')).unsent?.map((item) => item.id)).toEqual([row.id])
-        // Retry that goes: sent, the row is gone
-        terminal.set(IDLE)
-        submits = true
-        expect(await conversations.sendQueuedNow('s', row.id)).toEqual({ status: 'sent' })
-        expect((await conversations.getConversation('s')).unsent).toEqual([])
 
-        // ✕ (and Edit's withdrawal) on a row
-        submits = false
-        expect(await conversations.send('s', 'third')).toMatchObject({ status: 'rejected', reason: 'not_submitted' })
-        terminal.set(WORKING)
-        expect(await conversations.send('s', 'fourth')).toEqual({ status: 'queued' })
-        terminal.set(IDLE)
+        // the person presses Enter in the terminal: the box empties — after two reads the row says so
+        terminal.box = ''
+        terminal.tick()
         await poll(conversations)
-        const [failed] = (await conversations.getConversation('s')).unsent!
-        expect(failed.text).toBe('fourth')
-        expect(conversations.discardQueued('s', failed.id)).toBe(true)
+        terminal.tick()
+        await poll(conversations)
+        snapshot = await conversations.getConversation('s')
+        expect(snapshot.unsent?.map((item) => [item.id, item.reason])).toEqual([[row.id, 'left_input']])
+        // Retry now would send it a second time: refused, nothing typed
+        submits = true
+        expect(await conversations.sendQueuedNow('s', row.id)).toMatchObject({ status: 'rejected', reason: 'empty' })
+        expect(typed).toHaveLength(1)
+        // a new message is not held back by it
+        expect(await conversations.send('s', 'another')).toEqual({ status: 'sent' })
+        // ✕ (and Edit's withdrawal) removes it
+        expect(conversations.discardQueued('s', row.id)).toBe(true)
         expect((await conversations.getConversation('s')).unsent).toEqual([])
         conversations.unsubscribe('s')
+    })
+
+    test('Retry checks the box first: words that left it since are not sent again', async () => {
+        const terminal = quietTerminal(WORKING)
+        const { conversations, typed } = serviceOn(terminal, { type: async (_id, text) => (typed.push(text), (terminal.box = '[Pasted text #1 +3 lines]'), false) })
+        expect(await conversations.send('s', 'a\nb\nc\nd')).toEqual({ status: 'queued' })
+        terminal.set(IDLE)
+        await poll(conversations)
+        const [row] = (await conversations.getConversation('s')).unsent!
+        // sent from the terminal while no view watched (no reads since)
+        terminal.box = ''
+        expect(await conversations.sendQueuedNow('s', row.id)).toMatchObject({ status: 'rejected', reason: 'empty' })
+        expect(typed).toHaveLength(1)
+        expect((await conversations.getConversation('s')).unsent?.map((item) => item.reason)).toEqual(['left_input'])
+    })
+
+    test('at most 50 rows are kept, the oldest go first', async () => {
+        const terminal = quietTerminal(WORKING)
+        let front: string | null = '4242'
+        const { conversations } = serviceOn(terminal, { agentProcess: async () => front })
+        for (let n = 0; n < 52; n++) expect(await conversations.send('s', `m${n}`)).toEqual({ status: 'queued' })
+        terminal.set(['$ '])
+        front = null
+        await poll(conversations)
+        const texts = (await conversations.getConversation('s')).unsent!.map((item) => item.text)
+        expect(texts).toHaveLength(50)
+        expect([texts[0], texts.at(-1)]).toEqual(['m2', 'm51'])
     })
 
     test('the agent it was written for exited: a «Not sent» row (never typed into the shell)', async () => {
@@ -270,14 +305,15 @@ test.describe('T164 019248e1 a queued message that did not go stays, with the re
 
     test('Retry from a device that lost access meanwhile leaves the row to its owner', async () => {
         const terminal = quietTerminal(WORKING)
-        const { conversations } = serviceOn(terminal, { type: async () => false })
+        const { conversations } = serviceOn(terminal, { type: async (_id, text) => ((terminal.box = text), false) })
         expect(await conversations.send('s', 'from the Mac')).toEqual({ status: 'queued' })
         terminal.set(IDLE)
         await poll(conversations)
         const [row] = (await conversations.getConversation('s')).unsent!
         // a phone taps Retry and is disconnected by the time the send checks its access
         const result = await conversations.sendQueuedNow('s', row.id, { origin: 'device:abc', allowed: () => false })
-        expect(result).toMatchObject({ status: 'rejected', reason: 'revoked' })
+        // refused (the box holds it, or the tapper's access is gone) — and the row is still the Mac's
+        expect(result).toMatchObject({ status: 'rejected' })
         expect((await conversations.getConversation('s')).unsent?.map((item) => [item.id, item.text])).toEqual([[row.id, 'from the Mac']])
     })
 
@@ -362,17 +398,28 @@ test.describe('T164 3239a243 the last turn’s API error, from the transcript', 
 // ---- 45127b82: an answer copied for another agent ---------------------------------------------
 
 test.describe('T164 45127b82 «Copy for agent» on an answer', () => {
-    test('the session’s name and link, the turn’s place and time, then the answer', () => {
-        const at = '2026-11-23T09:15:00.000Z'
-        const local = new Date(at)
+    /** the local time with its UTC offset, as the copy writes it (computed, not typed) */
+    const localWhen = (at: string): string => {
+        const date = new Date(at)
         const pad = (n: number): string => String(n).padStart(2, '0')
-        const when = `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())} ${pad(local.getHours())}:${pad(local.getMinutes())}`
-        expect(answerForAgent({ sessionName: 'Review: header', sessionId: '0123abcd-ffff-4000-8000-000000000000', at, turnNumber: 2, totalTurns: 4, answer: '\nHere is the plan.\n\n- one\n' })).toBe(
-            [`Answer from "Review: header" in CLI Manager · climanager://session/0123abcd`, `Turn 2 of 4 · answered ${when}`, '', 'Here is the plan.\n\n- one'].join('\n')
+        const offset = -date.getTimezoneOffset()
+        const zone = `UTC${offset >= 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())} (${zone})`
+    }
+
+    test('the session’s name and link, which answer it is and when, then the answer', () => {
+        const at = '2026-11-23T09:15:00.000Z'
+        expect(answerForAgent({ sessionName: 'Review: header', sessionId: '0123abcd-ffff-4000-8000-000000000000', at, answerNumber: 2, answerTotal: 3, answer: '\nHere is the plan.\n\n- one\n' })).toBe(
+            ['From "Review: header" in CLI Manager · climanager://session/0123abcd', `Answer 2 of 3 · answered ${localWhen(at)}`, '', 'Here is the plan.\n\n- one'].join('\n')
         )
-        // no name, no time: still which session and which turn
-        expect(answerForAgent({ sessionId: 'abcdef0123456789', at: null, turnNumber: 1, totalTurns: 1, answer: 'Done.' })).toBe(
-            ['Answer from a session in CLI Manager · climanager://session/abcdef01', 'Turn 1 of 1', '', 'Done.'].join('\n')
+        expect(localWhen(at)).toMatch(/\(UTC[+-]\d\d:\d\d\)$/)
+    })
+
+    test('not all of the conversation read: the time alone; no time either: just the session', () => {
+        const at = '2026-11-23T09:15:00.000Z'
+        expect(answerForAgent({ sessionName: 'A', sessionId: 'abcdef0123456789', at, answer: 'Done.' })).toBe(
+            ['From "A" in CLI Manager · climanager://session/abcdef01', `answered ${localWhen(at)}`, '', 'Done.'].join('\n')
         )
+        expect(answerForAgent({ sessionId: 'abcdef0123456789', at: null, answer: 'Done.' })).toBe(['From a session in CLI Manager · climanager://session/abcdef01', '', 'Done.'].join('\n'))
     })
 })

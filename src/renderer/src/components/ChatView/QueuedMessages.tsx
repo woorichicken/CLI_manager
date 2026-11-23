@@ -13,8 +13,10 @@ import type { ChatTransport, QueuedMessage, UnsentMessage } from '../../../../sh
  * waits: its text goes back into the box only once the queue has given it up (sent twice otherwise).
  *
  * Under them, the «Not sent» rows (019248e1): queued messages that did not go when their turn came — left
- * unsubmitted in the terminal's input line, or their agent gone — with the reason, Retry (the guarded send:
- * refused, the row stays with the new reason), Edit, Copy and ✕. The send key never picks one.
+ * unsubmitted in the terminal's input line, or their agent gone — with the reason, Edit, Copy and ✕, and Retry
+ * (the guarded send: refused, the row stays with the new reason) unless the words are, or were, in the
+ * terminal's input line: there Enter in the terminal sends them, and a Retry could send them twice.
+ * The send key never picks one.
  */
 export interface QueuedMessagesHandle {
     /** Send now on the first row still waiting (the oldest), as its button does; false when none could go. */
@@ -181,9 +183,11 @@ export const QueuedMessages = forwardRef<QueuedMessagesHandle, {
                                 </div>
                             ) : (
                                 <div className="chat-queued-actions">
-                                    <button type="button" data-testid="chat-unsent-retry" disabled={busy !== null} title="Retry — send it again from here" onClick={() => void sendNow(message)}>
-                                        <RotateCw size={12} aria-hidden="true" /> Retry
-                                    </button>
+                                    {message.reason !== 'not_submitted' && message.reason !== 'left_input' && (
+                                        <button type="button" data-testid="chat-unsent-retry" disabled={busy !== null} title="Retry — send it again from here" onClick={() => void sendNow(message)}>
+                                            <RotateCw size={12} aria-hidden="true" /> Retry
+                                        </button>
+                                    )}
                                     <button type="button" data-testid="chat-unsent-edit" title="Edit — back into the box" aria-label="Edit message not sent" disabled={busy !== null} onClick={() => void edit(message)}>
                                         <Pencil size={12} />
                                     </button>

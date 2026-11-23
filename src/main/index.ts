@@ -693,12 +693,16 @@ const apiErrorTails = new ApiErrorTails()
 const apiErrorMisses = new Map<string, number>()
 const API_ERROR_MISS_RETRY_MS = 30_000
 const apiErrorReader = new TranscriptReader({ claudeConfigDir, codexHome })
-/** Claude sessions by id, read from the store at most once a second (the poller asks for each idle session every second). */
-let claudeSessionsAt = 0
-let claudeSessions = new Map<string, { cliSessionId: string; cwd: string }>()
+/**
+ * Claude sessions by id for the red dot, kept in memory until the saved workspaces change (a `store.get` parses
+ * config.json — 0.9–1.8ms, too much for every idle session every second).
+ */
+let claudeSessions: Map<string, { cliSessionId: string; cwd: string }> | null = null
+store.onDidChange('workspaces', () => {
+    claudeSessions = null
+})
 function claudeSessionFor(id: string): { cliSessionId: string; cwd: string } | undefined {
-    if (Date.now() - claudeSessionsAt >= 1000) {
-        claudeSessionsAt = Date.now()
+    if (!claudeSessions) {
         claudeSessions = new Map()
         for (const workspace of (store.get('workspaces') as Workspace[] | undefined) ?? []) {
             for (const session of workspace.sessions ?? []) {
@@ -725,7 +729,11 @@ const sessionScreenStatus = new SessionScreenStatusPoller({
             return null
         }
         apiErrorMisses.delete(session.cliSessionId)
-        return apiErrorTails.read(file)
+        const error = apiErrorTails.read(file)
+        // back at the shell (Ctrl+C, /exit): the agent is not there to be retried — no red dot. A program in front
+        // (the agent, resumed after a restart too) keeps it. A synchronous look at the pty, only when there is an error.
+        if (error && terminalManager.foregroundIsShell(terminalId)) return null
+        return error
     },
     publish: (message) => broadcast(SESSION_SCREEN_STATUS_CHANNEL, message),
     // Tests read tick timings from main (window.__termDebug has no view of main).

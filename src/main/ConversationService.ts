@@ -227,11 +227,16 @@ interface QueueItem extends QueuedMessage {
 interface UnsentItem extends UnsentMessage {
     origin?: string
     allowed?: () => boolean
+    /** not_submitted: what the input box showed of it then — its first words, and how many paste placeholders */
+    box?: { head: string; placeholders: number }
+    /** reads in a row that found it gone from the box (two flip it to left_input — one may land mid-redraw) */
+    goneReads?: number
 }
 
 /** What a «Not sent» row says, by why it did not go. */
 const UNSENT_MESSAGES: Record<UnsentMessage['reason'], string> = {
-    not_submitted: 'Typed into the terminal but not submitted — it is still in the terminal input line. Press Enter there, or clear it there and Retry.',
+    not_submitted: 'Typed into the terminal but not submitted — it is still in the terminal input line. Press Enter there to send it, or clear it there and use Edit.',
+    left_input: 'It is no longer in the terminal input line — sent from there, or cleared. Check the conversation; Edit brings it back if it was cleared.',
     no_agent: 'Not sent: the agent it was written for is no longer running.',
     conversation_changed: 'Not sent: the agent moved to another conversation (/resume or /clear).',
     exited: 'Not sent: the shell in this session exited.',
@@ -239,6 +244,13 @@ const UNSENT_MESSAGES: Record<UnsentMessage['reason'], string> = {
 }
 
 let queueSequence = 0
+/** «Not sent» rows kept per session at most (the oldest go first) */
+const UNSENT_MAX = 50
+/** how much of a message's start marks it in the input box (ControlApiService.confirmSubmitted reads as much) */
+const BOX_HEAD_CHARS = 16
+/** Retry reads the box twice this far apart before it believes the words left it */
+const RETRY_RECHECK_MS = 250
+const PASTE_PLACEHOLDERS = /\[Pasted text #\d+[^\]]*\]/g
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -599,13 +611,48 @@ export class ConversationService {
             reason,
             message: detail ? `${UNSENT_MESSAGES[reason]} ${detail}` : UNSENT_MESSAGES[reason],
             ...(message.origin !== undefined ? { origin: message.origin } : {}),
-            ...(message.allowed ? { allowed: message.allowed } : {})
+            ...(message.allowed ? { allowed: message.allowed } : {}),
+            ...(reason === 'not_submitted' ? { box: this.boxMark(sessionId, message.text) } : {})
         }
         console.warn(`[conversation] a queued message did not go (${reason}); kept as not sent`, sessionId)
         this.setUnsent(sessionId, [...(this.unsent.get(sessionId) ?? []), row])
     }
 
-    private setUnsent(sessionId: string, rows: UnsentItem[]): void {
+    /** How a not-submitted text shows in the input box now: its first words, and the paste placeholders there. */
+    private boxMark(sessionId: string, text: string): { head: string; placeholders: number } {
+        const typed = this.deps.mirror.inputBox(sessionId)?.typed ?? ''
+        return { head: text.replace(/\s+/g, ' ').trim().slice(0, BOX_HEAD_CHARS), placeholders: typed.match(PASTE_PLACEHOLDERS)?.length ?? 0 }
+    }
+
+    /** Whether a not-submitted row's text has left the input box (a box on screen, without its words or with fewer placeholders). */
+    private leftBox(sessionId: string, row: UnsentItem): boolean {
+        if (!row.box) return false
+        const box = this.deps.mirror.inputBox(sessionId)
+        if (!box) return false
+        if (box.typed.includes(row.box.head)) return false
+        return row.box.placeholders === 0 || (box.typed.match(PASTE_PLACEHOLDERS)?.length ?? 0) < row.box.placeholders
+    }
+
+    /**
+     * S4 (fb-1123 review): a «Not sent» row whose words left the terminal's input line — the person pressed Enter
+     * there, or cleared it — turns `left_input` after two reads in a row: Retry would send it twice.
+     */
+    private settleUnsent(sessionId: string): void {
+        const rows = this.unsent.get(sessionId)
+        if (!rows?.some((row) => row.reason === 'not_submitted')) return
+        let changed = false
+        const next = rows.map((row) => {
+            if (row.reason !== 'not_submitted') return row
+            if (!this.leftBox(sessionId, row)) return row.goneReads ? { ...row, goneReads: 0 } : row
+            const goneReads = (row.goneReads ?? 0) + 1
+            changed = true
+            return goneReads >= 2 ? { ...row, reason: 'left_input' as const, message: UNSENT_MESSAGES.left_input, goneReads } : { ...row, goneReads }
+        })
+        if (changed) this.setUnsent(sessionId, next)
+    }
+
+    private setUnsent(sessionId: string, all: UnsentItem[]): void {
+        const rows = all.slice(-UNSENT_MAX)
         if (rows.length > 0) this.unsent.set(sessionId, rows)
         else this.unsent.delete(sessionId)
         // nobody watches without an entry: the next view reads the rows with its snapshot
@@ -619,6 +666,21 @@ export class ConversationService {
      * while it goes, so a second tap does not send it twice.
      */
     private async retryUnsent(sessionId: string, row: UnsentItem, from?: From): Promise<ChatSendResult> {
+        if (row.reason === 'left_input') return { status: 'rejected', reason: 'empty', message: row.message }
+        // its words may have gone from the box since (sent from the terminal): read twice, then refuse rather than send twice
+        if (row.reason === 'not_submitted' && this.deps.hasTerminal(sessionId)) {
+            await this.deps.mirror.flush(sessionId)
+            if (this.leftBox(sessionId, row)) {
+                await sleep(RETRY_RECHECK_MS)
+                await this.deps.mirror.flush(sessionId)
+                if (this.leftBox(sessionId, row)) {
+                    const left: UnsentItem = { ...row, reason: 'left_input', message: UNSENT_MESSAGES.left_input }
+                    this.setUnsent(sessionId, (this.unsent.get(sessionId) ?? []).map((item) => (item === row ? left : item)))
+                    return { status: 'rejected', reason: 'empty', message: left.message }
+                }
+            }
+        }
+        if (!(this.unsent.get(sessionId) ?? []).includes(row)) return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
         this.setUnsent(sessionId, (this.unsent.get(sessionId) ?? []).filter((item) => item !== row))
         if (row.allowed && !row.allowed()) return REVOKED
         const result = await this.send(sessionId, row.text, from)
@@ -626,10 +688,14 @@ export class ConversationService {
         // the row's own sender lost access: dropped, as its queue is. A tapping device that lost access
         // (`revoked` here is the tapper's) leaves the row to its owner
         if (row.allowed && !row.allowed()) return result
+        const reason = isUnsentReason(result.reason) ? result.reason : row.reason
         const kept: UnsentItem = {
             ...row,
-            reason: isUnsentReason(result.reason) ? result.reason : row.reason,
-            message: result.message
+            reason,
+            message: result.message,
+            goneReads: 0,
+            // typed again and left in the box: what the box shows of it now
+            ...(result.reason === 'not_submitted' ? { box: this.boxMark(sessionId, row.text) } : {})
         }
         const rows = this.unsent.get(sessionId) ?? []
         if (!this.deps.session(sessionId)) return result
@@ -1135,6 +1201,7 @@ export class ConversationService {
         if (!force && outputAt === entry.lastScreenAt) return
         await mirror.flush(sessionId)
         entry.lastScreenAt = outputAt
+        this.settleUnsent(sessionId)
         const screen = this.deps.mirror.screen(sessionId)
         const agent = agentOf(this.deps.session(sessionId))
         // readPrompt reads a turn in progress only from the dialog's own rows: a dialog drawn last is what the

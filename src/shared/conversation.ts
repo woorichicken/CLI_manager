@@ -218,7 +218,11 @@ export interface QueuedMessage {
  * guarded send) or discards it (`discardQueued`) — never typed again on its own.
  */
 export interface UnsentMessage extends QueuedMessage {
-    reason: 'not_submitted' | 'no_agent' | 'conversation_changed' | 'exited' | 'failed'
+    /**
+     * `left_input`: it was `not_submitted`, and then left the terminal's input line — sent from the terminal, or
+     * cleared there. Retry is refused (it could go twice); Edit or Copy brings it back if it was cleared.
+     */
+    reason: 'not_submitted' | 'left_input' | 'no_agent' | 'conversation_changed' | 'exited' | 'failed'
     message: string
 }
 

@@ -753,11 +753,15 @@ export class ControlApiService {
         return { session: this.getSession(result.sessionId), scope, messageSent: result.messageSent, ...(result.note ? { note: result.note } : {}) }
     }
 
-    async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession> {
+    /**
+     * `submitted: false` (only then): the text is still in the agent's input box after Enter and two more — a long
+     * paste Claude Code folded into `[Pasted text #n …]` included (019248e1). It is there: do not send it again.
+     */
+    async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession & { submitted?: false }> {
         this.connect(sessionId, input.client, input.caller, 'record')
-        await this.typeAndSubmit(sessionId, input)
+        const submitted = await this.typeAndSubmit(sessionId, input)
         const { workspace, session } = this.requireSession(sessionId)
-        return this.describe(workspace, session)
+        return { ...this.describe(workspace, session), ...(submitted ? {} : { submitted: false as const }) }
     }
 
     /**

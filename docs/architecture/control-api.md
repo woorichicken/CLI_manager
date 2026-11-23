@@ -281,6 +281,16 @@ command is not evidence that an agent started. Draft/question checks remain refu
 Connect itself never sends Enter even when those checks miss text on the line.
 Saved options survive restarts; a renderer reload reattaches without resuming again.
 
+### Is the text submitted? (fb-1123 019248e1)
+
+After Enter, `send_input`/`POST …/input` reads the agent's input box: the text's first words still there — or one
+`[Pasted text #n +L lines]` placeholder more than before it was typed (Claude Code folds a long or multi-line paste
+into one) — means it did not go. Enter is pressed again, at most twice, 3 s apart; "left the box" is believed only on
+two reads 0.25 s apart (a read can land mid-redraw), so every submit takes about 0.25 s longer than before. Still there
+after that: the response says `submitted: false` (MCP: `"submitted": false` and a note). **The text is in the box —
+do not send it again**: press Enter with `keys: ["enter"]`, or clear it. A program without such a box (a shell,
+Codex's `›` line) is taken as submitted, as before.
+
 | HTTP | Code | Details |
 |---|---|---|
 | 400 | `invalid_id` | Invalid UUID or agent |
@@ -359,7 +369,7 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/sessions` | `path` or `workspaceId`; `template` or `command`; `name`, `prompt`, `focus`; `folder`, `ephemeral` (new registrations only) | `{ session, workspace, createdWorkspace, createdFolder, terminalStarted, promptSent, note? }` |
 | GET | `/v1/sessions/:id` | | session |
 | GET | `/v1/sessions/:id/output` | `?mode=screen\|tail&lines=` | `{ session, mode, cols, rows, lines[] }` |
-| POST | `/v1/sessions/:id/input` | `text`, `submit` (default true), `keys[]`, `force` | session |
+| POST | `/v1/sessions/:id/input` | `text`, `submit` (default true), `keys[]`, `force` | session; `submitted: false` when the text is still in the agent's input box after Enter (see below) |
 | POST | `/v1/sessions/:id/wait` | `timeoutMs` (≤600000), `quietMs`, `lines` | output + `{ timedOut, waitedMs, sleptMs }` — time the machine slept is not counted against `timeoutMs` |
 | POST | `/v1/sessions/:id/focus` | | session (the app switches to it; the window is never raised) |
 | POST | `/v1/sessions/:id/rename` | `name` (trimmed, ≤80 chars) | session — renames it in the sidebar; does not set the AI mark |

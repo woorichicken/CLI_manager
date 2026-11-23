@@ -99,10 +99,10 @@ test('T164 019248e1: a long Chat message is either sent or kept, never silently 
     await expect(composer).toHaveValue('')
     await waitForBufferText(page, 't164-lost3', `[Pasted text #1 +${lines - 1} lines]`, 10_000)
     await composer.fill('and one more thing')
-    await page.waitForTimeout(12_000)
+    // Enter pressed three times over ~10s, then refused: the words come back
+    await expect.soft(composer).toHaveValue(`${LONG}\n\nand one more thing`, { timeout: 25_000 })
     await shot(page, '019248e1', 'box')
     expect(await termText(page, 't164-lost3')).not.toContain('ANSWER[')
-    await expect.soft(composer).toHaveValue(`${LONG}\n\nand one more thing`)
     await expect.soft(chat(page).getByTestId('chat-composer-note')).toContainText('not submitted')
 
     // queued while the agent works, then not submitted: a «Not sent» row with the reason, Retry sends it
@@ -121,16 +121,20 @@ test('T164 019248e1: a long Chat message is either sent or kept, never silently 
     await expect.soft(unsent.getByTestId('chat-unsent-reason')).toContainText('not submitted')
     expect(await termText(page, 't164-queue')).not.toContain('ANSWER[2]')
     if ((await unsent.count()) === 1) {
-        // Retry while the words still sit in the terminal's box: refused (they would go twice), the row stays
-        await unsent.getByTestId('chat-unsent-retry').click()
-        await expect(chat(page).getByTestId('chat-queued-error')).toContainText('already has text', { timeout: 10_000 })
-        await expect(unsent).toHaveCount(1)
-        // the person clears the terminal's box, then Retry goes
-        await writeToTerminal(page, 't164-queue', '\x15')
-        await page.waitForTimeout(500)
-        await unsent.getByTestId('chat-unsent-retry').click()
+        // its words sit in the terminal's box: no Retry (Enter there sends them; a Retry could send them twice)
+        await expect(unsent.getByTestId('chat-unsent-retry')).toHaveCount(0)
+        await expect(unsent).toHaveAttribute('data-reason', 'not_submitted')
+        // the person presses Enter in the terminal: it goes, and the row says it left the input line
+        await writeToTerminal(page, 't164-queue', '\r')
         await expect.poll(async () => (await termText(page, 't164-queue')).includes(`ANSWER[2]: lines=${lines}`), { timeout: 20_000 }).toBe(true)
+        await expect(unsent).toHaveAttribute('data-reason', 'left_input', { timeout: 10_000 })
+        await expect(unsent.getByTestId('chat-unsent-reason')).toContainText('no longer in the terminal input line')
+        await expect(unsent.getByTestId('chat-unsent-retry')).toHaveCount(0)
+        await shot(page, '019248e1', 'left')
+        // ✕ removes it; nothing was sent twice
+        await unsent.getByTestId('chat-unsent-discard').click()
         await expect(unsent).toHaveCount(0, { timeout: 5_000 })
+        expect(await termText(page, 't164-queue')).not.toContain('ANSWER[3]')
     }
 })
 
@@ -202,6 +206,7 @@ test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a 
         record('u2', 'a1', 'user', 'go on', '2026-11-23T09:20:00.000Z'),
         record('e1', 'u2', 'assistant', DROPPED, '2026-11-23T09:20:05.000Z', { apiError: 'connection_failed', error: 'server_error', isApiErrorMessage: true })
     ].join('\n').replace('"model":"claude-opus-5-5","content":[{"type":"text","text":"API Error', '"model":"<synthetic>","content":[{"type":"text","text":"API Error') + '\n')
+    fs.copyFileSync(transcript, path.join(path.dirname(transcript), `${id(8)}.jsonl`))
     result = await launchAppWithWorkspaces(
         [{
             id: 'w-t164e',
@@ -209,7 +214,9 @@ test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a 
             path: project,
             sessions: [
                 { id: 't164-home', name: 'T164 Home' },
-                { id: 't164-dropped', name: 'T164 Dropped', cliSessionId: id(7), cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --continue` }
+                { id: 't164-dropped', name: 'T164 Dropped', cliSessionId: id(7), cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --continue` },
+                // the same failed turn, but the agent is gone (its command ends at once — as Ctrl+C back to the shell)
+                { id: 't164-exited', name: 'T164 Exited', cliSessionId: id(8), cliToolName: 'claude', cliCommand: 'true' }
             ]
         }],
         { env: { CLAUDE_CONFIG_DIR: claudeDir }, settings: { showSessionStatus: true } }
@@ -218,6 +225,9 @@ test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a 
     await resizeMainWindow(app, 1280, 800)
     await page.getByText('T164 Dropped', { exact: true }).first().click()
     await waitForBufferText(page, 't164-dropped', 'Claude Code (mock)', 20_000)
+    await page.getByText('T164 Exited', { exact: true }).first().click()
+    // its command (`true …`) ran and ended: the shell is in front again
+    await expect.poll(async () => (await termText(page, 't164-exited')).includes('true'), { timeout: 20_000 }).toBe(true)
     await page.getByText('T164 Home', { exact: true }).first().click()
 
     // --- 3239a243: red while the last turn is the error ------------------------------------------
@@ -225,6 +235,8 @@ test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a 
     await expect.soft(dot).toHaveAttribute('data-session-status', 'error', { timeout: 10_000 })
     await shot(page, '3239a243')
     await expect.soft(dot).toHaveAttribute('title', /Connection dropped \(ECONNRESET\)/)
+    // the shell in front (no agent to retry): no red dot for the same failed turn
+    await expect(page.locator('[data-session-item="t164-exited"] [data-session-status]')).toHaveCount(0)
     // the next turn starts (and answers): the dot goes
     await writeToTerminal(page, 't164-dropped', 'try again\r')
     await expect(dot).toHaveCount(0, { timeout: 15_000 })
@@ -244,12 +256,14 @@ test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a 
             await button.click()
             const pad = (n: number): string => String(n).padStart(2, '0')
             const local = new Date(ANSWERED_AT)
-            const when = `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())} ${pad(local.getHours())}:${pad(local.getMinutes())}`
+            const offset = -local.getTimezoneOffset()
+            const zone = `UTC${offset >= 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`
+            const when = `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())} ${pad(local.getHours())}:${pad(local.getMinutes())} (${zone})`
             await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText()), { timeout: 5_000 }).toContain('Here is the plan.')
             const copied = (await app.evaluate(({ clipboard }) => clipboard.readText())).split('\n')
-            expect(copied[0]).toBe(`Answer from "T164 Dropped" in CLI Manager · climanager://session/${'t164-dropped'.slice(0, 8)}`)
-            // the answer is the conversation's second turn; how many follow depends on the turns sent since
-            expect(copied[1]).toMatch(new RegExp(`^Turn 2 of \\d+ · answered ${when}$`))
+            expect(copied[0]).toBe(`From "T164 Dropped" in CLI Manager · climanager://session/${'t164-dropped'.slice(0, 8)}`)
+            // the first of the conversation's answers (the API error and the echo after it are answers too)
+            expect(copied[1]).toBe(`Answer 1 of 3 · answered ${when}`)
             expect(copied.slice(2).join('\n')).toBe('\nHere is the plan.\n\n- tighten the header\n- keep the tab row')
         } finally {
             await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved)

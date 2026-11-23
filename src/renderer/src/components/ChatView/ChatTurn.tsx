@@ -34,8 +34,8 @@ export const ChatTurn = memo(function ChatTurn({
     onOpenThread,
     sessionId,
     sessionName,
-    turnNumber,
-    totalTurns
+    answerNumber,
+    answerTotal
 }: {
     turn: ConversationTurn
     last: boolean
@@ -51,11 +51,11 @@ export const ChatTurn = memo(function ChatTurn({
     onFork?: (index: number, options: boolean) => void
     threads?: ChatThread[]
     onOpenThread?: (childId: string) => void
-    /** for «Copy for agent»: which session, and where this turn sits in its conversation (1-based) */
+    /** for «Copy for agent»: which session, and which of its answers this is (1-based; absent when not all are read) */
     sessionId?: string
     sessionName?: string
-    turnNumber?: number
-    totalTurns?: number
+    answerNumber?: number
+    answerTotal?: number
 }) {
     if (turn.role === 'user') {
         // the person's own words, to copy back (16f1402e) — not the «Stopped» marker
@@ -117,7 +117,7 @@ export const ChatTurn = memo(function ChatTurn({
                 {answer && settled && (
                     <CopyAnswer
                         markdown={answer}
-                        forAgent={sessionId && turnNumber && totalTurns ? () => answerForAgent({ sessionName, sessionId, at: turn.end_ts ?? turn.ts, turnNumber, totalTurns, answer }) : undefined}
+                        forAgent={sessionId ? () => answerForAgent({ sessionName, sessionId, at: turn.end_ts ?? turn.ts, answerNumber, answerTotal, answer }) : undefined}
                     />
                 )}
                 {answer && settled && onFork && (

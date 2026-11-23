@@ -510,7 +510,11 @@ async function callTool(
                 caller
             })
             const waitMs = seconds(num(args, 'wait_seconds'), 0)
-            if (waitMs === 0) return JSON.stringify({ sent: true, session }, null, 1)
+            // the text still in the input box after the Enter retries: said, so a caller does not type it twice
+            const { submitted, ...shown } = session
+            const stuck = submitted === false ? { submitted: false, note: 'The text is still in the input box (not submitted). Do not send it again: press Enter with keys ["enter"], or clear it.' } : {}
+            if (waitMs === 0) return JSON.stringify({ sent: true, ...stuck, session: shown }, null, 1)
+            if (submitted === false) return `${stuck.note}\n\n${formatScreen(await service.waitForIdle(sessionId, { timeoutMs: waitMs, signal, client, caller }))}`
             return formatScreen(await service.waitForIdle(sessionId, { timeoutMs: waitMs, signal, client, caller }))
         }
         case 'wait_for_idle':
