@@ -26,7 +26,11 @@ export function InboxReplyToggle({ open, disabledReason, onToggle }: { open: boo
             data-testid="inbox-reply-toggle"
             data-open={open ? 'true' : 'false'}
             onClick={handleClick}
-            onKeyDown={(e) => e.stopPropagation()}
+            // Enter/Space click it natively and must not also reach the row (which opens the session);
+            // Esc goes on to the popover, which closes.
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
+            }}
             disabled={Boolean(disabledReason)}
             className={clsx(
                 'shrink-0 -my-0.5 p-0.5 rounded text-gray-500 hover:bg-white/10 hover:text-blue-300 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-500',
@@ -72,14 +76,16 @@ export function InboxReplyBox({ sessionId, onClose }: { sessionId: string; onClo
     }
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+        // A key that ends a Korean/Japanese composition belongs to the IME: it neither sends nor closes.
+        const composing = e.nativeEvent.isComposing
         if (e.key === 'Escape') {
             // The popover closes on Esc from the document; the first Esc closes only this box.
             e.stopPropagation()
-            onClose()
+            if (!composing) onClose()
             return
         }
-        // Enter sends, Shift+Enter is a new line; Enter that ends a Korean/Japanese composition is not a send.
-        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+        // Enter sends, Shift+Enter is a new line.
+        if (e.key === 'Enter' && !e.shiftKey && !composing) {
             e.preventDefault()
             void send()
         }

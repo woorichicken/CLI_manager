@@ -125,6 +125,17 @@ test('T161 91fce7bf: the traffic lights sit in their own strip — no panel star
     const overlay = page.locator('.fixed.inset-0').filter({ has: page.getByTestId('settings-category-sidebar') }).first()
     await expect(overlay).toBeVisible()
     expect(await overlay.evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region') || getComputedStyle(el).getPropertyValue('app-region'))).toBe('no-drag')
+    // The busy screen (Restoring sessions…) has nothing to press: it leaves the window draggable.
+    const busy = await page.evaluate(() => {
+        const el = document.createElement('div')
+        el.className = 'fixed inset-0'
+        el.setAttribute('data-busy-overlay', '')
+        document.body.appendChild(el)
+        const region = getComputedStyle(el).getPropertyValue('-webkit-app-region') || getComputedStyle(el).getPropertyValue('app-region')
+        el.remove()
+        return region
+    })
+    expect(busy).not.toBe('no-drag')
 })
 
 test('T161 78a79526: buttons with a shortcut name the keys and say what they do on a second line', async () => {
@@ -226,7 +237,8 @@ test('T161 5f9002d5: reply to an inbox request from the popover — it reaches t
     // A question on the agent's screen: the reply is refused inline and its text is kept.
     await page.keyboard.type('ASK')
     await page.keyboard.press('Enter')
-    await expect(claudeItem.getByTestId('inbox-reply-status')).toHaveAttribute('data-state', 'sent', { timeout: 10_000 })
+    // The mock may still be finishing the first answer's turn: then it waits in the queue (also right).
+    await expect(claudeItem.getByTestId('inbox-reply-status')).toHaveAttribute('data-state', /^(sent|queued)$/, { timeout: 10_000 })
     await expect.poll(() => terminalLines(page, CLAUDE), { timeout: 10_000 }).toContain('Do you want to proceed?')
     await box.focus()
     await page.keyboard.type('second answer')
@@ -242,6 +254,7 @@ test('T161 5f9002d5: reply to an inbox request from the popover — it reaches t
     await page.keyboard.press('Escape')
     await expect(box).toHaveCount(0)
     await expect(popover).toBeVisible()
+    await expect(claudeItem.getByTestId('inbox-reply-toggle')).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(popover).toHaveCount(0)
 })

@@ -6,7 +6,7 @@ import { InboxRequest, Workspace } from '../../../../shared/types'
 import { isLinkAllowed } from '../../utils/terminalLinks'
 import { formatInboxAge, INBOX_KIND_META, shortLink } from './inboxFormat'
 import { InboxReplyBox, InboxReplyToggle } from './InboxReply'
-import { isAgentSession } from '../../utils/agentSession'
+import { isAgentSession, useAgentPendingVersion } from '../../utils/agentSession'
 
 const POPOVER_WIDTH = 360
 const VIEWPORT_MARGIN = 8
@@ -62,6 +62,17 @@ export function InboxPopover({
     const ref = useRef<HTMLDivElement>(null)
     // One reply box at a time (report 5f9002d5).
     const [replyingId, setReplyingId] = useState<string | null>(null)
+    // A Codex session started in the terminal is an agent before its cliToolName arrives (isAgentSession).
+    useAgentPendingVersion()
+    const closeReply = (requestId: string): void => {
+        setReplyingId(null)
+        // The caret goes back to the row's Reply button, not to the page.
+        requestAnimationFrame(() => {
+            ref.current
+                ?.querySelector<HTMLButtonElement>(`[data-inbox-request="${CSS.escape(requestId)}"] [data-testid="inbox-reply-toggle"]`)
+                ?.focus()
+        })
+    }
     const unread = requests.filter((r) => !r.readAt).length
     const now = Date.now()
 
@@ -168,7 +179,7 @@ export function InboxPopover({
                                 </div>
                                 {/* Beside the row, not in it: the row's click and Enter open the session */}
                                 {replyingId === request.id && !where.replyBlocked && (
-                                    <InboxReplyBox sessionId={request.sessionId} onClose={() => setReplyingId(null)} />
+                                    <InboxReplyBox sessionId={request.sessionId} onClose={() => closeReply(request.id)} />
                                 )}
                             </li>
                         )
