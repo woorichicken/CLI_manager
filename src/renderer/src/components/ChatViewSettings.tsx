@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
 import type { UserSettings } from '../../../shared/types'
-import { DEFAULT_QUICK_REPLIES, keepQuickReplyColors } from '../../../shared/conversation'
-import { QuickReplyColors } from './QuickReplyColors'
+import { DEFAULT_QUICK_REPLIES } from '../../../shared/conversation'
+import { QuickReplyEditor } from './QuickReplyEditor'
 import { DictationLogSettings } from './DictationLogSettings'
+
+const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((item, index) => item === b[index])
 
 /**
  * Settings › Chat: how the chat's message box sends, and one-tap replies over the
@@ -16,8 +17,6 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
     const openInApp = chat.openFilesInApp !== false
     const foldWork = chat.foldWork !== false
     const replies = chat.quickReplies ?? DEFAULT_QUICK_REPLIES
-    const [repliesText, setRepliesText] = useState(replies.join('\n'))
-    useEffect(() => setRepliesText((chat.quickReplies ?? DEFAULT_QUICK_REPLIES).join('\n')), [chat.quickReplies])
 
     const update = (patch: Partial<NonNullable<UserSettings['chat']>>): void => setSettings((prev) => ({ ...prev, chat: { ...prev.chat, ...patch } }))
 
@@ -76,32 +75,18 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
                         {toggle(showQuick, () => update({ showQuickReplies: !showQuick }), 'chat-setting-quick-replies')}
                     </div>
                     {showQuick && (
-                        <div>
-                            <label className="block text-xs text-gray-400 mb-1">Replies, one per line</label>
-                            <textarea
-                                value={repliesText}
-                                rows={4}
-                                data-testid="chat-setting-quick-list"
-                                onChange={(event) => setRepliesText(event.target.value)}
-                                onBlur={() => {
-                                    const quickReplies = repliesText
-                                        .split('\n')
-                                        .map((line) => line.trim())
-                                        .filter(Boolean)
-                                        // the same phrase twice would be one chip anyway, and colours follow the text
-                                        .filter((line, index, all) => all.indexOf(line) === index)
-                                        .slice(0, 8)
-                                    // a colour follows its reply's text, so a reply moved up keeps it and a deleted one lets it go
-                                    update({ quickReplies, quickReplyColors: keepQuickReplyColors(chat.quickReplyColors, quickReplies) })
-                                }}
-                                className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                            />
-                            <QuickReplyColors
-                                replies={[...new Set(replies.filter((reply) => reply.trim()))]}
-                                colors={chat.quickReplyColors}
-                                onChange={(quickReplyColors) => update({ quickReplyColors })}
-                            />
-                        </div>
+                        <QuickReplyEditor
+                            replies={replies}
+                            colors={chat.quickReplyColors}
+                            onChange={(quickReplies, quickReplyColors) =>
+                                update({
+                                    // no list saved and still the default one (only a colour picked): keep it unsaved, so a
+                                    // phone keeps following its own default instead of reading «the Mac set a list»
+                                    quickReplies: chat.quickReplies === undefined && sameList(quickReplies, DEFAULT_QUICK_REPLIES) ? undefined : quickReplies,
+                                    quickReplyColors
+                                })
+                            }
+                        />
                     )}
                 </div>
                 <DictationLogSettings
