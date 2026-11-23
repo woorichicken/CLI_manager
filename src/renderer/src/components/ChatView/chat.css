@@ -310,6 +310,7 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-confirm { display: flex; flex-direction: column; gap: 8px; padding: 6px 8px; }
 .chat-confirm-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #fbbf24; }
 .chat-confirm-note { color: var(--chat-dim); }
+.chat-confirm-title.is-error { color: #fca5a5; }
 .chat-confirm-actions { display: flex; gap: 6px; }
 .chat-confirm-actions button { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--chat-line); }
 .chat-confirm-actions .chat-confirm-primary { background: #2563eb; border-color: #2563eb; color: #fff; }

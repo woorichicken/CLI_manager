@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Bot, ChevronDown, ExternalLink, Layers, ListChecks } from 'lucide-react'
-import type { ConversationAgent, ConversationMeta } from '../../../../shared/conversation'
+import type { ChatSendResult, ConversationAgent, ConversationMeta } from '../../../../shared/conversation'
 import { formatTokens, modelLabel, todoProgress, type TodoItem } from './chatLib'
 import { TodoList } from './WorkBlock'
 
@@ -55,20 +55,40 @@ export function ModelChip({
     agent,
     meta,
     working,
-    onCommand
+    onCommand,
+    onOpenTerminal
 }: {
     agent: ConversationAgent | null
     meta: ConversationMeta | null
     working: boolean
-    /** sends a `/model …` the way a typed message goes */
-    onCommand: (text: string) => void
+    /** sends a `/model …` the way a typed message goes; a refusal is shown here, not dropped */
+    onCommand: (text: string) => Promise<ChatSendResult | void> | void
+    /** shows this session's terminal (where a menu the chat cannot answer waits) */
+    onOpenTerminal?: () => void
 }) {
     const [open, setOpen] = useState(false)
     const [confirm, setConfirm] = useState<{ text: string; label: string } | null>(null)
+    /**
+     * why the `/model` was not typed (fb-1123 0adc1255: after a usage-limit failure Codex 0.171 asks «Switch to
+     * gpt-6-luna?» — a menu the chat has no card for — and the refusal was dropped, so the chip did nothing at all)
+     */
+    const [refused, setRefused] = useState<string | null>(null)
+    const [running, setRunning] = useState(false)
     const model = meta?.model ? modelLabel(meta.model) : null
     const close = (): void => {
         setOpen(false)
         setConfirm(null)
+        setRefused(null)
+    }
+    const run = async (text: string): Promise<void> => {
+        setRunning(true)
+        try {
+            const result = await onCommand(text)
+            if (result && result.status === 'rejected') setRefused(result.message)
+            else close()
+        } finally {
+            setRunning(false)
+        }
     }
     if (!agent) return null
     return (
@@ -94,7 +114,24 @@ export function ModelChip({
                 <ChevronDown size={11} aria-hidden="true" />
             </button>
             <Popover open={open} onClose={close} align="end" testId="chat-model-menu">
-                {confirm ? (
+                {refused ? (
+                    <div className="chat-confirm" data-testid="chat-model-refused">
+                        <p className="chat-confirm-title is-error">
+                            <AlertTriangle size={13} aria-hidden="true" /> Not sent
+                        </p>
+                        <p>{refused}</p>
+                        <div className="chat-confirm-actions">
+                            {onOpenTerminal && (
+                                <button type="button" className="chat-confirm-primary" data-testid="chat-model-open-terminal" onClick={() => (onOpenTerminal(), close())}>
+                                    Open Terminal
+                                </button>
+                            )}
+                            <button type="button" onClick={close}>
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                ) : confirm ? (
                     <div className="chat-confirm" data-testid="chat-model-confirm">
                         <p className="chat-confirm-title">
                             <AlertTriangle size={13} aria-hidden="true" /> Also changes the default
@@ -106,7 +143,7 @@ export function ModelChip({
                         </p>
                         {working && <p className="chat-confirm-note">The agent is working: the command waits for the turn to end.</p>}
                         <div className="chat-confirm-actions">
-                            <button type="button" className="chat-confirm-primary" data-testid="chat-model-confirm-ok" onClick={() => (onCommand(confirm.text), close())}>
+                            <button type="button" className="chat-confirm-primary" data-testid="chat-model-confirm-ok" disabled={running} onClick={() => void run(confirm.text)}>
                                 {confirm.text === '/model' ? 'Open the picker' : `Use ${confirm.label}`}
                             </button>
                             <button type="button" data-testid="chat-model-confirm-cancel" onClick={() => setConfirm(null)}>

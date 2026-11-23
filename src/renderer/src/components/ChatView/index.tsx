@@ -638,7 +638,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         {snapshot && (
                             <QueuedMessages
                                 ref={queuedRows}
-                                sendNowKey={boxEmpty && !readOnly ? sendKeyName(preferences, touch, isMac) : null}
+                                sendNowKey={boxEmpty && !readOnly && !prompt ? sendKeyName(preferences, touch, isMac) : null}
                                 sessionId={sessionId}
                                 transport={transport}
                                 queued={snapshot.queued}
@@ -719,7 +719,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                         <UserRound size={12} aria-hidden="true" /> {onlyMine ? 'Only mine' : 'Mine'}
                                     </button>
                                     <span className="chat-status-spacer" />
-                                    <ModelChip agent={agent} meta={snapshot?.meta ?? null} working={working} onCommand={(text) => void sendText(text)} />
+                                    <ModelChip agent={agent} meta={snapshot?.meta ?? null} working={working} onCommand={sendText} onOpenTerminal={() => onOpenTerminal()} />
                                     <ContextChip meta={snapshot?.meta ?? null} canCompact={!working && !prompt} onCompact={() => void sendText('/compact')} />
                                 </>
                             }

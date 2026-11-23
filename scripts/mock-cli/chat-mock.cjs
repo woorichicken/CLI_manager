@@ -46,6 +46,9 @@
  *   ASKCX     (Codex) request_user_input with two questions, as 0.166.0 draws it (fixtures/prompts/codex-0.166-question-*):
  *             Enter answers the highlighted row; on "None of the above" Tab opens a notes line. The last answer
  *             prints `CHOSE: ask color=…; size=…` (a note as `size=None of the above (note: …)`).
+ *   LIMIT     (Codex) a turn the usage limit stopped, as codex-cli 0.171 does (probe 2026-11-23, fb-1123): records
+ *             `task_complete` with `error`, prints the red reason, then asks «Approaching rate limits — Switch to
+ *             gpt-6-luna?» (three options; Enter prints `CHOSE: <label>`, Esc closes it).
  *   PLAN      a TodoWrite call (3 steps, 1 done, 1 in progress), then an answer.
  *   TABLE     answers with a five-column table wider than a phone (Korean cells).
  *   FRUITS    (Codex) answers with a three-row table and draws it as codex-cli 0.166.0 does — `━` under the
@@ -290,6 +293,11 @@ function menuLines() {
         const last = menu.step === ASK_QUESTIONS.length - 1
         if (menu.notes !== null) lines.push(`  › ${menu.notes || 'Add notes'}`, '', `  tab or esc to clear notes | enter to submit ${last ? 'all' : 'answer'}`)
         else lines.push('', `  tab to add notes | enter to submit ${last ? 'all' : 'answer'} | ←/→ to navigate questions | esc to interrupt`)
+    } else if (menu.kind === 'codex-limit') {
+        lines.push('  Approaching rate limits', '  Switch to gpt-6-luna for lower credit usage?')
+        const notes = ['Fast and affordable model for easier tasks.', '', 'Hide future rate limit reminders about switching models']
+        menu.options.forEach((option, index) => lines.push(`${index === menu.selected ? '›' : ' '} ${index + 1}. ${option.label.padEnd(39)}${notes[index]}`))
+        lines.push('  enter select · esc back')
     } else if (menu.kind === 'codex-trust') {
         lines.push('Do you trust the contents of this directory?')
         menu.options.forEach((option, index) => lines.push(`${index === menu.selected ? '›' : ' '} ${index + 1}. ${option.label}`))
@@ -455,6 +463,8 @@ function openMenu(kind) {
     } else if (kind === 'mcp-elicit') {
         menu = { kind, selected: 0, options: [{ label: 'Accept' }, { label: 'Decline' }] }
         say('  Calling mock-db… (ctrl+o to expand)')
+    } else if (kind === 'codex-limit') {
+        menu = { kind, selected: 0, options: [{ label: 'Switch to gpt-6-luna' }, { label: 'Keep current model' }, { label: 'Keep current model (never show again)' }] }
     } else if (kind === 'codex-ask') {
         menu = { kind, step: 0, selected: 0, notes: null, answers: [], options: ASK_QUESTIONS[0].options.map(([label]) => ({ label })) }
     } else {
@@ -568,6 +578,12 @@ function submit(text) {
     else if (text === 'APPROVE' && AGENT === 'codex') openMenu('codex-approve')
     else if (text === 'MCPOK' && AGENT !== 'codex') openMenu('mcp-elicit')
     else if (text === 'ASKCX' && AGENT === 'codex') openMenu('codex-ask')
+    else if (text === 'LIMIT' && AGENT === 'codex') {
+        const reason = 'You’ve hit your usage limit. Upgrade to Pro (https://example.invalid/pro) or try again at Nov 24th, 2026 11:15 PM.'
+        record({ timestamp: now(), type: 'event_msg', payload: { type: 'task_complete', last_agent_message: null, error: { message: reason, codex_error_info: 'usage_limit_exceeded' } } })
+        say(`\x1b[31m■ ${reason}\x1b[0m`)
+        openMenu('codex-limit')
+    }
     else if (text === 'PLAN') {
         recordPlan()
         answerTurn(text, 'Planned three steps.')
@@ -646,7 +662,7 @@ function handleKey(key) {
         const formCustom = menu.kind === 'form' && (menu.step === 0 ? menu.selected === 2 : menu.step === 1 && menu.selected === 3)
         if (key === '\x1b[A') menu.selected = Math.max(0, menu.selected - 1)
         else if (key === '\x1b[B') menu.selected = Math.min(rowCount - 1, menu.selected + 1)
-        else if (key === '\x1b' && menu.kind === 'codex-approve') {
+        else if (key === '\x1b' && (menu.kind === 'codex-approve' || menu.kind === 'codex-limit')) {
             menu = null
             say('CHOSE: esc')
         } else if (key === '\r' && menu.kind === 'form') formEnter()

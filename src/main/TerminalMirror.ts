@@ -71,7 +71,10 @@ const AWAITING_INPUT_PATTERNS = [
     /Do you want to (proceed|make|create|allow|run)/i,
     /No, and tell Claude what to do differently/,
     /Would you like to (run|make|apply)/i,
-    /\bYes, proceed\b/i
+    /\bYes, proceed\b/i,
+    // Codex 0.17x's own selection menus — «Switch to gpt-6-luna?» after a usage-limit failure, the /model picker —
+    // end on this footer and name no question words above; their `› 1.` row read as typed text (fb-1123 0adc1255)
+    /\benter (?:select|default)\b[^\n]*\besc back\b/i
 ]
 
 /** Parsing normally finishes in milliseconds; this only guards against a disposed mirror. */
