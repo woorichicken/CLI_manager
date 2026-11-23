@@ -19,6 +19,9 @@ interface SidebarAllSessionsProps {
     showSessionCount?: boolean
     /** Writes to the clipboard and shows the sidebar's "Copied" notice. */
     onCopy?: (text: string, label: string) => void
+    /** «No folder» folded or not (cbc0ee48) — held by the sidebar, whose fold-all button counts it. */
+    noFolderExpanded?: boolean
+    onToggleNoFolder?: () => void
     /** Right-click "New Session…" on a folder (`null` = the "No folder" row): the sidebar opens New session for it (b9038a0e). */
     onNewSessionIn?: (folderId: string | null) => void
 }
@@ -29,7 +32,7 @@ interface SidebarAllSessionsProps {
  * heading goes into that folder; dropped on "No folder" it comes out (078ee766).
  * Dropped on another session row it relates the two instead (SessionItem).
  */
-export function SidebarAllSessions({ entries, sessionFolders, folderActions, listProps, fontSize = 14, showSessionCount = true, onCopy, onNewSessionIn }: SidebarAllSessionsProps) {
+export function SidebarAllSessions({ entries, sessionFolders, folderActions, listProps, fontSize = 14, showSessionCount = true, onCopy, noFolderExpanded = true, onToggleNoFolder, onNewSessionIn }: SidebarAllSessionsProps) {
     // folderId null = the "No folder" row's menu, which only starts a session.
     const [menu, setMenu] = useState<{ x: number; y: number; folderId: string | null } | null>(null)
     const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -108,24 +111,38 @@ export function SidebarAllSessions({ entries, sessionFolders, folderActions, lis
                 )
             })}
 
+            {/* «No folder» folds like a folder heading (cbc0ee48). Folded, it stays a drop target: a session
+                dropped on it leaves its folder. Without folders there is no heading — the list is all of it. */}
             {sessionFolders.length > 0 && (
                 <FolderDropRow
                     folderId={null}
                     entries={entries}
                     folderIds={folderIds}
                     onDropSession={id => void folderActions.moveSession(id, null)}
-                    className="mt-2 mb-0.5 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider text-gray-500"
+                    className="mt-2 mb-0.5 flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-white/5 cursor-pointer transition-colors text-[10px] uppercase tracking-wider text-gray-500"
                     testId="session-folder-none"
+                    state={noFolderExpanded ? 'expanded' : 'collapsed'}
+                    onClick={onToggleNoFolder}
                     onContextMenu={onNewSessionIn ? (e) => {
                         e.preventDefault()
                         e.stopPropagation()
                         setMenu({ x: e.clientX, y: e.clientY, folderId: null })
                     } : undefined}
                 >
-                    No folder
+                    {noFolderExpanded
+                        ? <ChevronDown size={12} className="text-gray-500 shrink-0" />
+                        : <ChevronRight size={12} className="text-gray-500 shrink-0" />}
+                    <span>No folder</span>
+                    {showSessionCount && (
+                        <span className="normal-case tracking-normal text-gray-500 shrink-0" data-session-folder-count="none">({unfiled.length})</span>
+                    )}
                 </FolderDropRow>
             )}
-            {unfiled.length > 0 && <SidebarSessionList entries={unfiled} dividePinned {...listProps} />}
+            {unfiled.length > 0 && (sessionFolders.length === 0 || noFolderExpanded) && (
+                <div data-session-folder-none-body>
+                    <SidebarSessionList entries={unfiled} dividePinned {...listProps} />
+                </div>
+            )}
 
             {menu && menu.folderId === null && onNewSessionIn && (
                 <FolderContextMenu
@@ -169,13 +186,15 @@ interface FolderDropRowProps {
     onDropSession: (sessionId: string) => void
     className: string
     testId: string
+    /** Folded or not, for a heading that folds. */
+    state?: 'expanded' | 'collapsed'
     onClick?: () => void
     onContextMenu?: (e: React.MouseEvent) => void
     children: React.ReactNode
 }
 
 /** A heading that files a dragged session. It does not light up for a session already filed there. */
-function FolderDropRow({ folderId, entries, folderIds, onDropSession, className, testId, onClick, onContextMenu, children }: FolderDropRowProps) {
+function FolderDropRow({ folderId, entries, folderIds, onDropSession, className, testId, state, onClick, onContextMenu, children }: FolderDropRowProps) {
     const drop = useSessionDrop()
     const dragged = drop?.draggingId ? entries.find(entry => entry.session.id === drop.draggingId) : undefined
     const takesDrop = !!dragged && sessionFolderOf(dragged, folderIds) !== folderId
@@ -192,6 +211,7 @@ function FolderDropRow({ folderId, entries, folderIds, onDropSession, className,
         <div
             data-testid={testId}
             data-drop-state={highlight.over ? 'over' : 'idle'}
+            data-state={state}
             className={`${className} ${highlight.over ? 'ring-1 ring-inset ring-sky-400/70 bg-sky-500/10' : ''}`}
             onClick={onClick}
             onContextMenu={onContextMenu}

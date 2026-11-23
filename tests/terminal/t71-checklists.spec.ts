@@ -173,15 +173,11 @@ test.describe('T71 header checklists', () => {
 
         await expect(chip(page)).toHaveAttribute('data-checklist-id', releaseId)
         await expect(chip(page)).toHaveAttribute('data-progress', '0/5')
-        await expect(page.getByTestId('checklist-chip-title')).toHaveText('v1.24 release')
+        // A small button since 6ab4bf73 (T163): the title is in the tooltip, the deadline is a dot.
+        await expect(chip(page)).toHaveAttribute('title', /— v1\.24 release · 0\/5 · due /)
         await expect(page.getByTestId('checklist-chip-due')).toHaveAttribute('data-due-tone', 'soon')
-
-        // The deadline badge stays a step below the title: no border, smaller type (63947391).
-        const badge = await page.getByTestId('checklist-chip-due').evaluate((el) => {
-            const style = getComputedStyle(el)
-            return { border: style.borderTopWidth, size: style.fontSize }
-        })
-        expect(badge).toEqual({ border: '0px', size: '9px' })
+        const dot = (await page.getByTestId('checklist-chip-due').boundingBox())!
+        expect(Math.max(dot.width, dot.height)).toBeLessThanOrEqual(8)
 
         // --- A second one through MCP, with an earlier (passed) deadline ---------
         const docs = await mcp('checklist_create', { title: 'Docs sweep', items: ['README', 'CHANGELOG'], due: dayFromToday(-1) }, WORKER)
@@ -238,7 +234,7 @@ test.describe('T71 header checklists', () => {
         await page.getByTestId('checklist-title').dblclick()
         await page.getByTestId('checklist-title-input').fill('v1.24 release (final)')
         await page.keyboard.press('Enter')
-        await expect(page.getByTestId('checklist-chip-title')).toHaveText('v1.24 release (final)')
+        await expect(chip(page)).toHaveAttribute('title', /— v1\.24 release \(final\) · /)
 
         // The deadline: a picked date saves without leaving the field; an emptied field clears it.
         await page.getByTestId('checklist-due').click()
@@ -339,11 +335,12 @@ test.describe('T71 header checklists', () => {
         await expect.poll(async () => (await api('GET', `/v1/checklists/${panelMade.id}`)).status).toBe(404)
         await expect(page.getByTestId('checklist-title')).not.toHaveText('Made in the panel')
 
-        // --- 390 wide: the chip drops the title, the panel stays in the window --------
+        // --- 390 wide: the chip stays small, the panel stays in the window --------
         await page.keyboard.press('Escape')
         await page.locator('button[title^="Close Sidebar"]').click()
         await resizeMainWindow(app, 390, 800)
-        await expect(page.getByTestId('checklist-chip-title')).toBeHidden()
+        await expect(chip(page)).toBeVisible()
+        expect((await chip(page).innerText()).trim()).toMatch(/^\d+\/\d+$/)
         await chip(page).click()
         await expect(panel(page)).toBeVisible()
         const box = await panel(page).boundingBox()

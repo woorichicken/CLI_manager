@@ -14,13 +14,13 @@ import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatch
 import { SidebarSessionList } from './SidebarSessionList'
 import { SidebarAllSessions } from './SidebarAllSessions'
 import { SidebarSessionTree } from './SidebarSessionTree'
-import { sessionForestFor, sessionTreeFor, wouldMakeLoop, handParentsInTheWay } from '../../utils/relatedSessions'
+import { sessionForestFor, sessionTreeFor, wouldMakeLoop, handParentsInTheWay, threadSessionIds, withoutThreadSessions } from '../../utils/relatedSessions'
 import { relatedForAgent } from '../../utils/relatedForAgent'
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, sidebarWorkspaceOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { isOrderHeldFor, setAllSessionsListElement } from '../../utils/allSessionsNav'
 import { useDragAutoScroll } from '../../utils/dragAutoScroll'
-import { PANEL_TOP_MARGIN } from '../../utils/platform'
+import { SidebarHeaderStart } from './SidebarTitle'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
@@ -86,6 +86,18 @@ function readSavedAllSessionsLayout(): AllSessionsLayout {
         return localStorage.getItem(ALL_SESSIONS_LAYOUT_STORAGE_KEY) === 'tree' ? 'tree' : 'list'
     } catch {
         return 'list'
+    }
+}
+
+// «No folder» in the All sessions view folds like a session folder (cbc0ee48). Session folders keep
+// their state in the store; this row is not a folder, so it is a per-machine view choice like the view mode.
+const NO_FOLDER_EXPANDED_STORAGE_KEY = 'sidebar-no-folder-expanded'
+
+function readSavedNoFolderExpanded(): boolean {
+    try {
+        return localStorage.getItem(NO_FOLDER_EXPANDED_STORAGE_KEY) !== 'false'
+    } catch {
+        return true
     }
 }
 
@@ -181,7 +193,7 @@ export function Sidebar({
     onOpenSettings,
     settingsOpen,
     onRenameSession,
-    onReorderSessions,
+    onReorderSessions: onReorderSessionsProp,
     onReorderWorkspaces,
     onTogglePin,
     onToggleSessionPin,
@@ -274,7 +286,22 @@ export function Sidebar({
     })
     const { notice: copyNotice, copy } = useCopyWithNotice()
     const hint = useShortcutHint()
-    const anySessionFolderExpanded = sessionFolders.some(f => f.isExpanded)
+    const [noFolderExpanded, setNoFolderExpandedState] = useState(readSavedNoFolderExpanded)
+    const setNoFolderExpanded = useCallback((expanded: boolean) => {
+        setNoFolderExpandedState(expanded)
+        try {
+            localStorage.setItem(NO_FOLDER_EXPANDED_STORAGE_KEY, String(expanded))
+        } catch {
+            // the choice just does not outlive the window
+        }
+    }, [])
+    // «No folder» is shown only next to session folders, so it counts only then.
+    const anySessionFolderExpanded = sessionFolders.some(f => f.isExpanded) || (sessionFolders.length > 0 && noFolderExpanded)
+    const setAllSessionFoldersExpanded = (expanded: boolean): void => {
+        if (!sessionFolderActions) return
+        void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), expanded)
+        setNoFolderExpanded(expanded)
+    }
 
     // A session row dragged onto another row relates the two (report 269168e4). Rows read the
     // dragged id from context, since dragover cannot read the drag's data.
@@ -763,11 +790,27 @@ export function Sidebar({
         onTogglePin(workspaceId)
     }
 
+    // Reply threads are not listed as sessions (1b965ad1): they live under their reply, in the thread
+    // pane and in the Threads list. Search still finds them, and the one on screen keeps its row.
+    const threadIds = useMemo(() => threadSessionIds(sessionRelations), [sessionRelations])
+    const onScreenKey = [activeSessionId ?? '', ...(splitLayout?.sessionIds ?? [])].join('\n')
+    const listedWorkspaces = useMemo(
+        () => withoutThreadSessions(workspaces, threadIds, onScreenKey.split('\n')),
+        [workspaces, threadIds, onScreenKey]
+    )
+    // A drag in a workspace's list orders only the rows shown; the hidden threads keep their place at
+    // the end, or the saved order (main keeps exactly the ids it is given) would drop them.
+    const onReorderSessions = useCallback((workspaceId: string, ordered: TerminalSession[]) => {
+        const named = new Set(ordered.map(session => session.id))
+        const rest = (workspaces.find(w => w.id === workspaceId)?.sessions ?? []).filter(session => !named.has(session.id))
+        onReorderSessionsProp(workspaceId, [...ordered, ...rest])
+    }, [workspaces, onReorderSessionsProp])
+
     // 홈, 일반 워크스페이스, Playground 분리
-    const homeWorkspace = workspaces.find(w => w.isHome)
-    const pinnedWorkspaces = workspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && w.isPinned)
-    const regularWorkspaces = workspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned && !w.folderId)
-    const playgroundWorkspaces = workspaces.filter(w => w.isPlayground)
+    const homeWorkspace = listedWorkspaces.find(w => w.isHome)
+    const pinnedWorkspaces = listedWorkspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && w.isPinned)
+    const regularWorkspaces = listedWorkspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned && !w.folderId)
+    const playgroundWorkspaces = listedWorkspaces.filter(w => w.isPlayground)
 
     // While searching, the grouped list (pinned / folders / drag-reorderable rows) is
     // replaced by a flat result list. Reorder groups must see the whole list: the
@@ -777,7 +820,7 @@ export function Sidebar({
         ? findMatchingProjects(workspaces, folders, searchQuery, showWorktrees)
         : []
 
-    const allSessionEntries = sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground)
+    const allSessionEntries = sessionsInSidebarOrder(listedWorkspaces, folders, showWorktrees, showPlayground)
     // All sessions' "New session" (c63a93c0) offers the projects the sidebar shows, in its order.
     const [newSessionOpen, setNewSessionOpen] = useState(false)
     // Opened from a session folder's right-click menu: the new session is filed there (b9038a0e).
@@ -792,11 +835,11 @@ export function Sidebar({
     // first, then sidebar order.
     const sessionForest = useMemo(
         () => allSessionsLayout === 'tree'
-            ? sessionForestFor(sessionRelations, orderForAllSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), []))
+            ? sessionForestFor(sessionRelations, orderForAllSessions(sessionsInSidebarOrder(listedWorkspaces, folders, showWorktrees, showPlayground), []))
             : null,
-        [allSessionsLayout, sessionRelations, workspaces, folders, showWorktrees, showPlayground]
+        [allSessionsLayout, sessionRelations, listedWorkspaces, folders, showWorktrees, showPlayground]
     )
-    const sessionResults = isSearching ? findMatchingSessions(allSessionEntries, searchQuery) : []
+    const sessionResults = isSearching ? findMatchingSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), searchQuery) : []
     const isAllSessionsView = viewMode === 'all'
     // Rows picked with their check boxes in All sessions (0d1e3d34). Closed sessions drop out.
     const sessionIdsKey = allSessionEntries.map(entry => entry.session.id).join('\n')
@@ -1133,13 +1176,12 @@ export function Sidebar({
                     sidebarRef.current = el
                     sidebarContainerRef.current = el
                 }}
-                className={`glass-panel mx-2 mb-2 ${PANEL_TOP_MARGIN} rounded-lg flex flex-col overflow-hidden relative`}
+                className="glass-panel m-2 rounded-lg flex flex-col overflow-hidden relative"
                 style={{ width: width, minWidth: 50, maxWidth: 480 }}
             >
                 {/* Same height and top edge as the main header (App.tsx) so the two divider lines meet */}
-                <div className={`${splitLayout ? 'h-6' : 'h-10'} px-2 border-b border-white/10 flex items-center justify-between draggable transition-all`}>
-                    {/* The label gives way first, so a narrow sidebar never clips the buttons */}
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">{isAllSessionsView ? 'All sessions' : 'Workspaces'}</span>
+                <div data-testid="sidebar-header" className={`${splitLayout ? 'h-6' : 'h-10'} px-2 border-b border-white/10 flex items-center justify-between draggable transition-all`}>
+                    <SidebarHeaderStart title={isAllSessionsView ? 'All sessions' : 'Workspaces'} />
                     <div className="flex items-center gap-0.5 no-drag shrink-0">
                         {inboxSlot}
                         <button
@@ -1165,7 +1207,7 @@ export function Sidebar({
                                 folderKind="session"
                                 anyExpanded={anySessionFolderExpanded}
                                 showCollapseAll={false}
-                                onToggleCollapseAll={() => void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), !anySessionFolderExpanded)}
+                                onToggleCollapseAll={() => setAllSessionFoldersExpanded(!anySessionFolderExpanded)}
                                 onNewFolder={() => setShowFolderPrompt('session')}
                                 onAddWorkspace={onAddWorkspace}
                             />
@@ -1181,7 +1223,7 @@ export function Sidebar({
                             <button
                                 data-testid="sidebar-collapse-session-folders"
                                 data-state={anySessionFolderExpanded ? 'expanded' : 'collapsed'}
-                                onClick={() => void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), !anySessionFolderExpanded)}
+                                onClick={() => setAllSessionFoldersExpanded(!anySessionFolderExpanded)}
                                 className="p-1 hover:bg-white/10 rounded transition-colors"
                                 title={anySessionFolderExpanded ? 'Collapse all session folders' : 'Expand all session folders'}
                             >
@@ -1205,7 +1247,8 @@ export function Sidebar({
                             data-state={viewMode}
                             onClick={toggleViewMode}
                             className={`p-1 hover:bg-white/10 rounded transition-colors ${isAllSessionsView ? 'bg-white/10' : ''}`}
-                            title={isAllSessionsView ? 'Back to folders' : 'All sessions'}
+                            // Names the view first: on macOS the header title gives way to the traffic lights (91fce7bf r2)
+                            title={isAllSessionsView ? 'All sessions — back to folders' : 'Workspaces — show all sessions'}
                         >
                             {isAllSessionsView
                                 ? <FolderTree size={14} className="text-blue-400" />
@@ -1341,6 +1384,8 @@ export function Sidebar({
                                 fontSize={fontSize}
                                 showSessionCount={showSessionCount}
                                 onCopy={copy}
+                                noFolderExpanded={noFolderExpanded}
+                                onToggleNoFolder={() => setNoFolderExpanded(!noFolderExpanded)}
                                 onNewSessionIn={(folderId) => { setNewSessionFolderId(folderId); setNewSessionOpen(true) }}
                             />
                         ) : (
@@ -1398,7 +1443,7 @@ export function Sidebar({
                             </div>
                             {pinnedWorkspaces.map(workspace => {
                                 const childWorktrees = showWorktrees
-                                    ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                    ? listedWorkspaces.filter(w => w.parentWorkspaceId === workspace.id)
                                     : []
                                 return (
                                     <WorkspaceItem
@@ -1444,7 +1489,7 @@ export function Sidebar({
                         className="space-y-0.5"
                     >
                         {folders.map(folder => {
-                            const folderWorkspaces = workspaces.filter(w =>
+                            const folderWorkspaces = listedWorkspaces.filter(w =>
                                 w.folderId === folder.id && !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned
                             )
                             return (
@@ -1525,7 +1570,7 @@ export function Sidebar({
                                         <div data-folder-body={folder.id} className="ml-3 pl-2 border-l border-white/5 space-y-0.5">
                                             {folderWorkspaces.map(workspace => {
                                                 const childWorktrees = showWorktrees
-                                                    ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                                    ? listedWorkspaces.filter(w => w.parentWorkspaceId === workspace.id)
                                                     : []
                                                 return (
                                                     <WorkspaceItem
@@ -1576,7 +1621,7 @@ export function Sidebar({
                     >
                         {regularWorkspaces.map(workspace => {
                             const childWorktrees = showWorktrees
-                                ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                ? listedWorkspaces.filter(w => w.parentWorkspaceId === workspace.id)
                                 : []
                             return (
                                 <ReorderableRow

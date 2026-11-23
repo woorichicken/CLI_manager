@@ -157,6 +157,8 @@ declare global {
             feedbackTerminalContext: (sessionId: string | null) => Promise<FeedbackTerminalContext>
             /** Tells main whether the feedback widget is shown here; the phone page follows it */
             reportFeedbackMode: (on: boolean) => void
+            /** macOS main window: the header row is the short split-view one — main re-centres the traffic lights. */
+            setHeaderCompact: (compact: boolean) => void
             checkTools: () => Promise<{ git: boolean; gh: boolean; brew: boolean }>
 
             // File utilities (for drag & drop)

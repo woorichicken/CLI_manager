@@ -109,6 +109,7 @@ rules stay in the root; this file is the inventory.
 #### 14-1. 세션 폴더 (All sessions 보기)
 - 1.20(제보 078ee766): 세션은 워크스페이스 소속을 그대로 두고 **세션 폴더 하나**에 더 들어갈 수 있다. 세션 폴더는 All sessions 보기에만 보인다 — 폴더(접기·개수) 먼저, 그 안은 목록과 같은 순서(고정 → 최근 본 순), 그 아래 「No folder」와 나머지
 - 만들기: All 보기 「…」 → New Session Folder(`sidebar-new-session-folder`). 같은 메뉴의 Collapse/Expand All(`sidebar-collapse-session-folders`)은 세션 폴더가 있을 때만. 폴더 보기의 「…」(워크스페이스 폴더)와 같은 자리 — 메뉴가 보기를 따른다(afbc3546)
+- 「No folder」 줄도 접힌다(cbc0ee48 — ▸/▾·개수). 저장 폴더가 아니라서 펼침은 localStorage `sidebar-no-folder-expanded`(기계마다), 머리 줄 접기/펼치기 버튼(`sidebar-collapse-session-folders`)이 세션 폴더와 함께 접고 편다. 접혀 있어도 끌어 놓으면 폴더에서 뺀다
 - 넣기·빼기: 세션 줄을 폴더 줄에 끌어 놓기 / 「No folder」 줄에 놓기. 세션 줄 위에 놓으면 폴더가 아니라 관계(위 14). 이름 바꾸기·지우기는 폴더 줄 우클릭(워크스페이스 폴더와 같은 `FolderContextMenu`). 지워도 세션은 그대로 — 「No folder」로
 - 없는 폴더를 가리키는 `sessionFolderId` 는 폴더 없음으로 읽는다(옛 판·다른 창에서 지운 경우). 1.19 이전 앱은 두 칸 모두 모른다 — 세션은 예전처럼 평평하게
 - 코드: `src/main/SessionFolders.ts`(저장 · T57) · `hooks/useSessionFolders.ts`(렌더러 상태 — 바로 바꾸고 뒤에서 저장) · `Sidebar/SidebarAllSessions.tsx`(목록·폴더 줄·놓기)
@@ -382,6 +383,9 @@ User Action (Renderer)
 - `get-system-info` → `SystemInfo`: CPU·RAM·디스크(데이터 볼륨)·배터리·가동 시간·세션 수. 팝오버를 열 때만 읽는다
 - `get-status-report` → `StatusCommandResult`: 팝오버 아래 「Queues」 칸. main 이 저장된 `settings.statusCommand` 를 로그인 셸로 돌리고(20초 상한, 렌더러는 명령을 넘기지 않는다) 출력의 `StatusReport` v1 JSON 을 읽는다(`main/statusCommand.ts`). 0 이 아닌 종료도 JSON 이 있으면 리포트로 친다(`queues status --json` 은 막힌 줄이 있으면 3). 모르는 상태는 `error`, 개수는 앱이 다시 센다. 비어 있으면 `{ configured: false }` 로 칸이 없다. 앱은 줄 이름을 모른다 — 모양만 안다. 열 때·Refresh 때만 돈다(같은 순간 두 번 열면 한 실행을 같이 쓴다). 줄마다 `actions`(빈 칸 = 읽기만), 행마다 지금 내건 동작 — 패널은 배지만 단다(`Read only`/`Manage · …`). 동작 실행은 Control API `POST /v1/queues/…` 뿐이고 `statusActionCommand` 가 있어야 한다(결정 0014, `createStatusService` 를 IPC 와 API 가 같이 쓴다)
 
+#### Window
+- `window-header-compact(compact)` (renderer → main, 받기만): 메인 창 머리 줄이 분할 보기의 h-6 인지. macOS 에서 main 이 신호등을 그 줄 가운데로 옮긴다(`setWindowButtonPosition` — 보통 {15, 21}, 분할 {15, 13}). 메인 창이 보낸 것만 받는다(Grid 창도 App 을 그린다). 렌더러는 신호등 자리 `TRAFFIC_LIGHTS_CLEAR_X`(84)를 사이드바 머리 줄 왼쪽, 사이드바를 닫으면 메인 머리 왼쪽에 비워 둔다(91fce7bf r2)
+
 #### Feedback Widget
 - `feedback-relay`: 피드백 위젯의 요청을 main 이 `Origin: https://desktop.climanager.solhun.com` 으로 보낸다. `https://*.supabase.co/functions/v1/dp-agentation-ingest/…` 의 GET·POST 만 허용하고, 실패는 던지지 않고 `{ error }` 로 돌려준다(렌더러 쪽이 던져서 위젯 큐가 재시도하게 한다)
 - `feedback-terminal-context(sessionId | null)` → `FeedbackTerminalContext`: 창 사건(`appEvents`)과 그 터미널의 상태·사건·최근 200줄(비밀값 가림). 모르는 id·문자열이 아닌 값이면 `terminal: null`. 제보를 보낼 때 위젯이 부르고, 2초 안에 답이 없으면 그 정보 없이 보낸다
@@ -436,6 +440,7 @@ User Action (Renderer)
   `prompt-answer(sessionId, { signature, optionIndex | customText })` → `PromptAnswerResult`(`answered` · `rejected: prompt_changed …`)
 - Fork: `chat-fork(sessionId, ChatForkRequest{ turnIndex, turnTs, scope: 'whole'|'excerpt', message, quote })` → `ChatForkResult`(`forked` + 새 세션 id·이름·`messageSent`·`note` · `rejected: no_conversation|turn_changed|unknown_session|too_large|revoked|failed`). 별칭을 먼저 읽는다
 - Threads: `chat-threads(sessionId)` → `ChatThread[]`(`childId, name, turnTs, turnIndex?, forkedAt, status, lastActivityAt`) · `chat-threads-subscribe` / `chat-threads-unsubscribe(sessionId)` · `chat-threads-changed`(main → renderer, `{ sessionId }`, 관계·상태·활동 시각·이름 변경). 창별 구독 수를 세고 렌더러 종료 때 해제한다.
+- 사이드바 세션 목록·⌘[ ] 에는 답 스레드가 없다(1b965ad1): 렌더러가 같은 판정(`opened` + anchor + 안 뺌, `utils/relatedSessions.ts` `threadSessionIds`)으로 줄에서 뺀다. 검색 결과·Threads 목록·화면에 띄운 스레드는 남는다. `reorder-sessions` 는 이름이 빠진 세션을 끝에 둔다(지우지 않음). 폰 목록도 같다: `/api/phone/sessions` 의 `PhoneSession.thread`(나무·세션 폴더 머리글은 스레드 없이 계산), 폰은 List·Tree·개수에서 빼고 검색에서 찾는다
 - Threads list (사이드바 All sessions › 💬): `chat-threads-all(quotes)` → `ChatThreadEntry[]`(`ChatThread` + `parentId, parentName, workspaceName, quote`, 마지막 활동 순 — `quotes: false` 는 닫힌 목록의 배지용, 대화 파일을 안 읽는다) · `chat-threads-all-subscribe` / `chat-threads-all-unsubscribe` · `chat-threads-all-changed`(main → renderer). All sessions 보기에 있는 창이 구독하고(목록이 닫혀 있어도 — 배지), 구독한 창이 있을 때만 같은 1초 틱이 모든 anchor 부모로 넓어진다(`pollChatThreadChanges` 의 `all`). 인용은 anchor 가 바뀌지 않으므로 main 이 부모·턴별로 기억한다(최대 500).
 - 2회차: `chat-discard-queued(sessionId, id)` · `chat-send-queued-now(sessionId, id)` → `ChatSendResult` · `chat-interrupt(sessionId)` → `InterruptResult` ·
   `chat-image(sessionId, ref)` → data: URL | null · `chat-tool-output(sessionId, ref)` → string | null · `chat-commands(sessionId)` → `ChatCommand[]` ·
