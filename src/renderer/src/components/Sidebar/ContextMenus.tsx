@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash, Link2, Plus, Bot } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { TemplateIcon } from '../TemplateIcon'
+import { AgentTemplateRows } from './AgentTemplateRows'
 import { MENU_Z_INDEX } from '../../constants/styles'
 
 /**
@@ -257,6 +258,17 @@ export function WorkspaceContextMenu({
             <div className="px-2.5 py-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                 New Terminal
             </div>
+
+            {/* Claude Code · Codex — built in, dim when the program is not found (fb-1120b) */}
+            <AgentTemplateRows
+                customTemplates={templates}
+                onPick={(_e, template) => {
+                    onAddSession('regular', template)
+                    onClose()
+                }}
+                rowClassName="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                iconSize={12}
+            />
 
             {/* Plain Terminal */}
             <button
@@ -516,6 +528,14 @@ export function WorktreeContextMenu({
             <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                 New Terminal
             </div>
+
+            {/* Claude Code · Codex — built in (fb-1120b) */}
+            <AgentTemplateRows
+                customTemplates={templates}
+                onPick={handleTemplateClick}
+                rowClassName="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-all duration-150 flex items-center gap-2 cursor-pointer"
+                iconSize={13}
+            />
 
             {/* Plain Terminal */}
             <button

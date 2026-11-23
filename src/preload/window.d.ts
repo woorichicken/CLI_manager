@@ -5,6 +5,7 @@ import type { PhoneState } from '../shared/types'
 import type { CronInput, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
 import type { PhoneTestPushResult } from '../shared/phone'
 import type { DocPreviewOpenResult } from '../shared/docPreview'
+import type { AgentCliStatuses, GettingStartedState } from '../shared/gettingStarted'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 declare global {
@@ -49,6 +50,13 @@ declare global {
             // Templates
             getTemplates: () => Promise<any[]>
             saveTemplates: (templates: any[]) => Promise<boolean>
+
+            // Getting started card + built-in agent rows (fb-1120b)
+            gettingStartedGet: () => Promise<GettingStartedState | null>
+            gettingStartedBegin: () => Promise<GettingStartedState>
+            gettingStartedDismiss: () => Promise<GettingStartedState | null>
+            gettingStartedCheck: () => Promise<GettingStartedState | null>
+            agentCliStatus: () => Promise<AgentCliStatuses>
 
             // Split Terminal View
             openFullscreenTerminal: (sessionIds: string[]) => Promise<boolean>

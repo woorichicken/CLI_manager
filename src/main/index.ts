@@ -65,6 +65,8 @@ import { net } from 'electron'
 import { DictationService } from './Dictation'
 import { DictationLog } from './DictationLog'
 import { openInDock } from './dockOpen'
+import { AgentCliChecker, GettingStarted, checkAgentClis, parseAgentCliFake } from './GettingStarted'
+import { BUILTIN_AGENT_TEMPLATES } from '../shared/gettingStarted'
 import { dockLocation } from './phone/phoneDock'
 import { BROWSER_PAGE_EXTENSIONS } from '../shared/fileKinds'
 import { guardDocPreviewFrames, registerDocPreviewScheme, setupDocPreview } from './docPreviewProtocol'
@@ -617,6 +619,19 @@ const conversationService = new ConversationService({
         phoneConversationListeners.emit(sessionId, revision)
     }
 })
+
+// First-run checklist: its own store key, not `settings` (the welcome screen and Settings write that back whole)
+const gettingStarted = new GettingStarted({
+    load: () => store.get('gettingStarted'),
+    save: (state) => store.set('gettingStarted', state),
+    workspaces: () => (store.get('workspaces') as Workspace[] | undefined) ?? [],
+    foregroundAgents: () => terminalManager.foregroundAgentKinds(),
+    hasConversation: (id) => conversationService.hasConversation(id)
+})
+// Tests never ask the person's shell: CLIMANAGER_AGENT_CLI_FAKE answers instead, and without it the answer is unknown
+const agentCliChecker = new AgentCliChecker(process.env.CLIMANGER_TEST_USERDATA
+    ? async () => parseAgentCliFake(process.env.CLIMANAGER_AGENT_CLI_FAKE ?? '')
+    : () => checkAgentClis(process.env.SHELL || '/bin/zsh'))
 
 // The same connection checks serve desktop IPC and the authenticated Control API.
 const agentConversations = new AgentConversations({
@@ -1784,7 +1799,8 @@ app.whenReady().then(async () => {
         // Only a template that exists is remembered — the Related dialog's "plain terminal" choice
         // has an id of its own that is not a template.
         const templates = (store.get('customTemplates') as TerminalTemplate[] | undefined) ?? []
-        const knownTemplateId = typeof templateId === 'string' && templates.some(t => t.id === templateId) ? templateId : undefined
+        // the + menu's built-in Claude Code / Codex rows count as templates too (no logo — the plain icon)
+        const knownTemplateId = typeof templateId === 'string' && (templates.some(t => t.id === templateId) || BUILTIN_AGENT_TEMPLATES.some(t => t.id === templateId)) ? templateId : undefined
 
         const newSession: TerminalSession = {
             id: uuidv4(),
@@ -2278,6 +2294,14 @@ app.whenReady().then(async () => {
         store.set('customTemplates', templates)
         return true
     })
+
+    // Getting started card (fb-1120b): created when the welcome screen is accepted, ticked by what happened
+    ipcMain.handle('getting-started-get', () => gettingStarted.get())
+    ipcMain.handle('getting-started-begin', () => gettingStarted.begin())
+    ipcMain.handle('getting-started-dismiss', () => gettingStarted.dismiss())
+    ipcMain.handle('getting-started-check', () => gettingStarted.check())
+    // Whether the "+" menu's Claude Code / Codex rows can start — a hint that dims a row, never a gate
+    ipcMain.handle('agent-cli-status', () => agentCliChecker.get())
 
     ipcMain.handle('check-git-config', async () => {
         try {

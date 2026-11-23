@@ -205,7 +205,8 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
     })
 
     await page.getByText(workspaces[0].name).first().waitFor({ timeout: 30_000 })
-    await page.waitForFunction(
+    // no seeded session: no terminal ever mounts, so there is nothing to wait for (T159 first run)
+    if (sessions.length > 0) await page.waitForFunction(
         (expected: number) => {
             const dbg = (window as unknown as { __termDebug?: { ids: () => string[] } }).__termDebug
             return Boolean(dbg && dbg.ids().length >= expected)

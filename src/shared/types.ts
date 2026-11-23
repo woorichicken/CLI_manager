@@ -142,6 +142,7 @@ export interface AppConfig {
     sessionRelations?: SessionRelation[]   // Session header "Related sessions" (see SessionRelation)
     inbox?: InboxRequest[]   // Requests sessions sent for the user's hands (see InboxRequest)
     checklists?: Checklist[]   // Header checklists, apart from sessions (see Checklist)
+    gettingStarted?: unknown   // First-run "Getting started" card (see shared/gettingStarted.ts); read through readGettingStartedState
 }
 
 export interface UserSettings {
