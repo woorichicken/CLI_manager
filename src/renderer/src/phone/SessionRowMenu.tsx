@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { MoreHorizontal, Pencil, StickyNote } from 'lucide-react'
+import { MoreHorizontal, Pencil, Power, StickyNote } from 'lucide-react'
 import type { PhoneSession } from '../../../shared/phone'
 
 /**
  * The ⋯ at the end of a session row and its small menu (f683eafe): what a held press used to hide,
- * in plain sight — Rename, and Memo when the session has one. Only for a device that may type; the
- * held press still renames. No end or delete here: the phone neither makes nor removes sessions
- * (decision 0009).
+ * in plain sight — Rename, Memo when the session has one, and End session (f683eafe r2, the person
+ * on 11-23: 「나는 넣었으면 좋겠고」 — decision 0009). Only for a device that may type; the held press
+ * still renames. End asks first (PhoneEndSheet); the phone still never makes a session.
  */
 export function SessionRowMenu({
     session,
@@ -14,7 +14,8 @@ export function SessionRowMenu({
     onToggle,
     onClose,
     onRename,
-    onMemo
+    onMemo,
+    onEnd
 }: {
     session: PhoneSession
     open: boolean
@@ -22,6 +23,7 @@ export function SessionRowMenu({
     onClose: () => void
     onRename: () => void
     onMemo: () => void
+    onEnd: () => void
 }) {
     const box = useRef<HTMLDivElement>(null)
     useEffect(() => {
@@ -67,6 +69,11 @@ export function SessionRowMenu({
                             Memo
                         </button>
                     )}
+                    {/* last and red: the one item that changes more than a label */}
+                    <button type="button" role="menuitem" className="is-danger" data-testid="phone-row-menu-end" onClick={onEnd}>
+                        <Power size={14} aria-hidden="true" />
+                        End session
+                    </button>
                 </div>
             )}
         </div>

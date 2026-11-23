@@ -4086,6 +4086,17 @@ app.whenReady().then(async () => {
                 throw error
             }
         },
+        // f683eafe r2: the phone's End session is the Control API's close — the sidebar's row, the
+        // store, the relations and the inbox go the same way; nothing is handed over
+        endSession: (id) => {
+            try {
+                controlApiService.closeSession(id)
+                return true
+            } catch (error) {
+                if (error instanceof ControlApiError && error.status === 404) return false
+                throw error
+            }
+        },
         hookStatus: (id) => agentStatusResolver.getStatus(id),
         broadcast,
         mask: { homeDir: os.homedir(), username: currentUsername() },

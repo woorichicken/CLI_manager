@@ -28,7 +28,9 @@ Everything a phone needs already lives in main: the ptys, their history (the scr
   ([0011](0011-phone-documents-in-a-sandboxed-frame.md)), the Artifact Dock's list (read only; the
   extension's order, untouched), and (when
   the Mac shows the feedback widget, `drive` devices only) the feedback relay — and
-  nothing that creates, deletes, renames or resizes. The Control API port is never forwarded:
+  nothing that creates a session or resizes a pty. `drive` devices may rename a session (0a4bdfff) and
+  end one (f683eafe, see the amendment below) through the Control API service's own rename and
+  close, nothing of their own. The Control API port is never forwarded:
   its token opens every session and a phone would have to carry it. The phone server calls the same
   `ConversationService` functions the Electron IPC handlers call, in the same process.
 - **Reached through `tailscale serve`, which the person runs.** Settings shows the command and the
@@ -52,6 +54,17 @@ Everything a phone needs already lives in main: the ptys, their history (the scr
 - **One page, two entries.** The phone page is a second Vite entry of the renderer (`phone.html`)
   and renders the desktop `ChatView` with a fetch + WebSocket `ChatTransport`. The server serves
   phone.html and only the chunks Vite's manifest says it loads.
+
+## Amendment 2026-11-23 — the phone may end a session (f683eafe round 2)
+
+The person, asked whether the row's ⋯ menu should end a session: 「나는 넣었으면 좋겠고」
+(«I'd like it in»). The phone's row menu has «End session»: a sheet names the session and says the
+terminal closes and the session leaves the list, Cancel focused, End in red. End sends
+`POST /api/phone/end/<id>`; main calls `ControlApiService.closeSession` — the same close the Control
+API's `DELETE /v1/sessions/:id` uses, so the sidebar row, the store, the relations, the inbox and the
+phone sockets go the same way; nothing is handed over. `drive` devices only (a view-only device has
+no menu, and the route answers 403), the Host/Origin checks as every POST, and a device disconnected
+while the request was on its way is refused (401). Creating a session from the phone stays out.
 
 ## Consequences
 
