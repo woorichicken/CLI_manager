@@ -54,9 +54,9 @@ test.describe('T13 hide worktrees', () => {
         // Asserting it first keeps the "it disappeared" check below honest.
         await expect(worktreeRow.first()).toBeVisible({ timeout: 15_000 })
 
-        // Settings > Git (Local) > Show Worktrees
+        // Settings > Sidebar > Show Worktrees
         await page.locator('button[title^="Settings"]').click()
-        await page.getByRole('button', { name: 'Git (Local)', exact: true }).click()
+        await page.getByTestId('settings-category-sidebar').click()
         const toggleRow = page.locator('div.flex.items-center.justify-between')
             .filter({ hasText: 'Show Worktrees' })
         await toggleRow.locator('button').first().click()

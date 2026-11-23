@@ -680,7 +680,7 @@ function persistDetectedSession(info: { terminalId: string; cliSessionId: string
 // Phone connection (Settings › Phone): a second server, off by default, set up once the app is ready.
 let phone: PhoneSetup | null = null
 
-// Sidebar status dots read from the screen mirrors (Settings > General). Off by default;
+// Sidebar status dots read from the screen mirrors (Settings > Sidebar). Off by default;
 // when off there is no timer at all.
 const sessionScreenStatus = new SessionScreenStatusPoller({
     mirror: terminalMirror,

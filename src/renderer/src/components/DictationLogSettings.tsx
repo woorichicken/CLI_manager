@@ -13,7 +13,7 @@ interface Props {
 }
 
 /**
- * Settings › Terminal › Chat view › Keep dictation log (decision 0012, default off): what dictation heard
+ * Settings › Chat › Keep dictation log (decision 0012, default off): what dictation heard
  * next to what was sent, on this Mac only, to make dictation better later. The folder and Delete all act
  * at once — they do not wait for Save. Main: src/main/DictationLog.ts.
  */

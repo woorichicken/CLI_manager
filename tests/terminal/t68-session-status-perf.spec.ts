@@ -18,8 +18,8 @@ import { launchAppWithWorkspaces, closeApp, writeToTerminal, saveMetrics, Launch
  * renders).
  *
  * Three setups, same load:
- *   off       — the user's config: Settings > Hooks off, new dots off
- *   heuristic — Settings > Hooks "Session Monitoring" on (the existing feature)
+ *   off       — the user's config: Settings > Agents > Session Monitoring off, new dots off
+ *   heuristic — Settings > Agents > Session Monitoring "Session Monitoring" on (the existing feature)
  *   screen    — the new "Show Session Status" (main reads the mirrors)
  *
  * Per setup: main and renderer CPU over 30s (app.getAppMetrics), status IPC

@@ -10,7 +10,7 @@ import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult } fro
  * - The sidebar header and the main header draw their divider on the same line.
  * - "Show Playground" changes the sidebar, not just the stored value (same reasoning as T13).
  * - Cmd+Shift+L opens and closes the Related sessions dialog of the active tab.
- * - fb-1117 0e6c4a0a: Settings › General "Show Source Control" off hides the header's Source Control
+ * - fb-1117 0e6c4a0a: Settings › Sidebar "Show Source Control" off hides the header's Source Control
  *   button and the split panes' Git Panel buttons; Review Diff stays. `T36_SHOTS=<dir>` (+ T36_LABEL)
  *   leaves header and Settings captures. Fails on the code before it: there is no such switch.
  *
@@ -59,6 +59,8 @@ test.describe('T36 feedback batch 1022', () => {
         await expect(section).toBeVisible()
 
         await page.locator('button[title^="Settings"]').click()
+
+        await page.getByTestId('settings-category-sidebar').click()
         await page.getByTestId('settings-show-playground').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
 
@@ -90,6 +92,8 @@ test.describe('T36 feedback batch 1022', () => {
         await shot('header-source-control-on')
 
         await page.locator('button[title^="Settings"]').click()
+
+        await page.getByTestId('settings-category-sidebar').click()
         const toggle = page.getByTestId('settings-show-source-control')
         await expect(toggle).toHaveAttribute('aria-pressed', 'true')
         await toggle.scrollIntoViewIfNeeded()
@@ -118,6 +122,7 @@ test.describe('T36 feedback batch 1022', () => {
 
         // On again: both panes get theirs back.
         await page.locator('button[title^="Settings"]').first().click()
+        await page.getByTestId('settings-category-sidebar').click()
         await page.getByTestId('settings-show-source-control').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(paneButtons).toHaveCount(2, { timeout: 15_000 })

@@ -88,13 +88,13 @@ export interface PhoneServerDeps extends Omit<PhoneApiDeps, 'access' | 'owner' |
     onDeviceRevoked?(deviceId: string | null): void
     /** the feedback widget on the phone (phoneFeedback.ts); absent, the page never shows it */
     feedback?: PhoneFeedbackDeps
-    /** the Mac's chat quick replies (Settings › Terminal › Chat view), for the phone's own switch (847da0aa) */
+    /** the Mac's chat quick replies (Settings › Chat), for the phone's own switch (847da0aa) */
     quickReplies?(): string[]
     /** their colours, keyed by text (93bd4834) — beside the list, so an older phone page reading strings is unaffected */
     quickReplyColors?(): Record<string, string> | undefined
     /** the person wrote their own phrases on the Mac: a phone shows them unless it was told not to */
     quickRepliesSet?(): boolean
-    /** Settings › Terminal › Chat view «Keep my last message on top»: a phone follows it until it chooses */
+    /** Settings › Chat «Keep my last message on top»: a phone follows it until it chooses */
     pinLastMessage?(): boolean
 }
 

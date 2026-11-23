@@ -196,7 +196,7 @@ export function SplitTerminalHeader({
                 <button onClick={handleSearchClick} className={buttonClass} title="Search Files" disabled={!workspace?.path}>
                     <Search size={16} className="text-gray-400" />
                 </button>
-                {/* No handler = Settings > General "Show Source Control" is off */}
+                {/* No handler = Settings > Sidebar "Show Source Control" is off */}
                 {onOpenGit && (
                     <button onClick={handleGitClick} className={buttonClass} title="Git Panel" disabled={!workspace?.path}>
                         <GitBranch size={16} className="text-gray-400" />

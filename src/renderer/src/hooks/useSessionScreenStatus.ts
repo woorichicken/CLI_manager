@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { SessionScreenStatus, SessionScreenStatusMessage } from '../../../shared/types'
 
 /**
- * Sidebar status dots judged in main from each screen (Settings > General
+ * Sidebar status dots judged in main from each screen (Settings > Sidebar
  * "Show Session Status"). Main sends only the sessions whose dot changed.
  *
  * A module-level store rather than state in App: a status change re-renders

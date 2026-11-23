@@ -501,7 +501,7 @@ test('T96 Mac Settings: the new Chat switches; off by default, and pinned stays 
         await expect(chat(page).getByTestId('chat-pinned-last')).toHaveCount(0)
     })
     await page.locator('button[title^="Settings ("]').click()
-    await page.getByTestId('settings-category-terminal').click()
+    await page.getByTestId('settings-category-chat').click()
     const panel = page.getByTestId('chat-view-settings')
     await panel.scrollIntoViewIfNeeded()
     await shot(page, 't96-settings-1280')

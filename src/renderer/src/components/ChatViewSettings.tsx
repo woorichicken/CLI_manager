@@ -5,7 +5,7 @@ import { QuickReplyColors } from './QuickReplyColors'
 import { DictationLogSettings } from './DictationLogSettings'
 
 /**
- * Settings › Terminal › Chat view: how the chat's message box sends, and one-tap replies over the
+ * Settings › Chat: how the chat's message box sends, and one-tap replies over the
  * empty box (ovis Settings → Chat → Composer). Kept with the app's settings, not per device.
  */
 export function ChatViewSettings({ settings, setSettings }: { settings: UserSettings; setSettings: React.Dispatch<React.SetStateAction<UserSettings>> }) {
@@ -35,7 +35,7 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
     )
 
     return (
-        <div className="mt-6 pt-6 border-t border-white/10" data-testid="chat-view-settings">
+        <div data-testid="chat-view-settings">
             <h3 className="text-sm font-semibold text-white mb-1">Chat view</h3>
             <p className="text-xs text-gray-400 mb-3">The Terminal / Chat switch in a Claude Code or Codex session&apos;s header.</p>
             <div className="space-y-3">

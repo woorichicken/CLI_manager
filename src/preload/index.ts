@@ -331,7 +331,7 @@ const api = {
         return () => ipcRenderer.removeListener('control-api-masters', listener)
     },
 
-    // Sidebar status dots, judged in main from the screen mirrors (Settings > General)
+    // Sidebar status dots, judged in main from the screen mirrors (Settings > Sidebar)
     getSessionScreenStatuses: (): Promise<SessionScreenStatusMessage> => ipcRenderer.invoke('get-session-screen-statuses'),
     onSessionScreenStatus: (callback: (message: SessionScreenStatusMessage) => void) => {
         const listener = (_e: unknown, message: SessionScreenStatusMessage) => callback(message)
