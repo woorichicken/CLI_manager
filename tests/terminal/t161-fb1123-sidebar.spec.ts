@@ -5,7 +5,7 @@ import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText } from './helpers'
 
 /**
- * T159 — fb-1123 sidebar reports.
+ * T161 — fb-1123 sidebar reports.
  *
  *  - 91fce7bf: the macOS traffic lights get a strip of their own above both panels. The lights are
  *    native and never in a capture, so the check reads where main put them (getWindowButtonPosition)
@@ -18,13 +18,13 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  *    view's send (no AI mark, the same refusals): it reaches the mock agent (`ANSWER[n]`), a question
  *    on screen refuses it inline, the request stays unread, and a session with no agent has no box.
  *
- * T159_SHOTS=<dir> + T159_LABEL saves captures before the checks (the old build's "before").
+ * T161_SHOTS=<dir> + T161_LABEL saves captures before the checks (the old build's "before").
  */
 
-const CLAUDE = 's-t159-claude'
-const SHELL = 's-t159-shell'
+const CLAUDE = 's-t161-claude'
+const SHELL = 's-t161-shell'
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
-const LABEL = process.env.T159_LABEL ?? 'run'
+const LABEL = process.env.T161_LABEL ?? 'run'
 /** A generous box for the three lights from their top-left corner (macOS 26: ~13px buttons, ~9px apart). */
 const LIGHTS = { width: 70, height: 16 }
 
@@ -43,7 +43,7 @@ function tempDir(prefix: string): string {
 }
 
 async function shot(page: Page, name: string): Promise<void> {
-    const dir = process.env.T159_SHOTS
+    const dir = process.env.T161_SHOTS
     if (!dir) return
     fs.mkdirSync(dir, { recursive: true })
     await page.waitForTimeout(400)
@@ -51,7 +51,7 @@ async function shot(page: Page, name: string): Promise<void> {
 }
 
 async function launch(): Promise<{ app: ElectronApplication; page: Page; home: string }> {
-    const home = tempDir('climanager-t159-')
+    const home = tempDir('climanager-t161-')
     const project = path.join(home, 'project')
     fs.mkdirSync(project, { recursive: true })
     const transcript = path.join(home, 'claude', 'projects', 'x', '00000000-0000-4000-8000-0000000c1590.jsonl')
@@ -59,18 +59,18 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; home: s
     fs.writeFileSync(transcript, '')
     result = await launchAppWithWorkspaces(
         [{
-            id: 'w-t159',
-            name: 'T159 project',
+            id: 'w-t161',
+            name: 'T161 project',
             path: project,
             sessions: [
                 {
                     id: CLAUDE,
-                    name: 'T159 Claude',
+                    name: 'T161 Claude',
                     cliSessionId: '00000000-0000-4000-8000-0000000c1590',
                     cliToolName: 'claude',
                     cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 300`
                 },
-                { id: SHELL, name: 'T159 Shell' }
+                { id: SHELL, name: 'T161 Shell' }
             ]
         }],
         {
@@ -89,10 +89,10 @@ const lightsBox = (app: ElectronApplication): Promise<{ x: number; y: number } |
 const panelTops = (page: Page): Promise<number[]> =>
     page.evaluate(() => Array.from(document.querySelectorAll('.glass-panel')).map((el) => el.getBoundingClientRect().top))
 
-test('T159 91fce7bf: the traffic lights sit in their own strip — no panel starts under them, open or closed sidebar', async () => {
+test('T161 91fce7bf: the traffic lights sit in their own strip — no panel starts under them, open or closed sidebar', async () => {
     const { app, page } = await launch()
-    await expect(page.getByText('T159 Shell', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
-    await shot(page, 't159-lights-open')
+    await expect(page.getByText('T161 Shell', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+    await shot(page, 't161-lights-open')
 
     const lights = await lightsBox(app)
     expect(lights, 'main reports the traffic light position').not.toBeNull()
@@ -114,7 +114,7 @@ test('T159 91fce7bf: the traffic lights sit in their own strip — no panel star
     await page.locator('button[title^="Close Sidebar"]').click()
     const open = page.locator('button[title^="Open Sidebar"]')
     await expect(open).toBeVisible()
-    await shot(page, 't159-lights-closed')
+    await shot(page, 't161-lights-closed')
     const openBox = (await open.boundingBox())!
     expect(openBox.y, 'Open Sidebar is below the lights').toBeGreaterThanOrEqual(lightsBottom)
     for (const top of await panelTops(page)) expect(top).toBeGreaterThanOrEqual(lightsBottom)
@@ -127,10 +127,10 @@ test('T159 91fce7bf: the traffic lights sit in their own strip — no panel star
     expect(await overlay.evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region') || getComputedStyle(el).getPropertyValue('app-region'))).toBe('no-drag')
 })
 
-test('T159 78a79526: buttons with a shortcut name the keys and say what they do on a second line', async () => {
+test('T161 78a79526: buttons with a shortcut name the keys and say what they do on a second line', async () => {
     const { page } = await launch()
-    await expect(page.getByText('T159 Shell', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
-    await page.getByText('T159 Shell', { exact: true }).first().click()
+    await expect(page.getByText('T161 Shell', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+    await page.getByText('T161 Shell', { exact: true }).first().click()
     await page.locator('button[title^="Session Memo"]:visible').click()
     await expect(page.getByTestId('session-memo-new-page')).toBeVisible()
 
@@ -143,10 +143,10 @@ test('T159 78a79526: buttons with a shortcut name the keys and say what they do 
         memoCopy: await page.getByTestId('session-memo-copy').getAttribute('title'),
         related: await titleOf(`[data-related-button="${SHELL}"]`)
     }
-    const dir = process.env.T159_SHOTS
+    const dir = process.env.T161_SHOTS
     if (dir) {
         fs.mkdirSync(dir, { recursive: true })
-        fs.writeFileSync(path.join(dir, `t159-titles-${LABEL}.json`), JSON.stringify(titles, null, 2))
+        fs.writeFileSync(path.join(dir, `t161-titles-${LABEL}.json`), JSON.stringify(titles, null, 2))
     }
 
     const lines = (title: string | null) => (title ?? '').split('\n')
@@ -171,7 +171,7 @@ async function apiFor(home: string) {
     return async (method: string, route: string, body: unknown, caller: string): Promise<number> => {
         const res = await fetch(discovery.url + route, {
             method,
-            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't159', 'X-Caller-Session': caller },
+            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't161', 'X-Caller-Session': caller },
             body: JSON.stringify(body)
         })
         return res.status
@@ -184,7 +184,7 @@ const terminalLines = (page: Page, id: string): Promise<string> =>
 const sessionRole = (page: Page, id: string) =>
     page.locator(`[data-session-item="${id}"][data-session-role]`).first().getAttribute('data-session-role')
 
-test('T159 5f9002d5: reply to an inbox request from the popover — it reaches the agent, a question refuses it, the request stays unread', async () => {
+test('T161 5f9002d5: reply to an inbox request from the popover — it reaches the agent, a question refuses it, the request stays unread', async () => {
     test.setTimeout(180_000)
     const { page, home } = await launch()
     await waitForBufferText(page, CLAUDE, 'Claude Code (mock)', 20_000)
@@ -198,7 +198,7 @@ test('T159 5f9002d5: reply to an inbox request from the popover — it reaches t
     await bell.click()
     const popover = page.getByTestId('inbox-popover')
     await expect(popover).toBeVisible()
-    await shot(page, 't159-inbox-open')
+    await shot(page, 't161-inbox-open')
 
     const claudeItem = popover.locator('li').filter({ has: page.locator('[data-inbox-request]', { hasText: 'Which port' }) })
     const shellItem = popover.locator('li').filter({ has: page.locator('[data-inbox-request]', { hasText: 'Sign in to the staging' }) })
@@ -213,7 +213,7 @@ test('T159 5f9002d5: reply to an inbox request from the popover — it reaches t
     const box = claudeItem.getByTestId('inbox-reply-input')
     await expect(box).toBeFocused()
     await page.keyboard.type('use port 4100')
-    await shot(page, 't159-inbox-reply')
+    await shot(page, 't161-inbox-reply')
     await page.keyboard.press('Enter')
     await expect(claudeItem.getByTestId('inbox-reply-status')).toHaveAttribute('data-state', 'sent', { timeout: 10_000 })
     await expect.poll(() => terminalLines(page, CLAUDE), { timeout: 10_000 }).toContain('ANSWER[1]: use port 4100')
@@ -235,7 +235,7 @@ test('T159 5f9002d5: reply to an inbox request from the popover — it reaches t
     await expect(status).toHaveAttribute('data-state', 'rejected', { timeout: 10_000 })
     await expect(status).toContainText('asking a question')
     await expect(box).toHaveValue('second answer')
-    await shot(page, 't159-inbox-refused')
+    await shot(page, 't161-inbox-refused')
     expect(await terminalLines(page, CLAUDE)).not.toContain('second answer')
 
     // Esc closes the reply box, not the popover; a second Esc closes the popover.

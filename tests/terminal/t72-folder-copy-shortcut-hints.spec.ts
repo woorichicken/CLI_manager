@@ -202,7 +202,7 @@ test.describe('T72 folder copy and shortcut hints (fb-1031)', () => {
             await page.evaluate(() => document.querySelectorAll('[data-t72-tip]').forEach(el => el.remove()))
         }
 
-        // Second line: what the key does, as Settings › Keyboard says it (78a79526 — T159).
+        // Second line: what the key does, as Settings › Keyboard says it (78a79526 — T161).
         expect(titles.settings).toBe('Settings (⌘,)\nOpen or close settings')
         expect(titles.closeSidebar).toBe('Close Sidebar (⌘B)\nShow or hide the sidebar')
         expect(titles.related).toBe('Related sessions — none yet. Open to add one. (⌘⇧L)')
