@@ -2235,11 +2235,14 @@ function App() {
                                         />
                                     </div>
                                 )}
-                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded mb-4">
-                                    <p className="text-xs text-blue-200">
-                                        <strong>Tip:</strong> If the terminal seems frozen, try pressing Enter
-                                    </p>
-                                </div>
+                                {/* the checklist already says what to do next; the frozen-terminal tip only competes with it */}
+                                {!gettingStartedState && (
+                                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded mb-4">
+                                        <p className="text-xs text-blue-200">
+                                            <strong>Tip:</strong> If the terminal seems frozen, try pressing Enter
+                                        </p>
+                                    </div>
+                                )}
                                 please select a terminal
 
                                 {settings.feedbackEmail && (

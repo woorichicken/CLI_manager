@@ -112,6 +112,8 @@ test.describe('T159 Getting started', () => {
         await expect(card.locator('[data-getting-started-count]')).toHaveText('0/3')
         await expect(card.locator('[data-getting-started-step="folder"]')).toHaveAttribute('data-done', 'false')
         await expect.poll(() => (readConfig(userDataDir).gettingStarted as { dismissed?: boolean } | undefined)?.dismissed).toBe(false)
+        // the card replaces the frozen-terminal tip on the empty pane (review 2026-11-23)
+        await expect(page.getByText('If the terminal seems frozen')).toHaveCount(0)
         await shot(page, '1-card-empty')
 
         // Step 1 — the card's Add folder… opens the same picker as the sidebar's +
@@ -134,6 +136,9 @@ test.describe('T159 Getting started', () => {
         await expect(claudeRow).toHaveAttribute('data-cli-status', 'installed')
         await expect(claudeRow).toHaveCSS('opacity', '1')
         await expect(claudeRow).toContainText('claude')
+        // each row carries its program's logo, not a generic icon
+        await expect(claudeRow.locator('svg[data-agent-logo="claude"]')).toBeVisible()
+        await expect(codexRow.locator('svg[data-agent-logo="codex"]')).toBeVisible()
         const order = await page.evaluate(() => {
             const name = (b: Element): string => b.querySelector('span.truncate')?.textContent?.trim() ?? ''
             return Array.from(document.querySelectorAll('button')).map(name).filter((n) => /^(Claude Code|Codex|Plain Terminal)$/.test(n))
@@ -182,6 +187,8 @@ test.describe('T159 Getting started', () => {
         await expect(page.locator('[data-getting-started]')).toHaveCount(0)
 
         // the person's own `claude …` template hides the built-in Claude row; Codex stays, normal
+        // no checklist: the empty pane keeps its tip
+        await expect(page.getByText('If the terminal seems frozen')).toBeVisible()
         await page.getByText('proj').first().click({ button: 'right' })
         await expect(page.locator('[data-builtin-template="claude"]')).toHaveCount(0)
         await expect(page.locator('[data-builtin-template="codex"]')).toHaveAttribute('data-cli-status', 'installed')

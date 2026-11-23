@@ -1,8 +1,8 @@
 import React from 'react'
-import { Bot, Sparkles } from 'lucide-react'
 import type { TerminalTemplate } from '../../../../shared/types'
 import { builtinTemplatesFor, type AgentCli } from '../../../../shared/gettingStarted'
 import { useAgentCliStatus } from '../../hooks/useAgentCliStatus'
+import { AgentLogo } from './AgentLogo'
 
 const INSTALL_HINT: Record<AgentCli, string> = {
     claude: '`claude` was not found in your shell. Install Claude Code, then open this again. (Click to try anyway.)',
@@ -29,7 +29,6 @@ export function AgentTemplateRows({ customTemplates, onPick, rowClassName, iconS
         <>
             {builtinTemplatesFor(customTemplates).map(({ agent, ...template }) => {
                 const missing = statuses[agent] === 'missing'
-                const Icon = agent === 'claude' ? Sparkles : Bot
                 return (
                     <button
                         key={template.id}
@@ -41,7 +40,7 @@ export function AgentTemplateRows({ customTemplates, onPick, rowClassName, iconS
                         data-builtin-template={agent}
                         data-cli-status={statuses[agent]}
                     >
-                        <Icon size={iconSize} className={`shrink-0 ${agent === 'claude' ? 'text-orange-300' : 'text-sky-300'}`} />
+                        <AgentLogo agent={agent} size={iconSize} className={`shrink-0${agent === 'codex' ? ' text-gray-100' : ''}`} />
                         <span className="truncate">{template.name}</span>
                         {missing
                             ? <span className="ml-auto shrink-0 text-[10px] text-gray-500">Not installed</span>
