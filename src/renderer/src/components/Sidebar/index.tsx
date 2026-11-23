@@ -14,7 +14,7 @@ import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatch
 import { SidebarSessionList } from './SidebarSessionList'
 import { SidebarAllSessions } from './SidebarAllSessions'
 import { SidebarSessionTree } from './SidebarSessionTree'
-import { sessionForestFor, sessionTreeFor, wouldMakeLoop, handParentsInTheWay } from '../../utils/relatedSessions'
+import { sessionForestFor, sessionTreeFor, wouldMakeLoop, handParentsInTheWay, threadSessionIds, withoutThreadSessions } from '../../utils/relatedSessions'
 import { relatedForAgent } from '../../utils/relatedForAgent'
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, sidebarWorkspaceOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
@@ -193,7 +193,7 @@ export function Sidebar({
     onOpenSettings,
     settingsOpen,
     onRenameSession,
-    onReorderSessions,
+    onReorderSessions: onReorderSessionsProp,
     onReorderWorkspaces,
     onTogglePin,
     onToggleSessionPin,
@@ -790,11 +790,27 @@ export function Sidebar({
         onTogglePin(workspaceId)
     }
 
+    // Reply threads are not listed as sessions (1b965ad1): they live under their reply, in the thread
+    // pane and in the Threads list. Search still finds them, and the one on screen keeps its row.
+    const threadIds = useMemo(() => threadSessionIds(sessionRelations), [sessionRelations])
+    const onScreenKey = [activeSessionId ?? '', ...(splitLayout?.sessionIds ?? [])].join('\n')
+    const listedWorkspaces = useMemo(
+        () => withoutThreadSessions(workspaces, threadIds, onScreenKey.split('\n')),
+        [workspaces, threadIds, onScreenKey]
+    )
+    // A drag in a workspace's list orders only the rows shown; the hidden threads keep their place at
+    // the end, or the saved order (main keeps exactly the ids it is given) would drop them.
+    const onReorderSessions = useCallback((workspaceId: string, ordered: TerminalSession[]) => {
+        const named = new Set(ordered.map(session => session.id))
+        const rest = (workspaces.find(w => w.id === workspaceId)?.sessions ?? []).filter(session => !named.has(session.id))
+        onReorderSessionsProp(workspaceId, [...ordered, ...rest])
+    }, [workspaces, onReorderSessionsProp])
+
     // 홈, 일반 워크스페이스, Playground 분리
-    const homeWorkspace = workspaces.find(w => w.isHome)
-    const pinnedWorkspaces = workspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && w.isPinned)
-    const regularWorkspaces = workspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned && !w.folderId)
-    const playgroundWorkspaces = workspaces.filter(w => w.isPlayground)
+    const homeWorkspace = listedWorkspaces.find(w => w.isHome)
+    const pinnedWorkspaces = listedWorkspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && w.isPinned)
+    const regularWorkspaces = listedWorkspaces.filter(w => !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned && !w.folderId)
+    const playgroundWorkspaces = listedWorkspaces.filter(w => w.isPlayground)
 
     // While searching, the grouped list (pinned / folders / drag-reorderable rows) is
     // replaced by a flat result list. Reorder groups must see the whole list: the
@@ -804,7 +820,7 @@ export function Sidebar({
         ? findMatchingProjects(workspaces, folders, searchQuery, showWorktrees)
         : []
 
-    const allSessionEntries = sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground)
+    const allSessionEntries = sessionsInSidebarOrder(listedWorkspaces, folders, showWorktrees, showPlayground)
     // All sessions' "New session" (c63a93c0) offers the projects the sidebar shows, in its order.
     const [newSessionOpen, setNewSessionOpen] = useState(false)
     // Opened from a session folder's right-click menu: the new session is filed there (b9038a0e).
@@ -819,11 +835,11 @@ export function Sidebar({
     // first, then sidebar order.
     const sessionForest = useMemo(
         () => allSessionsLayout === 'tree'
-            ? sessionForestFor(sessionRelations, orderForAllSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), []))
+            ? sessionForestFor(sessionRelations, orderForAllSessions(sessionsInSidebarOrder(listedWorkspaces, folders, showWorktrees, showPlayground), []))
             : null,
-        [allSessionsLayout, sessionRelations, workspaces, folders, showWorktrees, showPlayground]
+        [allSessionsLayout, sessionRelations, listedWorkspaces, folders, showWorktrees, showPlayground]
     )
-    const sessionResults = isSearching ? findMatchingSessions(allSessionEntries, searchQuery) : []
+    const sessionResults = isSearching ? findMatchingSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), searchQuery) : []
     const isAllSessionsView = viewMode === 'all'
     // Rows picked with their check boxes in All sessions (0d1e3d34). Closed sessions drop out.
     const sessionIdsKey = allSessionEntries.map(entry => entry.session.id).join('\n')
@@ -1427,7 +1443,7 @@ export function Sidebar({
                             </div>
                             {pinnedWorkspaces.map(workspace => {
                                 const childWorktrees = showWorktrees
-                                    ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                    ? listedWorkspaces.filter(w => w.parentWorkspaceId === workspace.id)
                                     : []
                                 return (
                                     <WorkspaceItem
@@ -1473,7 +1489,7 @@ export function Sidebar({
                         className="space-y-0.5"
                     >
                         {folders.map(folder => {
-                            const folderWorkspaces = workspaces.filter(w =>
+                            const folderWorkspaces = listedWorkspaces.filter(w =>
                                 w.folderId === folder.id && !w.isPlayground && !w.parentWorkspaceId && !w.isHome && !w.isPinned
                             )
                             return (
@@ -1554,7 +1570,7 @@ export function Sidebar({
                                         <div data-folder-body={folder.id} className="ml-3 pl-2 border-l border-white/5 space-y-0.5">
                                             {folderWorkspaces.map(workspace => {
                                                 const childWorktrees = showWorktrees
-                                                    ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                                    ? listedWorkspaces.filter(w => w.parentWorkspaceId === workspace.id)
                                                     : []
                                                 return (
                                                     <WorkspaceItem
@@ -1605,7 +1621,7 @@ export function Sidebar({
                     >
                         {regularWorkspaces.map(workspace => {
                             const childWorktrees = showWorktrees
-                                ? workspaces.filter(w => w.parentWorkspaceId === workspace.id)
+                                ? listedWorkspaces.filter(w => w.parentWorkspaceId === workspace.id)
                                 : []
                             return (
                                 <ReorderableRow

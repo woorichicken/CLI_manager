@@ -152,6 +152,10 @@ test('T154 551ee952 · c04532a6 · b808043e · 66e5ad19: Show opens the thread, 
     await field.press('Enter')
     await expect(panel.getByTestId('chat-thread-rename')).toHaveText('Pricing follow-up')
     await expect.poll(() => sessionName(childId), { timeout: 5000 }).toBe('Pricing follow-up')
-    await expect(page.locator(`[data-session-item="${childId}"]`).first()).toContainText('Pricing follow-up', { timeout: 5000 })
+    // The sidebar lists no thread rows since 1b965ad1 (T163); its search finds the thread by the new name.
+    await page.getByTestId('sidebar-search-toggle').click()
+    await page.getByPlaceholder('Search projects and sessions').fill('Pricing follow')
+    await expect(page.locator(`[data-testid="sidebar-search-results"] [data-session-item="${childId}"]`).first()).toContainText('Pricing follow-up', { timeout: 5000 })
+    await page.getByTestId('sidebar-search-toggle').click()
     await shot(page, 't154-3-renamed')
 })

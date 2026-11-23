@@ -353,3 +353,107 @@ test('T163 6ab4bf73: the checklist chip is a small button — count and due dot,
     await page.keyboard.press('Meta+Shift+J')
     await expect(page.getByTestId('checklist-panel')).toBeVisible()
 })
+
+const visibleTerminals = (page: Page): Promise<(string | null)[]> =>
+    page.evaluate(() => Array.from(document.querySelectorAll('[data-session-id]'))
+        .filter(el => getComputedStyle(el).visibility === 'visible' && (el as HTMLElement).offsetWidth > 0)
+        .map(el => el.getAttribute('data-session-id')))
+
+test('T163 1b965ad1: reply threads stay out of the sidebar lists and ⌘[ ] — Threads, search and the thread on screen still show them', async () => {
+    const project = tempDir('climanager-t163t-')
+    const P = 's-t163-parent', T1 = 's-t163-thread1', F = 's-t163-fork', T2 = 's-t163-thread2', X = 's-t163-other'
+    const TFOLDER = 'sf-t163-threads'
+    const now = Date.now()
+    const anchor = { turnTs: new Date(now - 60_000).toISOString() }
+    result = await launchAppWithWorkspaces(
+        [{
+            id: WS,
+            name: 'T163 threads',
+            path: project,
+            sessions: [
+                { id: P, name: 'T163 parent' },
+                { id: T1, name: 'T163 thread one' },
+                { id: F, name: 'T163 plain fork' },
+                { id: T2, name: 'T163 thread two', sessionFolderId: TFOLDER },
+                { id: X, name: 'T163 other' }
+            ]
+        }],
+        {
+            settings: { showHomeWorkspace: false, showSessionCount: true, showPlayground: false },
+            config: {
+                sessionFolders: [{ id: TFOLDER, name: 'T163 kept', isExpanded: true, createdAt: 1 }],
+                sessionRelations: [
+                    { from: P, to: T1, kind: 'opened', at: now - 3000, anchor },
+                    { from: P, to: T2, kind: 'opened', at: now - 2000, anchor },
+                    // a fork with no anchor (opened before threads, or by a lead): an ordinary session
+                    { from: P, to: F, kind: 'opened', at: now - 1000 }
+                ]
+            }
+        }
+    )
+    const { app, page, userDataDir } = result
+    await resizeMainWindow(app, 1280, 800)
+    const workspaceList = page.getByTestId('sidebar-workspace-list')
+    await expect(workspaceList.locator(`[data-session-item="${P}"]`)).toBeVisible({ timeout: 15_000 })
+    await workspaceList.locator(`[data-session-item="${P}"]`).click()
+    await expect.poll(() => visibleTerminals(page)).toEqual([P])
+    await shot(page, null, '1b965ad1', 'folders', { x: 0, y: 0, width: 420, height: 400 })
+
+    // Folder view: the threads are not rows, nor in the count; the plain fork is.
+    await expect(workspaceList.locator(`[data-session-item="${F}"]`)).toBeVisible()
+    await expect(workspaceList.locator(`[data-session-item="${T1}"]`)).toHaveCount(0)
+    await expect(workspaceList.locator(`[data-session-item="${T2}"]`)).toHaveCount(0)
+    await expect(workspaceList.getByText('(3)', { exact: true }).first()).toBeVisible()
+
+    // ⌘] from the parent goes to the next listed session, not into its thread.
+    await page.keyboard.press('Meta+]')
+    await expect.poll(() => visibleTerminals(page)).toEqual([F])
+    await page.keyboard.press('Meta+[')
+    await expect.poll(() => visibleTerminals(page)).toEqual([P])
+
+    // All sessions, List: not in the session folder, not under «No folder».
+    await page.getByTestId('sidebar-view-toggle').click()
+    await page.getByTestId('all-sessions-layout-list').click()
+    const all = page.getByTestId('sidebar-all-sessions')
+    await expect(all.locator(`[data-session-item="${X}"]`)).toBeVisible()
+    await shot(page, null, '1b965ad1', 'all-list', { x: 0, y: 0, width: 420, height: 400 })
+    await expect(all.locator(`[data-session-item="${T1}"]`)).toHaveCount(0)
+    await expect(all.locator(`[data-session-item="${T2}"]`)).toHaveCount(0)
+    await expect(page.locator(`[data-session-folder-count="${TFOLDER}"]`)).toHaveText('(0)')
+    await expect(page.locator('[data-session-folder-count="none"]')).toHaveText('(3)')
+
+    // Tree: the plain fork under its parent, no thread.
+    await page.getByTestId('all-sessions-layout-tree').click()
+    await expect(all.locator(`[data-session-item="${F}"]`)).toBeVisible()
+    await expect(all.locator(`[data-session-item="${T1}"]`)).toHaveCount(0)
+    await expect(all.locator(`[data-session-item="${T2}"]`)).toHaveCount(0)
+
+    // Threads (💬) lists them.
+    await page.getByTestId('all-sessions-threads').click()
+    await expect(page.locator(`[data-testid="sidebar-thread-row"][data-child-id="${T1}"]`)).toBeVisible()
+    await expect(page.locator(`[data-testid="sidebar-thread-row"][data-child-id="${T2}"]`)).toBeVisible()
+    await page.getByTestId('all-sessions-threads').click()
+    await page.getByTestId('all-sessions-layout-list').click()
+
+    // Search finds a thread; opened from there it keeps its row while it is on screen.
+    await page.getByTestId('sidebar-search-toggle').click()
+    await page.getByPlaceholder('Search projects and sessions').fill('thread one')
+    const found = page.locator(`[data-testid="sidebar-search-results"] [data-session-item="${T1}"]`).first()
+    await expect(found).toBeVisible()
+    await found.click()
+    await expect.poll(() => visibleTerminals(page)).toEqual([T1])
+    await page.getByTestId('sidebar-search-toggle').click()
+    await expect(all.locator(`[data-session-item="${T1}"]`)).toBeVisible()
+    await shot(page, null, '1b965ad1', 'thread-on-screen', { x: 0, y: 0, width: 420, height: 400 })
+    // Moving on, it leaves the list again.
+    await all.locator(`[data-session-item="${X}"]`).click()
+    await expect.poll(() => visibleTerminals(page)).toEqual([X])
+    await expect(all.locator(`[data-session-item="${T1}"]`)).toHaveCount(0)
+
+    // An order that leaves sessions out does not delete them (the sidebar orders only what it shows).
+    await page.evaluate(([ws, a, b]) => window.api.reorderSessions(ws, [a, b]), [WS, X, P])
+    await expect.poll(() => {
+        const config = JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8'))
+        return config.workspaces[0].sessions.map((s: { id: string }) => s.id)
+    }).toEqual([X, P, T1, F, T2])
+})

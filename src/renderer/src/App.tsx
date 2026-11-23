@@ -44,7 +44,7 @@ import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
-import { parentSessionsOf, relatedCounts } from './utils/relatedSessions'
+import { parentSessionsOf, relatedCounts, threadSessionIds, withoutThreadSessions } from './utils/relatedSessions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 import { useSessionTabs } from './hooks/useSessionTabs'
 import { SessionTabBar, type SessionTabEntry } from './components/SessionTabs/SessionTabBar'
@@ -1340,12 +1340,25 @@ function App() {
         window.api.reportSidebarSessionOrder(sidebarSessionIdsKey ? sidebarSessionIdsKey.split('\n') : [])
     }, [sidebarSessionIdsKey, sessionsRestored])
 
+    // ⌘[ ] and ⌘⇧[ ] walk the sessions the sidebar lists: reply threads are not among them (1b965ad1),
+    // except one on screen (the active session or a split pane), which keeps its place.
+    const sidebarThreadIds = useMemo(() => threadSessionIds(sessionRelations), [sessionRelations])
+    const onScreenKey = [activeSession?.id ?? '', ...(splitLayout?.sessionIds ?? [])].join('\n')
+    const navigationWorkspaces = useMemo(
+        () => withoutThreadSessions(workspacesInSidebarOrder, sidebarThreadIds, onScreenKey.split('\n')),
+        [workspacesInSidebarOrder, sidebarThreadIds, onScreenKey]
+    )
+    const navigationActiveWorkspace = useMemo(
+        () => (currentActiveWorkspace ? navigationWorkspaces.find(w => w.id === currentActiveWorkspace.id) ?? currentActiveWorkspace : null),
+        [currentActiveWorkspace, navigationWorkspaces]
+    )
+
     // Centralized keyboard shortcuts (session/workspace navigation, search, sidebar, settings, etc.)
     useKeyboardShortcuts({
         settings,
-        activeWorkspace: currentActiveWorkspace,
+        activeWorkspace: navigationActiveWorkspace,
         activeSession,
-        workspacesInSidebarOrder,
+        workspacesInSidebarOrder: navigationWorkspaces,
         splitLayout,
         activeSplitIndex,
         settingsOpen,

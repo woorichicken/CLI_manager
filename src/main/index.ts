@@ -2027,8 +2027,12 @@ app.whenReady().then(async () => {
         const reorderedSessions = sessionIds
             .map(id => workspace.sessions.find(s => s.id === id))
             .filter((s): s is TerminalSession => s !== undefined)
+        // A session the list did not name stays, at the end: an order is never a way to delete one
+        // (the sidebar hides reply threads from its rows — 1b965ad1)
+        const named = new Set(sessionIds)
+        const unnamed = workspace.sessions.filter(s => !named.has(s.id))
 
-        workspace.sessions = reorderedSessions
+        workspace.sessions = [...reorderedSessions, ...unnamed]
 
         // Update store
         store.set('workspaces', workspaces.map(w =>
