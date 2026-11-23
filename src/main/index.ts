@@ -17,7 +17,7 @@ import { rgPath } from '@vscode/ripgrep'
 import { TerminalManager } from './TerminalManager'
 import { PortManager } from './PortManager'
 import { SystemMonitor } from './SystemMonitor'
-import { registerStatusCommandIpc } from './statusCommand'
+import { createStatusService, registerStatusCommandIpc } from './statusCommand'
 import { countSessionActivity } from './systemMonitorInfo'
 import { CLISessionTracker } from './CLISessionTracker'
 import { codexResumeFromArgv, CodexSessionLocator } from './CodexSessionLocator'
@@ -251,7 +251,12 @@ const portManager = new PortManager(() => {
 // The mirror and the resolver are created further down; the popover only asks after startup.
 const systemMonitor = new SystemMonitor(store, () => countSessionActivity(terminalMirror, (id) => agentStatusResolver.getStatus(id)))
 // Status panel inside the System Monitor: runs settings.statusCommand only when the popover opens.
-registerStatusCommandIpc(() => (store.get('settings') as UserSettings | undefined)?.statusCommand)
+// One service for the popover and `/v1/queues`: same command, same shared run, same action rule.
+const statusService = createStatusService(() => {
+    const settings = store.get('settings') as UserSettings | undefined
+    return { command: settings?.statusCommand, actionCommand: settings?.statusActionCommand }
+})
+registerStatusCommandIpc(statusService)
 
 // LoopManager: instantiated after terminalManager so it can register onOutput.
 // The broadcast callback sends LOOP_UPDATE to loopWindow whenever state changes.
@@ -553,6 +558,7 @@ const cronService: CronService = new CronService({
 const controlApiServer = new ControlApiServer({
     service: controlApiService,
     crons: cronService,
+    queues: statusService,
     store,
     appVersion: app.getVersion()
 })
