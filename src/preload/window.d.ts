@@ -53,7 +53,7 @@ declare global {
 
             // Getting started card + built-in agent rows (fb-1120b)
             gettingStartedGet: () => Promise<GettingStartedState | null>
-            gettingStartedBegin: () => Promise<GettingStartedState>
+            gettingStartedBegin: () => Promise<GettingStartedState | null>
             gettingStartedDismiss: () => Promise<GettingStartedState | null>
             gettingStartedCheck: () => Promise<GettingStartedState | null>
             agentCliStatus: () => Promise<AgentCliStatuses>

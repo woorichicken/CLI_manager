@@ -626,6 +626,8 @@ const gettingStarted = new GettingStarted({
     save: (state) => store.set('gettingStarted', state),
     workspaces: () => (store.get('workspaces') as Workspace[] | undefined) ?? [],
     foregroundAgents: () => terminalManager.foregroundAgentKinds(),
+    agentStarted: () => codexAwaitingFirstMessage.size > 0 || ((store.get('workspaces') as Workspace[] | undefined) ?? [])
+        .some((w) => (w.sessions ?? []).some((s) => s.cliToolName === 'claude' || s.cliToolName === 'codex')),
     hasConversation: (id) => conversationService.hasConversation(id)
 })
 // Tests never ask the person's shell: CLIMANAGER_AGENT_CLI_FAKE answers instead, and without it the answer is unknown

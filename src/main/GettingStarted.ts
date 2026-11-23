@@ -4,7 +4,7 @@
  * real state and keeps the latched result in its own store key (`gettingStarted`) — not inside
  * `settings`, which the welcome screen and the Settings window write back whole from their copy.
  */
-import { execFile } from 'child_process'
+import { spawn } from 'child_process'
 import {
     beginGettingStarted,
     gettingStartedVisible,
@@ -25,6 +25,11 @@ export interface GettingStartedDeps {
     workspaces(): Workspace[]
     /** sessions whose terminal runs Claude Code or Codex in the foreground; null when unknown */
     foregroundAgents(): Promise<Map<string, AgentCli> | null>
+    /**
+     * Whether an agent was started anywhere (a session the app tied to claude/codex when its command
+     * was entered). Until then the process list is not read: one `ps` of every process is ~0.15 s.
+     */
+    agentStarted(): boolean
     /** whether a session's linked conversation has a message from the person; undefined when unknown */
     hasConversation(sessionId: string): boolean | undefined
     now?(): number
@@ -37,11 +42,13 @@ export class GettingStarted {
         return readGettingStartedState(this.deps.load())
     }
 
-    /** The welcome screen was accepted: show the card (again), keeping steps already done. */
-    begin(): GettingStartedState {
-        const state = beginGettingStarted(this.get(), this.deps.now?.() ?? Date.now())
-        this.deps.save(state)
-        return state
+    /**
+     * The welcome screen was accepted: show the card (again), keeping steps already done — and
+     * look at once, so a replay does not draw a card the first check then takes away.
+     */
+    async begin(): Promise<GettingStartedState | null> {
+        this.deps.save(beginGettingStarted(this.get(), this.deps.now?.() ?? Date.now()))
+        return this.check()
     }
 
     dismiss(): GettingStartedState | null {
@@ -69,7 +76,7 @@ export class GettingStarted {
         if (!state.done.agent) {
             // a conversation with a first message is proof the agent ran, even if it has since exited
             if (seen.chat) seen.agent = true
-            else {
+            else if (this.deps.agentStarted()) {
                 const running = await this.deps.foregroundAgents()
                 seen.agent = !!running && running.size > 0
             }
@@ -85,11 +92,19 @@ export type ShellRunner = (shell: string, args: string[], timeoutMs: number) => 
 const CLI_CHECK_TIMEOUT_MS = 6_000
 const CLI_CACHE_MS = 60_000
 
+const OUTPUT_LIMIT = 64 * 1024
+
+// stdin is closed: an rc file that reads input (a prompt, `read`) gets EOF instead of waiting for the kill
 const runShell: ShellRunner = (shell, args, timeoutMs) => new Promise((resolve, reject) => {
-    execFile(shell, args, { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 }, (error, stdout) => {
-        if (error && (error as NodeJS.ErrnoException & { killed?: boolean }).killed) reject(error)
-        else resolve(String(stdout ?? ''))
-    })
+    const child = spawn(shell, args, { stdio: ['ignore', 'pipe', 'ignore'] })
+    let out = ''
+    const timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        reject(new Error('shell check timed out'))
+    }, timeoutMs)
+    child.stdout.on('data', (chunk: Buffer) => { if (out.length < OUTPUT_LIMIT) out += chunk.toString() })
+    child.on('error', (error) => { clearTimeout(timer); reject(error) })
+    child.on('close', () => { clearTimeout(timer); resolve(out) })
 })
 
 /** The marker line keeps whatever a profile prints (banners, `instant prompt`) out of the answer. */

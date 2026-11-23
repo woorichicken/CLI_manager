@@ -52,7 +52,7 @@ const api = {
 
     // Getting started card + built-in agent rows (fb-1120b)
     gettingStartedGet: (): Promise<GettingStartedState | null> => ipcRenderer.invoke('getting-started-get'),
-    gettingStartedBegin: (): Promise<GettingStartedState> => ipcRenderer.invoke('getting-started-begin'),
+    gettingStartedBegin: (): Promise<GettingStartedState | null> => ipcRenderer.invoke('getting-started-begin'),
     gettingStartedDismiss: (): Promise<GettingStartedState | null> => ipcRenderer.invoke('getting-started-dismiss'),
     gettingStartedCheck: (): Promise<GettingStartedState | null> => ipcRenderer.invoke('getting-started-check'),
     agentCliStatus: (): Promise<AgentCliStatuses> => ipcRenderer.invoke('agent-cli-status'),

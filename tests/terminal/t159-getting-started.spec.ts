@@ -39,8 +39,10 @@ function makeSandbox(): Sandbox {
     const bin = path.join(root, 'bin')
     const project = path.join(root, 'my-project')
     for (const dir of [home, claudeDir, bin, project]) fs.mkdirSync(dir, { recursive: true })
-    // an empty .zshrc keeps zsh from asking its new-user questions in the temporary HOME
-    fs.writeFileSync(path.join(home, '.zshrc'), '')
+    // a .zshrc keeps zsh from asking its new-user questions, and puts the stand-in first: macOS
+    // path_helper moves /usr/local/bin and /opt/homebrew/bin ahead of the PATH it was given, where a
+    // real `claude` may be installed
+    fs.writeFileSync(path.join(home, '.zshrc'), `export PATH=${JSON.stringify(bin)}:$PATH\n`)
     const fake = path.join(bin, 'claude')
     fs.writeFileSync(fake, [
         `#!${process.execPath}`,
@@ -84,6 +86,7 @@ test.describe('T159 Getting started', () => {
             [{ id: 'home', name: 'Home', path: sandbox.home, isHome: true, sessions: [] }],
             {
                 settings: { hasCompletedOnboarding: false },
+                noTerminals: true,
                 env: {
                     HOME: sandbox.home,
                     CLAUDE_CONFIG_DIR: sandbox.claudeDir,
@@ -154,8 +157,8 @@ test.describe('T159 Getting started', () => {
 
         // Step 3 — a first message reaches the agent and its transcript
         const sessionId = agentSession()!.id
-        // the stand-in draws Claude's input box once it runs
-        await expect.poll(() => termText(page, sessionId), { timeout: 30_000 }).toContain('accept edits')
+        // only the stand-in may get the message: its own banner, never a real Claude's
+        await expect.poll(() => termText(page, sessionId), { timeout: 30_000 }).toContain('Claude Code (mock)')
         await writeToTerminal(page, sessionId, 'hello from t159')
         await page.waitForTimeout(300)
         await writeToTerminal(page, sessionId, '\r')
@@ -163,6 +166,7 @@ test.describe('T159 Getting started', () => {
         await expect(card).toHaveCount(0)
         await expect.poll(() => readConfig(userDataDir).gettingStarted).toMatchObject({ dismissed: false, done: { folder: true, agent: true, chat: true } })
         await shot(page, '4-done')
+        expect(ctx.pageErrors).toEqual([])
     })
 
     test('an existing user never sees the card; ✕ hides it for good and a replay brings it back', async () => {

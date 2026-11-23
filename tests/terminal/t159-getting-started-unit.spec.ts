@@ -83,7 +83,7 @@ test.describe('checklist rules', () => {
 })
 
 test.describe('main-side check', () => {
-    const make = (workspaces: Workspace[], options: { running?: Map<string, 'claude' | 'codex'> | null; talked?: Set<string> } = {}) => {
+    const make = (workspaces: Workspace[], options: { running?: Map<string, 'claude' | 'codex'> | null; talked?: Set<string>; started?: boolean } = {}) => {
         let stored: unknown = undefined
         const calls = { ps: 0, read: 0 }
         const service = new GettingStarted({
@@ -91,6 +91,7 @@ test.describe('main-side check', () => {
             save: (state) => { stored = JSON.parse(JSON.stringify(state)) },
             workspaces: () => workspaces,
             foregroundAgents: async () => { calls.ps++; return options.running === undefined ? new Map() : options.running },
+            agentStarted: () => options.started ?? true,
             hasConversation: (id) => { calls.read++; return options.talked?.has(id) ?? false },
             now: () => 42
         })
@@ -110,7 +111,7 @@ test.describe('main-side check', () => {
         const running = new Map<string, 'claude' | 'codex'>()
         const talked = new Set<string>()
         const { service, stored } = make([home, project], { running, talked })
-        service.begin()
+        await service.begin()
         expect((await service.check())!.done).toEqual({ folder: true })
         running.set('s1', 'claude')
         expect((await service.check())!.done).toEqual({ folder: true, agent: true })
@@ -126,7 +127,7 @@ test.describe('main-side check', () => {
     test('a conversation proves the agent ran even if no process is seen', async () => {
         const project = workspace({ sessions: [{ id: 's1', name: 's', cwd: '/tmp', type: 'regular', cliSessionId: 'c1' }] as Workspace['sessions'] })
         const { service, calls } = make([project], { running: null, talked: new Set(['s1']) })
-        service.begin()
+        await service.begin()
         expect((await service.check())!.done).toEqual({ folder: true, agent: true, chat: true })
         expect(calls.ps).toBe(0)
     })
@@ -134,15 +135,23 @@ test.describe('main-side check', () => {
     test('only Home: the folder step stays open; a session without a conversation id is not read', async () => {
         const home = workspace({ isHome: true, sessions: [{ id: 's', name: 's', cwd: '/', type: 'regular' }] as Workspace['sessions'] })
         const { service, calls } = make([home])
-        service.begin()
+        await service.begin()
         expect((await service.check())!.done).toEqual({})
         expect(calls.read).toBe(0)
     })
 
+    test('no agent started yet: the process list is not read', async () => {
+        const { service, calls } = make([workspace({})], { started: false, running: new Map([['x', 'claude']]) })
+        expect((await service.begin())!.done).toEqual({ folder: true })
+        expect(calls.ps).toBe(0)
+    })
+
     test('a closed card does no work', async () => {
         const { service, calls } = make([workspace({})])
-        service.begin()
+        await service.begin()
         service.dismiss()
+        calls.ps = 0
+        calls.read = 0
         expect((await service.check())!.dismissed).toBe(true)
         expect(calls).toEqual({ ps: 0, read: 0 })
     })
