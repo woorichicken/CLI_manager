@@ -3,7 +3,7 @@ import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, Status
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
 import type { CronInput, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
-import type { PhoneTestPushResult } from '../shared/phone'
+import type { PhoneEndedSession, PhoneTestPushResult } from '../shared/phone'
 import type { DocPreviewOpenResult } from '../shared/docPreview'
 import type { AgentCliStatuses, GettingStartedState } from '../shared/gettingStarted'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
@@ -282,6 +282,8 @@ declare global {
             revokeAllPhoneDevices: () => Promise<PhoneState>
             testPhonePush: () => Promise<PhoneTestPushResult>
             onPhoneStateChanged: (callback: (state: PhoneState) => void) => () => void
+            /** a phone ended a session (f683eafe r2): the sidebar's notice */
+            onPhoneEndedSession: (callback: (ended: PhoneEndedSession) => void) => () => void
             getConversation: (sessionId: string, limit?: number) => Promise<ConversationSnapshot | null>
             subscribeConversation: (sessionId: string) => Promise<void>
             unsubscribeConversation: (sessionId: string) => Promise<void>

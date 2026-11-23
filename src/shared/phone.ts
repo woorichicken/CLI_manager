@@ -3,8 +3,9 @@
  * answers over HTTP and WebSocket, and what the phone page (`src/renderer/src/phone/`)
  * sends. Types only — both sides import them so the two cannot drift.
  *
- * The phone only reads sessions and works in the ones that exist: there is no
- * route that creates, deletes or renames a session, and none that resizes a pty.
+ * The phone reads sessions and works in the ones that exist. It never creates one
+ * or resizes a pty; a drive device may rename one (0a4bdfff) and end one (f683eafe r2,
+ * decision 0009) — the same rename and close the Control API does.
  */
 
 /** What a request may do: `drive` types and answers, `watch` only reads. */
@@ -79,6 +80,20 @@ export interface PhoneSession {
      * it, so the phone's List and Tree skip it too; the phone's search still finds it.
      */
     thread?: true
+}
+
+/** main → renderer: a phone ended a session (f683eafe r2) — the sidebar says so at its bottom */
+export const PHONE_ENDED_SESSION_CHANNEL = 'phone-ended-session'
+export interface PhoneEndedSession {
+    sessionId: string
+    name: string
+    /** the paired device's name, else the Tailscale login it came in with */
+    by: string
+}
+
+/** POST /api/phone/end/<sessionId> — the session was closed on the Mac */
+export interface PhoneEndResponse {
+    status: 'ended'
 }
 
 /** POST /api/phone/rename/<sessionId> — the name the Mac kept (trimmed, at most 80 characters) */
@@ -360,7 +375,9 @@ export const PHONE_API = {
     /** GET `/api/phone/memo/<sessionId>`: the session's memo pages */
     memo: '/api/phone/memo',
     /** POST `/api/phone/rename/<sessionId>` `{ name }`: the sidebar name (drive devices) */
-    rename: '/api/phone/rename'
+    rename: '/api/phone/rename',
+    /** POST `/api/phone/end/<sessionId>`: close the session on the Mac (drive devices, f683eafe r2) */
+    end: '/api/phone/end'
 } as const
 
 /** One limit window. `resetsAt` is ISO-8601 (UTC). */

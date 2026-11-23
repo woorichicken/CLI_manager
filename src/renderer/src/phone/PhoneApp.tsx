@@ -375,6 +375,10 @@ export function PhoneApp() {
     const renamedFromList = (id: string, name: string): void => {
         setData((current) => (current ? { ...current, sessions: current.sessions.map((s) => (s.id === id ? { ...s, name } : s)) } : current))
     }
+    // ended from the list (f683eafe r2): the row goes now, not at the next poll; an open session falls back to the list
+    const endedFromList = (id: string): void => {
+        setData((current) => (current ? { ...current, sessions: current.sessions.filter((s) => s.id !== id) } : current))
+    }
     // A session link in the chat (b2020233): the phone shows one session, so the first one the link names
     // that this list holds. Refs are full ids or their first 8+ characters, as on the Mac (sessionLink.ts).
     const openSessionLink = (uri: string): void => {
@@ -474,7 +478,7 @@ export function PhoneApp() {
                         <span className="phone-dock-entry-label">Usage</span>
                         <ChevronRight size={15} className="phone-dock-entry-icon" aria-hidden="true" />
                     </button>
-                    <SessionList data={data} activeId={session?.id ?? null} canRename={me.role === 'drive'} onOpen={open} onRenamed={renamedFromList} />
+                    <SessionList data={data} activeId={session?.id ?? null} canRename={me.role === 'drive'} onOpen={open} onRenamed={renamedFromList} onEnded={endedFromList} />
                 </aside>
             )}
             {!wide && session && drawer && <div className="phone-scrim" onClick={() => setDrawer(false)} data-testid="phone-scrim" />}

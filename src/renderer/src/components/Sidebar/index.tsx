@@ -307,6 +307,9 @@ export function Sidebar({
     // dragged id from context, since dragover cannot read the drag's data.
     const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
     const { text: dropNotice, show: showDropNotice } = useDropNotice()
+    // A phone ended a session (f683eafe r2): its row just goes, so the sidebar says who did it — the same
+    // line at the bottom a drop uses
+    useEffect(() => window.api.onPhoneEndedSession(({ name, by }) => showDropNotice(`Ended from phone (${by}): ${name}`)), [showDropNotice])
     // The list a dragged row scrolls when held near its top or bottom (0edb46cc): whichever view is shown.
     const sessionListScrollRef = useRef<HTMLDivElement | null>(null)
     useDragAutoScroll(draggingSessionId !== null, sessionListScrollRef)

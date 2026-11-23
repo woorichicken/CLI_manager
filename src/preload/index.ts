@@ -4,7 +4,7 @@ import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, Status
 import { CRON_CHANNELS, CronInput, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatForkRequest, ChatForkResult, ChatThread, ChatThreadEntry, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
-import type { PhoneTestPushResult } from '../shared/phone'
+import { PHONE_ENDED_SESSION_CHANNEL, type PhoneEndedSession, type PhoneTestPushResult } from '../shared/phone'
 import type { DocPreviewOpenResult } from '../shared/docPreview'
 import type { SessionTabsState } from '../shared/sessionTabs'
 import type { AgentCliStatuses, GettingStartedState } from '../shared/gettingStarted'
@@ -403,6 +403,11 @@ const api = {
     revokePhoneDevice: (id: string): Promise<PhoneState> => ipcRenderer.invoke('phone-revoke-device', id),
     revokeAllPhoneDevices: (): Promise<PhoneState> => ipcRenderer.invoke('phone-revoke-all'),
     testPhonePush: (): Promise<PhoneTestPushResult> => ipcRenderer.invoke('phone-test-push'),
+    onPhoneEndedSession: (callback: (ended: PhoneEndedSession) => void) => {
+        const listener = (_e: unknown, ended: PhoneEndedSession) => callback(ended)
+        ipcRenderer.on(PHONE_ENDED_SESSION_CHANNEL, listener)
+        return () => ipcRenderer.removeListener(PHONE_ENDED_SESSION_CHANNEL, listener)
+    },
     onPhoneStateChanged: (callback: (state: PhoneState) => void) => {
         const listener = (_e: unknown, state: PhoneState) => callback(state)
         ipcRenderer.on('phone-state-changed', listener)
