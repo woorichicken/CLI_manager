@@ -115,6 +115,9 @@ test.describe('T58 session folders', () => {
         await heading.click()
         await expect(body).toHaveCount(0)
         await expect.poll(() => storedFolders(userDataDir)[0].isExpanded).toBe(false)
+        // «No folder» folds too and counts for the fold-all button (cbc0ee48, T163): fold it as well.
+        await page.getByTestId('session-folder-none').click()
+        await expect(page.getByTestId('session-folder-none')).toHaveAttribute('data-state', 'collapsed')
         if (process.env.T58_SHOTS) {
             fs.mkdirSync(process.env.T58_SHOTS, { recursive: true })
             await page.waitForTimeout(300)

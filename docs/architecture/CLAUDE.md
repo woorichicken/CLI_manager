@@ -109,6 +109,7 @@ rules stay in the root; this file is the inventory.
 #### 14-1. 세션 폴더 (All sessions 보기)
 - 1.20(제보 078ee766): 세션은 워크스페이스 소속을 그대로 두고 **세션 폴더 하나**에 더 들어갈 수 있다. 세션 폴더는 All sessions 보기에만 보인다 — 폴더(접기·개수) 먼저, 그 안은 목록과 같은 순서(고정 → 최근 본 순), 그 아래 「No folder」와 나머지
 - 만들기: All 보기 「…」 → New Session Folder(`sidebar-new-session-folder`). 같은 메뉴의 Collapse/Expand All(`sidebar-collapse-session-folders`)은 세션 폴더가 있을 때만. 폴더 보기의 「…」(워크스페이스 폴더)와 같은 자리 — 메뉴가 보기를 따른다(afbc3546)
+- 「No folder」 줄도 접힌다(cbc0ee48 — ▸/▾·개수). 저장 폴더가 아니라서 펼침은 localStorage `sidebar-no-folder-expanded`(기계마다), 머리 줄 접기/펼치기 버튼(`sidebar-collapse-session-folders`)이 세션 폴더와 함께 접고 편다. 접혀 있어도 끌어 놓으면 폴더에서 뺀다
 - 넣기·빼기: 세션 줄을 폴더 줄에 끌어 놓기 / 「No folder」 줄에 놓기. 세션 줄 위에 놓으면 폴더가 아니라 관계(위 14). 이름 바꾸기·지우기는 폴더 줄 우클릭(워크스페이스 폴더와 같은 `FolderContextMenu`). 지워도 세션은 그대로 — 「No folder」로
 - 없는 폴더를 가리키는 `sessionFolderId` 는 폴더 없음으로 읽는다(옛 판·다른 창에서 지운 경우). 1.19 이전 앱은 두 칸 모두 모른다 — 세션은 예전처럼 평평하게
 - 코드: `src/main/SessionFolders.ts`(저장 · T57) · `hooks/useSessionFolders.ts`(렌더러 상태 — 바로 바꾸고 뒤에서 저장) · `Sidebar/SidebarAllSessions.tsx`(목록·폴더 줄·놓기)

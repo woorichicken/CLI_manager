@@ -89,6 +89,18 @@ function readSavedAllSessionsLayout(): AllSessionsLayout {
     }
 }
 
+// «No folder» in the All sessions view folds like a session folder (cbc0ee48). Session folders keep
+// their state in the store; this row is not a folder, so it is a per-machine view choice like the view mode.
+const NO_FOLDER_EXPANDED_STORAGE_KEY = 'sidebar-no-folder-expanded'
+
+function readSavedNoFolderExpanded(): boolean {
+    try {
+        return localStorage.getItem(NO_FOLDER_EXPANDED_STORAGE_KEY) !== 'false'
+    } catch {
+        return true
+    }
+}
+
 function readSavedViewMode(): SidebarViewMode {
     try {
         return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'all' ? 'all' : 'folders'
@@ -274,7 +286,22 @@ export function Sidebar({
     })
     const { notice: copyNotice, copy } = useCopyWithNotice()
     const hint = useShortcutHint()
-    const anySessionFolderExpanded = sessionFolders.some(f => f.isExpanded)
+    const [noFolderExpanded, setNoFolderExpandedState] = useState(readSavedNoFolderExpanded)
+    const setNoFolderExpanded = useCallback((expanded: boolean) => {
+        setNoFolderExpandedState(expanded)
+        try {
+            localStorage.setItem(NO_FOLDER_EXPANDED_STORAGE_KEY, String(expanded))
+        } catch {
+            // the choice just does not outlive the window
+        }
+    }, [])
+    // «No folder» is shown only next to session folders, so it counts only then.
+    const anySessionFolderExpanded = sessionFolders.some(f => f.isExpanded) || (sessionFolders.length > 0 && noFolderExpanded)
+    const setAllSessionFoldersExpanded = (expanded: boolean): void => {
+        if (!sessionFolderActions) return
+        void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), expanded)
+        setNoFolderExpanded(expanded)
+    }
 
     // A session row dragged onto another row relates the two (report 269168e4). Rows read the
     // dragged id from context, since dragover cannot read the drag's data.
@@ -1164,7 +1191,7 @@ export function Sidebar({
                                 folderKind="session"
                                 anyExpanded={anySessionFolderExpanded}
                                 showCollapseAll={false}
-                                onToggleCollapseAll={() => void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), !anySessionFolderExpanded)}
+                                onToggleCollapseAll={() => setAllSessionFoldersExpanded(!anySessionFolderExpanded)}
                                 onNewFolder={() => setShowFolderPrompt('session')}
                                 onAddWorkspace={onAddWorkspace}
                             />
@@ -1180,7 +1207,7 @@ export function Sidebar({
                             <button
                                 data-testid="sidebar-collapse-session-folders"
                                 data-state={anySessionFolderExpanded ? 'expanded' : 'collapsed'}
-                                onClick={() => void sessionFolderActions.setExpanded(sessionFolders.map(f => f.id), !anySessionFolderExpanded)}
+                                onClick={() => setAllSessionFoldersExpanded(!anySessionFolderExpanded)}
                                 className="p-1 hover:bg-white/10 rounded transition-colors"
                                 title={anySessionFolderExpanded ? 'Collapse all session folders' : 'Expand all session folders'}
                             >
@@ -1341,6 +1368,8 @@ export function Sidebar({
                                 fontSize={fontSize}
                                 showSessionCount={showSessionCount}
                                 onCopy={copy}
+                                noFolderExpanded={noFolderExpanded}
+                                onToggleNoFolder={() => setNoFolderExpanded(!noFolderExpanded)}
                                 onNewSessionIn={(folderId) => { setNewSessionFolderId(folderId); setNewSessionOpen(true) }}
                             />
                         ) : (
