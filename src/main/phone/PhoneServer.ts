@@ -24,7 +24,8 @@ import { handlePhoneDocFile, handlePhoneDocOpen, isPhoneDocPath, PhoneDocTokens 
  * Safety (the person's worry was "the Mac becomes a server"):
  *   - off until Settings › Phone turns it on; off closes the server and every phone socket
  *   - 127.0.0.1 only, its own port; `/v1` and `/mcp` do not exist here — only the routes
- *     below, which read sessions and work in existing ones (no create, delete, rename, resize)
+ *     below, which read sessions and work in existing ones (no create or resize; drive devices may
+ *     rename and end one — 0a4bdfff, f683eafe r2)
  *   - reached through `tailscale serve`, which the person runs (the app shows the command);
  *     Funnel (the public internet) is refused
  *   - who: this Mac's own Tailscale login, or a device paired with a six-digit code

@@ -17,9 +17,9 @@ export function hasTerminalOnlyModifier(e: KeyboardEvent): boolean {
 }
 
 /**
- * Top margin of the two panels (sidebar card, main card). On macOS the window's traffic lights
- * (trafficLightPosition {15, 10} in main) sit over the content; the panels start below them so the
- * lights get a strip of their own instead of covering the sidebar title (report 91fce7bf). The
- * header row has no width to spare for them at the default sidebar width, so the strip takes height.
+ * Window x where header content may start on macOS: the main window's traffic lights (x 15, three
+ * ~13px buttons ~23px apart, so they end near x 75) plus a gap. The lights are drawn over the content,
+ * so the header row that sits under them — the sidebar's, or the main header's when the sidebar is
+ * closed — keeps just this spot free (91fce7bf r2). 0 elsewhere: no lights to clear.
  */
-export const PANEL_TOP_MARGIN = isMac ? 'mt-8' : 'mt-2'
+export const TRAFFIC_LIGHTS_CLEAR_X = isMac ? 84 : 0

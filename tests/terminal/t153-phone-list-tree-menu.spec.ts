@@ -14,7 +14,7 @@ import type { SessionRelation } from '../../src/shared/types'
  *  this phone's (kept over a reload); the Mac's «Show Session Tree» off takes the switch away.
  *  f683eafe what a held press hid is now a ⋯ at the end of the row: Rename (the same rename — the Mac
  *  sidebar follows) and Memo when there is one. A tap elsewhere closes it. A view-only device has no ⋯.
- *  No end / delete (decision 0009).
+ *  End session joined the menu in fb-1123 round 2 (T165, decision 0009 amended).
  *
  * T153_SHOTS=<dir> + T153_LABEL save captures before the checks; T153_BEFORE=1 only takes them (the
  * old code: the review's «before» column).
@@ -209,11 +209,11 @@ test('T153 phone list: ⋯ opens Rename (the Mac follows) and Memo; a view-only 
     expect(moreBox.x + moreBox.width).toBeLessThanOrEqual(390)
     expect(moreBox.height).toBeGreaterThanOrEqual(40)
 
-    // the memo session: Rename and Memo — no end, no delete
+    // the memo session: Rename, Memo and End session (T165 tests ending)
     await tap(cdp, phone, more(CHIEF))
     const menu = phone.locator(`[data-testid="phone-row-menu"][data-session-id="${CHIEF}"]`)
     await expect(menu).toBeVisible()
-    await expect(menu.getByRole('menuitem')).toHaveText(['Rename', 'Memo'])
+    await expect(menu.getByRole('menuitem')).toHaveText(['Rename', 'Memo', 'End session'])
     const menuBox = (await menu.boundingBox())!
     expect(menuBox.x + menuBox.width, 'menu inside the screen').toBeLessThanOrEqual(390)
     await shot(phone, 'E-menu-390')
@@ -232,9 +232,9 @@ test('T153 phone list: ⋯ opens Rename (the Mac follows) and Memo; a view-only 
     await tap(cdp, phone, '[data-testid="phone-memo-close"]')
     await expect(phone.getByTestId('phone-memo-panel')).toHaveCount(0)
 
-    // a session without a memo: Rename only
+    // a session without a memo: no Memo
     await tap(cdp, phone, more(TALK))
-    await expect(phone.locator(`[data-testid="phone-row-menu"][data-session-id="${TALK}"]`).getByRole('menuitem')).toHaveText(['Rename'])
+    await expect(phone.locator(`[data-testid="phone-row-menu"][data-session-id="${TALK}"]`).getByRole('menuitem')).toHaveText(['Rename', 'End session'])
 
     // Rename: the same editor as the held press; the Mac sidebar and the store follow
     await tap(cdp, phone, '[data-testid="phone-row-menu-rename"]')

@@ -17,7 +17,7 @@ import type {
 } from '../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../shared/conversation'
 import type { PhoneSessionsResponse } from '../../shared/phone'
-import { PHONE_API, type PhoneMemoResponse, type PhoneRenameResponse, type PhoneUsageResponse } from '../../shared/phone'
+import { PHONE_API, type PhoneEndResponse, type PhoneMemoResponse, type PhoneRenameResponse, type PhoneUsageResponse } from '../../shared/phone'
 import type { PhoneAccess } from './phoneAccess'
 import type { PhoneDevices } from './PhoneDevices'
 import type { PhoneDock } from './phoneDock'
@@ -90,6 +90,11 @@ export interface PhoneApiDeps {
      * such session. Absent: no rename route.
      */
     renameSession?(sessionId: string, name: string): string | null
+    /**
+     * Ends the session on the Mac as the Control API's close does (f683eafe r2): true when it was
+     * closed, false for no such session. `by` names the phone for the Mac's notice. Absent: no end route.
+     */
+    endSession?(sessionId: string, by: string): boolean
     /** absent: no file routes (phoneFiles.ts) */
     files?: PhoneFilesDeps
     /** a file on its way to a device: stopped if the device is disconnected */
@@ -199,6 +204,28 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
         }
         deps.recordPhoneInput(sessionId, 'renamed the session')
         const reply: PhoneRenameResponse = { name: kept }
+        send(res, 200, reply)
+        return
+    }
+
+    // Ending a session closes its terminal on the Mac (f683eafe r2, decision 0009): drive devices only,
+    // asked again after the body in case the device was disconnected meanwhile
+    const endRoute = /^\/api\/phone\/end\/([^/]+)$/.exec(path)
+    if (endRoute && method === 'POST' && deps.endSession) {
+        if (deps.access.role !== 'drive') {
+            send(res, 403, { error: 'view_only', message: 'This device can only watch. Pair it again with "Can type" to end a session.' })
+            return
+        }
+        const sessionId = decodedSegment(endRoute[1])
+        await readJson(req)
+        if (!deps.stillAllowed()) return refuseRevoked(res)
+        // the Mac says which phone did it (its sidebar notice): the paired name, else the Tailscale login
+        const by = deps.access.via === 'device' ? deps.access.deviceLabel ?? 'paired device' : deps.access.login ?? 'Tailscale'
+        if (sessionId === null || !deps.endSession(sessionId, by)) {
+            send(res, 404, { error: 'unknown_session' })
+            return
+        }
+        const reply: PhoneEndResponse = { status: 'ended' }
         send(res, 200, reply)
         return
     }

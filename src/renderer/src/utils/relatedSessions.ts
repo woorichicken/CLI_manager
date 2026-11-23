@@ -394,3 +394,34 @@ export function treeGuidesFor(depths: readonly number[]): TreeGuide[] {
         return { through, continues: depth > 0 && runsOn(depth), opensDown: depths[i + 1] === depth + 1 }
     })
 }
+
+/**
+ * Sessions that are a reply's thread: a fork opened from an answer with «Reply in thread» (an
+ * `opened` relation that carries the reply's anchor — the same test as main's chatThreads.ts).
+ * The sidebar's session lists leave them out (1b965ad1 — they read as stray sessions there);
+ * they live under the reply, in the thread pane and in the Threads list, and search still finds
+ * them. A fork without an anchor, or a session a lead opened, is an ordinary session.
+ */
+export function threadSessionIds(relations: SessionRelation[]): Set<string> {
+    const ids = new Set<string>()
+    for (const relation of relations) {
+        if (!relation.dismissed && relation.kind === 'opened' && relation.anchor) ids.add(relation.to)
+    }
+    return ids
+}
+
+/**
+ * The workspaces as the sidebar lists them: thread sessions out, except those on screen (`onScreen`:
+ * the active session, split panes) — a thread looked at keeps its row, so the selection, ⌘[ ] and
+ * ⌘W do not lose it. Workspaces without a hidden thread keep their identity (memoised rows do not
+ * re-render).
+ */
+export function withoutThreadSessions(workspaces: Workspace[], threadIds: ReadonlySet<string>, onScreen: ReadonlyArray<string | null | undefined> = []): Workspace[] {
+    if (threadIds.size === 0) return workspaces
+    const hides = (id: string): boolean => threadIds.has(id) && !onScreen.includes(id)
+    return workspaces.map((workspace) =>
+        (workspace.sessions ?? []).some((session) => hides(session.id))
+            ? { ...workspace, sessions: workspace.sessions.filter((session) => !hides(session.id)) }
+            : workspace
+    )
+}

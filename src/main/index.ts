@@ -60,6 +60,7 @@ import { relayFeedbackRequest } from './FeedbackRelay'
 import { FeedbackModeState } from './feedbackMode'
 import { setupPhone, phoneConversationListeners, type PhoneSetup } from './phone/phoneSetup'
 import { runAgentSwapInLoginShell } from './phone/phoneUsage'
+import { PHONE_ENDED_SESSION_CHANNEL } from '../shared/phone'
 import { workspacesInLoadOrder } from './workspaceLoadOrder'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
@@ -1131,6 +1132,16 @@ function isPrimaryModifier(input: Electron.Input): boolean {
 const RENDERER_RELOAD_LIMIT = 3
 const RENDERER_RELOAD_WINDOW_MS = 60_000
 
+/**
+ * Where the main window's traffic lights sit (macOS). The renderer keeps their spot free on the left of
+ * the header row (TRAFFIC_LIGHTS_CLEAR_X in renderer utils/platform.ts) and the lights are centred in
+ * that row: 40px tall from y 8 normally (h-10), 24px in split view (h-6). The buttons are ~13px tall.
+ */
+const MAIN_TRAFFIC_LIGHTS = {
+    full: { x: 15, y: 21 },
+    compact: { x: 15, y: 13 }
+}
+
 /** `hidden`: created for background work (Autocron) — stays hidden until the person asks for it. */
 function createWindow(options: { hidden?: boolean } = {}): void {
     // Create the browser window.
@@ -1142,7 +1153,8 @@ function createWindow(options: { hidden?: boolean } = {}): void {
         titleBarStyle: 'hiddenInset', // Mac-style title bar
         vibrancy: 'under-window', // Glass effect
         visualEffectState: 'active',
-        trafficLightPosition: { x: 15, y: 10 },
+        // Centred in the header row (91fce7bf r2); split view moves them up (window-header-compact)
+        trafficLightPosition: MAIN_TRAFFIC_LIGHTS.full,
         icon,
         webPreferences: {
             preload: join(__dirname, '../preload/index.js'),
@@ -2096,8 +2108,12 @@ app.whenReady().then(async () => {
         const reorderedSessions = sessionIds
             .map(id => workspace.sessions.find(s => s.id === id))
             .filter((s): s is TerminalSession => s !== undefined)
+        // A session the list did not name stays, at the end: an order is never a way to delete one
+        // (the sidebar hides reply threads from its rows — 1b965ad1)
+        const named = new Set(sessionIds)
+        const unnamed = workspace.sessions.filter(s => !named.has(s.id))
 
-        workspace.sessions = reorderedSessions
+        workspace.sessions = [...reorderedSessions, ...unnamed]
 
         // Update store
         store.set('workspaces', workspaces.map(w =>
@@ -2354,6 +2370,12 @@ app.whenReady().then(async () => {
     // Whether this Mac shows the widget — the renderer knows (build values, password unlock); the
     // phone page asks main through /api/phone/me (see feedbackMode.ts)
     ipcMain.on('feedback-mode', (_, on: unknown) => feedbackMode.report(on))
+    // The main window's header row is shorter in split view: keep the traffic lights centred in it (91fce7bf r2)
+    ipcMain.on('window-header-compact', (event, compact: unknown) => {
+        if (process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return
+        if (event.sender !== mainWindow.webContents) return
+        mainWindow.setWindowButtonPosition(compact === true ? MAIN_TRAFFIC_LIGHTS.compact : MAIN_TRAFFIC_LIGHTS.full)
+    })
 
     // Template handlers
     ipcMain.handle('get-templates', () => {
@@ -4145,6 +4167,20 @@ app.whenReady().then(async () => {
                 return controlApiService.renameSession(id, name).name
             } catch (error) {
                 if (error instanceof ControlApiError && error.status === 404) return null
+                throw error
+            }
+        },
+        // f683eafe r2: the phone's End session is the Control API's close — the sidebar's row, the
+        // store, the relations and the inbox go the same way; nothing is handed over
+        endSession: (id, by) => {
+            try {
+                const name = controlApiService.getSession(id).name
+                controlApiService.closeSession(id)
+                // the Mac's trace of it: a line at the bottom of the sidebar (PHONE_ENDED_SESSION_CHANNEL)
+                broadcast(PHONE_ENDED_SESSION_CHANNEL, { sessionId: id, name, by })
+                return true
+            } catch (error) {
+                if (error instanceof ControlApiError && error.status === 404) return false
                 throw error
             }
         },

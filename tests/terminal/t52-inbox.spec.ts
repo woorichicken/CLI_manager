@@ -370,20 +370,23 @@ test.describe('T52 inbox', () => {
         const shots = shotsDir()
         await resizeMainWindow(app, 1280, 800)
 
-        // The header row is [title span][buttons]; the title must not be cut at the default sidebar width.
+        // The header row is [lights' spot][title span][buttons]; the title must not be cut at the default
+        // sidebar width. On macOS it is hidden there instead — the lights take its room (91fce7bf r2, T163) —
+        // and a hidden title is not a cut one.
         const title = () => page.getByTestId('sidebar-search-toggle').evaluate((button) => {
             const label = button.parentElement!.parentElement!.querySelector(':scope > span') as HTMLElement
-            return { text: label.textContent, scroll: label.scrollWidth, client: label.clientWidth }
+            return { text: label.textContent, scroll: label.scrollWidth, client: label.clientWidth, hidden: getComputedStyle(label).visibility === 'hidden' }
         })
+        const notCut = (t: { scroll: number; client: number; hidden: boolean }) => t.hidden || t.scroll <= t.client
         const workspaces = await title()
         expect(workspaces.text).toBe('Workspaces')
-        expect(workspaces.scroll, JSON.stringify(workspaces)).toBeLessThanOrEqual(workspaces.client)
+        expect(notCut(workspaces), JSON.stringify(workspaces)).toBe(true)
         await expect(sidebarBell(page)).toBeVisible()
         // The longer "All sessions" title too.
         await page.getByTestId('sidebar-view-toggle').click()
         await expect.poll(async () => (await title()).text).toBe('All sessions')
         const allSessions = await title()
-        expect(allSessions.scroll, JSON.stringify(allSessions)).toBeLessThanOrEqual(allSessions.client)
+        expect(notCut(allSessions), JSON.stringify(allSessions)).toBe(true)
         await page.getByTestId('sidebar-view-toggle').click()
         await expect.poll(async () => (await title()).text).toBe('Workspaces')
 

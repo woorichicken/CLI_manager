@@ -2,9 +2,10 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { Folder, Search, X } from 'lucide-react'
 import type { PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { PhoneMemoPanel } from './PhoneMemoPanel'
-import { listLines, searchLines, treeLines } from './sessionListLines'
+import { listedSessions, listLines, searchLines, treeLines } from './sessionListLines'
 import { SessionRow } from './SessionRow'
 import { SessionRowMenu } from './SessionRowMenu'
+import { PhoneEndSheet } from './PhoneEndSheet'
 
 /**
  * The sessions on the Mac, read only, as one list in the Mac's own order: the sidebar's
@@ -50,7 +51,8 @@ export function SessionList({
     activeId,
     canRename = false,
     onOpen,
-    onRenamed
+    onRenamed,
+    onEnded
 }: {
     data: PhoneSessionsResponse | null
     activeId: string | null
@@ -59,11 +61,17 @@ export function SessionList({
     onOpen: (session: PhoneSession) => void
     /** the Mac kept this name — shown at once, before the next list poll */
     onRenamed?: (id: string, name: string) => void
+    /** the Mac closed this session (End session, f683eafe r2): drop it before the next list poll */
+    onEnded?: (id: string) => void
 }) {
     const [renamingId, setRenamingId] = useState<string | null>(null)
     // the ⋯ menu that is open (f683eafe), and the memo it opened — over the drawer, read-only
     const [menuId, setMenuId] = useState<string | null>(null)
     const [memoId, setMemoId] = useState<string | null>(null)
+    // the session whose End session question is open — as it was when asked: a list read that drops it
+    // meanwhile (ended elsewhere) leaves the sheet up, and End then finds it gone (404) and closes
+    const [endSession, setEndSession] = useState<PhoneSession | null>(null)
+    const closeEnd = useCallback(() => setEndSession(null), [])
     const closeMenu = useCallback(() => setMenuId(null), [])
     const [layout, setLayout] = useState<ListLayout>(readLayout)
     // the Mac's «Show Session Tree» off: no tree comes, and the list is List whatever was picked
@@ -94,7 +102,7 @@ export function SessionList({
         >
             <div className="phone-list-head">
                 <span className="phone-list-title">All sessions</span>
-                {data && <span className="phone-group-count">{data.sessions.length}</span>}
+                {data && <span className="phone-group-count">{listedSessions(data).length}</span>}
                 {data?.tree ? (
                     <span className="phone-list-layout" role="group" aria-label="Layout" data-testid="phone-list-layout">
                         {(['list', 'tree'] as const).map((choice) => (
@@ -210,12 +218,26 @@ export function SessionList({
                                     setMenuId(null)
                                     setMemoId(line.session.id)
                                 }}
+                                onEnd={() => {
+                                    setMenuId(null)
+                                    setEndSession(line.session)
+                                }}
                             />
                         )}
                     </div>
                 )
             })}
             {memoId && <PhoneMemoPanel sessionId={memoId} onClose={() => setMemoId(null)} />}
+            {endSession && (
+                <PhoneEndSheet
+                    session={endSession}
+                    onCancel={closeEnd}
+                    onEnded={(id) => {
+                        setEndSession(null)
+                        onEnded?.(id)
+                    }}
+                />
+            )}
         </nav>
     )
 }
