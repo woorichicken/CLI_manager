@@ -30,7 +30,9 @@ test.describe('T157 status report — parse', () => {
         if (!('report' in parsed)) return
         expect(parsed.report.counts).toEqual({ ok: 0, busy: 0, attention: 0, blocked: 1, error: 1 })
         expect(parsed.report.sources[1].state).toBe('error')
-        expect(parsed.report.sources[0].items[0]).toEqual({ text: 'x', state: 'blocked' })
+        expect(parsed.report.sources[0].items[0]).toEqual({ text: 'x', state: 'blocked', actions: [] })
+        // a report from before actions existed reads as read only
+        expect(parsed.report.sources[0].actions).toEqual([])
     })
 
     test('skips text a login shell prints before the JSON', () => {

@@ -20,6 +20,7 @@ import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice 
 import { sessionsInSidebarOrder, sidebarWorkspaceOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { isOrderHeldFor, setAllSessionsListElement } from '../../utils/allSessionsNav'
 import { useDragAutoScroll } from '../../utils/dragAutoScroll'
+import { PANEL_TOP_MARGIN } from '../../utils/platform'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
@@ -1132,7 +1133,7 @@ export function Sidebar({
                     sidebarRef.current = el
                     sidebarContainerRef.current = el
                 }}
-                className="glass-panel mx-2 mb-2 mt-2 rounded-lg flex flex-col overflow-hidden relative"
+                className={`glass-panel mx-2 mb-2 ${PANEL_TOP_MARGIN} rounded-lg flex flex-col overflow-hidden relative`}
                 style={{ width: width, minWidth: 50, maxWidth: 480 }}
             >
                 {/* Same height and top edge as the main header (App.tsx) so the two divider lines meet */}

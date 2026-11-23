@@ -7,6 +7,7 @@ import { join } from 'path'
 import { CALLER_SESSION_HEADER, ControlApiSettings, ControlApiState, DEFAULT_CONTROL_API } from '../shared/types'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { CRON_MADE_IN_WINDOW, type CronService } from './CronService'
+import type { StatusService } from './statusCommand'
 import type { CronInput } from '../shared/autocron'
 import { handleMcpBody } from './controlApiMcp'
 
@@ -107,6 +108,8 @@ export interface ControlApiServerOptions {
     service: ControlApiService
     /** Autocron — `/v1/crons`. Absent in setups without a scheduler (the routes answer 404). */
     crons?: CronService
+    /** Status panel queues — `/v1/queues`. Absent in setups without it (the routes answer 404). */
+    queues?: StatusService
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     store: any
     appVersion: string
@@ -549,7 +552,8 @@ export class ControlApiServer {
             route('DELETE', '/v1/checklists/:checklist/items/:item', ({ params }) => ({
                 checklist: service.removeChecklistItem(params.checklist, params.item)
             })),
-            ...this.cronRoutes()
+            ...this.cronRoutes(),
+            ...this.queueRoutes()
         ]
     }
 
@@ -597,6 +601,30 @@ export class ControlApiServer {
             route('POST', '/v1/crons/:cron/run', async ({ params }) => ({ run: await crons().runNow(job(params.cron).id) })),
             route('POST', '/v1/crons/:cron/pause', ({ params }) => ({ cron: checked(crons().update(job(params.cron).id, { enabled: false })).cron })),
             route('POST', '/v1/crons/:cron/resume', ({ params }) => ({ cron: checked(crons().update(job(params.cron).id, { enabled: true })).cron }))
+        ]
+    }
+
+    /**
+     * Queues: the Status panel's report, read (GET) or acted on (POST) — decision 0014. Every row says
+     * what it offers; an empty `actions` means read only, and only an offered action ever runs.
+     */
+    private queueRoutes(): Route[] {
+        const queues = (): StatusService => {
+            if (!this.options.queues) throw new ControlApiError(404, 'not_found', 'Queues are not available in this build.')
+            return this.options.queues
+        }
+        return [
+            route('GET', '/v1/queues', async () => {
+                const result = await queues().report()
+                if (!result.configured) throw new ControlApiError(404, 'not_configured', 'No status command in Settings › General.')
+                if (!result.ok) throw new ControlApiError(502, 'status_command_failed', result.error)
+                return { report: result.report, actionsEnabled: result.actionsEnabled, durationMs: result.durationMs }
+            }),
+            route('POST', '/v1/queues/:source/:item/:action', async ({ params }) => {
+                const result = await queues().act(params.source, params.item, params.action)
+                if (!result.ok) throw new ControlApiError(result.status, result.code, result.message)
+                return result
+            })
         ]
     }
 }

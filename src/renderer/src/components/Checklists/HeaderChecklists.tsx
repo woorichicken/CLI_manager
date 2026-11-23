@@ -5,7 +5,7 @@ import type { Workspace } from '../../../../shared/types'
 import { useCurrentChecklist } from '../../hooks/useChecklists'
 import { describeDue, DUE_TONE_CLASSES, localDateKey } from '../../utils/dueDate'
 import { ChecklistPanel } from './ChecklistPanel'
-import { useShortcutHint } from '../../utils/shortcutHints'
+import { shortcutDescription, useShortcutHint } from '../../utils/shortcutHints'
 
 interface HeaderChecklistsProps {
     open: boolean
@@ -77,10 +77,11 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
     const due = current?.due ? describeDue(current.due, todayKey) : null
 
     // The key comes from Settings › Keyboard, like every other button's tooltip (386b0c76).
-    const label = hint('Checklists', 'toggleChecklists')
-    const tooltip = current
+    // The checklist's own line comes first; what the key does goes last (78a79526).
+    const label = hint('Checklists', 'toggleChecklists', false)
+    const tooltip = `${current
         ? `${label} — ${current.title} · ${done}/${total}${current.due ? ` · due ${current.due}` : ''}`
-        : label
+        : label}\n${shortcutDescription('toggleChecklists')}`
 
     const anchor = open ? chipRef.current?.getBoundingClientRect() : undefined
     const width = Math.min(PANEL_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2)

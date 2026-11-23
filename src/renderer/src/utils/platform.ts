@@ -15,3 +15,11 @@ export function hasPrimaryModifier(e: KeyboardEvent): boolean {
 export function hasTerminalOnlyModifier(e: KeyboardEvent): boolean {
     return isMac && e.ctrlKey
 }
+
+/**
+ * Top margin of the two panels (sidebar card, main card). On macOS the window's traffic lights
+ * (trafficLightPosition {15, 10} in main) sit over the content; the panels start below them so the
+ * lights get a strip of their own instead of covering the sidebar title (report 91fce7bf). The
+ * header row has no width to spare for them at the default sidebar width, so the strip takes height.
+ */
+export const PANEL_TOP_MARGIN = isMac ? 'mt-8' : 'mt-2'

@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { DEFAULT_SHORTCUTS, effectiveShortcuts, KeyBinding, KeyboardShortcutMap, ShortcutAction } from '../../../shared/types'
+import { DEFAULT_SHORTCUTS, effectiveShortcuts, KeyBinding, KeyboardShortcutMap, SHORTCUT_LABELS, ShortcutAction } from '../../../shared/types'
 import { isMac } from './platform'
 
 // Keys a binding stores by name (`KeyboardEvent.key`), shown as their key-cap symbol.
@@ -26,9 +26,19 @@ export function formatBinding(binding: KeyBinding): string {
     return [...mods, key].join('+')
 }
 
-/** "New page" + ⌘⌥N → "New page (⌘⌥N)". */
-export function withShortcut(label: string, binding: KeyBinding | undefined): string {
-    return binding?.code ? `${label} (${formatBinding(binding)})` : label
+/**
+ * "New page" + ⌘⌥N → "New page (⌘⌥N)", and with a description a second line saying what it does:
+ * "New page (⌘⌥N)\nAdd a page to the memo (opens it if closed)" (report 78a79526). The first line is
+ * always the label first, so `title^="New page"` keeps matching.
+ */
+export function withShortcut(label: string, binding: KeyBinding | undefined, description?: string): string {
+    const first = binding?.code ? `${label} (${formatBinding(binding)})` : label
+    return description ? `${first}\n${description}` : first
+}
+
+/** What an action does, in one line — the text Settings › Keyboard shows beside it. */
+export function shortcutDescription(action: ShortcutAction): string {
+    return SHORTCUT_LABELS[action]?.description ?? ''
 }
 
 /*
@@ -55,8 +65,16 @@ function subscribe(listener: () => void): () => void {
     return () => listeners.delete(listener)
 }
 
-/** `hint('Settings', 'toggleSettings')` → "Settings (⌘,)". */
-export function useShortcutHint(): (label: string, action: ShortcutAction) => string {
+/**
+ * `hint('Settings', 'toggleSettings')` → "Settings (⌘,)\nOpen or close settings": the keys, then the
+ * action's description. `description: false` keeps one line — for a label that already says what the
+ * button does (Related, Dictate) — and a string replaces the description.
+ */
+export function useShortcutHint(): (label: string, action: ShortcutAction, description?: string | false) => string {
     const shortcuts = useSyncExternalStore(subscribe, () => activeShortcuts)
-    return useCallback((label: string, action: ShortcutAction) => withShortcut(label, shortcuts[action]), [shortcuts])
+    return useCallback(
+        (label: string, action: ShortcutAction, description?: string | false) =>
+            withShortcut(label, shortcuts[action], description === false ? undefined : description ?? shortcutDescription(action)),
+        [shortcuts]
+    )
 }
