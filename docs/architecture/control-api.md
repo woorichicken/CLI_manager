@@ -212,6 +212,23 @@ renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t13
 Not in this version: MCP tools for crons (use REST), `script`/`remote` kinds (launchd jobs and cloud crons
 shown read-only), running on another machine when this Mac is off.
 
+## Queues
+
+The Status panel's queues and locks (Settings › General › **Status command**, e.g. `queues status --json`) read
+from the API, and acted on when Settings also has an **Action command** (e.g. `queues act`) — decision
+[0014](../decisions/0014-queue-actions-only-what-the-report-offers.md). The app knows no queue: each queue in the
+report lists what it can do (`actions: [{ id, label }]`, empty = read only) and each row what it offers now
+(`actions: [id]`). Code: `src/main/statusCommand.ts` (`createStatusService` — shared with the popover's IPC).
+Tests: `t158-queue-actions-unit.spec.ts` (no Electron), `t158-queue-actions.spec.ts` (the app).
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/v1/queues` | `{ report, actionsEnabled, durationMs }` — the same run the popover shares. No status command → `404 not_configured`; a command that fails → `502 status_command_failed` |
+| POST | `/v1/queues/:source/:item/:action` | Re-reads the report, then runs `<action command> "$@"` with the three names as arguments → `{ ok, source, item, action, output, durationMs }`. `404 actions_off` (no action command) · `404 queue_not_found` · `404 queue_item_not_found` · `409 queue_unreadable` · `409 action_not_offered` (read-only queue, or not offered on that row now) · `409 action_in_progress` (the same row and action already running) · `400 bad_request` (a name that is not a plain id) · `502 action_failed` (non-zero exit; message ends with its last line) |
+
+Reading never acts, and nothing in the request body is used. Not in this version: MCP tools for queues (use REST),
+actions from the panel itself.
+
 ## Agent conversations
 
 The desktop session menu and Control API share `AgentConversations` (`agentConversations.ts`).
