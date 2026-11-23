@@ -622,7 +622,9 @@ export class ConversationService {
         if (row.allowed && !row.allowed()) return REVOKED
         const result = await this.send(sessionId, row.text, from)
         if (result.status !== 'rejected') return result
-        if (result.reason === 'revoked') return result
+        // the row's own sender lost access: dropped, as its queue is. A tapping device that lost access
+        // (`revoked` here is the tapper's) leaves the row to its owner
+        if (row.allowed && !row.allowed()) return result
         const kept: UnsentItem = {
             ...row,
             reason: isUnsentReason(result.reason) ? result.reason : row.reason,

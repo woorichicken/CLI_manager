@@ -280,7 +280,11 @@ function kindOf(text: string, options: PromptOption[]): PromptKind {
  * top to bottom (TerminalMirror.screen).
  */
 export function readPrompt(screen: string[], agent: ConversationAgent): PromptMenu | null {
-    const { rows: drawn, preview, previewLines } = withoutPreview(belowInputBox(screen))
+    const below = belowInputBox(screen)
+    // the agent's input box on screen and a spinner over it: a turn runs, whatever dialog words are around
+    // (only a screen with no input box — a dialog in its place — reads the turn from the dialog's rows, below)
+    if (below !== screen && screen.some(isBusyRow)) return null
+    const { rows: drawn, preview, previewLines } = withoutPreview(below)
     const rows = drawn
         .map(clean)
         .filter((line) => line.trim() !== '')

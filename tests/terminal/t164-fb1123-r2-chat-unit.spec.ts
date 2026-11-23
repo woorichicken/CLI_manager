@@ -4,6 +4,7 @@ import path from 'path'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { readPrompt } from '../../src/main/promptScreen'
+import { maskSnapshot } from '../../src/main/phone/phoneApi'
 
 /**
  * T164 — fb-1123 round 2 Chat reports, without Electron.
@@ -155,6 +156,17 @@ function serviceOn(terminal: { screen(): string[]; lastOutputAt(): number }, ove
 }
 const poll = (conversations: ConversationService): Promise<void> => (conversations as unknown as { pollRound(): Promise<void> }).pollRound()
 
+test.describe('T164 f7bff999 a phone gets the preview masked, line by line', () => {
+    test('maskSnapshot masks every preview row as it masks the question and options', () => {
+        const menu = readPrompt(FOUR_TABS, 'claude')!
+        const masked = maskSnapshot(
+            { sessionId: 's', agent: 'claude', turns: [], totalTurns: 0, truncated: false, working: false, prompt: menu, queued: [], meta: null, revision: 1 },
+            (line) => `[masked] ${line}`
+        )
+        expect(masked.prompt?.preview).toEqual(menu.preview!.map((line) => `[masked] ${line}`))
+    })
+})
+
 test.describe('T164 f7bff999 the Chat reads the dialog, not words above it', () => {
     test('a card and not «working» when the conversation above names the spinner hint', async () => {
         const terminal = quietTerminal(withAbove('  The spinner row says (esc to interrupt) while a turn works.'))
@@ -250,6 +262,19 @@ test.describe('T164 019248e1 a queued message that did not go stays, with the re
         const snapshot = await conversations.getConversation('s')
         expect(snapshot.queued).toEqual([])
         expect(snapshot.unsent ?? []).toEqual([])
+    })
+
+    test('Retry from a device that lost access meanwhile leaves the row to its owner', async () => {
+        const terminal = quietTerminal(WORKING)
+        const { conversations } = serviceOn(terminal, { type: async () => false })
+        expect(await conversations.send('s', 'from the Mac')).toEqual({ status: 'queued' })
+        terminal.set(IDLE)
+        await poll(conversations)
+        const [row] = (await conversations.getConversation('s')).unsent!
+        // a phone taps Retry and is disconnected by the time the send checks its access
+        const result = await conversations.sendQueuedNow('s', row.id, { origin: 'device:abc', allowed: () => false })
+        expect(result).toMatchObject({ status: 'rejected', reason: 'revoked' })
+        expect((await conversations.getConversation('s')).unsent?.map((item) => [item.id, item.text])).toEqual([[row.id, 'from the Mac']])
     })
 
     test('a phone disconnecting drops its «Not sent» rows too', async () => {
