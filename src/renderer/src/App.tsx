@@ -55,6 +55,8 @@ import { SplitDividers } from './components/SplitDividers'
 import { DocSplitPane } from './components/HtmlDoc/DocSplitPane'
 import { useDocPanes } from './hooks/useDocPanes'
 import { isDocPaneId, sessionPaneIds, splitAfterRemove } from './utils/docPanes'
+import { GettingStartedCard } from './components/GettingStarted/GettingStartedCard'
+import { useGettingStarted } from './hooks/useGettingStarted'
 
 /** Let the window settle before spending anything on a network check. */
 const UPDATE_CHECK_STARTUP_DELAY_MS = 2000
@@ -297,6 +299,10 @@ function App() {
 
     // Custom templates for keyboard shortcuts (Cmd+T → number)
     const customTemplates = useTemplates(settingsOpen)
+
+    // First-run checklist (fb-1120b) — the main window only; `workspaces` changing asks main again at once
+    const gettingStarted = useGettingStarted(isMainAppWindow && sessionsRestored, workspaces)
+    const gettingStartedState = showOnboarding ? null : gettingStarted.state
 
     // Authoritative status from official CLI hooks. Arrives independently of
     // the screen heuristic and always wins, including for the session that is
@@ -588,6 +594,8 @@ function App() {
     const handleOnboardingComplete = () => {
         setShowOnboarding(false)
         setSettings(prev => ({ ...prev, hasCompletedOnboarding: true }))
+        // the welcome screen's Continue is what shows the Getting started card (first run or a replay)
+        void gettingStarted.begin()
     }
 
     const handleSelect = (workspace: Workspace, session: TerminalSession) => {
@@ -1715,7 +1723,13 @@ function App() {
                     onDragEndSession={handleSidebarDragEnd}
                     sessionFolders={sessionFolders}
                     sessionFolderActions={sessionFolderActions}
-                    footerSlot={<PhoneBadge onOpenSettings={() => handleOpenSettings('phone')} />}
+                    footerSlot={<>
+                        {/* once a session fills the main pane, the checklist moves here, small */}
+                        {gettingStartedState && (activeSession || splitLayout) && (
+                            <GettingStartedCard state={gettingStartedState} variant="compact" onDismiss={() => void gettingStarted.dismiss()} />
+                        )}
+                        <PhoneBadge onOpenSettings={() => handleOpenSettings('phone')} />
+                    </>}
                     inboxSlot={
                         <InboxButton
                             placement="sidebar"
@@ -2214,11 +2228,24 @@ function App() {
 
                         {!activeSession && !splitLayout && (
                             <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded mb-4">
-                                    <p className="text-xs text-blue-200">
-                                        <strong>Tip:</strong> If the terminal seems frozen, try pressing Enter
-                                    </p>
-                                </div>
+                                {gettingStartedState && (
+                                    <div className="mb-6 w-full flex justify-center">
+                                        <GettingStartedCard
+                                            state={gettingStartedState}
+                                            variant="full"
+                                            onDismiss={() => void gettingStarted.dismiss()}
+                                            onAddFolder={() => void handleAddWorkspace()}
+                                        />
+                                    </div>
+                                )}
+                                {/* the checklist already says what to do next; the frozen-terminal tip only competes with it */}
+                                {!gettingStartedState && (
+                                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded mb-4">
+                                        <p className="text-xs text-blue-200">
+                                            <strong>Tip:</strong> If the terminal seems frozen, try pressing Enter
+                                        </p>
+                                    </div>
+                                )}
                                 please select a terminal
 
                                 {settings.feedbackEmail && (

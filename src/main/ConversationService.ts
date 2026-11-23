@@ -357,6 +357,30 @@ export class ConversationService {
     }
 
     /**
+     * Whether the session's linked conversation holds a message from the person — the Getting
+     * started checklist's last step. Reads the record only (no screen flush, unlike a Chat read).
+     * Undefined when no conversation is linked or it cannot be read.
+     */
+    hasConversation(sessionId: string): boolean | undefined {
+        const info = this.deps.session(sessionId)
+        const agent = agentOf(info)
+        if (!info?.cliSessionId || agent === null) return undefined
+        const entry = this.entry(sessionId)
+        try {
+            const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
+            if (!read) return undefined
+            // this read took the new records: an open Chat's poll will see nothing new, so it is told here
+            if (read.changed) this.bump(sessionId, entry)
+            return read.turns.some((turn) => turn.role === 'user')
+        } catch (error) {
+            console.warn('[conversation] getting-started read failed', sessionId, error)
+            return undefined
+        } finally {
+            this.dropIfIdle(sessionId, entry)
+        }
+    }
+
+    /**
      * A thread's reply count: the child's turns since the fork, as its thread panel shows them
      * (fb-1117 2c8bc2b5). Undefined when its conversation is not linked or cannot be read.
      */

@@ -87,6 +87,8 @@ export interface LaunchOptions {
     folders?: Array<{ id: string; name: string; isExpanded?: boolean; createdAt: number }>
     /** Extra top-level keys for config.json (e.g. `sessionRelations`), written before launch. */
     config?: Record<string, unknown>
+    /** No session is seeded, so no terminal mounts and there is no terminal instrumentation to wait for (T159 first run). */
+    noTerminals?: boolean
 }
 
 /** Production recognizes agent executables, so mocks use the same executable names. */
@@ -205,7 +207,7 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
     })
 
     await page.getByText(workspaces[0].name).first().waitFor({ timeout: 30_000 })
-    await page.waitForFunction(
+    if (!options.noTerminals) await page.waitForFunction(
         (expected: number) => {
             const dbg = (window as unknown as { __termDebug?: { ids: () => string[] } }).__termDebug
             return Boolean(dbg && dbg.ids().length >= expected)
