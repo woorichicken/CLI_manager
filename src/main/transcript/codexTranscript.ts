@@ -188,6 +188,8 @@ export function codexCallFailed(output: string): boolean {
 
 /** What the chat reads as a stopped turn — the words Claude Code records (chatLib INTERRUPTED_TEXT). */
 const STOPPED_MARKER = "[Request interrupted by user]";
+/** The notice source of a turn Codex could not run (TurnParts shows it as an error). */
+export const CODEX_ERROR_SOURCE = "error";
 
 /**
  * What a Codex `exec` script runs, for its row (chat-gap C-5): Codex 0.16x wraps its calls in a script
@@ -291,6 +293,16 @@ export function createCodexTranscriptParser(state: CodexParseState = { turns: []
           const last = turns.at(-1);
           const marked = last?.role === "user" && last.parts.length === 1 && last.parts[0]!.kind === "text" && last.parts[0]!.text === STOPPED_MARKER;
           if (!marked) turns.push({ role: "user", ts: ts || null, parts: [{ kind: "text", text: STOPPED_MARKER }] });
+        }
+        // a turn Codex could not run (usage limit, overloaded server, a refused request): the terminal prints the
+        // reason in red and no answer comes (fb-1123 8a3a326f). Codex 0.16x records it on the turn's end
+        // (`task_complete.error`); older ones as an `error` event. Shown as a notice in the person's seat, like «Stopped».
+        const failure = payload.type === "task_complete" ? string(record(payload.error).message).trim()
+          : payload.type === "error" ? string(payload.message).trim() : "";
+        if (failure) {
+          const last = turns.at(-1)?.parts;
+          const shown = last?.length === 1 && last[0]!.kind === "notice" && last[0]!.source === CODEX_ERROR_SOURCE && last[0]!.text === failure;
+          if (!shown) turns.push({ role: "user", ts: ts || null, parts: [{ kind: "notice", text: failure, source: CODEX_ERROR_SOURCE }] });
         }
         if (payload.type === "user_message" && (!payload.kind || payload.kind === "plain")) {
           message("user", contentText(payload.message, true), "event", ts, undefined, codexImageParts(entry));

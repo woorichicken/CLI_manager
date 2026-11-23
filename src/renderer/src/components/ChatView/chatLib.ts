@@ -490,3 +490,54 @@ export function codeIsSessionLink(code: string): boolean {
     const parts = splitSessionLinks(code.trim())
     return parts.length === 1 && typeof parts[0] !== 'string'
 }
+
+/**
+ * How long after a message went from the box, or after an IME composition ended, the send key in the now
+ * empty box is not taken as «send the queued one now». Korean IME can deliver Enter twice — once while
+ * composing (ignored) and again after the composition ends; the second one, or a double press, must not
+ * push an older queued message out right behind the one just sent (fb-1123 00c4df83). A person's second,
+ * deliberate press comes later than this.
+ */
+export const QUEUED_SEND_QUIET_MS = 400
+
+/**
+ * Whether the send key sends the first queued message now (fb-1123 00c4df83): pressed in an empty box while
+ * something waits for the turn to end, with no question card, no message of the box on its way, and not as
+ * the tail of a send or an IME composition. `sendKey`: the key would send a message (Enter, ⌘Enter when
+ * Enter breaks the line, a phone's Return only when Return sends).
+ */
+export function sendsQueuedNow(key: {
+    sendKey: boolean
+    composing: boolean
+    repeat: boolean
+    boxEmpty: boolean
+    queued: number
+    question: boolean
+    boxSending: boolean
+    sinceSendMs: number
+    sinceCompositionMs: number
+}): boolean {
+    return (
+        key.sendKey &&
+        !key.composing &&
+        !key.repeat &&
+        key.boxEmpty &&
+        key.queued > 0 &&
+        !key.question &&
+        !key.boxSending &&
+        key.sinceSendMs >= QUEUED_SEND_QUIET_MS &&
+        key.sinceCompositionMs >= QUEUED_SEND_QUIET_MS
+    )
+}
+
+/** The message box holds nothing: no words and no file — attaching, ready or failed (send-now's «empty box»). */
+export function isComposerEmpty(text: string, attachments: readonly unknown[]): boolean {
+    return text.trim() === '' && attachments.length === 0
+}
+
+/** The key that sends from the box, as the queued row names it; null where no key sends (a phone's Return breaks the line). */
+export function sendKeyName(preferences: { enterSends?: boolean; returnSendsOnTouch?: boolean }, touch: boolean, mac: boolean): string | null {
+    if (touch) return preferences.returnSendsOnTouch === true ? 'Return' : null
+    if (preferences.enterSends !== false) return 'Enter'
+    return mac ? '⌘Enter' : 'Ctrl+Enter'
+}
