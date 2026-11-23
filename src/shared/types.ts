@@ -174,6 +174,12 @@ export interface UserSettings {
      * never passes a command (see main/statusCommand.ts).
      */
     statusCommand?: string
+    /**
+     * Command the app runs to act on one queue row (`queues act`), with `<source> <item> <action>` appended
+     * as three separate arguments — never spliced into the command text. Only actions the status report
+     * offers for that row right now are run. Empty or unset: every row is read-only (decision 0014).
+     */
+    statusActionCommand?: string
     portFilter?: {
         enabled: boolean
         minPort: number
@@ -304,8 +310,18 @@ export interface PortInfo {
 export type StatusState = 'ok' | 'busy' | 'attention' | 'blocked' | 'error'
 
 export interface StatusItem {
+    /** Stable id the row's actions are addressed by. Absent → the row cannot be acted on. */
+    id?: string
     text: string
     state?: StatusState
+    /** Action ids this row offers right now (a subset of its source's `actions`). Empty → read only. */
+    actions: string[]
+}
+
+/** Something a queue lets you do to one of its rows, named by the command (the app knows no queue). */
+export interface StatusAction {
+    id: string
+    label: string
 }
 
 /** One queue or lock the status command looked at. */
@@ -315,6 +331,8 @@ export interface StatusSource {
     what?: string
     state: StatusState
     summary: string
+    /** What this queue can do to its rows. Empty → the queue is read only. */
+    actions: StatusAction[]
     items: StatusItem[]
     /** The command a person runs to see more, shown as-is. */
     see?: string
@@ -330,8 +348,14 @@ export interface StatusReport {
 
 export type StatusCommandResult =
     | { configured: false }
-    | { configured: true; ok: true; report: StatusReport; durationMs: number }
+    /** `actionsEnabled` is false while Settings has no action command — then every row is read only. */
+    | { configured: true; ok: true; report: StatusReport; durationMs: number; actionsEnabled: boolean }
     | { configured: true; ok: false; error: string; durationMs: number }
+
+/** Outcome of one queue action (`POST /v1/queues/:source/:item/:action`). */
+export type QueueActionResult =
+    | { ok: true; source: string; item: string; action: string; output: string; durationMs: number }
+    | { ok: false; status: number; code: string; message: string }
 
 
 export interface SystemInfo {

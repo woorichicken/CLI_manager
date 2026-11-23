@@ -136,10 +136,12 @@ rules stay in the root; this file is the inventory.
     답·도구 줄의 경로(ovis `filePaths` 이식 — `:12`·`#L12`, 상대 경로는 세션 폴더 기준) → 앱 미리보기, PDF·영상 등은 `shell.openPath`.
     그림(프롬프트·도구 결과)은 `TranscriptReader.image(ref)` 가 기록에서 그 줄을 다시 읽어 data: URL — 끝에서 거꾸로 찾는다(`findRecord`). 잘린 출력도 같은 길(`toolOutput`)
   - 작업 상태: Stop = Esc 를 **화면이 일하는 중일 때만** 보낸다(쉬는 중 Esc 는 메뉴·입력칸에 떨어진다). 대기열은 id 를 가진 줄 — 하나씩 Send now(바로 친다,
-    읽는 때는 에이전트가 정함)·버리기. 치는 중(`sending`)에 온 보내기도 대기열 뒤로(두 보내기가 동시에 치지 않게)
+    읽는 때는 에이전트가 정함)·버리기. 치는 중(`sending`)에 온 보내기도 대기열 뒤로(두 보내기가 동시에 치지 않게). 빈 입력칸의 보내기 키(Enter · Enter 가 줄바꿈이면 ⌘Enter ·
+    폰은 Return 으로 보내기일 때만)는 가장 오래된 대기 글을 Send now 로 — IME 조합 중·보낸 직후·조합 끝난 직후 0.4초·질문 카드 위에서는 아님(`chatLib.sendsQueuedNow`, fb-1123 00c4df83).
+    Codex 가 돌리지 못한 턴(사용량 한도 등 `task_complete.error`·옛 `error` 이벤트)은 그 프롬프트 뒤 「Turn failed」 알림(빨강, source `error`)으로 보인다(fb-1123 8a3a326f)
   - 모델: `transcript/metadata.ts`(ovis conversation-metadata 이식) — Claude 답의 `message.model`·`effort`·usage, /model 답(「Set model to `Sonnet 5`」),
-    Codex `turn_context`·`token_count`(창 크기 → %). 바꾸기는 에이전트의 `/model` 뿐: Claude 는 그 선택을 새 세션 기본값(settings.json)으로도 저장하므로
-    칩은 반드시 확인을 거친다. 인자 없는 `/model`·`/config` 처럼 터미널만 그리는 명령(`chatCommands.ts` 의 `terminal`)은 보낸 뒤 터미널 + 「Back to Chat」 띠
+    Codex `turn_context`·`token_count`(창 크기 → %)·`thread_settings_applied`(Codex `/model` 이 턴 없이 바로 쓰는 새 모델·추론 — fb-1123 0adc1255). 바꾸기는 에이전트의 `/model` 뿐: Claude 는 그 선택을 새 세션 기본값(settings.json)으로도 저장하므로
+    칩은 반드시 확인을 거친다. 거절되면(질문·입력줄에 글) 칩이 닫히지 않고 「Not sent」 이유와 Open Terminal 을 보인다 — Codex 0.17x 메뉴 꼬리 `enter select · esc back` 도 화면 맨 아래 줄일 때만 질문으로 읽는다(제목 줄을 질문 글로)(fb-1123 0adc1255). 인자 없는 `/model`·`/config` 처럼 터미널만 그리는 명령(`chatCommands.ts` 의 `terminal`)은 보낸 뒤 터미널 + 「Back to Chat」 띠
   - 화면 읽기: `refreshScreen` 하나 — 미러를 flush 한 뒤 읽고 그 출력 시각까지만 「읽음」. (flush 없이 읽던 1회차는 그리기 전 화면을 읽어 답한 뒤에도
     카드가 남거나, 새 질문 카드가 안 뜰 수 있었다)
   - 단축키: `toggleChatView` ⌘⇧M · `focusChatInput` ⌘⇧I · `scrollPaneUp/Down` ⌘⇧PgUp/PgDn(그룹 「Chat View」). 입력칸 안에서도 먹도록 입력 칸 건너뛰기
@@ -378,7 +380,7 @@ User Action (Renderer)
 
 #### System Monitor
 - `get-system-info` → `SystemInfo`: CPU·RAM·디스크(데이터 볼륨)·배터리·가동 시간·세션 수. 팝오버를 열 때만 읽는다
-- `get-status-report` → `StatusCommandResult`: 팝오버 아래 「Queues」 칸. main 이 저장된 `settings.statusCommand` 를 로그인 셸로 돌리고(20초 상한, 렌더러는 명령을 넘기지 않는다) 출력의 `StatusReport` v1 JSON 을 읽는다(`main/statusCommand.ts`). 0 이 아닌 종료도 JSON 이 있으면 리포트로 친다(`queues status --json` 은 막힌 줄이 있으면 3). 모르는 상태는 `error`, 개수는 앱이 다시 센다. 비어 있으면 `{ configured: false }` 로 칸이 없다. 앱은 줄 이름을 모른다 — 모양만 안다. 열 때·Refresh 때만 돈다(같은 순간 두 번 열면 한 실행을 같이 쓴다)
+- `get-status-report` → `StatusCommandResult`: 팝오버 아래 「Queues」 칸. main 이 저장된 `settings.statusCommand` 를 로그인 셸로 돌리고(20초 상한, 렌더러는 명령을 넘기지 않는다) 출력의 `StatusReport` v1 JSON 을 읽는다(`main/statusCommand.ts`). 0 이 아닌 종료도 JSON 이 있으면 리포트로 친다(`queues status --json` 은 막힌 줄이 있으면 3). 모르는 상태는 `error`, 개수는 앱이 다시 센다. 비어 있으면 `{ configured: false }` 로 칸이 없다. 앱은 줄 이름을 모른다 — 모양만 안다. 열 때·Refresh 때만 돈다(같은 순간 두 번 열면 한 실행을 같이 쓴다). 줄마다 `actions`(빈 칸 = 읽기만), 행마다 지금 내건 동작 — 패널은 배지만 단다(`Read only`/`Manage · …`). 동작 실행은 Control API `POST /v1/queues/…` 뿐이고 `statusActionCommand` 가 있어야 한다(결정 0014, `createStatusService` 를 IPC 와 API 가 같이 쓴다)
 
 #### Feedback Widget
 - `feedback-relay`: 피드백 위젯의 요청을 main 이 `Origin: https://desktop.climanager.solhun.com` 으로 보낸다. `https://*.supabase.co/functions/v1/dp-agentation-ingest/…` 의 GET·POST 만 허용하고, 실패는 던지지 않고 `{ error }` 로 돌려준다(렌더러 쪽이 던져서 위젯 큐가 재시도하게 한다)

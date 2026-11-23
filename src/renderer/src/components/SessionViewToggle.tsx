@@ -20,7 +20,7 @@ export function SessionViewToggle({ sessionId, compact = false }: { sessionId: s
                 type="button"
                 data-testid={`view-toggle-${value}`}
                 aria-pressed={active}
-                title={hint(value === 'chat' ? 'Chat — read and reply like a chat' : 'Terminal', 'toggleChatView')}
+                title={value === 'chat' ? hint('Chat — read and reply like a chat', 'toggleChatView', false) : hint('Terminal', 'toggleChatView')}
                 onClick={(event) => {
                     event.stopPropagation()
                     switchSessionView(sessionId, value)

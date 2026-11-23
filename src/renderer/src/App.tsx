@@ -36,6 +36,7 @@ import { UpdateNotification, UpdateStatus } from './components/UpdateNotificatio
 import { BusyOverlay } from './components/BusyOverlay'
 import { FeedbackGate } from './components/Feedback/FeedbackGate'
 import { resumeCommandFor } from './utils/resumeCommand'
+import { isMac, PANEL_TOP_MARGIN } from './utils/platform'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { mostRecentOtherSession, neighborSession, sessionsInSidebarOrder, sidebarWorkspaceOrder, type SessionLanding } from './utils/sessionNavigation'
 import { describeSessionLinkProblems, MAX_LINKED_SESSIONS, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
@@ -1662,6 +1663,8 @@ function App() {
 
     return (
         <div className="flex h-screen w-screen bg-transparent">
+            {/* macOS: the traffic lights' strip above the panels drags the window like the headers (91fce7bf) */}
+            {isMac && <div aria-hidden data-window-title-strip className="fixed top-0 inset-x-0 h-8 draggable" />}
             {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
 
             {installingUpdate ? (
@@ -1738,7 +1741,7 @@ function App() {
                     }
                 />
             )}
-            <div className="flex-1 glass-panel m-2 ml-0 rounded-lg overflow-hidden flex flex-col">
+            <div className={`flex-1 glass-panel m-2 ml-0 ${PANEL_TOP_MARGIN} rounded-lg overflow-hidden flex flex-col`}>
                 {/* Header - minimized in split view */}
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} border-b border-white/10 flex items-center px-4 draggable justify-between relative z-10 transition-all`}>
                     {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers.

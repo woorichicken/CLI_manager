@@ -74,6 +74,13 @@ const AWAITING_INPUT_PATTERNS = [
     /\bYes, proceed\b/i
 ]
 
+/**
+ * Codex 0.17x's own selection menus — «Switch to gpt-6-luna?» after a usage-limit failure, the /model and effort
+ * pickers — end on this footer and may name no question words above; their `› 1.` row read as typed text
+ * (fb-1123 0adc1255). Only as the screen's last line: an answer quoting the words is no menu.
+ */
+const CODEX_MENU_FOOTER = /^\s*enter (?:select|default)\b.*\besc back\s*$/i
+
 /** Parsing normally finishes in milliseconds; this only guards against a disposed mirror. */
 const FLUSH_TIMEOUT_MS = 1000
 
@@ -662,7 +669,7 @@ function questionRegion(screen: string[]): string[] {
 
 function showsQuestion(region: string[]): boolean {
     const text = region.join('\n')
-    return AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(text))
+    return AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(text)) || CODEX_MENU_FOOTER.test(region.at(-1) ?? '')
 }
 
 /** The first option of an agent dialog: "❯ 1. Yes", "› 1. Yes, proceed", "  1. Red". */
@@ -680,7 +687,9 @@ function questionLine(region: string[]): string {
     const above = firstOption >= 0 ? cleaned.slice(0, firstOption) : cleaned
     const asked = [...above].reverse().find((line) => /[?？]$/.test(line))
     const matched = cleaned.find((line) => AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(line)))
-    const chars = Array.from(asked ?? matched ?? '')
+    // a menu that asks nothing in words (Codex's effort picker): its heading above the options, not the key footer
+    const heading = firstOption > 0 ? [...above].reverse().find((line) => line.trim() !== '') : undefined
+    const chars = Array.from(asked ?? matched ?? heading ?? cleaned.at(-1) ?? '')
     return chars.length > QUESTION_LINE_MAX ? `${chars.slice(0, QUESTION_LINE_MAX - 1).join('')}…` : chars.join('')
 }
 

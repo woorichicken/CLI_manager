@@ -97,7 +97,7 @@ function claudeSetting(entry: RecordValue): { model?: string; effort?: string | 
 /** Lines that cannot name a model, skipped before JSON.parse (a busy transcript is mostly these). */
 function mayNameMeta(line: string, agent: 'claude' | 'codex'): boolean {
     if (line.length === 0 || line.length > MAX_META_LINE) return false
-    if (agent === 'codex') return line.includes('"turn_context"') || line.includes('"token_count"') || line.includes('"session_meta"')
+    if (agent === 'codex') return line.includes('"turn_context"') || line.includes('"token_count"') || line.includes('"session_meta"') || line.includes('"thread_settings_applied"')
     return line.includes('"assistant"') || line.includes('"permissionMode"') || line.includes('local-command') || line.includes('local_command') || line.includes('/clear')
 }
 
@@ -154,6 +154,17 @@ export function foldMetadata(text: string, agent: 'claude' | 'codex', before: Co
             const current = ensure()
             current.context = contextOf(count(record(info.last_token_usage).total_tokens), current.model, window || null, current.context)
             if (current.context === undefined) delete current.context
+            continue
+        }
+        // Codex's `/model` (and the rate-limit «Switch to …?» menu) record the new model and effort at once, as
+        // `thread_settings_applied`; the next turn_context only comes with the next turn. Without this the chip kept
+        // the old model until then (fb-1123 0adc1255 — codex-cli 0.166/0.171, measured). Its mode is left to
+        // turn_context: the event carries no sandbox_policy.
+        if (entry.type === 'event_msg' && event.type === 'thread_settings_applied') {
+            const settings = record(event.thread_settings)
+            const model = label(settings.model)
+            if (model) ensure().model = model
+            if ('reasoning_effort' in settings) ensure().effort = label(settings.reasoning_effort)
             continue
         }
         if (entry.type !== 'turn_context' && entry.type !== 'session_meta') continue
