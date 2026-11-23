@@ -32,6 +32,8 @@ runner) and the app ships to people whose queues it has never heard of. Two easy
   before this change stays version 1.
 - **Acting re-reads first.** `POST /v1/queues/:source/:item/:action` runs a fresh report (not a shared one in
   flight) and runs the action command only if that row still offers that action — otherwise `404`/`409` and nothing runs.
+- **One at a time per row.** A second call for the same queue, row and action while the first runs gets
+  `409 action_in_progress`. Calls for different rows are not serialized — the action command must tolerate that.
 - **Names are arguments, never text.** The shell gets `<actionCommand> "$@"` with the three names as positional
   parameters.
 - **The panel only reads.** It badges each queue `Read only` or `Manage · <labels>` and each row with what it

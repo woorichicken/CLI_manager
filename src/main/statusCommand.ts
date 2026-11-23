@@ -153,6 +153,7 @@ export interface StatusService {
 
 export function createStatusService(settings: () => { command?: string; actionCommand?: string }): StatusService {
     let inFlight: Promise<StatusCommandResult> | null = null
+    const acting = new Set<string>()
     const read = (): { command: string; actionCommand: string } => {
         const s = settings()
         return { command: (s.command ?? '').trim(), actionCommand: (s.actionCommand ?? '').trim() }
@@ -173,27 +174,39 @@ export function createStatusService(settings: () => { command?: string; actionCo
             const { command, actionCommand } = read()
             if (!command) return refuse(404, 'not_configured', 'No status command in Settings › General.')
             if (!actionCommand) return refuse(404, 'actions_off', 'No action command in Settings › General — every queue is read only.')
-            if (!safeId(item) || !safeId(action)) return refuse(400, 'bad_request', 'item and action must be plain ids.')
-            // Its own run, not a shared one: a run that started before this call may predate the row's change.
-            const result = await runStatusCommand(command)
-            if (!result.configured) return refuse(404, 'not_configured', 'No status command in Settings › General.')
-            if (!result.ok) return refuse(502, 'status_command_failed', result.error)
-            const src = result.report.sources.find(s => s.id === source)
-            if (!src) return refuse(404, 'queue_not_found', `No queue "${source}" in the report.`)
-            if (src.state === 'error') return refuse(409, 'queue_unreadable', `Queue "${source}" could not be read: ${src.summary}`)
-            const row = src.items.find(i => i.id === item)
-            if (!row) return refuse(404, 'queue_item_not_found', `Queue "${source}" has no row "${item}" now.`)
-            if (!row.actions.includes(action)) {
-                return refuse(409, 'action_not_offered', src.actions.length === 0
-                    ? `Queue "${source}" is read only.`
-                    : `Row "${item}" does not offer "${action}" now.`)
+            if (!safeId(source) || !safeId(item) || !safeId(action)) return refuse(400, 'bad_request', 'source, item and action must be plain ids.')
+            // The same row twice at once (a double click, two clients) runs once; the second is told so.
+            const key = `${source}/${item}/${action}`
+            if (acting.has(key)) return refuse(409, 'action_in_progress', `"${action}" on "${item}" is already running.`)
+            acting.add(key)
+            try {
+                return await actNow(command, actionCommand, source, item, action)
+            } finally {
+                acting.delete(key)
             }
-            const ran = await runStatusAction(actionCommand, source, item, action)
-            if (ran.exitCode !== 0) {
-                return refuse(502, 'action_failed', `exit ${ran.exitCode}${ran.output ? ` — ${ran.output.split('\n').pop()}` : ''}`)
-            }
-            return { ok: true, source, item, action, output: ran.output, durationMs: ran.durationMs }
         }
+    }
+    /** The checks and the run behind `act`, once the per-row guard is held. */
+    async function actNow(command: string, actionCommand: string, source: string, item: string, action: string): Promise<QueueActionResult> {
+        // Its own run, not a shared one: a run that started before this call may predate the row's change.
+        const result = await runStatusCommand(command)
+        if (!result.configured) return refuse(404, 'not_configured', 'No status command in Settings › General.')
+        if (!result.ok) return refuse(502, 'status_command_failed', result.error)
+        const src = result.report.sources.find(s => s.id === source)
+        if (!src) return refuse(404, 'queue_not_found', `No queue "${source}" in the report.`)
+        if (src.state === 'error') return refuse(409, 'queue_unreadable', `Queue "${source}" could not be read: ${src.summary}`)
+        const row = src.items.find(i => i.id === item)
+        if (!row) return refuse(404, 'queue_item_not_found', `Queue "${source}" has no row "${item}" now.`)
+        if (!row.actions.includes(action)) {
+            return refuse(409, 'action_not_offered', src.actions.length === 0
+                ? `Queue "${source}" is read only.`
+                : `Row "${item}" does not offer "${action}" now.`)
+        }
+        const ran = await runStatusAction(actionCommand, source, item, action)
+        if (ran.exitCode !== 0) {
+            return refuse(502, 'action_failed', `exit ${ran.exitCode}${ran.output ? ` — ${ran.output.split('\n').pop()}` : ''}`)
+        }
+        return { ok: true, source, item, action, output: ran.output, durationMs: ran.durationMs }
     }
 }
 

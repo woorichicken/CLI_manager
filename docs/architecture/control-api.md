@@ -223,7 +223,7 @@ Tests: `t158-queue-actions-unit.spec.ts` (no Electron), `t158-queue-actions.spec
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/v1/queues` | `{ report, actionsEnabled, durationMs }` — the same run the popover shares. No status command → `404 not_configured`; a command that fails → `502 status_command_failed` |
-| POST | `/v1/queues/:source/:item/:action` | Re-reads the report, then runs `<action command> "$@"` with the three names as arguments → `{ ok, source, item, action, output, durationMs }`. `404 actions_off` (no action command) · `404 queue_not_found` · `404 queue_item_not_found` · `409 queue_unreadable` · `409 action_not_offered` (read-only queue, or not offered on that row now) · `400 bad_request` (not a plain id) · `502 action_failed` (non-zero exit; message ends with its last line) |
+| POST | `/v1/queues/:source/:item/:action` | Re-reads the report, then runs `<action command> "$@"` with the three names as arguments → `{ ok, source, item, action, output, durationMs }`. `404 actions_off` (no action command) · `404 queue_not_found` · `404 queue_item_not_found` · `409 queue_unreadable` · `409 action_not_offered` (read-only queue, or not offered on that row now) · `409 action_in_progress` (the same row and action already running) · `400 bad_request` (a name that is not a plain id) · `502 action_failed` (non-zero exit; message ends with its last line) |
 
 Reading never acts, and nothing in the request body is used. Not in this version: MCP tools for queues (use REST),
 actions from the panel itself.

@@ -81,7 +81,8 @@ test.describe('T158 queue actions — run', () => {
             ['nope', 'q1', 'cancel', 404, 'queue_not_found'],
             ['jobs', 'bad id!', 'cancel', 400, 'bad_request'],
             ['jobs', 'q1;touch x', 'cancel', 400, 'bad_request'],
-            ['jobs', 'q1', 'rm -rf', 400, 'bad_request']
+            ['jobs', 'q1', 'rm -rf', 400, 'bad_request'],
+            ['x;rm -rf', 'q1', 'cancel', 400, 'bad_request']        // the queue name is checked like the others
         ]
         for (const [source, item, action, status, code] of refusals) {
             expect(await service.act(source, item, action), `${source} ${item} ${action}`).toEqual(expect.objectContaining({ ok: false, status, code }))
@@ -97,6 +98,15 @@ test.describe('T158 queue actions — run', () => {
         expect(await service.act('jobs', 'q1', 'cancel')).toMatchObject({ ok: false, status: 404, code: 'actions_off' })
         await expect(createStatusService(() => ({})).act('jobs', 'q1', 'cancel')).resolves.toMatchObject({ code: 'not_configured' })
         expect(st.calls()).toEqual([])
+    })
+
+    test('the same row twice at once runs once; the second is told it is in progress', async () => {
+        const st = fixtureState()
+        const service = createStatusService(() => ({ command: `${st.env} ${node('report-actions.cjs')}`, actionCommand: `${st.env} ${node('act.cjs')}` }))
+        const [a, b] = await Promise.all([service.act('jobs', 'q1', 'cancel'), service.act('jobs', 'q1', 'cancel')])
+        expect([a.ok, b.ok].sort()).toEqual([false, true])
+        expect([a, b].find(r => !r.ok)).toMatchObject({ status: 409, code: 'action_in_progress' })
+        expect(st.calls()).toEqual([['jobs', 'q1', 'cancel']])
     })
 
     test('a failing action says so with its exit code and last line', async () => {
