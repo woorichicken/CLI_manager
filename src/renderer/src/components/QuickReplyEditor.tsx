@@ -158,6 +158,7 @@ export function QuickReplyEditor({ replies, colors, onChange }: QuickReplyEditor
                             index={index}
                             reply={text}
                             color={row.color}
+                            repeat={repeat}
                             open={openId === row.id}
                             onOpen={(open) => setOpenId(open ? row.id : null)}
                             onPick={(color) => edit(row.id, { color })}
@@ -211,6 +212,8 @@ interface ColorDotProps {
     index: number
     reply: string
     color: QuickReplyColor | null
+    /** the same text as a row above: one chip, coloured by that row, so this dot has nothing to set */
+    repeat: boolean
     open: boolean
     onOpen: (open: boolean) => void
     onPick: (color: QuickReplyColor | null) => void
@@ -218,7 +221,7 @@ interface ColorDotProps {
 }
 
 /** The row's chip in its colour; pressing it pops a small radio group of the fixed colours (report 93bd4834). */
-function ColorDot({ index, reply, color, open, onOpen, onPick, ring }: ColorDotProps) {
+function ColorDot({ index, reply, color, repeat, open, onOpen, onPick, ring }: ColorDotProps) {
     const triggerRef = useRef<HTMLButtonElement>(null)
     const popoverRef = useRef<HTMLDivElement>(null)
 
@@ -272,8 +275,9 @@ function ColorDot({ index, reply, color, open, onOpen, onPick, ring }: ColorDotP
                 data-color={color ?? undefined}
                 aria-haspopup="dialog"
                 aria-expanded={open}
-                aria-label={`Colour for “${label}”: ${colorName(color)}`}
-                title={`Colour: ${colorName(color)}`}
+                aria-label={repeat ? `Colour for “${label}”: set on the row above` : `Colour for “${label}”: ${colorName(color)}`}
+                title={repeat ? 'Same text as a reply above: one chip, coloured by that row' : `Colour: ${colorName(color)}`}
+                disabled={repeat}
                 onClick={() => onOpen(!open)}
                 className={`chat-quick-reply ${ring}`}
                 // the plain chip reads the chat's line and text tints, which live on the chat view; a coloured one its dark tints
@@ -288,7 +292,7 @@ function ColorDot({ index, reply, color, open, onOpen, onPick, ring }: ColorDotP
             >
                 Aa
             </button>
-            {open && (
+            {open && !repeat && (
                 // the dialog's own surface and border classes, so it looks like the dialog whichever way that is drawn
                 <div
                     ref={popoverRef}

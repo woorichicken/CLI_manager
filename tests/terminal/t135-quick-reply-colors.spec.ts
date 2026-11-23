@@ -48,7 +48,7 @@ function seed(): { project: string; claudeDir: string; transcript: string; statu
     return { project, claudeDir, transcript, statusFile }
 }
 
-const readSettings = (dir: string): { chat?: { quickReplies?: unknown; quickReplyColors?: Record<string, string> } } =>
+const readSettings = (dir: string): { chat?: { showQuickReplies?: boolean; quickReplies?: unknown; quickReplyColors?: Record<string, string> } } =>
     JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')).settings
 
 const chip = (root: Page | Locator, reply: string): Locator =>
@@ -584,4 +584,76 @@ test('T135 the editor\'s colour dots read on the Settings dialog, which stays da
     expect(await popover.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(dialogBg)
     await page.keyboard.press('Escape')
     await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+})
+
+test('T135 Cancel drops the edits; an untouched Save keeps no list; a colour alone on the default list does not write it (c44bf0af review)', async () => {
+    test.setTimeout(150_000)
+    const { project, claudeDir, transcript, statusFile } = seed()
+    result = await launchAppWithWorkspaces(
+        [{
+            id: 'w-t135',
+            name: 'T135 project',
+            path: project,
+            sessions: [{ id: SESSION, name: 'T135 Claude', cliSessionId: SESSION_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 300 --mode-row none` }]
+        }],
+        // no list saved: the chat shows the default replies
+        { settings: { phone: { enabled: true, port: PORT }, chat: { showQuickReplies: true } }, env: { CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile, CLAUDE_CONFIG_DIR: claudeDir } }
+    )
+    const { app, page, userDataDir } = result
+    await resizeMainWindow(app, 1280, 800)
+    const DEFAULTS = ['continue', 'yes', 'no', 'retry']
+    const openChatSettings = async (): Promise<Locator> => {
+        await page.locator('button[title^="Settings"]').first().click()
+        await page.getByTestId('settings-category-chat').click()
+        const editor = page.getByTestId('quick-reply-editor')
+        await expect(editor).toBeVisible()
+        return editor
+    }
+
+    // --- Cancel: nothing of the edit is kept ---------------------------------------
+    let editor = await openChatSettings()
+    expect(await editorTexts(page)).toEqual(DEFAULTS)
+    await editor.getByTestId('quick-reply-add').click()
+    await page.keyboard.type('throw me away')
+    await editor.getByTestId('quick-reply-delete-0').click()
+    await editor.getByTestId('quick-reply-color-0').click()
+    await page.getByTestId('quick-reply-color-0-red').click()
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(page.getByTestId('chat-view-settings')).toHaveCount(0)
+    expect(readSettings(userDataDir).chat?.quickReplies).toBeUndefined()
+    expect(readSettings(userDataDir).chat?.quickReplyColors).toBeUndefined()
+    editor = await openChatSettings()
+    expect(await editorTexts(page)).toEqual(DEFAULTS)
+    await expect(editor.getByTestId('quick-reply-color-0')).not.toHaveAttribute('data-color', /.+/)
+
+    // --- A repeat's dot is off: the first row with that text gives the colour -------------
+    await editor.getByTestId('quick-reply-add').click()
+    await page.keyboard.type('yes')
+    await expect(editor.getByTestId('quick-reply-row-4')).toHaveAttribute('data-duplicate', 'true')
+    await expect(editor.getByTestId('quick-reply-color-4')).toBeDisabled()
+    await expect(editor.getByTestId('quick-reply-color-4')).toHaveAttribute('title', /above/)
+    await expect(editor.getByTestId('quick-reply-color-1')).toBeEnabled()
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+    // --- Save without touching the list: still no list in config.json ------------------
+    await openChatSettings()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(page.getByTestId('chat-view-settings')).toHaveCount(0)
+    await expect.poll(() => readSettings(userDataDir).chat?.showQuickReplies).toBe(true)
+    expect(readSettings(userDataDir).chat).not.toHaveProperty('quickReplies')
+
+    // --- A colour on the default list: the colour is saved, the list is not --------------
+    editor = await openChatSettings()
+    await editor.getByTestId('quick-reply-color-0').click()
+    await page.getByTestId('quick-reply-color-0-green').click()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect.poll(() => readSettings(userDataDir).chat?.quickReplyColors).toEqual({ continue: 'green' })
+    expect(readSettings(userDataDir).chat).not.toHaveProperty('quickReplies')
+    // so a phone still follows its own default instead of thinking the Mac set a list
+    const state = await page.evaluate(() => window.api.getPhoneState())
+    const { phone } = await openPhone(app, `http://127.0.0.1:${state.port}/?session=${SESSION}&view=chat`)
+    const me = await phone.evaluate(async () => (await fetch('/api/phone/me')).json()) as { quickReplies?: unknown[]; quickReplyColors?: Record<string, string>; quickRepliesSet?: boolean }
+    expect(me.quickRepliesSet).toBeUndefined()
+    expect(me.quickReplies).toEqual(DEFAULTS)
+    expect(me.quickReplyColors).toEqual({ continue: 'green' })
 })

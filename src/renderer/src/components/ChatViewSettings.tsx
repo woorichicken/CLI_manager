@@ -3,6 +3,8 @@ import { DEFAULT_QUICK_REPLIES } from '../../../shared/conversation'
 import { QuickReplyEditor } from './QuickReplyEditor'
 import { DictationLogSettings } from './DictationLogSettings'
 
+const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((item, index) => item === b[index])
+
 /**
  * Settings › Chat: how the chat's message box sends, and one-tap replies over the
  * empty box (ovis Settings → Chat → Composer). Kept with the app's settings, not per device.
@@ -76,7 +78,14 @@ export function ChatViewSettings({ settings, setSettings }: { settings: UserSett
                         <QuickReplyEditor
                             replies={replies}
                             colors={chat.quickReplyColors}
-                            onChange={(quickReplies, quickReplyColors) => update({ quickReplies, quickReplyColors })}
+                            onChange={(quickReplies, quickReplyColors) =>
+                                update({
+                                    // no list saved and still the default one (only a colour picked): keep it unsaved, so a
+                                    // phone keeps following its own default instead of reading «the Mac set a list»
+                                    quickReplies: chat.quickReplies === undefined && sameList(quickReplies, DEFAULT_QUICK_REPLIES) ? undefined : quickReplies,
+                                    quickReplyColors
+                                })
+                            }
                         />
                     )}
                 </div>
