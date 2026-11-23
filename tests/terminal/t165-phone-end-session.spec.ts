@@ -5,6 +5,8 @@ import path from 'path'
 import { closeApp, launchAppWithWorkspaces, type LaunchResult, resizeMainWindow } from './helpers'
 import { PhoneDevices } from '../../src/main/phone/PhoneDevices'
 import { PhoneServer } from '../../src/main/phone/PhoneServer'
+import { endWarning } from '../../src/renderer/src/phone/PhoneEndSheet'
+import http from 'http'
 
 /**
  * T165 — f683eafe round 2 (person, 11-23: 「나는 넣었으면 좋겠고」): the phone's row ⋯ menu ends a session.
@@ -23,12 +25,15 @@ const LABEL = process.env.T165_LABEL ?? 'run'
 const OWNER = 'owner-t165@example.com'
 const ENDED = 't165-ended-0-4000-8000-000000000001'
 const KEPT = 't165-kept-00-4000-8000-000000000002'
+const VIEWED = 't165-viewed-4000-8000-000000000003'
+const GONE = 't165-gone-00-4000-8000-000000000004'
 
 test.describe('T165 phone server: POST /api/phone/end/<id>', () => {
     let server: PhoneServer
     let base = ''
     let devices: PhoneDevices
     const ended: string[] = []
+    const endedBy: string[] = []
     const pairAs = (role: 'drive' | 'watch', label: string): { cookie: string; id: string } => {
         const { code } = devices.startPairing(role)
         const paired = devices.pair(code, label)
@@ -56,9 +61,10 @@ test.describe('T165 phone server: POST /api/phone/end/<id>', () => {
             recordPhoneInput: () => undefined,
             terminals: {} as never,
             subscribeConversation: () => () => undefined,
-            endSession: (id: string) => {
+            endSession: (id: string, by: string) => {
                 if (id !== 's1') return false
                 ended.push(id)
+                endedBy.push(by)
                 return true
             }
         } as never)
@@ -90,7 +96,42 @@ test.describe('T165 phone server: POST /api/phone/end/<id>', () => {
         expect(ok.status).toBe(200)
         expect(await ok.json()).toEqual({ status: 'ended' })
         expect(ended).toEqual(['s1'])
+        expect(endedBy).toEqual(['Phone'])
     })
+
+    test('a device disconnected while its request is still sending the body ends nothing (401)', async () => {
+        const device = pairAs('drive', 'Slow phone')
+        const before = ended.length
+        const port = Number(new URL(base).port)
+        const body = JSON.stringify({ pad: 'x'.repeat(64) })
+        const result = await new Promise<{ status: number }>((resolve, reject) => {
+            const req = http.request(
+                { host: '127.0.0.1', port, path: '/api/phone/end/s1', method: 'POST', headers: { cookie: device.cookie, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), origin: base } },
+                (res) => {
+                    res.resume()
+                    res.on('end', () => resolve({ status: res.statusCode ?? 0 }))
+                }
+            )
+            req.on('error', reject)
+            const half = Math.floor(body.length / 2)
+            req.write(body.slice(0, half))
+            // the headers were judged when they arrived; the revoke comes while the rest is on its way
+            setTimeout(() => {
+                devices.revoke(device.id)
+                setTimeout(() => req.end(body.slice(half)), 100)
+            }, 200)
+        })
+        expect(result.status).toBe(401)
+        expect(ended.length).toBe(before)
+    })
+})
+
+test('T165 the sheet says what ending interrupts, from the list state', () => {
+    expect(endWarning({ agent: 'claude', state: 'working' })).toBe('Claude is still working — it will be stopped.')
+    expect(endWarning({ agent: 'codex', state: 'working' })).toBe('Codex is still working — it will be stopped.')
+    expect(endWarning({ agent: null, state: 'working' })).toBe('Something is still running — it will be stopped.')
+    expect(endWarning({ agent: 'claude', state: 'waiting' })).toBe('Claude is waiting for your answer — ending drops the question.')
+    for (const state of ['idle', 'stopped', 'exited'] as const) expect(endWarning({ agent: 'claude', state })).toBeNull()
 })
 
 let result: LaunchResult | null = null
@@ -155,7 +196,7 @@ test('T165 app: ⋯ → End session → a sheet; Cancel keeps it, End closes it 
     const statusFile = path.join(home, 'tailscale-status.json')
     fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Running', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: ['100.100.1.1'] }, User: { '42': { LoginName: OWNER } } }))
     result = await launchAppWithWorkspaces(
-        [{ id: 'ws-t165', name: 'T165 project', path: project, sessions: [{ id: ENDED, name: 'T165 to end' }, { id: KEPT, name: 'T165 kept' }] }],
+        [{ id: 'ws-t165', name: 'T165 project', path: project, sessions: [{ id: ENDED, name: 'T165 to end' }, { id: KEPT, name: 'T165 kept' }, { id: VIEWED, name: 'T165 viewed' }, { id: GONE, name: 'T165 gone' }] }],
         {
             settings: { phone: { enabled: true, port: 0 }, showHomeWorkspace: false },
             config: { sessionRelations: [{ from: KEPT, to: ENDED, kind: 'opened', at: 1 }] },
@@ -196,18 +237,41 @@ test('T165 app: ⋯ → End session → a sheet; Cancel keeps it, End closes it 
     await tap(cdp, phone, '[data-testid="phone-end-cancel"]')
     await expect(sheet).toHaveCount(0)
     await phone.waitForTimeout(500)
-    expect(storedIds(userDataDir)).toEqual([ENDED, KEPT])
+    expect(storedIds(userDataDir)).toEqual([ENDED, KEPT, VIEWED, GONE])
     await expect(page.locator(`[data-session-item="${ENDED}"]`).first()).toBeVisible()
 
     // End: closed on the Mac like the sidebar's delete — sidebar, store, relations; and the phone's list
     await tap(cdp, phone, more(ENDED))
     await tap(cdp, phone, '[data-testid="phone-row-menu-end"]')
     await tap(cdp, phone, '[data-testid="phone-end-confirm"]')
-    await expect.poll(() => storedIds(userDataDir), { timeout: 10_000 }).toEqual([KEPT])
+    await expect.poll(() => storedIds(userDataDir), { timeout: 10_000 }).toEqual([KEPT, VIEWED, GONE])
     expect(storedRelations(userDataDir)).toEqual([])
+    // the Mac's trace: the row went with no click there, so the sidebar says who did it
+    await expect(page.getByTestId('sidebar-drop-notice')).toHaveText(`Ended from phone (${OWNER}): T165 to end`)
     await expect(page.locator(`[data-session-item="${ENDED}"]`)).toHaveCount(0, { timeout: 10_000 })
     await expect(page.locator(`[data-session-item="${KEPT}"]`).first()).toBeVisible()
     await expect(phone.locator(row(ENDED))).toHaveCount(0, { timeout: 10_000 })
     await expect(phone.locator(row(KEPT))).toBeVisible()
     await shot(phone, 'after-end-390')
+
+    // Already closed elsewhere: End finds it gone (404) — the sheet closes and the row goes, no error.
+    await tap(cdp, phone, more(GONE))
+    await tap(cdp, phone, '[data-testid="phone-row-menu-end"]')
+    await expect(sheet).toBeVisible()
+    expect(await phone.evaluate(async (id) => (await fetch(`/api/phone/end/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, GONE)).toBe(200)
+    await tap(cdp, phone, '[data-testid="phone-end-confirm"]')
+    await expect(sheet).toHaveCount(0)
+    await expect(phone.getByTestId('phone-end-error')).toHaveCount(0)
+    await expect(phone.locator(row(GONE))).toHaveCount(0)
+
+    // The session the phone is showing: ended from the drawer, the phone goes back to the list.
+    await phone.goto(`http://127.0.0.1:${port}/?session=${VIEWED}&view=terminal`)
+    await expect(phone.getByTestId('phone-session-rename')).toHaveText('T165 viewed', { timeout: 15_000 })
+    await tap(cdp, phone, '[data-testid="phone-menu-button"]')
+    await tap(cdp, phone, more(VIEWED))
+    await tap(cdp, phone, '[data-testid="phone-row-menu-end"]')
+    await tap(cdp, phone, '[data-testid="phone-end-confirm"]')
+    await expect.poll(() => storedIds(userDataDir), { timeout: 10_000 }).toEqual([KEPT])
+    await expect(phone.getByTestId('phone-session-rename')).toHaveCount(0)
+    await expect(phone.locator(row(KEPT))).toBeVisible()
 })

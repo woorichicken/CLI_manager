@@ -51,7 +51,7 @@ export interface PhoneSetupDeps {
     /** the Control API's rename: the sidebar follows at once. Returns the name kept, null for no such session */
     renameSession?(sessionId: string, name: string): string | null
     /** the Control API's close (sidebar, store, relations, inbox follow): false for no such session */
-    endSession?(sessionId: string): boolean
+    endSession?(sessionId: string, by: string): boolean
     hookStatus(id: string): AgentStatusUpdate | null
     broadcast(channel: string, payload: unknown): void
     mask: MaskOptions

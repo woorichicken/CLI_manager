@@ -1159,7 +1159,8 @@ body.phone-body #root {
 .phone-end-layer {
     position: fixed;
     inset: 0;
-    z-index: 60;
+    /* above every other phone layer (the highest, 80, is the drawer's) */
+    z-index: 90;
 }
 .phone-end-scrim {
     position: absolute;
@@ -1190,6 +1191,11 @@ body.phone-body #root {
     margin: 0;
     font-size: 13px;
     color: var(--text-secondary);
+}
+.phone-end-warning {
+    margin: 0;
+    font-size: 13px;
+    color: #fcd34d;
 }
 .phone-end-error {
     margin: 0;

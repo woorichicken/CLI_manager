@@ -91,10 +91,10 @@ export interface PhoneApiDeps {
      */
     renameSession?(sessionId: string, name: string): string | null
     /**
-     * Ends the session on the Mac as the sidebar's delete and the Control API's close do (f683eafe r2):
-     * true when it was closed, false for no such session. Absent: no end route.
+     * Ends the session on the Mac as the Control API's close does (f683eafe r2): true when it was
+     * closed, false for no such session. `by` names the phone for the Mac's notice. Absent: no end route.
      */
-    endSession?(sessionId: string): boolean
+    endSession?(sessionId: string, by: string): boolean
     /** absent: no file routes (phoneFiles.ts) */
     files?: PhoneFilesDeps
     /** a file on its way to a device: stopped if the device is disconnected */
@@ -219,7 +219,9 @@ export async function handlePhoneApi(req: http.IncomingMessage, res: http.Server
         const sessionId = decodedSegment(endRoute[1])
         await readJson(req)
         if (!deps.stillAllowed()) return refuseRevoked(res)
-        if (sessionId === null || !deps.endSession(sessionId)) {
+        // the Mac says which phone did it (its sidebar notice): the paired name, else the Tailscale login
+        const by = deps.access.via === 'device' ? deps.access.deviceLabel ?? 'paired device' : deps.access.login ?? 'Tailscale'
+        if (sessionId === null || !deps.endSession(sessionId, by)) {
             send(res, 404, { error: 'unknown_session' })
             return
         }

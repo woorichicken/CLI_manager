@@ -77,6 +77,15 @@ export interface PhoneSession {
     templateId?: string
 }
 
+/** main → renderer: a phone ended a session (f683eafe r2) — the sidebar says so at its bottom */
+export const PHONE_ENDED_SESSION_CHANNEL = 'phone-ended-session'
+export interface PhoneEndedSession {
+    sessionId: string
+    name: string
+    /** the paired device's name, else the Tailscale login it came in with */
+    by: string
+}
+
 /** POST /api/phone/end/<sessionId> — the session was closed on the Mac */
 export interface PhoneEndResponse {
     status: 'ended'

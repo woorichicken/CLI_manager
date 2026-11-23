@@ -59,6 +59,7 @@ import { relayFeedbackRequest } from './FeedbackRelay'
 import { FeedbackModeState } from './feedbackMode'
 import { setupPhone, phoneConversationListeners, type PhoneSetup } from './phone/phoneSetup'
 import { runAgentSwapInLoginShell } from './phone/phoneUsage'
+import { PHONE_ENDED_SESSION_CHANNEL } from '../shared/phone'
 import { workspacesInLoadOrder } from './workspaceLoadOrder'
 import type { FeedbackRelayRequest } from '../shared/types'
 import { net } from 'electron'
@@ -4088,9 +4089,12 @@ app.whenReady().then(async () => {
         },
         // f683eafe r2: the phone's End session is the Control API's close — the sidebar's row, the
         // store, the relations and the inbox go the same way; nothing is handed over
-        endSession: (id) => {
+        endSession: (id, by) => {
             try {
+                const name = controlApiService.getSession(id).name
                 controlApiService.closeSession(id)
+                // the Mac's trace of it: a line at the bottom of the sidebar (PHONE_ENDED_SESSION_CHANNEL)
+                broadcast(PHONE_ENDED_SESSION_CHANNEL, { sessionId: id, name, by })
                 return true
             } catch (error) {
                 if (error instanceof ControlApiError && error.status === 404) return false

@@ -68,10 +68,10 @@ export function SessionList({
     // the ⋯ menu that is open (f683eafe), and the memo it opened — over the drawer, read-only
     const [menuId, setMenuId] = useState<string | null>(null)
     const [memoId, setMemoId] = useState<string | null>(null)
-    // the session whose End session question is open
-    const [endId, setEndId] = useState<string | null>(null)
-    const closeEnd = useCallback(() => setEndId(null), [])
-    const endSession = endId ? data?.sessions.find((s) => s.id === endId) ?? null : null
+    // the session whose End session question is open — as it was when asked: a list read that drops it
+    // meanwhile (ended elsewhere) leaves the sheet up, and End then finds it gone (404) and closes
+    const [endSession, setEndSession] = useState<PhoneSession | null>(null)
+    const closeEnd = useCallback(() => setEndSession(null), [])
     const closeMenu = useCallback(() => setMenuId(null), [])
     const [layout, setLayout] = useState<ListLayout>(readLayout)
     // the Mac's «Show Session Tree» off: no tree comes, and the list is List whatever was picked
@@ -220,7 +220,7 @@ export function SessionList({
                                 }}
                                 onEnd={() => {
                                     setMenuId(null)
-                                    setEndId(line.session.id)
+                                    setEndSession(line.session)
                                 }}
                             />
                         )}
@@ -233,7 +233,7 @@ export function SessionList({
                     session={endSession}
                     onCancel={closeEnd}
                     onEnded={(id) => {
-                        setEndId(null)
+                        setEndSession(null)
                         onEnded?.(id)
                     }}
                 />
