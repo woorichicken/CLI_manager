@@ -7,6 +7,7 @@ import type { PhoneState } from '../shared/types'
 import type { PhoneTestPushResult } from '../shared/phone'
 import type { DocPreviewOpenResult } from '../shared/docPreview'
 import type { SessionTabsState } from '../shared/sessionTabs'
+import type { AgentCliStatuses, GettingStartedState } from '../shared/gettingStarted'
 import type { DictationCancelReason, DictationEvent, DictationOutcome, DictationStartContext, DictationStartResult, DictationStatus } from '../shared/dictation'
 
 // Custom APIs for renderer
@@ -49,6 +50,13 @@ const api = {
     // Templates
     getTemplates: (): Promise<any[]> => ipcRenderer.invoke('get-templates'),
     saveTemplates: (templates: any[]): Promise<boolean> => ipcRenderer.invoke('save-templates', templates),
+
+    // Getting started card + built-in agent rows (fb-1120b)
+    gettingStartedGet: (): Promise<GettingStartedState | null> => ipcRenderer.invoke('getting-started-get'),
+    gettingStartedBegin: (): Promise<GettingStartedState | null> => ipcRenderer.invoke('getting-started-begin'),
+    gettingStartedDismiss: (): Promise<GettingStartedState | null> => ipcRenderer.invoke('getting-started-dismiss'),
+    gettingStartedCheck: (): Promise<GettingStartedState | null> => ipcRenderer.invoke('getting-started-check'),
+    agentCliStatus: (): Promise<AgentCliStatuses> => ipcRenderer.invoke('agent-cli-status'),
 
     // Split Terminal View
     openFullscreenTerminal: (sessionIds: string[]): Promise<boolean> => ipcRenderer.invoke('open-fullscreen-terminal', sessionIds),
