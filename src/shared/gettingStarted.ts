@@ -23,6 +23,11 @@ export interface GettingStartedState {
     dismissed: boolean
     /** steps seen done at least once */
     done: Partial<Record<GettingStartedStep, true>>
+    /**
+     * Steps already done when the welcome screen was last accepted — a replay (Settings › General ›
+     * Show Again) marks them «Already done» instead of asking for them again. Empty on a first run.
+     */
+    alreadyDone: GettingStartedStep[]
 }
 
 export type AgentCli = 'claude' | 'codex'
@@ -78,9 +83,10 @@ export function isProjectFolder(workspace: Pick<Workspace, 'isHome' | 'isPlaygro
     return !workspace.isHome && !workspace.isPlayground && !workspace.parentWorkspaceId && !workspace.aiRegistration
 }
 
-/** A fresh state for an accepted welcome screen; a replay keeps the steps already done. */
+/** A fresh state for an accepted welcome screen; a replay keeps the steps already done and says so. */
 export function beginGettingStarted(previous: GettingStartedState | null | undefined, now: number): GettingStartedState {
-    return { startedAt: now, dismissed: false, done: { ...(previous?.done ?? {}) } }
+    const done = { ...(previous?.done ?? {}) }
+    return { startedAt: now, dismissed: false, done, alreadyDone: GETTING_STARTED_STEPS.filter((step) => done[step]) }
 }
 
 /** Steps newly seen are added; a step once done stays done. Returns the same object when nothing changed. */
@@ -96,9 +102,17 @@ export function gettingStartedComplete(state: GettingStartedState): boolean {
     return GETTING_STARTED_STEPS.every((step) => state.done[step])
 }
 
-/** The card is drawn while a state exists, the person has not closed it, and a step is left. */
+/** A replay that found every step already done: the card stays as an «all done» note until ✕. */
+export function gettingStartedReplayedDone(state: GettingStartedState): boolean {
+    return state.alreadyDone.length === GETTING_STARTED_STEPS.length
+}
+
+/**
+ * The card is drawn while a state exists and the person has not closed it, and a step is left —
+ * or the replay began with everything done (finishing the last step in this run still hides it).
+ */
 export function gettingStartedVisible(state: GettingStartedState | null | undefined): state is GettingStartedState {
-    return !!state && !state.dismissed && !gettingStartedComplete(state)
+    return !!state && !state.dismissed && (!gettingStartedComplete(state) || gettingStartedReplayedDone(state))
 }
 
 /** Reads a stored value defensively: anything not shaped like a state is no state. */
@@ -109,5 +123,7 @@ export function readGettingStartedState(value: unknown): GettingStartedState | n
     const done: Partial<Record<GettingStartedStep, true>> = {}
     const rawDone = raw.done && typeof raw.done === 'object' ? raw.done as Record<string, unknown> : {}
     for (const step of GETTING_STARTED_STEPS) if (rawDone[step] === true) done[step] = true
-    return { startedAt: raw.startedAt, dismissed: raw.dismissed === true, done }
+    const rawAlready = Array.isArray(raw.alreadyDone) ? raw.alreadyDone : []
+    const alreadyDone = GETTING_STARTED_STEPS.filter((step) => rawAlready.includes(step) && done[step])
+    return { startedAt: raw.startedAt, dismissed: raw.dismissed === true, done, alreadyDone }
 }

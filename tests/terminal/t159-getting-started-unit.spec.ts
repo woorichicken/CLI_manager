@@ -4,6 +4,7 @@ import {
     agentOfCommand,
     beginGettingStarted,
     builtinTemplatesFor,
+    gettingStartedReplayedDone,
     gettingStartedVisible,
     isProjectFolder,
     latchGettingStarted,
@@ -56,7 +57,7 @@ test.describe('checklist rules', () => {
 
     test('a step once done stays done; nothing new returns the same object', () => {
         const start = beginGettingStarted(null, 100)
-        expect(start).toEqual({ startedAt: 100, dismissed: false, done: {} })
+        expect(start).toEqual({ startedAt: 100, dismissed: false, done: {}, alreadyDone: [] })
         const one = latchGettingStarted(start, { folder: true, agent: false })
         expect(one.done).toEqual({ folder: true })
         expect(latchGettingStarted(one, { folder: false })).toBe(one)
@@ -64,13 +65,24 @@ test.describe('checklist rules', () => {
     })
 
     test('a replay shows the card again and keeps what was done', () => {
-        const before: GettingStartedState = { startedAt: 1, dismissed: true, done: { folder: true } }
+        const before: GettingStartedState = { startedAt: 1, dismissed: true, done: { folder: true }, alreadyDone: [] }
         const again = beginGettingStarted(before, 2)
-        expect(again).toEqual({ startedAt: 2, dismissed: false, done: { folder: true } })
+        expect(again).toEqual({ startedAt: 2, dismissed: false, done: { folder: true }, alreadyDone: ['folder'] })
         expect(gettingStartedVisible(again)).toBe(true)
+        // finishing the rest during the replay still hides the card
         expect(gettingStartedVisible({ ...again, done: { folder: true, agent: true, chat: true } })).toBe(false)
         expect(gettingStartedVisible(before)).toBe(false)
         expect(gettingStartedVisible(null)).toBe(false)
+    })
+
+    test('a replay after all three were done shows an «all done» card until ✕', () => {
+        const finished: GettingStartedState = { startedAt: 1, dismissed: false, done: { folder: true, agent: true, chat: true }, alreadyDone: [] }
+        expect(gettingStartedVisible(finished)).toBe(false)
+        const again = beginGettingStarted(finished, 2)
+        expect(again.alreadyDone).toEqual(['folder', 'agent', 'chat'])
+        expect(gettingStartedReplayedDone(again)).toBe(true)
+        expect(gettingStartedVisible(again)).toBe(true)
+        expect(gettingStartedVisible({ ...again, dismissed: true })).toBe(false)
     })
 
     test('the stored value is read defensively', () => {
@@ -78,7 +90,9 @@ test.describe('checklist rules', () => {
         expect(readGettingStartedState('x')).toBeNull()
         expect(readGettingStartedState({ dismissed: true })).toBeNull()
         expect(readGettingStartedState({ startedAt: 5, dismissed: 'yes', done: { folder: true, agent: 'yes', other: true } }))
-            .toEqual({ startedAt: 5, dismissed: false, done: { folder: true } })
+            .toEqual({ startedAt: 5, dismissed: false, done: { folder: true }, alreadyDone: [] })
+        // an «already done» step must also be done; anything else in the list is dropped
+        expect(readGettingStartedState({ startedAt: 5, done: { folder: true }, alreadyDone: ['folder', 'agent', 'x'] })!.alreadyDone).toEqual(['folder'])
     })
 })
 
@@ -121,7 +135,7 @@ test.describe('main-side check', () => {
         const last = await service.check()
         expect(last!.done).toEqual({ folder: true, agent: true, chat: true })
         expect(gettingStartedVisible(last)).toBe(false)
-        expect(stored()).toEqual({ startedAt: 42, dismissed: false, done: { folder: true, agent: true, chat: true } })
+        expect(stored()).toEqual({ startedAt: 42, dismissed: false, done: { folder: true, agent: true, chat: true }, alreadyDone: [] })
     })
 
     test('a conversation proves the agent ran even if no process is seen', async () => {
@@ -144,6 +158,20 @@ test.describe('main-side check', () => {
         const { service, calls } = make([workspace({})], { started: false, running: new Map([['x', 'claude']]) })
         expect((await service.begin())!.done).toEqual({ folder: true })
         expect(calls.ps).toBe(0)
+    })
+
+    test('a replay after everything was done costs no ps and no read', async () => {
+        const { service, calls } = make([workspace({})])
+        await service.begin()
+        await service.check()
+        const store = (service as unknown as { deps: { save(s: GettingStartedState): void } }).deps
+        store.save({ startedAt: 1, dismissed: true, done: { folder: true, agent: true, chat: true }, alreadyDone: [] })
+        const again = await service.begin()
+        expect(again!.alreadyDone).toEqual(['folder', 'agent', 'chat'])
+        calls.ps = 0
+        calls.read = 0
+        expect(gettingStartedVisible(await service.check())).toBe(true)
+        expect(calls).toEqual({ ps: 0, read: 0 })
     })
 
     test('a closed card does no work', async () => {

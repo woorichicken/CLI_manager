@@ -209,4 +209,39 @@ test.describe('T159 Getting started', () => {
         await page.waitForTimeout(3500)
         await expect(page.locator('[data-getting-started]')).toHaveCount(0)
     })
+
+    test('a replay after all three were done says so, marks each step «Already done», and ✕ closes it', async () => {
+        test.setTimeout(120_000)
+        sandbox = makeSandbox()
+        ctx = await launchAppWithWorkspaces(
+            [{ id: 'p', name: 'proj', path: sandbox.project, sessions: [] }],
+            {
+                env: { HOME: sandbox.home, CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=installed' },
+                config: { gettingStarted: { startedAt: 1, dismissed: false, done: { folder: true, agent: true, chat: true } } }
+            }
+        )
+        const { page, userDataDir } = ctx
+        // finished before: no card on start
+        await page.waitForTimeout(1500)
+        await expect(page.locator('[data-getting-started]')).toHaveCount(0)
+
+        await page.locator('button[title^="Settings"]').first().click()
+        await page.getByRole('button', { name: 'Show Again' }).click()
+        await page.getByRole('button', { name: /Accept and Continue/ }).click()
+        const card = page.locator('[data-getting-started="full"]')
+        await expect(card).toBeVisible({ timeout: 15_000 })
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('3/3')
+        await expect(card.locator('[data-getting-started-all-done]')).toContainText('already done all three steps')
+        await expect(card.locator('[data-getting-started-already]')).toHaveCount(3)
+        await expect(page.getByText('If the terminal seems frozen')).toHaveCount(0)
+        // still there after a check round
+        await page.waitForTimeout(3500)
+        await expect(card).toBeVisible()
+        await shot(page, '5-replay-all-done')
+
+        await card.locator('[data-getting-started-dismiss]').click()
+        await expect(page.locator('[data-getting-started]')).toHaveCount(0)
+        await expect.poll(() => readConfig(userDataDir).gettingStarted).toMatchObject({ dismissed: true, alreadyDone: ['folder', 'agent', 'chat'] })
+        expect(ctx.pageErrors).toEqual([])
+    })
 })

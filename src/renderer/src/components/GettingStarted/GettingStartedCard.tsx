@@ -1,5 +1,5 @@
 import { Check, X, FolderPlus } from 'lucide-react'
-import { GETTING_STARTED_STEPS, type GettingStartedState, type GettingStartedStep } from '../../../../shared/gettingStarted'
+import { GETTING_STARTED_STEPS, gettingStartedReplayedDone, type GettingStartedState, type GettingStartedStep } from '../../../../shared/gettingStarted'
 
 const STEP_TEXT: Record<GettingStartedStep, { title: string; hint: string }> = {
     folder: {
@@ -33,6 +33,12 @@ interface GettingStartedCardProps {
 export function GettingStartedCard({ state, variant, onDismiss, onAddFolder }: GettingStartedCardProps) {
     const doneCount = GETTING_STARTED_STEPS.filter((step) => state.done[step]).length
     const next = GETTING_STARTED_STEPS.find((step) => !state.done[step])
+    const allDoneBefore = gettingStartedReplayedDone(state)
+    const doneNote = (
+        <div className="text-[11px] text-gray-300 leading-snug" data-getting-started-all-done>
+            You've already done all three steps — nothing to set up again. Close this with ✕.
+        </div>
+    )
     const header = (
         <div className="flex items-center gap-2">
             <span className={`font-semibold text-white ${variant === 'full' ? 'text-sm' : 'text-xs'}`}>Getting started</span>
@@ -60,6 +66,7 @@ export function GettingStartedCard({ state, variant, onDismiss, onAddFolder }: G
             <div className="mx-2 mb-2 p-2.5 rounded-lg border border-blue-500/25 bg-blue-500/10 space-y-1.5" data-getting-started="compact">
                 {header}
                 {bar}
+                {allDoneBefore && doneNote}
                 {next && (
                     <div className="text-[11px] leading-snug" data-getting-started-next={next}>
                         <div className="text-gray-200">{STEP_TEXT[next].title}</div>
@@ -74,16 +81,23 @@ export function GettingStartedCard({ state, variant, onDismiss, onAddFolder }: G
         <div className="w-[360px] max-w-[calc(100%-32px)] p-4 rounded-xl border border-white/10 bg-white/[0.04] space-y-3 text-left" data-getting-started="full">
             {header}
             {bar}
+            {allDoneBefore && doneNote}
             <ol className="space-y-2.5">
                 {GETTING_STARTED_STEPS.map((step) => {
                     const done = !!state.done[step]
+                    const already = state.alreadyDone.includes(step)
                     return (
                         <li key={step} className="flex gap-2.5" data-getting-started-step={step} data-done={done ? 'true' : 'false'}>
                             <span className={`mt-0.5 w-4 h-4 shrink-0 rounded-full flex items-center justify-center border ${done ? 'bg-green-500/80 border-green-500/80 text-white' : 'border-gray-500'}`}>
                                 {done && <Check size={10} strokeWidth={3} />}
                             </span>
                             <div className="min-w-0 flex-1">
-                                <div className={`text-xs ${done ? 'text-gray-500 line-through' : 'text-gray-100'}`}>{STEP_TEXT[step].title}</div>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-xs ${done ? 'text-gray-500 line-through' : 'text-gray-100'}`}>{STEP_TEXT[step].title}</span>
+                                    {already && (
+                                        <span className="text-[10px] text-green-300/80" data-getting-started-already>Already done</span>
+                                    )}
+                                </div>
                                 {!done && <div className="text-[11px] text-gray-400 leading-snug">{STEP_TEXT[step].hint}</div>}
                                 {!done && step === 'folder' && onAddFolder && (
                                     <button
