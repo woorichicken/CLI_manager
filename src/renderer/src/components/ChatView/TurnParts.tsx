@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { BookOpen, ChevronDown, ChevronRight, FileText, Image as ImageIcon, Layers, OctagonX, Terminal as TerminalIcon } from 'lucide-react'
+import { AlertTriangle, BookOpen, ChevronDown, ChevronRight, FileText, Image as ImageIcon, Layers, OctagonX, Terminal as TerminalIcon } from 'lucide-react'
 import type { ConversationPart, TaskResult } from '../../../../shared/conversation'
 import { LinkedText, Markdown } from './markdown/Markdown'
 import { ChatImageStrip } from './ChatImages'
@@ -41,9 +41,18 @@ export const UserParts = memo(function UserParts({ parts }: { parts: Conversatio
                             </div>
                         )
                     case 'notice':
+                        // a turn the agent could not run (Codex usage limit, fb-1123 8a3a326f): red, as the terminal prints it
                         return (
-                            <div key={index} className="chat-notice" data-testid="chat-notice">
-                                <span className="chat-notice-source">{noticeSource(part.source)}</span>
+                            <div
+                                key={index}
+                                className={`chat-notice${part.source === ERROR_SOURCE ? ' is-error' : ''}`}
+                                data-testid="chat-notice"
+                                data-source={part.source}
+                                role={part.source === ERROR_SOURCE ? 'alert' : undefined}
+                            >
+                                <span className="chat-notice-source">
+                                    {part.source === ERROR_SOURCE && <AlertTriangle size={11} aria-hidden="true" />} {noticeSource(part.source)}
+                                </span>
                                 <Markdown>{part.text}</Markdown>
                             </div>
                         )
@@ -116,8 +125,12 @@ function AttachmentChip({ attachment }: { attachment: AppAttachmentMention }) {
     )
 }
 
+/** codexTranscript CODEX_ERROR_SOURCE: a turn that ended on an error instead of an answer */
+const ERROR_SOURCE = 'error'
+
 function noticeSource(source: string | undefined): string {
     if (!source) return 'Notice'
+    if (source === ERROR_SOURCE) return 'Turn failed'
     if (source === 'local-command') return 'Command output'
     if (source === 'informational') return 'Claude Code'
     if (source.startsWith('peer:')) return source.length > 5 ? `From ${source.slice(5)}` : 'From another session'
