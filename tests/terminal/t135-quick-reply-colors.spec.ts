@@ -260,10 +260,13 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
     await page.getByTestId('settings-category-chat').click()
     const settings = page.getByTestId('chat-view-settings')
     await settings.scrollIntoViewIfNeeded()
-    await settings.getByTestId('quick-reply-color-0-green').click()
-    await settings.getByTestId('quick-reply-color-1-red').click()
-    await expect(settings.getByTestId('quick-reply-color-0-green')).toHaveAttribute('aria-checked', 'true')
-    await expect(settings.getByTestId('quick-reply-color-2-none')).toHaveAttribute('aria-checked', 'true')
+    // each row's colour dot pops its colours (c44bf0af — one list)
+    await settings.getByTestId('quick-reply-color-0').click()
+    await page.getByTestId('quick-reply-color-0-green').click()
+    await settings.getByTestId('quick-reply-color-1').click()
+    await page.getByTestId('quick-reply-color-1-red').click()
+    await expect(settings.getByTestId('quick-reply-color-0')).toHaveAttribute('data-color', 'green')
+    await expect(settings.getByTestId('quick-reply-color-2')).not.toHaveAttribute('data-color', /.+/)
     await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.getByTestId('chat-view-settings')).toHaveCount(0)
 
@@ -329,14 +332,17 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
     await expect(chip(macChat2, PHRASES[0])).toHaveCSS('color', DARK_FG.green)
     await expect(chip(macChat2, PHRASES[1])).toHaveCSS('color', DARK_FG.red)
 
-    // --- The keyboard: a radio group per row — ← / → move the choice, Tab stops once per row (PR #139 review) ----
+    // --- The keyboard: a radio group per row — ← / → move the choice, Tab stops once per group (PR #139 review) ----
+    // the group pops from the row's colour dot (c44bf0af); Enter on the dot opens it on the chosen colour
     await page2.locator('button[title^="Settings"]').first().click()
     await page2.getByTestId('settings-category-chat').click()
-    const row0 = page2.getByTestId('quick-reply-color-0')
+    await page2.getByTestId('quick-reply-color-0').focus()
+    await page2.keyboard.press('Enter')
+    const row0 = page2.getByTestId('quick-reply-color-popover')
     await expect(row0.getByRole('radiogroup')).toHaveCount(1)
     await expect(row0.locator('[aria-pressed]')).toHaveCount(0)
     await expect(row0.locator('[tabindex="0"]')).toHaveCount(1)
-    await page2.getByTestId('quick-reply-color-0-green').focus()
+    await expect(page2.getByTestId('quick-reply-color-0-green')).toBeFocused()
     await page2.keyboard.press('ArrowRight')
     await expect(page2.getByTestId('quick-reply-color-0-amber')).toHaveAttribute('aria-checked', 'true')
     await expect(page2.getByTestId('quick-reply-color-0-amber')).toBeFocused()
@@ -355,22 +361,178 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
     await page2.keyboard.press('ArrowRight')
     await page2.keyboard.press('ArrowRight')
     await expect(page2.getByTestId('quick-reply-color-0-green')).toHaveAttribute('aria-checked', 'true')
-    // Tab leaves the row for the next row's chosen colour, not the next swatch
+    // Tab leaves the group (it closes) for the row's text, not the next swatch
     await page2.keyboard.press('Tab')
-    await expect(page2.getByTestId('quick-reply-color-1-red')).toBeFocused()
+    await expect(row0).toHaveCount(0)
+    await expect(page2.getByTestId('quick-reply-text-0')).toBeFocused()
+    await expect(page2.getByTestId('quick-reply-color-0')).toHaveAttribute('data-color', 'green')
     await page2.getByRole('button', { name: 'Cancel', exact: true }).click()
 
     // --- Editing the list drops colours of replies that are gone ---------------------
     await page2.locator('button[title^="Settings"]').first().click()
     await page2.getByTestId('settings-category-chat').click()
-    const list = page2.getByTestId('chat-setting-quick-list')
-    // the same phrase twice is saved once (one chip, one row)
-    await list.fill([PHRASES[1], PHRASES[2], PHRASES[1]].join('\n'))
-    await list.blur()
-    await expect(page2.locator('[data-testid$="-none"][role="radio"]')).toHaveCount(2)
+    // the green reply goes; the same phrase twice is saved once (one chip)
+    await page2.getByTestId('quick-reply-delete-0').click()
+    await page2.getByTestId('quick-reply-add').click()
+    await page2.keyboard.type(PHRASES[1])
+    await expect(page2.getByTestId('quick-reply-row-2')).toHaveAttribute('data-duplicate', 'true')
     // the red reply moved to the first row and kept its colour
-    await expect(page2.getByTestId('quick-reply-color-0-red')).toHaveAttribute('aria-checked', 'true')
+    await expect(page2.getByTestId('quick-reply-color-0')).toHaveAttribute('data-color', 'red')
     await page2.getByRole('button', { name: 'Save', exact: true }).click()
     await expect.poll(() => readSettings(keptDir).chat?.quickReplyColors).toEqual({ [PHRASES[1]]: 'red' })
     expect(readSettings(keptDir).chat?.quickReplies).toEqual([PHRASES[1], PHRASES[2]])
+})
+
+/** The editor's reply texts, top to bottom (input values — the list is shown once, as inputs). */
+const editorTexts = (root: Page): Promise<string[]> =>
+    root.locator('[data-testid^="quick-reply-text-"]').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))
+
+/** The Mac Chat's chips, left to right. */
+const chipTexts = (chat: Locator): Promise<string[]> => chat.getByTestId('chat-quick-replies').getByRole('button').allTextContents().then((texts) => texts.map((t) => t.trim()))
+
+test('T135 quick replies are one list to edit: add, reorder, delete, a colour per row (c44bf0af)', async () => {
+    test.setTimeout(200_000)
+    const { project, claudeDir, transcript, statusFile } = seed()
+    result = await launchAppWithWorkspaces(
+        [{
+            id: 'w-t135',
+            name: 'T135 project',
+            path: project,
+            sessions: [{ id: SESSION, name: 'T135 Claude', cliSessionId: SESSION_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 300 --mode-row none` }]
+        }],
+        {
+            settings: { phone: { enabled: true, port: PORT }, chat: { showQuickReplies: true, quickReplies: PHRASES, quickReplyColors: { [PHRASES[0]]: 'green' } } },
+            env: { CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile, CLAUDE_CONFIG_DIR: claudeDir }
+        }
+    )
+    const { app, page, userDataDir } = result
+    await resizeMainWindow(app, 1280, 800)
+    await waitForBufferText(page, SESSION, 'Claude Code (mock)', 20_000)
+
+    await page.locator('button[title^="Settings"]').first().click()
+    await page.getByTestId('settings-category-chat').click()
+    const settings = page.getByTestId('chat-view-settings')
+    await expect(settings).toBeVisible()
+    if (SHOTS) {
+        // taken before any check, so the old build leaves its «before» too
+        fs.mkdirSync(SHOTS, { recursive: true })
+        // the Quick replies card's bottom in view (the toggle's card, in the old build and the new)
+        await page.getByTestId('chat-setting-quick-replies').evaluate((el) => el.closest('div.p-4')?.scrollIntoView({ block: 'end' }))
+        await page.waitForTimeout(500)
+        await page.screenshot({ path: path.join(SHOTS, `${SHOT_LABEL}.png`) })
+    }
+
+    // --- One list: a row per reply, no second «Colour» list under a text box ----------
+    const editor = settings.getByTestId('quick-reply-editor')
+    await expect(editor).toBeVisible({ timeout: 5_000 })
+    await expect(settings.getByTestId('chat-setting-quick-list')).toHaveCount(0)
+    await expect(settings.getByTestId('quick-reply-colors')).toHaveCount(0)
+    expect(await editorTexts(page)).toEqual(PHRASES)
+
+    // the colour dot is the chat's own chip, in the chip's colour
+    const dot0 = editor.getByTestId('quick-reply-color-0')
+    await expect(dot0).toHaveAttribute('data-color', 'green')
+    await expect(dot0).toHaveClass(/chat-quick-reply/)
+    await expect(dot0).toHaveCSS('color', DARK_FG.green)
+    await expect(editor.getByTestId('quick-reply-color-1')).not.toHaveAttribute('data-color', /.+/)
+
+    // --- A colour from the dot's popover -------------------------------------------
+    await editor.getByTestId('quick-reply-color-1').click()
+    const popover = page.getByTestId('quick-reply-color-popover')
+    await expect(popover).toBeVisible()
+    await expect(popover.getByRole('radiogroup')).toHaveCount(1)
+    await popover.getByTestId('quick-reply-color-1-red').click()
+    await expect(popover).toHaveCount(0)
+    await expect(editor.getByTestId('quick-reply-color-1')).toHaveAttribute('data-color', 'red')
+
+    // --- Renaming a row keeps its colour (the colour is the row's, not the old text's) ------
+    const text0 = editor.getByTestId('quick-reply-text-0')
+    await text0.fill('계속 진행해 줘')
+    await expect(dot0).toHaveAttribute('data-color', 'green')
+
+    // --- + Add reply: a new row at the bottom, its box focused -------------------------
+    await editor.getByTestId('quick-reply-add').click()
+    await expect(editor.getByTestId('quick-reply-text-3')).toBeFocused()
+    await page.keyboard.type('ㅇㅋ 머지')
+    // move it up one: the third reply goes below it
+    await editor.getByTestId('quick-reply-up-3').click()
+    expect(await editorTexts(page)).toEqual(['계속 진행해 줘', PHRASES[1], 'ㅇㅋ 머지', PHRASES[2]])
+    // the first one down: its colour goes with it
+    await editor.getByTestId('quick-reply-down-0').click()
+    expect(await editorTexts(page)).toEqual([PHRASES[1], '계속 진행해 줘', 'ㅇㅋ 머지', PHRASES[2]])
+    await expect(editor.getByTestId('quick-reply-color-1')).toHaveAttribute('data-color', 'green')
+    await expect(editor.getByTestId('quick-reply-color-0')).toHaveAttribute('data-color', 'red')
+    // the ends cannot move further
+    await expect(editor.getByTestId('quick-reply-up-0')).toBeDisabled()
+    await expect(editor.getByTestId('quick-reply-down-3')).toBeDisabled()
+
+    // --- × deletes the red one; its colour goes with it --------------------------------
+    await editor.getByTestId('quick-reply-delete-0').click()
+    expect(await editorTexts(page)).toEqual(['계속 진행해 줘', 'ㅇㅋ 머지', PHRASES[2]])
+
+    // an empty row and a repeat are not saved (one chip per text)
+    await editor.getByTestId('quick-reply-add').click()
+    await editor.getByTestId('quick-reply-add').click()
+    await page.keyboard.type('ㅇㅋ 머지')
+    await expect(editor.getByTestId('quick-reply-row-4')).toHaveAttribute('data-duplicate', 'true')
+
+    // --- The keyboard: Enter on the dot opens the radio group on the chosen colour; ← / → pick; Esc closes ----
+    await editor.getByTestId('quick-reply-color-1').focus()
+    await page.keyboard.press('Enter')
+    await expect(popover).toBeVisible()
+    await expect(popover.getByTestId('quick-reply-color-1-none')).toBeFocused()
+    await expect(popover.getByTestId('quick-reply-color-1-none')).toHaveAttribute('aria-checked', 'true')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await expect(popover.getByTestId('quick-reply-color-1-amber')).toHaveAttribute('aria-checked', 'true')
+    await expect(popover.getByTestId('quick-reply-color-1-amber')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(popover).toHaveCount(0)
+    await expect(editor.getByTestId('quick-reply-color-1')).toBeFocused()
+    await expect(editor.getByTestId('quick-reply-color-1')).toHaveAttribute('data-color', 'amber')
+    // Esc closed the popover only, not Settings
+    await expect(settings).toBeVisible()
+    if (SHOTS) {
+        await editor.getByTestId('quick-reply-color-2').click()
+        await expect(popover).toBeVisible()
+        await page.waitForTimeout(300)
+        await page.screenshot({ path: path.join(SHOTS, `${SHOT_LABEL}-popover.png`) })
+        await page.keyboard.press('Escape')
+    }
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(settings).toHaveCount(0)
+
+    // --- Stored as before: a list of strings, colours by text --------------------------
+    const saved = ['계속 진행해 줘', 'ㅇㅋ 머지', PHRASES[2]]
+    await expect.poll(() => readSettings(userDataDir).chat?.quickReplies).toEqual(saved)
+    expect(readSettings(userDataDir).chat?.quickReplyColors).toEqual({ '계속 진행해 줘': 'green', 'ㅇㅋ 머지': 'amber' })
+
+    // --- Mac Chat: that order, those colours --------------------------------------
+    await openMacChat(page)
+    const macChat = page.locator('[data-testid="chat-view"][data-session-id]:visible')
+    await expect(chip(macChat, saved[0])).toBeVisible({ timeout: 15_000 })
+    expect(await chipTexts(macChat)).toEqual(saved)
+    await expect(chip(macChat, saved[0])).toHaveCSS('color', DARK_FG.green)
+    await expect(chip(macChat, saved[1])).toHaveAttribute('data-color', 'amber')
+    await expect(chip(macChat, saved[2])).not.toHaveAttribute('data-color', /.+/)
+
+    // --- The phone reads the same list and colours ---------------------------------
+    const state = await page.evaluate(() => window.api.getPhoneState())
+    const { phone } = await openPhone(app, `http://127.0.0.1:${state.port}/?session=${SESSION}&view=chat`)
+    await expect(chip(phone, saved[0])).toBeVisible({ timeout: 15_000 })
+    await expect(chip(phone, saved[0])).toHaveCSS('color', DARK_FG.green)
+    const me = await phone.evaluate(async () => (await fetch('/api/phone/me')).json()) as { quickReplies?: unknown[]; quickReplyColors?: Record<string, string> }
+    expect(me.quickReplies).toEqual(saved)
+    expect(me.quickReplyColors).toEqual({ '계속 진행해 줘': 'green', 'ㅇㅋ 머지': 'amber' })
+
+    // --- Up to eight rows: + Add reply stops there ------------------------------------
+    await page.locator('button[title^="Settings"]').first().click()
+    await page.getByTestId('settings-category-chat').click()
+    const editor2 = page.getByTestId('quick-reply-editor')
+    for (let i = 3; i < 8; i++) await editor2.getByTestId('quick-reply-add').click()
+    await expect(editor2.locator('[data-testid^="quick-reply-row-"]')).toHaveCount(8)
+    await expect(editor2.getByTestId('quick-reply-add')).toBeDisabled()
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 })
