@@ -4,7 +4,7 @@ import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, Cha
 import { InputBusyNote } from './InputBusyNote'
 import { ComposerSuggestion } from './ComposerSuggestion'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH, quickReplyColorOf } from '../../../../shared/conversation'
-import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands, skillTriggerFor } from './chatLib'
+import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands, sendsQueuedNow, skillTriggerFor } from './chatLib'
 import { QuickReplyRow } from './QuickReplyRow'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 import { DictationButton } from './DictationButton'
@@ -100,6 +100,12 @@ export interface ComposerProps {
     status?: ReactNode
     /** Claude's dim next-prompt suggestion (ConversationSnapshot.suggestion): shown while the box is empty */
     suggestion?: string | null
+    /** messages waiting for the turn to end (QueuedMessages): the send key in the empty box sends the first now */
+    queuedCount?: number
+    /** sends the first waiting message now, as its Send now button does; false when none could go */
+    onSendQueuedNow?: () => boolean
+    /** the box went empty or got words or files: the queued row says what the send key does there */
+    onEmptyChange?: (empty: boolean) => void
 }
 
 /**
@@ -112,7 +118,7 @@ export interface ComposerProps {
  * Stop (and Esc) while the agent works, one-tap replies, the length limit, and the card's numbers.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-    { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, autoFocus = true, placeholder: messagePlaceholder, onSend, onInterrupt, status, suggestion = null },
+    { sessionId, transport, agentName, codex, working, promptOptions, pendingPick, onPick, onConfirmPick, onCancelPick, preferences, touch = false, autoFocus = true, placeholder: messagePlaceholder, onSend, onInterrupt, status, suggestion = null, queuedCount = 0, onSendQueuedNow, onEmptyChange },
     ref
 ) {
     const [text, setText] = useState(() => readDraft(sessionId))
@@ -126,6 +132,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
      */
     const [quickInFlight, setQuickInFlight] = useState<string | null>(null)
     const quickInFlightRef = useRef<string | null>(null)
+    /** when the box last sent, and when an IME composition last ended: the send key right after is not «send now» */
+    const lastBoxSendAt = useRef(0)
+    const compositionEndAt = useRef(0)
     const [notice, setNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
     /** a send refused for text left in the terminal's input box, which main can clear (C-1) */
     const [busyDraft, setBusyDraft] = useState<string | null>(null)
@@ -354,6 +363,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const message = [ready.map((item) => fileMention(item.path!)).join(' '), text].filter((part) => part.trim()).join(ready.length > 0 && text ? ' ' : '')
     const over = message.length - MAX_CHAT_TEXT_LENGTH
     const empty = !message.trim()
+    useEffect(() => onEmptyChange?.(empty), [empty, onEmptyChange])
     const showStop = working && text.trim() === '' && attachments.length === 0
     // only in an empty box, and not while the agent works, a card asks, or the mic or a menu has the box
     const shownSuggestion =
@@ -374,6 +384,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         const outgoing = override ?? message
         if (!outgoing.trim() || (override === undefined && (attaching || over > 0))) return
         const taken = override === undefined ? { text, attachments } : null
+        if (taken) lastBoxSendAt.current = Date.now()
         // dictated words in the box: the log keeps the box as sent next to what was heard
         const dictated = taken ? dictation.takeForSend() : []
         if (taken) {
@@ -483,6 +494,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 if (!event.repeat) onConfirmPick()
                 return
             }
+        }
+        // the send key in the empty box, with messages waiting for the turn: the first goes now (fb-1123 00c4df83)
+        const now = Date.now()
+        if (
+            onSendQueuedNow &&
+            sendsQueuedNow({
+                sendKey: shouldSend,
+                composing: event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229,
+                repeat: event.repeat,
+                boxEmpty: empty && text.trim() === '',
+                queued: queuedCount,
+                question: promptOptions !== null || pendingPick,
+                boxSending: sending > 0,
+                sinceSendMs: now - lastBoxSendAt.current,
+                sinceCompositionMs: now - compositionEndAt.current
+            })
+        ) {
+            event.preventDefault()
+            onSendQueuedNow()
+            return
         }
         if (event.key === 'Escape' && working) {
             event.preventDefault()
@@ -708,6 +739,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         }}
                         onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
                         onKeyDown={onKeyDown}
+                        onCompositionEnd={() => (compositionEndAt.current = Date.now())}
                         onPaste={onPaste}
                         readOnly={dictation.active}
                         data-dictating={dictation.active ? 'true' : undefined}

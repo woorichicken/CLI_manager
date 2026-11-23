@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import { ArrowUp, Clock, Copy, Pencil, X } from 'lucide-react'
 import type { ChatTransport, QueuedMessage } from '../../../../shared/conversation'
 
@@ -12,14 +12,12 @@ import type { ChatTransport, QueuedMessage } from '../../../../shared/conversati
  * row, Send now marks it «Sending…»; a refusal or a failure brings the row back with the reason. Edit still
  * waits: its text goes back into the box only once the queue has given it up (sent twice otherwise).
  */
-export function QueuedMessages({
-    sessionId,
-    transport,
-    queued,
-    agentName,
-    onEdit,
-    onChanged
-}: {
+export interface QueuedMessagesHandle {
+    /** Send now on the first row still waiting (the oldest), as its button does; false when none could go. */
+    sendFirst(): boolean
+}
+
+export const QueuedMessages = forwardRef<QueuedMessagesHandle, {
     sessionId: string
     transport: ChatTransport
     queued: QueuedMessage[]
@@ -27,7 +25,9 @@ export function QueuedMessages({
     /** `sessionId`: the session the message was withdrawn from — the view may show another one by then */
     onEdit: (text: string, sessionId: string) => void
     onChanged: () => void
-}) {
+    /** the key that sends the first one now from the empty box (Enter, ⌘Enter, Return); null: no key does */
+    sendNowKey?: string | null
+}>(function QueuedMessages({ sessionId, transport, queued, agentName, onEdit, onChanged, sendNowKey = null }, ref) {
     const [busy, setBusy] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
     /** what was pressed on a row, shown before the Mac answers: id → sending (Send now) or gone (✕) */
@@ -50,6 +50,17 @@ export function QueuedMessages({
         setError(null)
     }, [sessionId])
     const shown = queued.filter((message) => pressed.get(message.id) !== 'gone')
+    // the empty box's send key (fb-1123 00c4df83): the oldest row not already on its way or withdrawn — the
+    // marks stop a second press from sending the same message twice
+    useImperativeHandle(ref, () => ({
+        sendFirst: () => {
+            if (busy !== null) return false
+            const first = queued.find((message) => !pressed.has(message.id))
+            if (!first) return false
+            void sendNow(first)
+            return true
+        }
+    }))
     if (shown.length === 0) return null
     /** rows still waiting for the turn to end (not the ones on their way now) */
     const waiting = shown.filter((message) => pressed.get(message.id) !== 'sending').length
@@ -150,6 +161,11 @@ export function QueuedMessages({
             {waiting > 0 && (
                 <div className="chat-queued-note">
                     <Clock size={12} aria-hidden="true" /> {waiting === 1 ? 'Sends' : 'They send'} when {agentName} finishes this turn
+                    {sendNowKey && (
+                        <span className="chat-queued-key" data-testid="chat-queued-key">
+                            · {sendNowKey} sends {waiting === 1 ? 'it' : 'the first'} now
+                        </span>
+                    )}
                 </div>
             )}
             {error && (
@@ -159,4 +175,4 @@ export function QueuedMessages({
             )}
         </div>
     )
-}
+})

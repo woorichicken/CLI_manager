@@ -10,7 +10,7 @@ import { ArtifactsChip, ContextChip, ModeChip, ModelChip, PlanChip } from './Com
 import { BackgroundChip } from './BackgroundTasksChip'
 import { ImageLightbox } from './ChatImages'
 import { PromptCard } from './PromptCard'
-import { QueuedMessages } from './QueuedMessages'
+import { QueuedMessages, type QueuedMessagesHandle } from './QueuedMessages'
 import { useConversation } from './useConversation'
 import { useElapsed } from './WorkBlock'
 import { ChatActionsContext, onChatCommand, type ChatActions, type GalleryImage } from './chatContext'
@@ -20,7 +20,7 @@ import { hasEarlierThreadReplies, replyForThread, replyQuote, turnsAfterFork } f
 import { ThreadPanel } from './ThreadPanel'
 import { onOpenThreadChange, openThreadOf, setOpenThread } from './threadSelection'
 import { draftBackAfterStop } from './draftHandoff'
-import { artifactLinks, chatOpenTitle, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, terminalCommand } from './chatLib'
+import { artifactLinks, chatOpenTitle, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, sendKeyName, terminalCommand } from './chatLib'
 import './chat.css'
 
 /**
@@ -138,6 +138,10 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const scroller = useRef<HTMLDivElement>(null)
     const column = useRef<HTMLDivElement>(null)
     const composer = useRef<ComposerHandle>(null)
+    const queuedRows = useRef<QueuedMessagesHandle>(null)
+    /** the message box holds nothing: its send key sends the first queued message now (fb-1123 00c4df83) */
+    const [boxEmpty, setBoxEmpty] = useState(true)
+    const sendQueuedNow = useCallback((): boolean => queuedRows.current?.sendFirst() ?? false, [])
     const pinned = useRef(true)
     const limitRef = useRef(limit)
     limitRef.current = limit
@@ -633,6 +637,8 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         )}
                         {snapshot && (
                             <QueuedMessages
+                                ref={queuedRows}
+                                sendNowKey={boxEmpty && !readOnly ? sendKeyName(preferences, touch, isMac) : null}
                                 sessionId={sessionId}
                                 transport={transport}
                                 queued={snapshot.queued}
@@ -697,6 +703,9 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                             placeholder={placeholder}
                             onSend={sendText}
                             onInterrupt={interrupt}
+                            queuedCount={snapshot?.queued.length ?? 0}
+                            onSendQueuedNow={sendQueuedNow}
+                            onEmptyChange={setBoxEmpty}
                             suggestion={agent === 'claude' ? snapshot?.suggestion ?? null : null}
                             status={
                                 <>
