@@ -3,6 +3,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, resizeMainWindow } from './helpers'
+import { listedSessions, listLines, searchLines, treeLines } from '../../src/renderer/src/phone/sessionListLines'
+import type { PhoneSessionsResponse } from '../../src/shared/phone'
 
 /**
  * T163 — fb-1123 round 2, sidebar header (person's review of PR #182).
@@ -456,4 +458,66 @@ test('T163 1b965ad1: reply threads stay out of the sidebar lists and ⌘[ ] — 
         const config = JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8'))
         return config.workspaces[0].sessions.map((s: { id: string }) => s.id)
     }).toEqual([X, P, T1, F, T2])
+})
+
+test('T163 1b965ad1 phone: the session list flags reply threads — List and Tree skip them, search finds them', async () => {
+    const home = tempDir('climanager-t163p-')
+    const project = path.join(home, 'project')
+    fs.mkdirSync(project, { recursive: true })
+    const OWNER = 'owner-t163@example.com'
+    const statusFile = path.join(home, 'tailscale-status.json')
+    fs.writeFileSync(statusFile, JSON.stringify({ BackendState: 'Running', Self: { UserID: 42, DNSName: 'mac.tail1234.ts.net.', TailscaleIPs: ['100.100.1.1'] }, User: { '42': { LoginName: OWNER } } }))
+    const P = 's-t163p-parent', T1 = 's-t163p-thread1', F = 's-t163p-fork', T2 = 's-t163p-thread2'
+    const TFOLDER = 'sf-t163p-threads'
+    const anchor = { turnTs: new Date(Date.now() - 60_000).toISOString() }
+    result = await launchAppWithWorkspaces(
+        [{
+            id: WS,
+            name: 'T163 phone',
+            path: project,
+            sessions: [
+                { id: P, name: 'T163 parent' },
+                { id: T1, name: 'T163 thread one' },
+                { id: F, name: 'T163 plain fork' },
+                { id: T2, name: 'T163 thread two', sessionFolderId: TFOLDER }
+            ]
+        }],
+        {
+            settings: { phone: { enabled: true, port: 0 }, showHomeWorkspace: false },
+            config: {
+                sessionFolders: [{ id: TFOLDER, name: 'T163 kept', isExpanded: true, createdAt: 1 }],
+                sessionRelations: [
+                    { from: P, to: T1, kind: 'opened', at: 1, anchor },
+                    { from: P, to: T2, kind: 'opened', at: 2, anchor },
+                    { from: P, to: F, kind: 'opened', at: 3 }
+                ]
+            },
+            env: { CLIMANAGER_PHONE_TAILSCALE_STATUS: statusFile, CLIMANAGER_HOME: path.join(home, 'climanager') }
+        }
+    )
+    const { page } = result
+    await expect.poll(() => page.evaluate(() => window.api.getPhoneState().then((s) => s.running)), { timeout: 15_000 }).toBe(true)
+    const port = (await page.evaluate(() => window.api.getPhoneState())).port
+    const res = await fetch(`http://127.0.0.1:${port}/api/phone/sessions`, {
+        headers: { 'Tailscale-User-Login': OWNER, 'X-Forwarded-For': '100.101.102.103' }
+    })
+    expect(res.status).toBe(200)
+    const data = await res.json() as PhoneSessionsResponse
+
+    // Every session is sent (the phone's search needs them); the threads carry the flag.
+    expect(data.sessions.map((s) => s.id).sort()).toEqual([P, T1, F, T2].sort())
+    expect(data.sessions.filter((s) => s.thread).map((s) => s.id).sort()).toEqual([T1, T2].sort())
+    // The tree and the folder headings are built without them: a folder holding only a thread is not a heading.
+    const treeIds = [...(data.tree?.rows ?? []).map((r) => r.id), ...(data.tree?.unlinked ?? [])]
+    expect(treeIds).not.toContain(T1)
+    expect(treeIds).not.toContain(T2)
+    expect(treeIds).toContain(F)
+    expect(data.sessionFolders).toEqual([])
+
+    // What the phone draws from it (the same functions as the drawer).
+    const rowIds = (lines: ReturnType<typeof listLines> | null) => (lines ?? []).flatMap((line) => (line.kind === 'row' ? [line.session.id] : []))
+    expect(rowIds(listLines(data)).sort()).toEqual([F, P].sort())
+    expect(rowIds(treeLines(data))).not.toContain(T1)
+    expect(listedSessions(data).length).toBe(2)
+    expect(rowIds(searchLines(data, 'thread two'))).toEqual([T2])
 })

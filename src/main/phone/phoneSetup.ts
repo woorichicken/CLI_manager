@@ -15,7 +15,7 @@ import { DEFAULT_QUICK_REPLIES, keepQuickReplyColors } from '../../shared/conver
 // The sidebar's own ordering functions (pure, types only): the phone's list is the Mac's All
 // sessions List exactly because it is computed by the same code, not a copy of it.
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder, type SessionEntry } from '../../renderer/src/utils/sessionNavigation'
-import { sessionForestFor } from '../../renderer/src/utils/relatedSessions'
+import { sessionForestFor, threadSessionIds } from '../../renderer/src/utils/relatedSessions'
 import { workspacesInLoadOrder } from '../workspaceLoadOrder'
 import { PhoneDevices } from './PhoneDevices'
 import { dockHostFiles, dockLocation, PhoneDock } from './phoneDock'
@@ -134,6 +134,10 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
             const seen = new Set(listed.map((entry) => entry.session.id))
             drawn = [...listed, ...loadOrder.filter((entry) => !seen.has(entry.session.id))]
         }
+        // Reply threads are sent flagged, not as rows (1b965ad1 — as the Mac sidebar): the phone's
+        // search finds them, its List and Tree skip them, and the tree is built without them.
+        const relations = deps.sessionRelations?.() ?? []
+        const threads = threadSessionIds(relations)
         const entries = orderForAllSessions(drawn, deps.recentSessions())
         const grouped = groupBySessionFolder(entries, sessionFolders)
         const ordered = [...grouped.folders.flatMap((group) => group.rows), ...grouped.unfiled]
@@ -174,16 +178,21 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
                 ...(session.isPinned ? { pinned: true } : {}),
                 ...(filledMemoPages(session) > 0 ? { memoPages: filledMemoPages(session) } : {}),
                 ...(icon ? { icon } : {}),
-                ...(icon === 'logo' ? { templateId: session.templateId } : {})
+                ...(icon === 'logo' ? { templateId: session.templateId } : {}),
+                ...(threads.has(session.id) ? { thread: true as const } : {})
             }
         })
         // The sidebar's Tree (Sidebar/index.tsx sessionForest): the same function over the same entries —
         // the sidebar's order with pinned first and no recently viewed order, so a look never moves a row.
-        const forest = settings?.showSessionTree === false ? null : sessionForestFor(deps.sessionRelations?.() ?? [], orderForAllSessions(drawn, []))
+        const forest = settings?.showSessionTree === false
+            ? null
+            : sessionForestFor(relations, orderForAllSessions(drawn.filter((entry) => !threads.has(entry.session.id)), []))
         return {
             sessions,
             ...(Object.keys(templateLogos).length > 0 ? { templateLogos } : {}),
-            sessionFolders: grouped.folders.filter((group) => group.rows.length > 0).map(({ folder }) => ({ id: folder.id, name: folder.name })),
+            sessionFolders: grouped.folders
+                .filter((group) => group.rows.some(({ session }) => !threads.has(session.id)))
+                .map(({ folder }) => ({ id: folder.id, name: folder.name })),
             ...(forest
                 ? {
                       tree: {
