@@ -377,7 +377,7 @@ User Action (Renderer)
 
 #### System Monitor
 - `get-system-info` → `SystemInfo`: CPU·RAM·디스크(데이터 볼륨)·배터리·가동 시간·세션 수. 팝오버를 열 때만 읽는다
-- `get-status-report` → `StatusCommandResult`: 팝오버 아래 「Queues」 칸. main 이 저장된 `settings.statusCommand` 를 로그인 셸로 돌리고(20초 상한, 렌더러는 명령을 넘기지 않는다) 출력의 `StatusReport` v1 JSON 을 읽는다(`main/statusCommand.ts`). 0 이 아닌 종료도 JSON 이 있으면 리포트로 친다(`queues status --json` 은 막힌 줄이 있으면 3). 모르는 상태는 `error`, 개수는 앱이 다시 센다. 비어 있으면 `{ configured: false }` 로 칸이 없다. 앱은 줄 이름을 모른다 — 모양만 안다. 열 때·Refresh 때만 돈다(같은 순간 두 번 열면 한 실행을 같이 쓴다)
+- `get-status-report` → `StatusCommandResult`: 팝오버 아래 「Queues」 칸. main 이 저장된 `settings.statusCommand` 를 로그인 셸로 돌리고(20초 상한, 렌더러는 명령을 넘기지 않는다) 출력의 `StatusReport` v1 JSON 을 읽는다(`main/statusCommand.ts`). 0 이 아닌 종료도 JSON 이 있으면 리포트로 친다(`queues status --json` 은 막힌 줄이 있으면 3). 모르는 상태는 `error`, 개수는 앱이 다시 센다. 비어 있으면 `{ configured: false }` 로 칸이 없다. 앱은 줄 이름을 모른다 — 모양만 안다. 열 때·Refresh 때만 돈다(같은 순간 두 번 열면 한 실행을 같이 쓴다). 줄마다 `actions`(빈 칸 = 읽기만), 행마다 지금 내건 동작 — 패널은 배지만 단다(`Read only`/`Manage · …`). 동작 실행은 Control API `POST /v1/queues/…` 뿐이고 `statusActionCommand` 가 있어야 한다(결정 0014, `createStatusService` 를 IPC 와 API 가 같이 쓴다)
 
 #### Feedback Widget
 - `feedback-relay`: 피드백 위젯의 요청을 main 이 `Origin: https://desktop.climanager.solhun.com` 으로 보낸다. `https://*.supabase.co/functions/v1/dp-agentation-ingest/…` 의 GET·POST 만 허용하고, 실패는 던지지 않고 `{ error }` 로 돌려준다(렌더러 쪽이 던져서 위젯 큐가 재시도하게 한다)

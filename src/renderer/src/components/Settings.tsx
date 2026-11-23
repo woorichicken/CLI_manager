@@ -808,6 +808,8 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                     <StatusCommandSetting
                                         command={settings.statusCommand}
                                         onChange={next => setSettings(prev => ({ ...prev, statusCommand: next }))}
+                                        actionCommand={settings.statusActionCommand}
+                                        onActionChange={next => setSettings(prev => ({ ...prev, statusActionCommand: next }))}
                                     />
                                 </>
                             )}
