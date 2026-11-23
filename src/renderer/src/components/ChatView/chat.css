@@ -190,6 +190,11 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-prompt-step { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--chat-line); color: var(--chat-dim); }
 .chat-prompt-step.is-answered { color: #86efac; border-color: rgba(134, 239, 172, 0.4); }
 .chat-prompt-step.is-submit { border-style: dashed; }
+.chat-prompt-progress { display: inline-flex; align-items: center; padding: 1px 4px; color: var(--chat-faint); }
+.chat-prompt-preview-box { margin: 0; display: flex; flex-direction: column; gap: 3px; }
+.chat-prompt-preview-label { color: var(--chat-faint); font-size: 0.75em; }
+/* the box beside the options, as the terminal draws it: monospace, its rows kept, scrolled sideways when wide */
+.chat-prompt-preview { margin: 0; padding: 6px 8px; border-radius: 6px; background: var(--chat-code-bg); color: var(--chat-fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8em; line-height: 1.35; white-space: pre; overflow-x: auto; max-height: 16rem; overflow-y: auto; }
 .chat-prompt-box { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-top: 2px; border: 1px solid var(--chat-faint); border-radius: 3px; }
 .chat-prompt-option.is-checked { border-color: rgba(96, 165, 250, 0.7); background: rgba(96, 165, 250, 0.12); }
 .chat-prompt-option.is-checked .chat-prompt-box { background: #60a5fa; border-color: #60a5fa; color: #0b1220; }
@@ -377,6 +382,10 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-queued-actions button { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border-radius: 6px; font-size: 0.78em; color: var(--chat-dim); }
 .chat-queued-actions button:hover:not(:disabled) { color: var(--chat-fg); background: var(--chat-soft); }
 .chat-queued-actions button:disabled { opacity: 0.5; }
+.chat-user-bubble.is-unsent { border: 1px dashed rgba(251, 191, 36, 0.55); }
+.chat-unsent-reason { display: flex; align-items: flex-start; gap: 5px; max-width: 32rem; margin: 0; color: #fcd34d; font-size: 0.8em; text-align: right; }
+.chat-unsent-reason svg { flex-shrink: 0; margin-top: 2px; }
+:root.light .chat-unsent-reason { color: #b45309; }
 .chat-queued-sending { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; font-size: 0.78em; color: var(--chat-dim); }
 .chat-sent { display: flex; flex-direction: column; gap: 8px; }
 .chat-user-bubble.is-sending { opacity: 0.55; }

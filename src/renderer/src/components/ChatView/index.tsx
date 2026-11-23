@@ -642,6 +642,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                 sessionId={sessionId}
                                 transport={transport}
                                 queued={snapshot.queued}
+                                unsent={snapshot.unsent}
                                 agentName={agentName}
                                 onEdit={(text, from) => (composer.current ? composer.current.editText(text, from) : appendDraft(from, text))}
                                 onChanged={refresh}

@@ -77,8 +77,13 @@ const PREVIEW_BOX_TOP = /^\s*[❯›>]?\s*\d{1,2}\.\s+\S.*?\s{2,}┌─{6,}┐\s
 const PREVIEW_BOX_BOTTOM = /└─{6,}┘\s*$/
 /** where the right column starts on a row inside the box: its edge after two blanks, or at the row's start */
 const PREVIEW_EDGE = /\s{2,}[│┌└]|^\s*[│┌└]/
-/** the notes hint under the box («Notes: press n to add notes»), drawn in the right column */
-const PREVIEW_NOTES = /^\s{8,}Notes:/
+/**
+ * the notes hint under the box («Notes: press n to add notes»), drawn in the right column — beside an option's
+ * row when the preview is shorter than the options (f7bff999)
+ */
+const PREVIEW_NOTES = /\s{2,}Notes:|^\s*Notes:/
+/** the most preview rows a card carries (the terminal shows the whole box) */
+const PREVIEW_MAX_LINES = 40
 
 /** A multiple choice's tick box at the start of its label: `[ ] Apple`, `[✔] Apple` (2.1.319) */
 const CHECKBOX_LABEL = /^\[([ xX✔✓])\]\s+(.+)$/
@@ -275,8 +280,7 @@ function kindOf(text: string, options: PromptOption[]): PromptKind {
  * top to bottom (TerminalMirror.screen).
  */
 export function readPrompt(screen: string[], agent: ConversationAgent): PromptMenu | null {
-    if (screen.some(isBusyRow)) return null
-    const { rows: drawn, preview } = withoutPreview(belowInputBox(screen))
+    const { rows: drawn, preview, previewLines } = withoutPreview(belowInputBox(screen))
     const rows = drawn
         .map(clean)
         .filter((line) => line.trim() !== '')
@@ -464,6 +468,17 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     // while nothing but its own key hint (wrapped, perhaps) and a rule sits under its hint row.
     if (agent === 'claude' && !menuIsLast(rows, confirm ? -1 : lastOptionRow, confirm !== null)) return null
 
+    // A turn in progress: a real question replaces the spinner (checked on 2.1.312). Only rows from the
+    // dialog's top down count — the conversation above it is the agent's words, and they may name the
+    // spinner's hint or read like its row («… (esc to interrupt)», «* 정리 중… (2개 남음)»), which hid the
+    // card of a dialog waiting on the person (f7bff999).
+    const dialogStart = confirm
+        ? 0
+        : edgeFound
+          ? top
+          : Math.min(...[questionStart, firstOptionRow, progress].filter((row) => row >= 0), rows.length)
+    if (rows.slice(Math.max(0, dialogStart)).some(isBusyRow)) return null
+
     const multi = options.some((option) => option.checked !== undefined || CHECKBOX.test(option.label))
     const kind: PromptKind = review ? 'review' : plan ? 'plan' : kindOf([text, ...options.map((option) => option.label)].join('\n'), options)
     const highlighted = options.some((option) => option.selected)
@@ -484,7 +499,8 @@ export function readPrompt(screen: string[], agent: ConversationAgent): PromptMe
     const signature = createHash('sha256')
         .update(JSON.stringify([agent, kind, question, context, options.map((option) => option.label), selected, submitRow?.selected ?? null]))
         .digest('hex')
-    return { agent, kind, question, context, options, multi, ...(submitRow ? { submitRow } : {}), ...(steps ? { steps } : {}), answerable, signature }
+    const shownPreview = preview && previewLines.length > 0 ? { preview: previewLines } : {}
+    return { agent, kind, question, context, options, multi, ...(submitRow ? { submitRow } : {}), ...(steps ? { steps } : {}), ...shownPreview, answerable, signature }
 }
 
 /**
@@ -497,6 +513,8 @@ function readMcpConfirm(rows: string[]): PromptMenu | null {
     let headerAt = -1
     for (let row = choiceAt - 1; row >= 0 && choiceAt - row <= MCP_PANEL_ROWS && headerAt < 0; row--) if (MCP_HEADER_START.test(rows[row].trim())) headerAt = row
     if (headerAt < 0) return null
+    // a turn in progress under the panel's header (readPrompt: only the dialog's own rows count)
+    if (rows.slice(headerAt).some(isBusyRow)) return null
     let headerEnd = headerAt
     while (headerEnd < choiceAt - 1 && headerEnd - headerAt < QUESTION_WRAP_ROWS && !MCP_HEADER_END.test(rows[headerEnd].trim())) headerEnd++
     if (!MCP_HEADER_END.test(rows[headerEnd].trim())) return null
@@ -546,20 +564,32 @@ function claudeQuestionRows(above: string[]): number {
  * The screen with an AskUserQuestion's preview column cut off its rows (see PREVIEW_BOX_TOP): its box
  * edges were read as part of the options' labels, its lines as more labels. Other screens come back as
  * they were. Cut at the box's edge character, not a column: a wide (Hangul) cell is one character.
+ * `previewLines`: what was cut off — the box's rows without its own left and right edges (f7bff999: the
+ * card showed nothing of the preview the question was about).
  */
-function withoutPreview(screen: string[]): { rows: string[]; preview: boolean } {
+function withoutPreview(screen: string[]): { rows: string[]; preview: boolean; previewLines: string[] } {
     const top = screen.findIndex((line) => PREVIEW_BOX_TOP.test(line))
-    if (top < 0) return { rows: screen, preview: false }
+    if (top < 0) return { rows: screen, preview: false, previewLines: [] }
     let bottom = -1
     for (let row = top + 1; row < screen.length && bottom < 0; row++) if (PREVIEW_BOX_BOTTOM.test(screen[row])) bottom = row
-    if (bottom < 0) return { rows: screen, preview: false }
+    if (bottom < 0) return { rows: screen, preview: false, previewLines: [] }
+    const previewLines: string[] = []
     const rows = screen.map((line, row) => {
-        if (row > bottom && row <= bottom + 3 && PREVIEW_NOTES.test(line)) return ''
+        if (row > bottom && row <= bottom + 3) {
+            const notes = line.search(PREVIEW_NOTES)
+            if (notes >= 0) return line.slice(0, notes)
+        }
         if (row < top || row > bottom) return line
         const edge = line.search(PREVIEW_EDGE)
+        if (row > top && row < bottom) {
+            const inside = edge < 0 ? '' : line.slice(edge).trim().replace(/^│ ?/, '').replace(/ ?│$/, '')
+            previewLines.push(inside.replace(/\s+$/, ''))
+        }
         return edge < 0 ? line : line.slice(0, edge)
     })
-    return { rows, preview: true }
+    while (previewLines.length > 0 && previewLines[0] === '') previewLines.shift()
+    while (previewLines.length > 0 && previewLines[previewLines.length - 1] === '') previewLines.pop()
+    return { rows, preview: true, previewLines: previewLines.slice(0, PREVIEW_MAX_LINES) }
 }
 
 function findLast(lines: string[], test: (line: string) => boolean): number {

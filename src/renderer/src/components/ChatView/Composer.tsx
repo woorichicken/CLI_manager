@@ -380,7 +380,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
     /**
      * The box empties at once, so the next message can be typed while this one is typed into the
-     * terminal (main queues it behind). A refused message comes back into the box, if still empty.
+     * terminal (main queues it behind). A refused message comes back into the box — before what was
+     * typed since, a blank line between (019248e1: a long one refused after the person had started the
+     * next went nowhere).
      */
     const send = async (override?: string, options?: ChatSendOptions): Promise<void> => {
         const outgoing = override ?? message
@@ -410,8 +412,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 dictation.restore(dictated)
                 setDraft(taken.text, taken.text.length)
                 setAttachments(taken.attachments)
+            } else if (taken) {
+                // the box holds what was typed since: both stay, the refused words first (the log counts them discarded)
+                const since = textRef.current
+                const joined = taken.text && since ? `${taken.text}\n\n${since}` : taken.text || since
+                setDraft(joined, joined.length)
+                setAttachments([...taken.attachments, ...attachmentsRef.current])
             }
-            // refused and the box holds other text: those words went nowhere (the log counts them discarded)
             return
         }
         dictation.sent(dictated, taken?.text ?? outgoing)

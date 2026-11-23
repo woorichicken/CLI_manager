@@ -847,6 +847,8 @@ export class ControlApiService {
         if (input.text !== undefined) {
             const submit = input.submit !== false
             const text = submit ? input.text.replace(/[\r\n]+$/, '') : input.text
+            // the paste placeholders the box holds before this text: one more after Enter is this text, unsent
+            const placeholdersBefore = text.length > 0 && submit ? await this.pastePlaceholders(sessionId) : 0
             if (text.length > 0) {
                 await this.settleAfterEscape(sessionId)
                 stillAllowed()
@@ -856,7 +858,7 @@ export class ControlApiService {
                 await sleep(submitDelay(text.length))
                 stillAllowed()
                 this.write(sessionId, '\r')
-                if (text.length > 0) submitted = await this.confirmSubmitted(sessionId, text, stillAllowed)
+                if (text.length > 0) submitted = await this.confirmSubmitted(sessionId, text, stillAllowed, placeholdersBefore)
             }
         }
 
@@ -881,18 +883,27 @@ export class ControlApiService {
         if (since < ESCAPE_SETTLE_MS) await sleep(ESCAPE_SETTLE_MS - since)
     }
 
+    /** How many `[Pasted text #n …]` placeholders the agent's input box shows now (0 without a box). */
+    private async pastePlaceholders(sessionId: string): Promise<number> {
+        await this.deps.mirror.flush(sessionId)
+        return countPastePlaceholders(this.deps.mirror.inputBox(sessionId)?.typed ?? '')
+    }
+
     /**
      * After Enter, the prompt should leave the input box. Only checked when the
-     * program draws one and the prompt was visible in it; anything else (a
-     * shell, a multi-line paste shown as a placeholder) is taken as submitted.
+     * program draws one; anything else (a shell) is taken as submitted. Still in
+     * the box: its first words, or — a long or multi-line text Claude Code folds
+     * into `[Pasted text #n +L lines]` — one placeholder more than before it was
+     * typed. (019248e1: the placeholder was taken as submitted, so an Enter lost
+     * there left a long Chat message in the box while the Chat called it sent.)
      */
-    private async confirmSubmitted(sessionId: string, text: string, beforeEnter: () => void = () => undefined): Promise<boolean> {
+    private async confirmSubmitted(sessionId: string, text: string, beforeEnter: () => void = () => undefined, placeholdersBefore = 0): Promise<boolean> {
         const head = text.replace(/\s+/g, ' ').trim().slice(0, SUBMIT_HEAD_CHARS)
         if (!head) return true
         const stillInBox = async (): Promise<boolean> => {
             await this.deps.mirror.flush(sessionId)
             const box = this.deps.mirror.inputBox(sessionId)
-            return box !== null && box.typed.includes(head)
+            return box !== null && (box.typed.includes(head) || countPastePlaceholders(box.typed) > placeholdersBefore)
         }
 
         for (let attempt = 0; attempt <= SUBMIT_RETRIES; attempt++) {
@@ -1839,6 +1850,13 @@ export class ControlApiService {
 function clampLines(lines?: number): number {
     if (!lines || !Number.isFinite(lines)) return DEFAULT_OUTPUT_LINES
     return Math.min(Math.max(Math.floor(lines), 1), MAX_OUTPUT_LINES)
+}
+
+/** Claude Code's stand-in for a pasted block in its input box: `[Pasted text #1 +20 lines]`. */
+const PASTE_PLACEHOLDER = /\[Pasted text #\d+[^\]]*\]/g
+
+function countPastePlaceholders(typed: string): number {
+    return typed.match(PASTE_PLACEHOLDER)?.length ?? 0
 }
 
 function submitDelay(length: number): number {

@@ -123,9 +123,16 @@ rules stay in the root; this file is the inventory.
 - **화면 쪽**: 「일하는 중」(`esc to interrupt`)과 질문 메뉴는 기록이 아니라 살아 있는 화면(미러)에서 `promptScreen.readPrompt` 로 읽는다 —
   보기·강조된 보기·설명·「Type something.」. 카드 답은 화살표 + Enter(직접 입력은 그 줄로 가서 글 + Enter). **보내기 직전 화면을 다시 읽어
   같은 메뉴(질문·보기·강조 위치·맥락 = `signature`)가 아니면 보내지 않는다**(`prompt_changed`). Codex 메뉴·다중 선택은 실제 화면 사본이 없어
-  「Answer in Terminal」만
+  「Answer in Terminal」만. 「일하는 중」은 **대화 상자 자기 줄(위 경계부터 아래)에서만** 본다 — 상자 위 대화 글이 `(esc to interrupt)` 를 말하거나 스피너처럼
+  읽혀도 맨 아래 그려진 대화 상자가 이긴다(fb-1123 f7bff999, 전엔 카드 없이 「working」). 미리 보기가 붙은 질문은 강조된 보기의 미리 보기 상자 줄을
+  카드 아래에 그대로 보이고(`PromptMenu.preview`, 폰은 줄마다 가림), 질문 탭은 「k of m answered」(지금 탭은 색으로만 그려져 글에 없다)
 - **보내기**: Control API 의 입력 경로(`ControlApiService.typeForChat` = `typeAndSubmit`, AI 표시 없음) — 질문 대기면 거부, 터미널 입력줄(입력 상자)에
-  글이 있으면 거부(사람·AI·Chat 글이 섞이지 않게), 일하는 중이면 main 의 대기열에 두고 턴이 끝나 1.5초 조용하면 보낸다
+  글이 있으면 거부(사람·AI·Chat 글이 섞이지 않게), 일하는 중이면 main 의 대기열에 두고 턴이 끝나 1.5초 조용하면 보낸다.
+  Enter 뒤 입력 상자에 글 앞머리 **또는 새 `[Pasted text #n …]` 자리표시**가 남아 있으면 아직 안 간 것 — Enter 를 다시 누르고, 끝내 안 가면
+  `not_submitted`(fb-1123 019248e1: 긴 글은 자리표시로 접혀 「보냄」으로 읽혔다). 거절된 글은 Chat 입력칸으로 돌아온다(그사이 쓴 글이 있으면
+  그 앞에 빈 줄 하나 두고). 대기열 글이 차례가 왔는데 안 가면(입력 상자에 남음·에이전트/대화 바뀜·셸 끝남·오류) 버리지 않고
+  `ConversationSnapshot.unsent` 「Not sent」 줄로 이유와 함께 남는다 — Retry(= 막힘 검사를 다 거치는 보내기, 거절되면 줄 유지)·Edit·Copy·✕,
+  스스로 다시 치지 않는다. 접근을 잃은 기기의 글은 그대로 버린다
 - `ConversationService` 는 Chat 이 열린 세션(또는 대기열이 있는 세션)만 0.7초마다 본다 — 기록 stat + 출력이 있었을 때만 화면 읽기. 바뀌면
   `conversation-changed` 로 알리고 화면이 다시 가져간다
 - **폰과의 약속**: `ChatView/` 는 `window.api` 를 부르지 않는다 — `ChatTransport`(`src/shared/conversation.ts`: 가져오기 · 구독 · 보내기 · 대기 취소 ·
