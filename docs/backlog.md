@@ -59,6 +59,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Evidence: codex-cli 0.166 → 0.169 업데이트 알림이 시작 때 떠서 첫 녹화의 입력이 그 메뉴로 갔다.
 - Why deferred: 이번 녹화는 다시 떠서 끝냈다.
 - Trigger: `scripts/mock-cli/record-claude.cjs` 로 Codex 를 다시 녹화할 때 — `-c check_for_update_on_startup=false` 안내 한 줄을 스크립트·`scripts/CLAUDE.md` 에.
+- 2026-11-23 fb-1123 재발: 0adc1255 확인용 pty 스크립트의 Enter 가 같은 메뉴의 「Update now」를 골라 이 Mac 의 codex 가 `brew upgrade --cask codex`(0.166 → 0.171)로 올라갔다. 실제 codex 를 띄우는 모든 탐침·녹화에 이 옵션을 기본으로.
+- Owner: 없음
+
+### Codex 사용량 한도 메뉴(「Switch to …?」)를 Chat 카드로
+- Discovered: 2026-11-23 fb-1123 0adc1255(PR #183).
+- Evidence: Codex 0.17x 는 한도 실패 뒤 「Switch to gpt-…?」 보기 메뉴를 띄운다. #183 부터 이 메뉴는 질문으로 읽혀(꼬리 `enter select|default … esc back`, 화면 맨 아래 줄) Chat 보내기·모델 칩이 거절 이유를 보이지만, Chat 에 카드가 없어 답하려면 Terminal 로 가야 한다.
+- Why deferred: 카드 파서(`promptScreen.ts`)에 Codex 보기 메뉴 형식을 더하는 일 — 0adc1255 범위 밖.
+- Trigger: 한도 메뉴에 Chat 에서 답하고 싶다는 제보, 또는 Codex 질문 카드 작업 때.
 - Owner: 없음
 
 ### 시험 — Settings 는 마지막에 본 분류로 열린다
