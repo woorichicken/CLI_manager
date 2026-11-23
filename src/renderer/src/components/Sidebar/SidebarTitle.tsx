@@ -29,8 +29,8 @@ export function SidebarHeaderStart({ title }: { title: string }) {
 
     return (
         <>
+            {/* The title gives way first; below ~200px the spot shrinks too, so the buttons are never pushed off the card */}
             {SIDEBAR_HEADER_LIGHTS_SPACER > 0 && (
-                {/* The title gives way first; below ~200px the spot shrinks too, so the buttons are never pushed off the card */}
                 <div aria-hidden data-traffic-lights-spacer className="self-stretch min-w-0" style={{ flex: `0 1 ${SIDEBAR_HEADER_LIGHTS_SPACER}px` }} />
             )}
             {/* The label gives way first, so a narrow sidebar never clips the buttons */}
