@@ -118,6 +118,13 @@ test('T159 91fce7bf: the traffic lights sit in their own strip — no panel star
     const openBox = (await open.boundingBox())!
     expect(openBox.y, 'Open Sidebar is below the lights').toBeGreaterThanOrEqual(lightsBottom)
     for (const top of await panelTops(page)) expect(top).toBeGreaterThanOrEqual(lightsBottom)
+
+    // A full-window overlay over the strip opts out of the drag band, or its top row (Settings'
+    // close button in a short window) would move the window instead of taking the click.
+    await page.locator('button[title^="Settings"]').click()
+    const overlay = page.locator('.fixed.inset-0').filter({ has: page.getByTestId('settings-category-sidebar') }).first()
+    await expect(overlay).toBeVisible()
+    expect(await overlay.evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region') || getComputedStyle(el).getPropertyValue('app-region'))).toBe('no-drag')
 })
 
 test('T159 78a79526: buttons with a shortcut name the keys and say what they do on a second line', async () => {
@@ -219,6 +226,7 @@ test('T159 5f9002d5: reply to an inbox request from the popover — it reaches t
     // A question on the agent's screen: the reply is refused inline and its text is kept.
     await page.keyboard.type('ASK')
     await page.keyboard.press('Enter')
+    await expect(claudeItem.getByTestId('inbox-reply-status')).toHaveAttribute('data-state', 'sent', { timeout: 10_000 })
     await expect.poll(() => terminalLines(page, CLAUDE), { timeout: 10_000 }).toContain('Do you want to proceed?')
     await box.focus()
     await page.keyboard.type('second answer')

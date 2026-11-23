@@ -53,10 +53,11 @@ export function InboxReplyBox({ sessionId, onClose }: { sessionId: string; onClo
 
     const send = async (): Promise<void> => {
         if (sending || !text.trim()) return
+        const sent = text
         setStatus({ state: 'sending' })
         let result: ChatSendResult
         try {
-            result = await window.api.sendChatMessage(sessionId, text)
+            result = await window.api.sendChatMessage(sessionId, sent)
         } catch {
             result = { status: 'rejected', reason: 'not_running', message: 'Could not reach the session.' }
         }
@@ -65,7 +66,8 @@ export function InboxReplyBox({ sessionId, onClose }: { sessionId: string; onClo
             setStatus({ state: 'rejected', message: result.message })
             return
         }
-        setText('')
+        // The box stays editable while sending; what was typed after Enter is the next reply, not this one.
+        setText((current) => (current === sent ? '' : current))
         setStatus(result.status === 'queued' ? { state: 'queued', message: QUEUED_MESSAGE } : { state: 'sent', message: SENT_MESSAGE })
     }
 
@@ -91,8 +93,6 @@ export function InboxReplyBox({ sessionId, onClose }: { sessionId: string; onClo
                     autoFocus
                     rows={2}
                     value={text}
-                    // readOnly rather than disabled while sending: the caret stays in the box
-                    readOnly={sending}
                     onChange={(e) => {
                         setText(e.target.value)
                         if (status.state !== 'sending') setStatus({ state: 'idle' })
