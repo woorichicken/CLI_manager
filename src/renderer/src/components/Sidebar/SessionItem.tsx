@@ -37,8 +37,17 @@ const AWAITING_INPUT_COLOR = 'bg-amber-400 animate-pulse ring-2 ring-amber-400/3
 // dot itself already says the agent is mid-turn.
 export const SCREEN_STATUS_COLORS = {
     working: 'bg-blue-500',
-    waiting: 'bg-amber-400 ring-2 ring-amber-400/30'
+    waiting: 'bg-amber-400 ring-2 ring-amber-400/30',
+    // the last turn ended on an API error — a dropped connection (fb-1123 3239a243)
+    error: 'bg-red-500 ring-2 ring-red-500/30'
 } as const
+
+/** A status dot's tooltip (the sidebar row and the session tab show the same words). */
+export function screenStatusTitle(status: { state: string; question?: string; error?: string }): string {
+    if (status.state === 'waiting') return `Waiting for you${status.question ? ` — ${status.question}` : ''}`
+    if (status.state === 'error') return `Turn ended on an error — ${(status.error ?? 'API Error').replace(/^API Error:\s*/, '')}`
+    return 'Working'
+}
 
 // Sessions an AI drives through the Control API are green instead of blue, so
 // the user can tell at a glance which terminals something else may type into.
@@ -411,9 +420,7 @@ export function SessionItem({
                 <div
                     data-session-status={status.state}
                     className={`w-2 h-2 rounded-full shrink-0 ${SCREEN_STATUS_COLORS[status.state]}`}
-                    title={status.state === 'waiting'
-                        ? `Waiting for you${status.question ? ` — ${status.question}` : ''}`
-                        : 'Working'}
+                    title={screenStatusTitle(status)}
                 />
             )
         }

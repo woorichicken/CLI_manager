@@ -23,6 +23,13 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 Chat 「일하는 중」 — 대화 글 속 `(esc to interrupt)` 를 진행 중인 턴으로 읽는다(대화 상자가 없을 때)
+- Date: 2026-11-23
+- Where: `src/main/ConversationService.ts` `refreshScreen`(`entry.working = prompt === null && screen.some(isBusyRow)`) · `TerminalMirror.showsBusy`/`screenStatus`(사이드바 상태 점).
+- What: 화면 어디든 `esc to interrupt` 나 스피너처럼 읽히는 줄(`* 정리 중… (2개 남음)`)이 있으면 쉬는 세션도 「working」이다 — Chat 은 「Claude is working…」을 띄우고 보낸 글은 대기열에서 안 빠진다. 대화 상자가 그려진 동안은 fb-1123 f7bff999 에서 막았다(`readPrompt` 가 상자 자기 줄만 본다). 상자에 답한 뒤 그 대화 글이 화면에 남아 있으면 다시 생긴다.
+- Surfaced by: fb-1123 2회차 f7bff999(`t164-fb1123-r2-chat` FORM4 — 상자 위에 그 말을 둔다).
+- Fix direction: 스피너 줄은 입력 상자 윗선 바로 위(몇 줄 안)에만 그려진다 — 입력 상자가 있으면 그 위 몇 줄만 보게. 사이드바 점·Stop·대기열이 같은 판정을 쓰므로 T66·T94·T67 과 함께.
+
 ### 🐛 탭 이름 칸 — 칸 안에서 마우스로 끌어도 글자가 선택되지 않는다
 - Date: 2026-11-20
 - Where: `src/renderer/src/components/SessionTabs/SessionTabBar.tsx` `TabNameInput`(탭 우클릭 Rename… · 탭 더블클릭, 13968765).

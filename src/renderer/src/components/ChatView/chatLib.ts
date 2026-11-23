@@ -281,6 +281,28 @@ export function artifactLinks(turns: { parts: ConversationPart[] }[]): { url: st
     return [...found].map(([url, title]) => ({ url, title }))
 }
 
+/**
+ * An answer to paste to another agent (fb-1123 45127b82 «메타데이터 복사»): which session and which answer it is,
+ * then the answer — like the checklist's and the Related dialog's «Copy for agent». The session link carries the
+ * id's first 8 characters (a full id breaks across Claude Code's wrapped rows — sessionLink.ts). `answerNumber`
+ * of `answerTotal` counts the agent's answers in the whole conversation; left out when not all of it is read
+ * (a long file, «Show earlier» not opened) — then the time alone says which. The time carries its UTC offset.
+ */
+export function answerForAgent(input: { sessionName?: string; sessionId: string; at: string | null; answerNumber?: number; answerTotal?: number; answer: string }): string {
+    const name = input.sessionName ? `"${input.sessionName}"` : 'a session'
+    const date = input.at ? new Date(input.at) : null
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    let when: string | null = null
+    if (date && !Number.isNaN(date.getTime())) {
+        const offset = -date.getTimezoneOffset()
+        const zone = `UTC${offset >= 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`
+        when = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())} (${zone})`
+    }
+    const place = input.answerNumber && input.answerTotal ? `Answer ${input.answerNumber} of ${input.answerTotal}` : null
+    const about = [place, when ? `answered ${when}` : null].filter(Boolean).join(' · ')
+    return [`From ${name} in CLI Manager · climanager://session/${input.sessionId.slice(0, 8)}`, ...(about ? [about] : []), '', input.answer.trim()].join('\n')
+}
+
 /** `12s`, `3m 05s`, `1h 02m` — how long a turn has been working. */
 export function formatElapsed(ms: number): string {
     const seconds = Math.max(0, Math.floor(ms / 1000))

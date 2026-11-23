@@ -137,7 +137,8 @@ export class PhonePush {
                     title: `${session.name} needs you`,
                     body: change.question ? clip(change.question) : 'Waiting for your answer'
                 })
-            } else if (change.state === 'idle' && before?.state === 'working' && now - before.since >= finishMinWorkMs()) {
+            } else if ((change.state === 'idle' || change.state === 'error') && before?.state === 'working' && now - before.since >= finishMinWorkMs()) {
+                // (a turn that ended on an API error ended too: the push says so as before the red dot existed)
                 void this.alert(change.sessionId, { title: `${session.name} finished`, body: 'The turn ended. Tap to read it.' })
             }
         }

@@ -49,6 +49,7 @@ import { CronService, CRON_MADE_IN_WINDOW } from './CronService'
 import { waitForWindowLoad } from './windowLoad'
 import { CRON_CHANNELS, CronInput, CronOpenTerminal } from '../shared/autocron'
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
+import { ApiErrorTails } from './transcript/apiError'
 import { TranscriptReader } from './TranscriptReader'
 import { ConversationService } from './ConversationService'
 import { createChatCommandLister } from './chatCommands'
@@ -706,9 +707,70 @@ let phone: PhoneSetup | null = null
 
 // Sidebar status dots read from the screen mirrors (Settings > Sidebar). Off by default;
 // when off there is no timer at all.
+const apiErrorTails = new ApiErrorTails()
+const apiErrorMisses = new Map<string, number>()
+const API_ERROR_MISS_RETRY_MS = 30_000
+/** Sessions whose last turn failed: is a program (the agent) in front of the shell — and when that was read. */
+const agentInFront = new Map<string, { agent: boolean; at: number; reading: boolean }>()
+const AGENT_IN_FRONT_TTL_MS = 3_000
+const apiErrorReader = new TranscriptReader({ claudeConfigDir, codexHome })
+/**
+ * Claude sessions by id for the red dot, kept in memory until the saved workspaces change (a `store.get` parses
+ * config.json — 0.9–1.8ms, too much for every idle session every second).
+ */
+let claudeSessions: Map<string, { cliSessionId: string; cwd: string }> | null = null
+store.onDidChange('workspaces', () => {
+    claudeSessions = null
+})
+function claudeSessionFor(id: string): { cliSessionId: string; cwd: string } | undefined {
+    if (!claudeSessions) {
+        claudeSessions = new Map()
+        for (const workspace of (store.get('workspaces') as Workspace[] | undefined) ?? []) {
+            for (const session of workspace.sessions ?? []) {
+                if (session.cliToolName === 'claude' && session.cliSessionId) claudeSessions.set(session.id, { cliSessionId: session.cliSessionId, cwd: session.cwd || workspace.path })
+            }
+        }
+    }
+    return claudeSessions.get(id)
+}
 const sessionScreenStatus = new SessionScreenStatusPoller({
     mirror: terminalMirror,
     hookStatus: (terminalId) => agentStatusResolver.getStatus(terminalId),
+    // a red dot after a turn that ended on an API error (fb-1123 3239a243): from the Claude transcript's last turn
+    lastTurnError: (terminalId) => {
+        const session = claudeSessionFor(terminalId)
+        if (!session) return null
+        // a transcript not on disk yet (or gone) is looked for again after a while, not every second:
+        // locate scans every project folder when the direct path misses
+        const missedAt = apiErrorMisses.get(session.cliSessionId)
+        if (missedAt !== undefined && Date.now() - missedAt < API_ERROR_MISS_RETRY_MS) return null
+        const [file] = apiErrorReader.locate('claude', session.cliSessionId, session.cwd)
+        if (!file) {
+            apiErrorMisses.set(session.cliSessionId, Date.now())
+            return null
+        }
+        apiErrorMisses.delete(session.cliSessionId)
+        const error = apiErrorTails.read(file)
+        // back at the shell (Ctrl+C, /exit): the agent is not there to be retried — no red dot. A program in front
+        // (the agent, resumed after a restart too) keeps it. A synchronous look at the pty, only when there is an error.
+        if (!error) {
+            agentInFront.delete(terminalId)
+            return null
+        }
+        // back at the shell (Ctrl+C, /exit): the agent is not there to be retried — no red dot. Read with `ps`
+        // (node-pty's foreground name gives the shell's path on macOS while a program runs), only while there is
+        // an error, at most every few seconds; until the first answer, no dot
+        const front = agentInFront.get(terminalId)
+        if (!front || Date.now() - front.at >= AGENT_IN_FRONT_TTL_MS) {
+            if (!front?.reading) {
+                agentInFront.set(terminalId, { ...(front ?? { agent: false, at: 0 }), reading: true })
+                void terminalManager.foregroundProgram(terminalId).then((group) => {
+                    agentInFront.set(terminalId, { agent: group !== null, at: Date.now(), reading: false })
+                })
+            }
+        }
+        return front && front.at > 0 && front.agent ? error : null
+    },
     publish: (message) => broadcast(SESSION_SCREEN_STATUS_CHANNEL, message),
     // Tests read tick timings from main (window.__termDebug has no view of main).
     onTick: process.env.CLIMANGER_TERM_DEBUG === '1'

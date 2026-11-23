@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon, UserRound } from 'lucide-react'
-import type { ChatCommand, ChatForkRequest, ChatOpenMode, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatTransport, ConversationAgent, ConversationSnapshot } from '../../../../shared/conversation'
+import type { ChatCommand, ChatForkRequest, ChatOpenMode, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatTransport, ConversationAgent, ConversationSnapshot, ConversationTurn } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { isMac } from '../../utils/platform'
 import { ChatTurn } from './ChatTurn'
@@ -135,6 +135,14 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         return { ...sourceSnapshot, turns, totalTurns: turns.length, truncated: false }
     }, [sourceSnapshot, forkedAt])
     const earlierThreadReplies = sourceSnapshot !== null && forkedAt !== undefined && hasEarlierThreadReplies(sourceSnapshot, forkedAt)
+    // «Copy for agent» numbers an answer among all the conversation's answers — a thread's pane too, so it counts
+    // the whole file it read; nothing when part of it is not read (45127b82 review)
+    const answerNumbers = useMemo(() => {
+        if (!sourceSnapshot || sourceSnapshot.truncated || sourceSnapshot.turns.length < sourceSnapshot.totalTurns) return null
+        const numbers = new Map<ConversationTurn, number>()
+        for (const turn of sourceSnapshot.turns) if (turn.role === 'assistant') numbers.set(turn, numbers.size + 1)
+        return numbers
+    }, [sourceSnapshot])
     const scroller = useRef<HTMLDivElement>(null)
     const column = useRef<HTMLDivElement>(null)
     const composer = useRef<ComposerHandle>(null)
@@ -621,7 +629,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} onlyMine={onlyMine} />
+                            <Turns snapshot={snapshot} answerNumbers={answerNumbers} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} onlyMine={onlyMine} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -642,6 +650,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                 sessionId={sessionId}
                                 transport={transport}
                                 queued={snapshot.queued}
+                                unsent={snapshot.unsent}
                                 agentName={agentName}
                                 onEdit={(text, from) => (composer.current ? composer.current.editText(text, from) : appendDraft(from, text))}
                                 onChanged={refresh}
@@ -823,7 +832,7 @@ function PinnedLastMessage({ words, onGo }: { words: string; onGo: () => void })
     )
 }
 
-function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThread, threadView, hasEarlierThreadReplies, onlyMine = false }: { snapshot: ConversationSnapshot; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void; threadView?: boolean; hasEarlierThreadReplies?: boolean; onlyMine?: boolean }) {
+function Turns({ snapshot, answerNumbers = null, foldWork, onFork, onShowEarlier, threads, onOpenThread, threadView, hasEarlierThreadReplies, onlyMine = false }: { snapshot: ConversationSnapshot; answerNumbers?: Map<ConversationTurn, number> | null; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void; threadView?: boolean; hasEarlierThreadReplies?: boolean; onlyMine?: boolean }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
     const previousGroups = useRef<ThreadGroups>(new Map())
@@ -862,6 +871,10 @@ function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThrea
                     onFork={onFork}
                     threads={threadsForTurn(threadGroups, turn.ts, hidden + index)}
                     onOpenThread={onOpenThread}
+                    sessionId={snapshot.sessionId}
+                    sessionName={snapshot.sessionName}
+                    answerNumber={answerNumbers?.get(turn)}
+                    answerTotal={answerNumbers?.size}
                 />
             ))}
         </>

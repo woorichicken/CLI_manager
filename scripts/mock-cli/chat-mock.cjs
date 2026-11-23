@@ -19,6 +19,11 @@
  *                         Tab takes it into the box (as Claude does), a submitted prompt drops it (ba2ae0cb, T143)
  *   --restore-on-esc      (Claude) Esc while the turn works puts the sent prompt back in the input box, as Claude Code
  *                         does when a turn is stopped before it answered (682ea4de, T156)
+ *   --paste-placeholder   (Claude) a paste with a line break, or longer than 800 characters, stands in the input box as
+ *                         `[Pasted text #n +L lines]` (Claude Code folds a long paste so); the words go out whole on Enter
+ *   --lose-enters N       (Claude) the next N Enters pressed while the box holds a paste placeholder do nothing — the
+ *                         message stays in the box unsent (019248e1: a long Chat message neither sent nor kept). Counted
+ *                         over the whole run, so a later send goes through once N are spent
  *   --continue            new records follow the transcript's last entry (a resumed session), so its history stays on the branch
  *   --show-args           print the start's own arguments (`ARGS: --resume <id> --fork-session`) — what the app typed after
  *                         the saved command (T117 Fork)
@@ -38,6 +43,11 @@
  *   FORM      (Claude) two questions under tabs, copied from real 2.1.319 screens (fixtures/prompts/claude-2.1.319-*):
  *             "Which color?" (single), "Which fruits?" (multiple choice: Enter ticks a row, Enter on its Submit
  *             row goes on), then "Ready to submit your answers?". Submitting prints `CHOSE: submit color=…; fruits=…`.
+ *   FORM4     (Claude) four questions under tabs whose options carry previews, as 2.1.330 draws them (f7bff999, modelled on
+ *             the reported screen — fixtures/prompts/claude-2.1.330-ask-four-tabs-preview.txt): a «│» question over two
+ *             rows, «(Recommended)» wrapped under the first label, the highlighted option's preview in a box to the right,
+ *             «Notes: press n to add notes», a rule, «Chat about this», then the key hint. Enter picks and goes to the next
+ *             tab; after the last, «Ready to submit your answers?». Submitting prints `CHOSE: submit4 <a>; <b>; <c>; <d>`.
  *   PLANOK    (Claude) the plan approval of 2.1.319 (ExitPlanMode); "Tell Claude what to change" takes typed words.
  *   APPROVE   (Codex) its command approval of 0.166.0; Esc picks "No …" (`CHOSE: esc`).
  *   MCPOK     (Claude) an MCP server's Accept / Decline (elicitation with no fields), copied from a real 2.1.319
@@ -75,8 +85,8 @@ const arg = (name, fallback) => {
     return index > 0 ? process.argv[index + 1] : fallback
 }
 /** the mock's own options; the rest of argv is what the app typed after the saved command */
-const OWN_VALUE_FLAGS = new Set(['--transcript', '--agent', '--work-ms', '--user-delay-ms', '--name', '--spinner', '--mode-row', '--permission-mode', '--fresh-transcript', '--suggest'])
-const OWN_FLAGS = new Set(['--continue', '--show-args', '--copy-transcript'])
+const OWN_VALUE_FLAGS = new Set(['--transcript', '--agent', '--work-ms', '--user-delay-ms', '--name', '--spinner', '--mode-row', '--permission-mode', '--fresh-transcript', '--suggest', '--lose-enters'])
+const OWN_FLAGS = new Set(['--continue', '--show-args', '--copy-transcript', '--paste-placeholder'])
 const START_ARGS = []
 for (let i = 2; i < process.argv.length; i++) {
     if (OWN_VALUE_FLAGS.has(process.argv[i])) i++
@@ -115,6 +125,13 @@ let suggestion = AGENT === 'codex' ? null : arg('--suggest') ?? null
 /** set by a SUGGEST prompt: the suggestion the turn's end puts up */
 let nextSuggestion = null
 let workStartedAt = 0
+const PASTE_PLACEHOLDER = process.argv.includes('--paste-placeholder') && AGENT !== 'codex'
+/** Enters still to drop while the box holds a paste placeholder (--lose-enters) */
+let enterLosses = Number(arg('--lose-enters', '0'))
+/** placeholder → the pasted words it stands for */
+const pastes = new Map()
+const PASTE_FOLD_CHARS = 800
+const PASTE_TOKEN = /\[Pasted text #\d+ \+\d+ lines\]/g
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
 const FRAMES = ['✻', '✢', '✳', '∗']
@@ -266,6 +283,8 @@ function menuLines() {
             lines.push('Review your answers', '', ' ● Which color?', `   → ${menu.color}`, ' ● Which fruits?', `   → ${formFruits().join(', ') || '(none)'}`, '')
             lines.push('Ready to submit your answers?', '', `${at(0)} 1. Submit answers`, `${at(1)} 2. Cancel`)
         }
+    } else if (menu.kind === 'form4') {
+        lines.push(...form4Lines())
     } else if (menu.kind === 'plan-approval') {
         lines.push(rule(), ' Ready to code?', '', " Here is Claude's plan:", dashes(), ' Plan: add a greeting', '', ' 1. Write hello.txt', ' 2. Read it back', dashes(), '', rule())
         lines.push(...wrapped('Claude has written up a plan and is ready to execute. Would you like to proceed?', ' '), '')
@@ -442,6 +461,12 @@ function openMenu(kind) {
     } else if (kind === 'form') {
         // cursor positions: Q1 rows 0-3 · Q2 rows 0-3, its Submit row 4, "Chat about this" 5 · review 0-1
         menu = { kind, step: 0, selected: 0, customText: '', color: null, ticks: [false, false, false, false] }
+    } else if (kind === 'form4') {
+        // the agent's own words above the dialog may name the spinner's hint (this app's sessions talk about it):
+        // they are conversation, not a turn in progress
+        say('⏺ While a turn works the spinner row says (esc to interrupt); here are four questions.')
+        // cursor: the three options of each question · review 0-1
+        menu = { kind, step: 0, selected: 0, answers: [] }
     } else if (kind === 'plan-approval') {
         menu = {
             kind,
@@ -526,6 +551,65 @@ function formEnter() {
     if (submitted) recordAnswer(`You answered: ${summary}.`)
 }
 
+/** FORM4's questions (neutral words in the reported layout): tab, question rows, options, each option's preview rows */
+const FORM4 = [
+    {
+        tab: '메뉴 자리',
+        question: ['0a1b2c3d 메뉴 자리: 「딱 그 부분만 비우기」는 가능합니다. 다만 기본 폭(256px)에서는 표시등(약 70px)·제목·아이콘 5개가', '한 줄에 다 안 들어갑니다. 어떻게 할까요?'],
+        options: ['표시등 옆만 비움', '목록 칸만 내림', '지금처럼 전체 띠'],
+        preview: (i) => ['┌──────────────────┬──────────────────┐', `│ ● ● ●   ${['  ', '↓ ', '──'][i]}     │ ‹ › proj > item  │`, '├──────────────────┼──────────────────┤', '│ Search…          │ [tab]            │', '└──────────────────┴──────────────────┘', '', `(미리 보기 ${i + 1})`]
+    },
+    { tab: '줄 모양', question: ['줄 모양은 어느 쪽이 좋을까요?'], options: ['한 줄', '두 줄', '접기'], preview: (i) => [`줄 모양 ${i + 1}`, '──────────', '│ 첫 줄', '│ 둘째 줄'] },
+    { tab: '0a1b2c3d', question: ['0a1b2c3d 는 이번에 같이 고칠까요?'], options: ['같이 고침', '다음에', '빼기'], preview: (i) => [`고칠 범위 ${i + 1}`] },
+    { tab: '마무리', question: ['마무리는 어떻게 할까요?'], options: ['바로 끝내기', '한 번 더 보기', '보류'], preview: (i) => [`마무리 ${i + 1}`, '└ 기록만 남김'] }
+]
+const FORM4_BOX_COLUMN = 34
+const FORM4_BOX_WIDTH = 55
+/** cells a row takes: Hangul and CJK are two wide */
+const cells = (text) => [...text].reduce((sum, ch) => sum + (/[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/.test(ch) ? 2 : 1), 0)
+const padCells = (text, width) => text + ' '.repeat(Math.max(0, width - cells(text)))
+
+function form4Lines() {
+    const lines = [rule()]
+    const tabs = FORM4.map((question, index) => `${index < menu.answers.length ? '☒' : '☐'} ${question.tab}`).join('  ')
+    lines.push(`←  ${tabs}  ✔ Submit  →`, '')
+    if (menu.step >= FORM4.length) {
+        lines.push('Review your answers', '')
+        FORM4.forEach((question, index) => lines.push(` ● ${question.question.at(-1)}`, `   → ${menu.answers[index]}`))
+        lines.push('', 'Ready to submit your answers?', '', `${menu.selected === 0 ? '❯' : ' '} 1. Submit answers`, `${menu.selected === 1 ? '❯' : ' '} 2. Cancel`)
+        return lines
+    }
+    const question = FORM4[menu.step]
+    for (const row of question.question) lines.push(`│ ${row}`)
+    lines.push('')
+    const left = []
+    question.options.forEach((label, index) => {
+        left.push(`${index === menu.selected ? '❯' : ' '} ${index + 1}. ${label}`)
+        if (index === 0) left.push('    (Recommended)')
+    })
+    const inner = FORM4_BOX_WIDTH - 4
+    const box = [`┌${'─'.repeat(FORM4_BOX_WIDTH - 2)}┐`, ...question.preview(menu.selected).map((row) => `│ ${padCells(row, inner)} │`), `└${'─'.repeat(FORM4_BOX_WIDTH - 2)}┘`]
+    for (let row = 0; row < Math.max(left.length, box.length); row++) lines.push((padCells(left[row] ?? '', FORM4_BOX_COLUMN) + (box[row] ?? '')).replace(/\s+$/, ''))
+    lines.push('', `${' '.repeat(FORM4_BOX_COLUMN)}Notes: press n to add notes`, '', rule(), '  Chat about this', '')
+    lines.push('Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel')
+    return lines
+}
+
+/** Enter on FORM4: an option answers this tab and goes to the next; on the review, Submit answers or Cancel. */
+function form4Enter() {
+    if (menu.step < FORM4.length) {
+        menu.answers.push(FORM4[menu.step].options[menu.selected])
+        menu.step++
+        menu.selected = 0
+        return
+    }
+    const summary = menu.answers.join('; ')
+    const submitted = menu.selected === 0
+    menu = null
+    say(submitted ? `CHOSE: submit4 ${summary}` : 'CHOSE: cancel')
+    if (submitted) recordAnswer(`You answered: ${summary}.`)
+}
+
 function choose() {
     const option = menu.options[menu.selected]
     const label = option.custom ? `custom ${menu.customText}` : option.label
@@ -574,6 +658,7 @@ function submit(text) {
     if (text === 'ASK') openMenu(AGENT === 'codex' ? 'codex-trust' : 'permission')
     else if (text === 'QUESTION') openMenu('question')
     else if (text === 'FORM' && AGENT !== 'codex') openMenu('form')
+    else if (text === 'FORM4' && AGENT !== 'codex') openMenu('form4')
     else if (text === 'PLANOK' && AGENT !== 'codex') openMenu('plan-approval')
     else if (text === 'APPROVE' && AGENT === 'codex') openMenu('codex-approve')
     else if (text === 'MCPOK' && AGENT !== 'codex') openMenu('mcp-elicit')
@@ -657,7 +742,7 @@ function handleKey(key) {
         return draw()
     }
     if (menu) {
-        const rowCount = menu.kind === 'form' ? formRows() : menu.options.length
+        const rowCount = menu.kind === 'form' ? formRows() : menu.kind === 'form4' ? (menu.step < FORM4.length ? 3 : 2) : menu.options.length
         // the typed-answer row of FORM: Q1 row 2, Q2 row 3 (typing ticks it)
         const formCustom = menu.kind === 'form' && (menu.step === 0 ? menu.selected === 2 : menu.step === 1 && menu.selected === 3)
         if (key === '\x1b[A') menu.selected = Math.max(0, menu.selected - 1)
@@ -666,6 +751,7 @@ function handleKey(key) {
             menu = null
             say('CHOSE: esc')
         } else if (key === '\r' && menu.kind === 'form') formEnter()
+        else if (key === '\r' && menu.kind === 'form4') form4Enter()
         else if (key === '\r') return choose()
         else if (formCustom && key >= ' ') {
             menu.customText += key
@@ -689,7 +775,14 @@ function handleKey(key) {
     }
     if (key === '\r') {
         if (input.length === 0) return draw()
-        const text = input
+        // an Enter lost while the box holds a paste (--lose-enters): the message stays in the box
+        if (enterLosses > 0 && PASTE_TOKEN.test(input)) {
+            PASTE_TOKEN.lastIndex = 0
+            enterLosses--
+            return draw()
+        }
+        PASTE_TOKEN.lastIndex = 0
+        const text = input.replace(PASTE_TOKEN, (token) => pastes.get(token) ?? token)
         input = ''
         if (busy) {
             held.push(text)
@@ -720,7 +813,11 @@ function feed(chunk) {
             pasteBuffer += data.slice(0, end)
             data = data.slice(end + PASTE_END.length)
             inPaste = false
-            input += pasteBuffer
+            if (PASTE_PLACEHOLDER && (pasteBuffer.includes('\n') || pasteBuffer.includes('\r') || pasteBuffer.length > PASTE_FOLD_CHARS)) {
+                const token = `[Pasted text #${pastes.size + 1} +${pasteBuffer.split(/\r\n|\r|\n/).length - 1} lines]`
+                pastes.set(token, pasteBuffer)
+                input += token
+            } else input += pasteBuffer
             pasteBuffer = ''
             draw()
             continue

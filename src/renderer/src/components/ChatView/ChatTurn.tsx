@@ -1,11 +1,11 @@
 import { memo, useRef, useState } from 'react'
-import { Check, Copy, FileText, GitFork } from 'lucide-react'
+import { Bot, Check, Copy, FileText, GitFork } from 'lucide-react'
 import type { ChatThread, ConversationAgent, ConversationTurn } from '../../../../shared/conversation'
 import { Markdown } from './markdown/Markdown'
 import { UserParts } from './TurnParts'
 import { WorkBlock } from './WorkBlock'
 import { isLiveWorkTurn, turnSegments, workBlockStartsOpen } from './workBlocks'
-import { formatElapsed, INTERRUPTED_TEXT } from './chatLib'
+import { answerForAgent, formatElapsed, INTERRUPTED_TEXT } from './chatLib'
 import { ThreadChip } from './ThreadChip'
 
 const AGENT_NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
@@ -31,7 +31,11 @@ export const ChatTurn = memo(function ChatTurn({
     foldWork = true,
     onFork,
     threads,
-    onOpenThread
+    onOpenThread,
+    sessionId,
+    sessionName,
+    answerNumber,
+    answerTotal
 }: {
     turn: ConversationTurn
     last: boolean
@@ -47,6 +51,11 @@ export const ChatTurn = memo(function ChatTurn({
     onFork?: (index: number, options: boolean) => void
     threads?: ChatThread[]
     onOpenThread?: (childId: string) => void
+    /** for «Copy for agent»: which session, and which of its answers this is (1-based; absent when not all are read) */
+    sessionId?: string
+    sessionName?: string
+    answerNumber?: number
+    answerTotal?: number
 }) {
     if (turn.role === 'user') {
         // the person's own words, to copy back (16f1402e) — not the «Stopped» marker
@@ -105,7 +114,12 @@ export const ChatTurn = memo(function ChatTurn({
                         </span>
                     </>
                 )}
-                {answer && settled && <CopyAnswer markdown={answer} />}
+                {answer && settled && (
+                    <CopyAnswer
+                        markdown={answer}
+                        forAgent={sessionId ? () => answerForAgent({ sessionName, sessionId, at: turn.end_ts ?? turn.ts, answerNumber, answerTotal, answer }) : undefined}
+                    />
+                )}
                 {answer && settled && onFork && (
                     <span className="chat-copy-answer">
                         <button
@@ -165,11 +179,12 @@ function CopyMine({ text }: { text: string }) {
  * Copy an answer as Markdown (what the agent wrote) or as plain text (what the chat shows: the
  * rendered words, without `**` and fences) — ovis "Copy an answer as Markdown or plain text".
  */
-function CopyAnswer({ markdown }: { markdown: string }) {
-    const [copied, setCopied] = useState<'md' | 'text' | null>(null)
+function CopyAnswer({ markdown, forAgent }: { markdown: string; forAgent?: () => string }) {
+    const [copied, setCopied] = useState<'md' | 'text' | 'agent' | null>(null)
     const anchor = useRef<HTMLSpanElement>(null)
-    const copy = async (kind: 'md' | 'text'): Promise<void> => {
+    const copy = async (kind: 'md' | 'text' | 'agent'): Promise<void> => {
         let text = markdown
+        if (kind === 'agent' && forAgent) text = forAgent()
         if (kind === 'text') {
             const turn = anchor.current?.closest('[data-role="assistant"]')
             const answers = turn ? Array.from(turn.querySelectorAll<HTMLElement>('[data-testid="chat-answer"]')) : []
@@ -191,6 +206,12 @@ function CopyAnswer({ markdown }: { markdown: string }) {
             <button type="button" data-testid="chat-copy-text" title="Copy answer as plain text" aria-label="Copy answer as plain text" onClick={() => void copy('text')}>
                 {copied === 'text' ? <Check size={12} /> : <FileText size={12} />}
             </button>
+            {forAgent && (
+                // for another agent: the session's name and link and the turn's place and time over the answer (45127b82)
+                <button type="button" data-testid="chat-copy-for-agent" title="Copy for agent — the answer with its session link, turn and time" aria-label="Copy answer for an agent" onClick={() => void copy('agent')}>
+                    {copied === 'agent' ? <Check size={12} /> : <Bot size={12} />}
+                </button>
+            )}
         </span>
     )
 }

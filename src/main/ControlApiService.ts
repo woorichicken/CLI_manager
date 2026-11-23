@@ -753,11 +753,15 @@ export class ControlApiService {
         return { session: this.getSession(result.sessionId), scope, messageSent: result.messageSent, ...(result.note ? { note: result.note } : {}) }
     }
 
-    async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession> {
+    /**
+     * `submitted: false` (only then): the text is still in the agent's input box after Enter and two more — a long
+     * paste Claude Code folded into `[Pasted text #n …]` included (019248e1). It is there: do not send it again.
+     */
+    async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession & { submitted?: false }> {
         this.connect(sessionId, input.client, input.caller, 'record')
-        await this.typeAndSubmit(sessionId, input)
+        const submitted = await this.typeAndSubmit(sessionId, input)
         const { workspace, session } = this.requireSession(sessionId)
-        return this.describe(workspace, session)
+        return { ...this.describe(workspace, session), ...(submitted ? {} : { submitted: false as const }) }
     }
 
     /**
@@ -847,6 +851,8 @@ export class ControlApiService {
         if (input.text !== undefined) {
             const submit = input.submit !== false
             const text = submit ? input.text.replace(/[\r\n]+$/, '') : input.text
+            // the paste placeholders the box holds before this text: one more after Enter is this text, unsent
+            const placeholdersBefore = text.length > 0 && submit ? await this.pastePlaceholders(sessionId) : 0
             if (text.length > 0) {
                 await this.settleAfterEscape(sessionId)
                 stillAllowed()
@@ -856,7 +862,7 @@ export class ControlApiService {
                 await sleep(submitDelay(text.length))
                 stillAllowed()
                 this.write(sessionId, '\r')
-                if (text.length > 0) submitted = await this.confirmSubmitted(sessionId, text, stillAllowed)
+                if (text.length > 0) submitted = await this.confirmSubmitted(sessionId, text, stillAllowed, placeholdersBefore)
             }
         }
 
@@ -881,24 +887,41 @@ export class ControlApiService {
         if (since < ESCAPE_SETTLE_MS) await sleep(ESCAPE_SETTLE_MS - since)
     }
 
+    /** How many `[Pasted text #n …]` placeholders the agent's input box shows now (0 without a box). */
+    private async pastePlaceholders(sessionId: string): Promise<number> {
+        await this.deps.mirror.flush(sessionId)
+        return countPastePlaceholders(this.deps.mirror.inputBox(sessionId)?.typed ?? '')
+    }
+
     /**
      * After Enter, the prompt should leave the input box. Only checked when the
-     * program draws one and the prompt was visible in it; anything else (a
-     * shell, a multi-line paste shown as a placeholder) is taken as submitted.
+     * program draws one; anything else (a shell) is taken as submitted. Still in
+     * the box: its first words, or — a long or multi-line text Claude Code folds
+     * into `[Pasted text #n +L lines]` — one placeholder more than before it was
+     * typed. (019248e1: the placeholder was taken as submitted, so an Enter lost
+     * there left a long Chat message in the box while the Chat called it sent.)
      */
-    private async confirmSubmitted(sessionId: string, text: string, beforeEnter: () => void = () => undefined): Promise<boolean> {
+    private async confirmSubmitted(sessionId: string, text: string, beforeEnter: () => void = () => undefined, placeholdersBefore = 0): Promise<boolean> {
         const head = text.replace(/\s+/g, ' ').trim().slice(0, SUBMIT_HEAD_CHARS)
         if (!head) return true
         const stillInBox = async (): Promise<boolean> => {
             await this.deps.mirror.flush(sessionId)
             const box = this.deps.mirror.inputBox(sessionId)
-            return box !== null && box.typed.includes(head)
+            return box !== null && (box.typed.includes(head) || countPastePlaceholders(box.typed) > placeholdersBefore)
         }
 
+        // «gone» is believed on two reads in a row: a read can land between the clear and the rows of the
+        // program's redraw (seen under load with a mock that redraws the whole screen), where no box — or an
+        // empty one — is drawn for a moment though the text is still there (019248e1)
+        const goneTwice = async (): Promise<boolean> => {
+            if (await stillInBox()) return false
+            await sleep(SUBMIT_CONFIRM_POLL_MS)
+            return !(await stillInBox())
+        }
         for (let attempt = 0; attempt <= SUBMIT_RETRIES; attempt++) {
             const deadline = Date.now() + SUBMIT_CONFIRM_MS
             while (Date.now() < deadline) {
-                if (!(await stillInBox())) return true
+                if (await goneTwice()) return true
                 await sleep(SUBMIT_CONFIRM_POLL_MS)
             }
             if (attempt === SUBMIT_RETRIES) break
@@ -906,7 +929,7 @@ export class ControlApiService {
             beforeEnter()
             this.write(sessionId, '\r')
         }
-        return !(await stillInBox())
+        return goneTwice()
     }
 
     /**
@@ -1839,6 +1862,13 @@ export class ControlApiService {
 function clampLines(lines?: number): number {
     if (!lines || !Number.isFinite(lines)) return DEFAULT_OUTPUT_LINES
     return Math.min(Math.max(Math.floor(lines), 1), MAX_OUTPUT_LINES)
+}
+
+/** Claude Code's stand-in for a pasted block in its input box: `[Pasted text #1 +20 lines]`. */
+const PASTE_PLACEHOLDER = /\[Pasted text #\d+[^\]]*\]/g
+
+function countPastePlaceholders(typed: string): number {
+    return typed.match(PASTE_PLACEHOLDER)?.length ?? 0
 }
 
 function submitDelay(length: number): number {

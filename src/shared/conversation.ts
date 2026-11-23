@@ -143,6 +143,11 @@ export interface PromptMenu {
     /** the question bar of several questions, in order */
     steps?: PromptStep[]
     /**
+     * The highlighted option's preview (AskUserQuestion options that carry one — 2.1.322+): the rows of the
+     * box Claude draws to the right of the options, without the box's own edges, as the terminal shows them.
+     */
+    preview?: string[]
+    /**
      * The card can send keys for this menu. False when the screen layout is one
      * this app has no captured copy of (Codex's folder trust, an unknown multiple
      * choice): the card then only offers "Answer in Terminal".
@@ -207,8 +212,24 @@ export interface QueuedMessage {
     text: string
 }
 
+/**
+ * A queued message that did not go when its turn came (019248e1): typed but left in the agent's input box,
+ * or its agent or conversation gone. Kept with the reason until the person retries (`sendQueuedNow`, the
+ * guarded send) or discards it (`discardQueued`) — never typed again on its own.
+ */
+export interface UnsentMessage extends QueuedMessage {
+    /**
+     * `left_input`: it was `not_submitted`, and then left the terminal's input line — sent from the terminal, or
+     * cleared there. Retry is refused (it could go twice); Edit or Copy brings it back if it was cleared.
+     */
+    reason: 'not_submitted' | 'left_input' | 'no_agent' | 'conversation_changed' | 'exited' | 'failed'
+    message: string
+}
+
 export interface ConversationSnapshot {
     sessionId: string
+    /** the session's sidebar name (an answer's «Copy for agent» names it — fb-1123 45127b82) */
+    sessionName?: string
     /** the session's working folder: relative paths in the chat resolve against it */
     cwd?: string
     /** the home folder of the Mac running the agent: `~/` paths resolve against it */
@@ -235,6 +256,8 @@ export interface ConversationSnapshot {
     suggestion?: string | null
     /** messages sent from the chat while the agent worked, waiting for the turn to end, oldest first */
     queued: QueuedMessage[]
+    /** queued messages that did not go, oldest first (absent from a Mac that predates them) */
+    unsent?: UnsentMessage[]
     /** model · effort · context, from the transcript; null before the first answer records them */
     meta: ConversationMeta | null
     /** bumps on every change, so a subscriber can skip a fetch it already has */
@@ -485,11 +508,14 @@ export interface ChatTransport {
     /** Drops every queued message. */
     cancelQueued(sessionId: string): Promise<void>
     /**
-     * Drops one queued message. True when it was still queued and is withdrawn now; false when it had
-     * already gone to the agent. Rejects when the request did not get through.
+     * Drops one queued message (or a «Not sent» one). True when it was still queued and is withdrawn now;
+     * false when it had already gone to the agent. Rejects when the request did not get through.
      */
     discardQueued(sessionId: string, id: string): Promise<boolean>
-    /** Sends one queued message now, while the agent still works (the agent decides when it reads it). */
+    /**
+     * Sends one queued message now, while the agent still works (the agent decides when it reads it). For a
+     * «Not sent» one (`ConversationSnapshot.unsent`) it is Retry: the guarded send, the row kept when refused.
+     */
     sendQueuedNow(sessionId: string, id: string): Promise<ChatSendResult>
     /** Chat → Terminal: the unsent text into Claude's input box, without Enter (4b9cb0c2). Absent: not offered. */
     placeDraftInTerminal?(sessionId: string, text: string): Promise<DraftToTerminalResult>

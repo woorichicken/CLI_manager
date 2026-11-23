@@ -394,7 +394,8 @@ export function maskSnapshot(snapshot: ConversationSnapshot, maskLine: (text: st
             ...option,
             label: maskLine(option.label),
             ...(option.description ? { description: maskLine(option.description) } : {})
-        }))
+        })),
+        ...(snapshot.prompt.preview ? { preview: snapshot.prompt.preview.map(maskLine) } : {})
     }
     return { ...snapshot, prompt }
 }

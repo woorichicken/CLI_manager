@@ -13,7 +13,8 @@ import type {
     PromptAnswer,
     PromptAnswerResult,
     PromptMenu,
-    QueuedMessage
+    QueuedMessage,
+    UnsentMessage
 } from '../shared/conversation'
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
 // the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
@@ -222,7 +223,34 @@ interface QueueItem extends QueuedMessage {
     conversation: string | null
 }
 
+/** A «Not sent» row and who sent it (a phone's rows go when it disconnects, as its queue does). */
+interface UnsentItem extends UnsentMessage {
+    origin?: string
+    allowed?: () => boolean
+    /** not_submitted: what the input box showed of it then — its first words, and how many paste placeholders */
+    box?: { head: string; placeholders: number }
+    /** reads in a row that found it gone from the box (two flip it to left_input — one may land mid-redraw) */
+    goneReads?: number
+}
+
+/** What a «Not sent» row says, by why it did not go. */
+const UNSENT_MESSAGES: Record<UnsentMessage['reason'], string> = {
+    not_submitted: 'Typed into the terminal but not submitted — it is still in the terminal input line. Press Enter there to send it, or clear it there and use Edit.',
+    left_input: 'It is no longer in the terminal input line — sent from there, or cleared. Check the conversation; Edit brings it back if it was cleared.',
+    no_agent: 'Not sent: the agent it was written for is no longer running.',
+    conversation_changed: 'Not sent: the agent moved to another conversation (/resume or /clear).',
+    exited: 'Not sent: the shell in this session exited.',
+    failed: 'Not sent.'
+}
+
 let queueSequence = 0
+/** «Not sent» rows kept per session at most (the oldest go first) */
+const UNSENT_MAX = 50
+/** how much of a message's start marks it in the input box (ControlApiService.confirmSubmitted reads as much) */
+const BOX_HEAD_CHARS = 16
+/** Retry reads the box twice this far apart before it believes the words left it */
+const RETRY_RECHECK_MS = 250
+const PASTE_PLACEHOLDERS = /\[Pasted text #\d+[^\]]*\]/g
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -247,6 +275,11 @@ export class ConversationService {
      * count only while that tool is in the chat — a `/resume` or a rewind takes it away, and its links with it.
      */
     private readonly wholeOutputPaths = new Map<string, Map<string, Set<string>>>()
+    /**
+     * Queued messages that did not go when their turn came (019248e1), per session: kept apart from `watched`
+     * so they outlive a closed view, until Retry or ✕ (or the session closes). Never typed again on their own.
+     */
+    private readonly unsent = new Map<string, UnsentItem[]>()
     private timer: NodeJS.Timeout | null = null
     private polling = false
 
@@ -287,6 +320,7 @@ export class ConversationService {
         const idleTimer = this.watched.get(sessionId)?.idleTimer
         if (idleTimer) clearTimeout(idleTimer)
         this.watched.delete(sessionId)
+        this.unsent.delete(sessionId)
         this.lastAnswer.delete(sessionId)
         this.wholeOutputPaths.delete(sessionId)
         this.deps.reader.forget(sessionId)
@@ -298,12 +332,14 @@ export class ConversationService {
         const info = this.deps.session(sessionId)
         const base = {
             sessionId,
+            ...(info?.name ? { sessionName: info.name } : {}),
             ...(info?.cwd ? { cwd: info.cwd } : {}),
             ...(this.deps.home ? { home: this.deps.home } : {}),
             working: entry.working,
             prompt: entry.prompt,
             suggestion: entry.suggestion ?? null,
             queued: entry.queue.map(({ id, text }) => ({ id, text })),
+            unsent: (this.unsent.get(sessionId) ?? []).map(({ id, text, reason, message }) => ({ id, text, reason, message })),
             revision: entry.revision,
             meta: null,
             terminalOpened: entry.terminalOpened
@@ -574,6 +610,12 @@ export class ConversationService {
     dropQueuedFrom(origin: string | ((origin: string | undefined) => boolean)): number {
         const matches = typeof origin === 'string' ? (from: string | undefined) => from === origin : origin
         let dropped = 0
+        for (const [sessionId, rows] of [...this.unsent]) {
+            const kept = rows.filter((row) => !matches(row.origin))
+            if (kept.length === rows.length) continue
+            dropped += rows.length - kept.length
+            this.setUnsent(sessionId, kept)
+        }
         for (const [sessionId, entry] of [...this.watched]) {
             const kept = entry.queue.filter((message) => !matches(message.origin))
             if (kept.length === entry.queue.length) continue
@@ -583,6 +625,106 @@ export class ConversationService {
             this.dropIfIdle(sessionId, entry)
         }
         return dropped
+    }
+
+    /** A queued message that did not go: kept as a «Not sent» row with why (019248e1), never typed again on its own. */
+    private markUnsent(sessionId: string, message: QueueItem, reason: UnsentMessage['reason'], detail?: string): void {
+        const row: UnsentItem = {
+            id: message.id,
+            text: message.text,
+            reason,
+            message: detail ? `${UNSENT_MESSAGES[reason]} ${detail}` : UNSENT_MESSAGES[reason],
+            ...(message.origin !== undefined ? { origin: message.origin } : {}),
+            ...(message.allowed ? { allowed: message.allowed } : {}),
+            ...(reason === 'not_submitted' ? { box: this.boxMark(sessionId, message.text) } : {})
+        }
+        console.warn(`[conversation] a queued message did not go (${reason}); kept as not sent`, sessionId)
+        this.setUnsent(sessionId, [...(this.unsent.get(sessionId) ?? []), row])
+    }
+
+    /** How a not-submitted text shows in the input box now: its first words, and the paste placeholders there. */
+    private boxMark(sessionId: string, text: string): { head: string; placeholders: number } {
+        const typed = this.deps.mirror.inputBox(sessionId)?.typed ?? ''
+        return { head: text.replace(/\s+/g, ' ').trim().slice(0, BOX_HEAD_CHARS), placeholders: typed.match(PASTE_PLACEHOLDERS)?.length ?? 0 }
+    }
+
+    /** Whether a not-submitted row's text has left the input box (a box on screen, without its words or with fewer placeholders). */
+    private leftBox(sessionId: string, row: UnsentItem): boolean {
+        if (!row.box) return false
+        const box = this.deps.mirror.inputBox(sessionId)
+        if (!box) return false
+        if (box.typed.includes(row.box.head)) return false
+        return row.box.placeholders === 0 || (box.typed.match(PASTE_PLACEHOLDERS)?.length ?? 0) < row.box.placeholders
+    }
+
+    /**
+     * S4 (fb-1123 review): a «Not sent» row whose words left the terminal's input line — the person pressed Enter
+     * there, or cleared it — turns `left_input` after two reads in a row: Retry would send it twice.
+     */
+    private settleUnsent(sessionId: string): void {
+        const rows = this.unsent.get(sessionId)
+        if (!rows?.some((row) => row.reason === 'not_submitted')) return
+        let changed = false
+        const next = rows.map((row) => {
+            if (row.reason !== 'not_submitted') return row
+            if (!this.leftBox(sessionId, row)) return row.goneReads ? { ...row, goneReads: 0 } : row
+            const goneReads = (row.goneReads ?? 0) + 1
+            changed = true
+            return goneReads >= 2 ? { ...row, reason: 'left_input' as const, message: UNSENT_MESSAGES.left_input, goneReads } : { ...row, goneReads }
+        })
+        if (changed) this.setUnsent(sessionId, next)
+    }
+
+    private setUnsent(sessionId: string, all: UnsentItem[]): void {
+        const rows = all.slice(-UNSENT_MAX)
+        if (rows.length > 0) this.unsent.set(sessionId, rows)
+        else this.unsent.delete(sessionId)
+        // nobody watches without an entry: the next view reads the rows with its snapshot
+        const entry = this.watched.get(sessionId)
+        if (entry) this.noteState(sessionId, entry)
+    }
+
+    /**
+     * Retry on a «Not sent» row: the guarded send, as if typed again in the box — refused (the words still in
+     * the terminal's input line, a question, no agent) it stays, with the new reason. Taken off the list
+     * while it goes, so a second tap does not send it twice.
+     */
+    private async retryUnsent(sessionId: string, row: UnsentItem, from?: From): Promise<ChatSendResult> {
+        if (row.reason === 'left_input') return { status: 'rejected', reason: 'empty', message: row.message }
+        // its words may have gone from the box since (sent from the terminal): read twice, then refuse rather than send twice
+        if (row.reason === 'not_submitted' && this.deps.hasTerminal(sessionId)) {
+            await this.deps.mirror.flush(sessionId)
+            if (this.leftBox(sessionId, row)) {
+                await sleep(RETRY_RECHECK_MS)
+                await this.deps.mirror.flush(sessionId)
+                if (this.leftBox(sessionId, row)) {
+                    const left: UnsentItem = { ...row, reason: 'left_input', message: UNSENT_MESSAGES.left_input }
+                    this.setUnsent(sessionId, (this.unsent.get(sessionId) ?? []).map((item) => (item === row ? left : item)))
+                    return { status: 'rejected', reason: 'empty', message: left.message }
+                }
+            }
+        }
+        if (!(this.unsent.get(sessionId) ?? []).includes(row)) return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
+        this.setUnsent(sessionId, (this.unsent.get(sessionId) ?? []).filter((item) => item !== row))
+        if (row.allowed && !row.allowed()) return REVOKED
+        const result = await this.send(sessionId, row.text, from)
+        if (result.status !== 'rejected') return result
+        // the row's own sender lost access: dropped, as its queue is. A tapping device that lost access
+        // (`revoked` here is the tapper's) leaves the row to its owner
+        if (row.allowed && !row.allowed()) return result
+        const reason = isUnsentReason(result.reason) ? result.reason : row.reason
+        const kept: UnsentItem = {
+            ...row,
+            reason,
+            message: result.message,
+            goneReads: 0,
+            // typed again and left in the box: what the box shows of it now
+            ...(result.reason === 'not_submitted' ? { box: this.boxMark(sessionId, row.text) } : {})
+        }
+        const rows = this.unsent.get(sessionId) ?? []
+        if (!this.deps.session(sessionId)) return result
+        this.setUnsent(sessionId, [kept, ...rows].sort((a, b) => unsentOrder(a.id) - unsentOrder(b.id)))
+        return result
     }
 
     /** A queued terminal-only `/` command went out: the views show the terminal (F18). */
@@ -631,6 +773,11 @@ export class ConversationService {
      * false when it already went (or never was), so Edit does not bring back text the agent has.
      */
     discardQueued(sessionId: string, id: string): boolean {
+        const rows = this.unsent.get(sessionId) ?? []
+        if (rows.some((row) => row.id === id)) {
+            this.setUnsent(sessionId, rows.filter((row) => row.id !== id))
+            return true
+        }
         const entry = this.watched.get(sessionId)
         const index = entry?.queue.findIndex((message) => message.id === id) ?? -1
         if (!entry || index < 0) return false
@@ -646,6 +793,8 @@ export class ConversationService {
      * is on screen or the terminal's input line holds text — then it stays queued.
      */
     async sendQueuedNow(sessionId: string, id: string, from?: From): Promise<ChatSendResult> {
+        const failed = this.unsent.get(sessionId)?.find((row) => row.id === id)
+        if (failed) return this.retryUnsent(sessionId, failed, from)
         if (!this.watched.get(sessionId)?.queue.some((item) => item.id === id)) {
             return { status: 'rejected', reason: 'empty', message: 'That message is no longer waiting.' }
         }
@@ -665,7 +814,7 @@ export class ConversationService {
         if (!this.sameConversation(sessionId, message)) {
             const at = entry.queue.indexOf(message)
             if (at >= 0) entry.queue.splice(at, 1)
-            console.warn('[conversation] dropped a queued message: the agent moved to another conversation', sessionId)
+            this.markUnsent(sessionId, message, 'conversation_changed')
             this.bump(sessionId, entry)
             this.dropIfIdle(sessionId, entry)
             return CONVERSATION_CHANGED
@@ -673,7 +822,7 @@ export class ConversationService {
         if (!this.stillFor(message, await this.agentInFront(sessionId))) {
             const at = entry.queue.indexOf(message)
             if (at >= 0) entry.queue.splice(at, 1)
-            console.warn('[conversation] dropped a queued message: the agent it was written for is gone', sessionId)
+            this.markUnsent(sessionId, message, 'no_agent')
             this.bump(sessionId, entry)
             this.dropIfIdle(sessionId, entry)
             return NO_AGENT
@@ -686,8 +835,12 @@ export class ConversationService {
         entry.queue.splice(index, 1)
         entry.sending = true
         try {
-            // not put back when unsubmitted: the text is in the terminal's box, a later send would type it twice
-            if (!(await this.deps.type(sessionId, message.text, allowed))) return NOT_SUBMITTED
+            // not put back in the queue when unsubmitted: the text is in the terminal's box, a later send would
+            // type it twice — a «Not sent» row keeps it, retried only by the person
+            if (!(await this.deps.type(sessionId, message.text, allowed))) {
+                this.markUnsent(sessionId, message, 'not_submitted')
+                return NOT_SUBMITTED
+            }
             this.noteTerminalCommand(sessionId, entry, message)
             return { status: 'sent' }
         } catch (error) {
@@ -1072,12 +1225,15 @@ export class ConversationService {
         if (!force && outputAt === entry.lastScreenAt) return
         await mirror.flush(sessionId)
         entry.lastScreenAt = outputAt
+        this.settleUnsent(sessionId)
         const screen = this.deps.mirror.screen(sessionId)
-        entry.working = screen.some(isBusyRow)
+        const agent = agentOf(this.deps.session(sessionId))
+        // readPrompt reads a turn in progress only from the dialog's own rows: a dialog drawn last is what the
+        // agent waits on, whatever its words above it say (f7bff999 — «(esc to interrupt)» in them hid the card)
+        entry.prompt = readPrompt(screen, agent ?? 'claude')
+        entry.working = entry.prompt === null && screen.some(isBusyRow)
         entry.screenMode = screenAgentMode(screen)
         entry.background = screenBackground(screen)
-        const agent = agentOf(this.deps.session(sessionId))
-        entry.prompt = entry.working ? null : readPrompt(screen, agent ?? 'claude')
         entry.suggestion = chatSuggestion(mirror.inputBox(sessionId), {
             agent,
             working: entry.working,
@@ -1092,7 +1248,8 @@ export class ConversationService {
 
     /** Bumps the revision when what views show (conversation id, working, mode, menu, suggestion, queue) changed. */
     private noteState(sessionId: string, entry: Watched): void {
-        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.background ?? null, entry.prompt?.signature ?? null, entry.suggestion ?? null, entry.queue.map((message) => message.id)])
+        const unsent = (this.unsent.get(sessionId) ?? []).map((row) => `${row.id}:${row.message}`)
+        const key = JSON.stringify([this.deps.session(sessionId)?.cliSessionId ?? null, entry.working, entry.screenMode ?? null, entry.background ?? null, entry.prompt?.signature ?? null, entry.suggestion ?? null, entry.queue.map((message) => message.id), unsent])
         if (key === entry.lastKey) return
         entry.lastKey = key
         this.bump(sessionId, entry)
@@ -1149,7 +1306,7 @@ export class ConversationService {
         if (entry.queue.length === 0 || entry.sending || entry.working || entry.prompt) return
         if (Date.now() - this.deps.mirror.lastOutputAt(sessionId) < QUEUE_QUIET_MS) return
         if (!this.deps.hasTerminal(sessionId) || this.deps.mirror.hasExited(sessionId)) {
-            entry.queue.length = 0
+            for (const message of entry.queue.splice(0)) if (message.allowed?.() ?? true) this.markUnsent(sessionId, message, 'exited')
             this.bump(sessionId, entry)
             return
         }
@@ -1161,14 +1318,15 @@ export class ConversationService {
             // written for it would run as a command there — dropped, never typed
             const front = await this.agentInFront(sessionId)
             // also what a device sent and lost access to since (revoked after its revoke hook ran)
-            const kept = entry.queue.filter(
-                (message) => this.stillFor(message, front) && this.sameConversation(sessionId, message) && (message.allowed?.() ?? true)
-            )
+            // (one that lost its sender's access is dropped, not kept for others to send)
+            const kept: QueueItem[] = []
+            for (const message of entry.queue) {
+                if (!(message.allowed?.() ?? true)) console.warn('[conversation] dropped a queued message: its sender lost access', sessionId)
+                else if (!this.stillFor(message, front)) this.markUnsent(sessionId, message, 'no_agent')
+                else if (!this.sameConversation(sessionId, message)) this.markUnsent(sessionId, message, 'conversation_changed')
+                else kept.push(message)
+            }
             if (kept.length !== entry.queue.length) {
-                console.warn(
-                    `[conversation] dropped ${entry.queue.length - kept.length} queued message(s): the agent or conversation they were written for is gone, or their sender lost access`,
-                    sessionId
-                )
                 entry.queue = kept
                 this.bump(sessionId, entry)
                 if (kept.length === 0) {
@@ -1179,15 +1337,18 @@ export class ConversationService {
             const message = entry.queue.shift()!
             entry.sending = true
             try {
-                // left in the terminal's box: not queued again (typing it twice), the person sees it there
-                if (!(await this.deps.type(sessionId, message.text, message.allowed))) console.warn('[conversation] queued message left unsubmitted in the input box', sessionId)
+                // left in the terminal's box: not queued again (typing it twice) — a «Not sent» row says where it is
+                if (!(await this.deps.type(sessionId, message.text, message.allowed))) this.markUnsent(sessionId, message, 'not_submitted')
                 else this.noteTerminalCommand(sessionId, entry, message)
             } catch (error) {
                 // A question appeared between the check and the typing: put it back and wait.
                 const code = (error as { code?: string }).code
                 if (code === 'awaiting_input') entry.queue.unshift(message)
                 else if (code === 'revoked') console.warn('[conversation] dropped a queued message: its sender lost access', sessionId)
-                else console.error('[conversation] queued send failed', sessionId, error)
+                else {
+                    console.error('[conversation] queued send failed', sessionId, error)
+                    this.markUnsent(sessionId, message, 'failed', error instanceof Error ? error.message : String(error))
+                }
             } finally {
                 entry.sending = false
                 this.bump(sessionId, entry)
@@ -1195,6 +1356,15 @@ export class ConversationService {
             }
         })
     }
+}
+
+function isUnsentReason(reason: string): reason is UnsentMessage['reason'] {
+    return reason in UNSENT_MESSAGES
+}
+
+/** queue ids are `q<n>`: their number keeps the rows in the order they were written */
+function unsentOrder(id: string): number {
+    return Number(id.slice(1)) || 0
 }
 
 function senderOf(from: From): ChatSender | null {

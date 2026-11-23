@@ -13,6 +13,10 @@ import type { ChatTransport, PromptAnswer, PromptMenu, PromptOption } from '../.
  * presses Enter on each row whose tick differs, then on that row. The card's body
  * scrolls past a height and folds away (the ▴ button), so a long plan or many
  * options never cover the chat (fb 2c234a60).
+ *
+ * Several question tabs show as chips with how many are answered, and an option's preview (the box Claude
+ * draws beside the options) shows under them as the terminal draws it (f7bff999). Which tab is current is
+ * not in the screen's text (only a colour marks it), so the card names the count, not «n of m».
  */
 export function PromptCard({
     sessionId,
@@ -101,6 +105,11 @@ export function PromptCard({
             </div>
             {prompt.steps && prompt.steps.length > 0 && (
                 <div className="chat-prompt-steps" data-testid="chat-prompt-steps">
+                    {prompt.steps.some((step) => !step.submit) && (
+                        <span className="chat-prompt-progress" data-testid="chat-prompt-progress">
+                            {prompt.steps.filter((step) => !step.submit && step.answered).length} of {prompt.steps.filter((step) => !step.submit).length} answered
+                        </span>
+                    )}
                     {prompt.steps.map((step, index) => (
                         <span
                             key={index}
@@ -151,6 +160,16 @@ export function PromptCard({
                                 )
                             })}
                     </div>
+                    {prompt.preview && prompt.preview.length > 0 && (
+                        <figure className="chat-prompt-preview-box">
+                            <figcaption className="chat-prompt-preview-label">
+                                Preview{prompt.options.find((option) => option.selected)?.number ? ` · option ${prompt.options.find((option) => option.selected)?.number}` : ''}
+                            </figcaption>
+                            <pre className="chat-prompt-preview" data-testid="chat-prompt-preview">
+                                {prompt.preview.join('\n')}
+                            </pre>
+                        </figure>
+                    )}
                     {custom && prompt.answerable && (
                         <form
                             className="chat-prompt-custom"
