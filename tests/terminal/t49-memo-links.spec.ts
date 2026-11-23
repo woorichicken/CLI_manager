@@ -43,7 +43,7 @@ test.describe('T49 memo links', () => {
         })
 
         // Opening the memo is for typing: the textarea is up and holds the stored text.
-        await page.locator('button[title="Session Memo (⌘J)"]:visible').click()
+        await page.locator('button[title^="Session Memo (⌘J)"]:visible').click()
         const textarea = page.locator('textarea[placeholder="Quick notes..."]')
         await expect(textarea).toBeFocused()
         await expect(textarea).toHaveValue(MEMO)
@@ -92,7 +92,7 @@ test.describe('T49 memo links', () => {
             shell.openExternal = async (url: string) => { urls.push(url) }
         })
 
-        await page.locator('button[title="Session Memo (⌘J)"]:visible').click()
+        await page.locator('button[title^="Session Memo (⌘J)"]:visible').click()
         await page.getByText('Memo', { exact: true }).click()
         const read = page.getByTestId('session-memo-read')
         const textarea = page.locator('textarea[placeholder="Quick notes..."]')
@@ -124,7 +124,7 @@ test.describe('T49 memo links', () => {
         const { page } = ctx
         await activateSession(page, 'T49EMPTYSESS')
 
-        await page.locator('button[title="Session Memo (⌘J)"]:visible').click()
+        await page.locator('button[title^="Session Memo (⌘J)"]:visible').click()
         const textarea = page.locator('textarea[placeholder="Quick notes..."]')
         await expect(textarea).toBeFocused()
         await page.getByText('Memo', { exact: true }).click()
@@ -148,7 +148,7 @@ test.describe('T49 memo links', () => {
         const readClipboard = () => app.evaluate(({ clipboard }) => clipboard.readText())
         try {
             await app.evaluate(({ clipboard }) => clipboard.writeText('T49-BEFORE'))
-            await page.locator('button[title="Session Memo (⌘J)"]:visible').click()
+            await page.locator('button[title^="Session Memo (⌘J)"]:visible').click()
             const textarea = page.locator('textarea[placeholder="Quick notes..."]')
             await expect(textarea).toBeFocused()
 

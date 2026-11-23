@@ -202,12 +202,13 @@ test.describe('T72 folder copy and shortcut hints (fb-1031)', () => {
             await page.evaluate(() => document.querySelectorAll('[data-t72-tip]').forEach(el => el.remove()))
         }
 
-        expect(titles.settings).toBe('Settings (⌘,)')
-        expect(titles.closeSidebar).toBe('Close Sidebar (⌘B)')
+        // Second line: what the key does, as Settings › Keyboard says it (78a79526 — T159).
+        expect(titles.settings).toBe('Settings (⌘,)\nOpen or close settings')
+        expect(titles.closeSidebar).toBe('Close Sidebar (⌘B)\nShow or hide the sidebar')
         expect(titles.related).toBe('Related sessions — none yet. Open to add one. (⌘⇧L)')
-        expect(titles.memo).toBe('Session Memo (⌘J)')
+        expect(titles.memo).toBe('Session Memo (⌘J)\nOpen or close session memo')
         // Remapped in Settings: the tooltip shows the new key, never the default ⌘⌥N.
-        expect(titles.memoNewPage).toBe('New page (⌘⇧M)')
-        expect(titles.memoCopy).toBe('Copy memo (⌘⌥C)')
+        expect(titles.memoNewPage).toBe('New page (⌘⇧M)\nAdd a page to the memo (opens it if closed)')
+        expect(titles.memoCopy).toBe('Copy memo (⌘⌥C)\nCopy the page shown to the clipboard')
     })
 })

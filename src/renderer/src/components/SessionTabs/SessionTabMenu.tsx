@@ -67,7 +67,7 @@ export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onRen
         >
             {onRenameTab && (
                 <>
-                    <button className={ITEM} data-tab-menu-item="rename" title={hint('Rename the session', 'renameSession')} onClick={run(() => onRenameTab(tabId))}>
+                    <button className={ITEM} data-tab-menu-item="rename" title={hint('Rename the session', 'renameSession', false)} onClick={run(() => onRenameTab(tabId))}>
                         <Pencil size={12} className="text-gray-400 shrink-0" />
                         <span className="truncate">Rename…</span>
                     </button>
@@ -105,7 +105,7 @@ export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onRen
             <button
                 className={`${ITEM} text-red-300 hover:bg-red-500/20 hover:text-red-200`}
                 data-tab-menu-item="end-session"
-                title={hint('End the session and close its tab', 'closeSession')}
+                title={hint('End the session and close its tab', 'closeSession', false)}
                 onClick={run(() => actions.onEndSession(tabId))}
             >
                 <Trash2 size={12} className="text-red-400 shrink-0" />

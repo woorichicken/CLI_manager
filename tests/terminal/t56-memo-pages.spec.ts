@@ -40,7 +40,7 @@ test.describe('T56 memo pages', () => {
         const { app, page, userDataDir } = ctx
         await activateSession(page, 'T56SESS')
 
-        await page.locator('button[title="Session Memo (⌘J)"]:visible').click()
+        await page.locator('button[title^="Session Memo (⌘J)"]:visible').click()
         const textarea = page.locator('textarea[placeholder="Quick notes..."]')
         // The old sheet is one page: its "--------" line is text, not a page break.
         await expect(textarea).toHaveValue(OLD_SHEET)
@@ -108,7 +108,7 @@ test.describe('T56 memo pages', () => {
         const { page, userDataDir } = ctx
         await activateSession(page, 'T56STOREDSESS')
 
-        await page.locator('button[title="Session Memo (⌘J)"]:visible').click()
+        await page.locator('button[title^="Session Memo (⌘J)"]:visible').click()
         const textarea = page.locator('textarea[placeholder="Quick notes..."]')
         await expect(page.getByTestId('session-memo-page')).toHaveText('1 / 3')
         await expect(textarea).toHaveValue('T56 page one')
