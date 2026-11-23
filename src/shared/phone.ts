@@ -75,6 +75,11 @@ export interface PhoneSession {
     icon?: 'master' | 'logo' | 'ai'
     /** with `icon: 'logo'`: the template whose logo it is — a key of `templateLogos` */
     templateId?: string
+    /**
+     * A reply's thread (a fork opened with «Reply in thread», 1b965ad1). The Mac sidebar does not list
+     * it, so the phone's List and Tree skip it too; the phone's search still finds it.
+     */
+    thread?: true
 }
 
 /** main → renderer: a phone ended a session (f683eafe r2) — the sidebar says so at its bottom */

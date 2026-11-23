@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { ListChecks } from 'lucide-react'
 import type { Workspace } from '../../../../shared/types'
 import { useCurrentChecklist } from '../../hooks/useChecklists'
-import { describeDue, DUE_TONE_CLASSES, localDateKey } from '../../utils/dueDate'
+import { describeDue, localDateKey, type DueTone } from '../../utils/dueDate'
 import { ChecklistPanel } from './ChecklistPanel'
 import { shortcutDescription, useShortcutHint } from '../../utils/shortcutHints'
 
@@ -29,8 +29,13 @@ function focusTerminal(sessionId: string): void {
 
 const PANEL_WIDTH = 320
 const VIEWPORT_MARGIN = 8
-// The deadline / Done badge on the chip: tinted, no border, smaller than the title.
-const CHIP_BADGE = 'px-1 rounded-sm text-[9px] leading-[13px] font-medium'
+/** The deadline on the small chip is a dot in its tone (6ab4bf73); the label is in the tooltip and the panel. */
+const DUE_DOT_CLASSES: Record<DueTone, string> = {
+    overdue: 'bg-red-400',
+    today: 'bg-amber-300',
+    soon: 'bg-sky-300',
+    later: 'bg-gray-400'
+}
 
 /**
  * The checklist chip in the main header and its panel. Checklists belong to no session,
@@ -79,8 +84,9 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
     // The key comes from Settings › Keyboard, like every other button's tooltip (386b0c76).
     // The checklist's own line comes first; what the key does goes last (78a79526).
     const label = hint('Checklists', 'toggleChecklists', false)
+    const dueText = complete ? ' · done' : due ? ` · due ${due.label} (${current?.due})` : ''
     const tooltip = `${current
-        ? `${label} — ${current.title} · ${done}/${total}${current.due ? ` · due ${current.due}` : ''}`
+        ? `${label} — ${current.title} · ${done}/${total}${dueText}`
         : label}\n${shortcutDescription('toggleChecklists')}`
 
     const anchor = open ? chipRef.current?.getBoundingClientRect() : undefined
@@ -95,10 +101,10 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
                 data-progress={current ? `${done}/${total}` : ''}
                 onClick={() => onOpenChange(!open)}
                 title={tooltip}
-                aria-label="Checklists"
+                aria-label={current ? `Checklists — ${done} of ${total} done` : 'Checklists'}
                 aria-expanded={open}
-                className={`no-drag shrink-0 flex items-center gap-1.5 rounded-md border transition-colors ${
-                    compact ? 'h-5 px-1 text-[10px]' : 'h-7 px-2 text-xs'
+                className={`no-drag shrink-0 flex items-center gap-1 rounded-md border transition-colors ${
+                    compact ? 'h-5 px-1 text-[10px]' : 'h-7 px-1.5 text-xs'
                 } ${
                     open
                         ? 'bg-sky-500/25 border-sky-400/40 text-sky-100'
@@ -108,20 +114,18 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
                 }`}
             >
                 <ListChecks size={compact ? 12 : 14} />
+                {/* A small button (6ab4bf73): the count at a glance, the deadline as a dot; the title and the
+                    deadline's words are in the tooltip, and a click opens the panel with all of it. */}
                 {current && (
                     <>
-                        {/* The title goes first when the window is narrow: the progress is what matters at a glance. */}
-                        <span data-testid="checklist-chip-title" className="hidden sm:inline max-w-[10rem] truncate">{current.title}</span>
-                        <span className="tabular-nums text-gray-400">{done}/{total}</span>
-                        {/* Badges stay a step below the title (63947391: a bordered 10px badge read as the loudest thing in the header). */}
-                        {complete ? (
-                            <span className={`${CHIP_BADGE} text-emerald-300 bg-emerald-500/10`}>Done</span>
-                        ) : (
-                            due && (
-                                <span data-testid="checklist-chip-due" data-due-tone={due.tone} className={`hidden sm:inline ${CHIP_BADGE} ${DUE_TONE_CLASSES[due.tone]}`}>
-                                    {due.label}
-                                </span>
-                            )
+                        <span className={`tabular-nums ${complete ? 'text-emerald-300' : 'text-gray-300'}`}>{done}/{total}</span>
+                        {!complete && due && (
+                            <span
+                                data-testid="checklist-chip-due"
+                                data-due-tone={due.tone}
+                                aria-label={`Due ${due.label}`}
+                                className={`w-1.5 h-1.5 rounded-full shrink-0 ${DUE_DOT_CLASSES[due.tone]}`}
+                            />
                         )}
                     </>
                 )}

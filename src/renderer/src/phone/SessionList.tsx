@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { Folder, Search, X } from 'lucide-react'
 import type { PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { PhoneMemoPanel } from './PhoneMemoPanel'
-import { listLines, searchLines, treeLines } from './sessionListLines'
+import { listedSessions, listLines, searchLines, treeLines } from './sessionListLines'
 import { SessionRow } from './SessionRow'
 import { SessionRowMenu } from './SessionRowMenu'
 import { PhoneEndSheet } from './PhoneEndSheet'
@@ -102,7 +102,7 @@ export function SessionList({
         >
             <div className="phone-list-head">
                 <span className="phone-list-title">All sessions</span>
-                {data && <span className="phone-group-count">{data.sessions.length}</span>}
+                {data && <span className="phone-group-count">{listedSessions(data).length}</span>}
                 {data?.tree ? (
                     <span className="phone-list-layout" role="group" aria-label="Layout" data-testid="phone-list-layout">
                         {(['list', 'tree'] as const).map((choice) => (

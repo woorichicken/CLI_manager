@@ -12,6 +12,11 @@ export type ListLine =
     | { kind: 'divider'; key: string }
     | { kind: 'row'; key: string; session: PhoneSession; /** Tree only: levels under its root (0 = a root) */ depth?: number }
 
+/** The sessions the list shows: all but reply threads (1b965ad1). */
+export function listedSessions(data: PhoneSessionsResponse): PhoneSession[] {
+    return data.sessions.filter((session) => !session.thread)
+}
+
 /** The rows with the Mac's folder headings and pinned lines between them; the order is untouched. */
 export function listLines(data: PhoneSessionsResponse): ListLine[] {
     const folderName = new Map(data.sessionFolders.map((folder) => [folder.id, folder.name]))
@@ -19,6 +24,8 @@ export function listLines(data: PhoneSessionsResponse): ListLine[] {
     let part: string | null | undefined
     let pinnedInPart = false
     for (const session of data.sessions) {
+        // a reply's thread is not a row, as in the Mac sidebar (1b965ad1); search still finds it
+        if (session.thread) continue
         const folderId = session.sessionFolderId && folderName.has(session.sessionFolderId) ? session.sessionFolderId : null
         if (folderId !== part) {
             part = folderId
@@ -51,9 +58,9 @@ export function treeLines(data: PhoneSessionsResponse): ListLine[] | null {
     const lines: ListLine[] = []
     for (const { id, depth } of data.tree.rows) {
         const session = byId.get(id)
-        if (session) lines.push({ kind: 'row', key: id, session, depth })
+        if (session && !session.thread) lines.push({ kind: 'row', key: id, session, depth })
     }
-    const unlinked = data.tree.unlinked.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []))
+    const unlinked = data.tree.unlinked.flatMap((id) => (byId.has(id) && !byId.get(id)!.thread ? [byId.get(id)!] : []))
     if (unlinked.length > 0 && lines.length > 0) lines.push({ kind: 'folder', key: 'tree-unlinked', title: 'Not in a tree', folderId: null })
     for (const session of unlinked) lines.push({ kind: 'row', key: session.id, session, depth: 0 })
     return lines
