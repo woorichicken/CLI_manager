@@ -130,7 +130,8 @@ the `climanager-session` skill (`clim fork`) say so; an agent does not split on 
 
 A session that needs the user's hands — sign in somewhere (often a browser login an agent cannot do),
 look at a result, answer a question — sends a request. The app keeps it in an inbox, unread, until the user
-checks it off. Code: `src/main/InboxStore.ts` (store, checks) · `ControlApiService.notifyInbox`
+checks it off. The popover's Reply sends an answer to the asking session through the Chat view's send
+(same refusals, no AI mark) and leaves the request unread. Code: `src/main/InboxStore.ts` (store, checks) · `ControlApiService.notifyInbox`
 · renderer `hooks/useInbox.ts`, `components/Inbox/`. Tests: `t52-inbox.spec.ts`, `t53-inbox-unit.spec.ts`.
 
 | Piece | Contract |

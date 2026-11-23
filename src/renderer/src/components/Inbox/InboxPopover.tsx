@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, CheckCheck, ExternalLink } from 'lucide-react'
 import clsx from 'clsx'
 import { InboxRequest, Workspace } from '../../../../shared/types'
 import { isLinkAllowed } from '../../utils/terminalLinks'
 import { formatInboxAge, INBOX_KIND_META, shortLink } from './inboxFormat'
+import { InboxReplyBox, InboxReplyToggle } from './InboxReply'
+import { isAgentSession } from '../../utils/agentSession'
 
 const POPOVER_WIDTH = 360
 const VIEWPORT_MARGIN = 8
@@ -22,13 +24,22 @@ interface InboxPopoverProps {
     onClose: () => void
 }
 
-/** Session name and workspace name for a request; the session can be renamed after it asked. */
-function locate(workspaces: Workspace[], sessionId: string): { session: string; workspace: string } {
+/**
+ * Session name and workspace name for a request; the session can be renamed after it asked.
+ * `replyBlocked`: why a reply would reach no one (closed session, no agent), null when it can go.
+ */
+function locate(workspaces: Workspace[], sessionId: string): { session: string; workspace: string; replyBlocked: string | null } {
     for (const workspace of workspaces) {
         const session = workspace.sessions?.find((s) => s.id === sessionId)
-        if (session) return { session: session.name, workspace: workspace.name }
+        if (session) {
+            return {
+                session: session.name,
+                workspace: workspace.name,
+                replyBlocked: isAgentSession(session) ? null : 'No agent in this session to read a reply — answer in its terminal'
+            }
+        }
     }
-    return { session: 'Closed session', workspace: '' }
+    return { session: 'Closed session', workspace: '', replyBlocked: 'This session is closed' }
 }
 
 /**
@@ -49,6 +60,8 @@ export function InboxPopover({
     onClose
 }: InboxPopoverProps) {
     const ref = useRef<HTMLDivElement>(null)
+    // One reply box at a time (report 5f9002d5).
+    const [replyingId, setReplyingId] = useState<string | null>(null)
     const unread = requests.filter((r) => !r.readAt).length
     const now = Date.now()
 
@@ -132,6 +145,11 @@ export function InboxPopover({
                                                 <span className="truncate min-w-0 flex-1 text-[10px] text-gray-500">{where.workspace}</span>
                                             )}
                                             <span className="ml-auto shrink-0 text-[10px] text-gray-500">{formatInboxAge(request.at, now)}</span>
+                                            <InboxReplyToggle
+                                                open={replyingId === request.id}
+                                                disabledReason={where.replyBlocked}
+                                                onToggle={() => setReplyingId((id) => (id === request.id ? null : request.id))}
+                                            />
                                             {!request.readAt && <MarkReadButton onMark={() => onMarkRead(request)} />}
                                         </div>
                                         <p
@@ -148,6 +166,10 @@ export function InboxPopover({
                                         )}
                                     </div>
                                 </div>
+                                {/* Beside the row, not in it: the row's click and Enter open the session */}
+                                {replyingId === request.id && !where.replyBlocked && (
+                                    <InboxReplyBox sessionId={request.sessionId} onClose={() => setReplyingId(null)} />
+                                )}
                             </li>
                         )
                     })}
