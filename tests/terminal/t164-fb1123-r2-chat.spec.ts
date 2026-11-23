@@ -207,6 +207,10 @@ test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a 
         record('e1', 'u2', 'assistant', DROPPED, '2026-11-23T09:20:05.000Z', { apiError: 'connection_failed', error: 'server_error', isApiErrorMessage: true })
     ].join('\n').replace('"model":"claude-opus-5-5","content":[{"type":"text","text":"API Error', '"model":"<synthetic>","content":[{"type":"text","text":"API Error') + '\n')
     fs.copyFileSync(transcript, path.join(path.dirname(transcript), `${id(8)}.jsonl`))
+    const bin = path.join(home, 'bin')
+    fs.mkdirSync(bin)
+    const gone = path.join(bin, 'claude')
+    fs.writeFileSync(gone, '#!/bin/sh\necho "agent gone"\nexit 0\n', { mode: 0o755 })
     result = await launchAppWithWorkspaces(
         [{
             id: 'w-t164e',
@@ -215,8 +219,10 @@ test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a 
             sessions: [
                 { id: 't164-home', name: 'T164 Home' },
                 { id: 't164-dropped', name: 'T164 Dropped', cliSessionId: id(7), cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --continue` },
-                // the same failed turn, but the agent is gone (its command ends at once — as Ctrl+C back to the shell)
-                { id: 't164-exited', name: 'T164 Exited', cliSessionId: id(8), cliToolName: 'claude', cliCommand: 'true' }
+                // the same failed turn, but the agent is gone (its command ends at once — as Ctrl+C back to the shell).
+                // An executable named «claude» the app resumes as Claude's: anything else, and the app falls back to
+                // the real `claude` (seen: it started — never let a test do that)
+                { id: 't164-exited', name: 'T164 Exited', cliSessionId: id(8), cliToolName: 'claude', cliCommand: `'${gone}'` }
             ]
         }],
         { env: { CLAUDE_CONFIG_DIR: claudeDir }, settings: { showSessionStatus: true } }
@@ -226,8 +232,8 @@ test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a 
     await page.getByText('T164 Dropped', { exact: true }).first().click()
     await waitForBufferText(page, 't164-dropped', 'Claude Code (mock)', 20_000)
     await page.getByText('T164 Exited', { exact: true }).first().click()
-    // its command (`true …`) ran and ended: the shell is in front again
-    await expect.poll(async () => (await termText(page, 't164-exited')).includes('true'), { timeout: 20_000 }).toBe(true)
+    // its command ran and ended: the shell is in front
+    await expect.poll(async () => (await termText(page, 't164-exited')).includes('agent gone'), { timeout: 20_000 }).toBe(true)
     await page.getByText('T164 Home', { exact: true }).first().click()
 
     // --- 3239a243: red while the last turn is the error ------------------------------------------

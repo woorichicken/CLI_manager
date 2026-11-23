@@ -709,6 +709,9 @@ let phone: PhoneSetup | null = null
 const apiErrorTails = new ApiErrorTails()
 const apiErrorMisses = new Map<string, number>()
 const API_ERROR_MISS_RETRY_MS = 30_000
+/** Sessions whose last turn failed: is a program (the agent) in front of the shell — and when that was read. */
+const agentInFront = new Map<string, { agent: boolean; at: number; reading: boolean }>()
+const AGENT_IN_FRONT_TTL_MS = 3_000
 const apiErrorReader = new TranscriptReader({ claudeConfigDir, codexHome })
 /**
  * Claude sessions by id for the red dot, kept in memory until the saved workspaces change (a `store.get` parses
@@ -749,8 +752,23 @@ const sessionScreenStatus = new SessionScreenStatusPoller({
         const error = apiErrorTails.read(file)
         // back at the shell (Ctrl+C, /exit): the agent is not there to be retried — no red dot. A program in front
         // (the agent, resumed after a restart too) keeps it. A synchronous look at the pty, only when there is an error.
-        if (error && terminalManager.foregroundIsShell(terminalId)) return null
-        return error
+        if (!error) {
+            agentInFront.delete(terminalId)
+            return null
+        }
+        // back at the shell (Ctrl+C, /exit): the agent is not there to be retried — no red dot. Read with `ps`
+        // (node-pty's foreground name gives the shell's path on macOS while a program runs), only while there is
+        // an error, at most every few seconds; until the first answer, no dot
+        const front = agentInFront.get(terminalId)
+        if (!front || Date.now() - front.at >= AGENT_IN_FRONT_TTL_MS) {
+            if (!front?.reading) {
+                agentInFront.set(terminalId, { ...(front ?? { agent: false, at: 0 }), reading: true })
+                void terminalManager.foregroundProgram(terminalId).then((group) => {
+                    agentInFront.set(terminalId, { agent: group !== null, at: Date.now(), reading: false })
+                })
+            }
+        }
+        return front && front.at > 0 && front.agent ? error : null
     },
     publish: (message) => broadcast(SESSION_SCREEN_STATUS_CHANNEL, message),
     // Tests read tick timings from main (window.__termDebug has no view of main).

@@ -609,21 +609,6 @@ export class TerminalManager {
      * program the shell `exec`ed is the pty's own process. When `ps` cannot answer, 'unknown' —
      * the binding then cannot tell, as before it existed.
      */
-    /**
-     * Whether the terminal's foreground program is its shell — node-pty's `process` (the foreground process's
-     * name, read synchronously from the pty). False when another program is in front or it cannot be told.
-     */
-    foregroundIsShell(id: string): boolean {
-        const ptyProcess = this.terminals.get(id)
-        if (!ptyProcess) return false
-        try {
-            const name = String(ptyProcess.process ?? '').split('/').pop()!.replace(/^-/, '')
-            return SHELL_NAMES.test(name)
-        } catch {
-            return false
-        }
-    }
-
     foregroundProgram(id: string): Promise<string | null> {
         const ptyProcess = this.terminals.get(id)
         if (!ptyProcess) return Promise.resolve(null)
