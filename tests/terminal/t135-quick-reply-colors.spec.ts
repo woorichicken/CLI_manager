@@ -536,3 +536,52 @@ test('T135 quick replies are one list to edit: add, reorder, delete, a colour pe
     await expect(editor2.getByTestId('quick-reply-add')).toBeDisabled()
     await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 })
+
+test('T135 the editor\'s colour dots read on the Settings dialog, which stays dark under the light class (c44bf0af)', async () => {
+    test.setTimeout(120_000)
+    const { project } = seed()
+    result = await launchAppWithWorkspaces(
+        [{ id: 'w-t135', name: 'T135 project', path: project, sessions: [{ id: 's-t135-light', name: 'T135 shell' }] }],
+        { settings: { chat: { showQuickReplies: true, quickReplies: PHRASES, quickReplyColors: { [PHRASES[0]]: 'green' } } } }
+    )
+    const { app, page } = result
+    await resizeMainWindow(app, 1280, 800)
+    // The Theme setting is not wired to the page yet (docs/found-defects.md «Theme 을 Light 로 바꿔도…») and the
+    // dialog's light rules do not reach it, so Settings is dark either way. chat.css's light-theme chip text is
+    // dark green — the dot must not take it, or it would read dark on dark the day the class is put on.
+    await page.evaluate(() => document.documentElement.classList.add('light'))
+    await page.locator('button[title^="Settings"]').first().click()
+    await page.getByTestId('settings-category-chat').click()
+    const editor = page.getByTestId('quick-reply-editor')
+    await expect(editor).toBeVisible()
+    /** WCAG contrast of an element's text against its own background laid over the first opaque one under it. */
+    const contrast = (testId: string): Promise<number> => page.evaluate((id) => {
+        const el = document.querySelector(`[data-testid="${id}"]`) as HTMLElement
+        const parse = (value: string): number[] => (value.match(/[\d.]+/g) ?? []).map(Number)
+        let under = [255, 255, 255]
+        for (let p: HTMLElement | null = el.parentElement; p; p = p.parentElement) {
+            const [r, g, b, a = 1] = parse(getComputedStyle(p).backgroundColor)
+            if (a > 0.9) { under = [r, g, b]; break }
+        }
+        const [br, bg, bb, ba = 1] = parse(getComputedStyle(el).backgroundColor)
+        const back = [br, bg, bb].map((c, i) => c * ba + under[i] * (1 - ba))
+        const fore = parse(getComputedStyle(el).color).slice(0, 3)
+        const lum = (rgb: number[]): number => {
+            const [r, g, b] = rgb.map((c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4 })
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b
+        }
+        const [hi, lo] = [lum(fore), lum(back)].sort((a, b) => b - a)
+        return (hi + 0.05) / (lo + 0.05)
+    }, testId)
+    await expect(editor.getByTestId('quick-reply-color-0')).toHaveCSS('color', DARK_FG.green)
+    expect(await contrast('quick-reply-color-0')).toBeGreaterThanOrEqual(4.5)
+    expect(await contrast('quick-reply-color-1')).toBeGreaterThanOrEqual(4.5)
+    // the popover is drawn like the dialog it sits in
+    await editor.getByTestId('quick-reply-color-1').click()
+    const popover = page.getByTestId('quick-reply-color-popover')
+    await expect(popover).toBeVisible()
+    const dialogBg = await page.locator('div.bg-\\[\\#1e1e20\\]').first().evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(await popover.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(dialogBg)
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+})

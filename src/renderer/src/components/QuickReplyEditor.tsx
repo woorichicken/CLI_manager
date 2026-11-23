@@ -18,6 +18,21 @@ const SWATCH: Record<QuickReplyColor, string> = {
     teal: '#14b8a6'
 }
 
+/**
+ * The chip's dark-chat text and fill (chat.css 300 tints, 14% fill). Settings stays dark even under the
+ * `light` class (its light rules do not reach the dialog — docs/found-defects.md, Theme), so the dot pins
+ * these rather than taking chat.css's light-theme ones, which would be dark green on the dark dialog.
+ */
+const DARK_CHIP: Record<QuickReplyColor, { fg: string; fill: string }> = {
+    blue: { fg: '#93c5fd', fill: 'rgba(59, 130, 246, 0.14)' },
+    green: { fg: '#86efac', fill: 'rgba(34, 197, 94, 0.14)' },
+    amber: { fg: '#fcd34d', fill: 'rgba(245, 158, 11, 0.14)' },
+    red: { fg: '#fca5a5', fill: 'rgba(239, 68, 68, 0.14)' },
+    purple: { fg: '#d8b4fe', fill: 'rgba(168, 85, 247, 0.14)' },
+    pink: { fg: '#f9a8d4', fill: 'rgba(236, 72, 153, 0.14)' },
+    teal: { fg: '#5eead4', fill: 'rgba(20, 184, 166, 0.14)' }
+}
+
 /** None first, then the colours: the order ← / → walks. */
 const OPTIONS: (QuickReplyColor | null)[] = [null, ...QUICK_REPLY_COLORS]
 
@@ -261,12 +276,20 @@ function ColorDot({ index, reply, color, open, onOpen, onPick, ring }: ColorDotP
                 title={`Colour: ${colorName(color)}`}
                 onClick={() => onOpen(!open)}
                 className={`chat-quick-reply ${ring}`}
-                // the plain chip reads the chat's own line and text tints, which live on the chat view
-                style={{ padding: '2px 9px', fontSize: 12, lineHeight: '18px', ['--chat-line' as string]: 'rgba(255, 255, 255, 0.18)', ['--chat-dim' as string]: '#a0a0a0' }}
+                // the plain chip reads the chat's line and text tints, which live on the chat view; a coloured one its dark tints
+                style={{
+                    padding: '2px 9px',
+                    fontSize: 12,
+                    lineHeight: '18px',
+                    ['--chat-line' as string]: 'rgba(255, 255, 255, 0.18)',
+                    ['--chat-dim' as string]: '#a0a0a0',
+                    ...(color ? { ['--qr-fg' as string]: DARK_CHIP[color].fg, ['--qr-fill' as string]: DARK_CHIP[color].fill } : {})
+                }}
             >
                 Aa
             </button>
             {open && (
+                // the dialog's own surface and border classes, so it looks like the dialog whichever way that is drawn
                 <div
                     ref={popoverRef}
                     data-testid="quick-reply-color-popover"
@@ -277,7 +300,7 @@ function ColorDot({ index, reply, color, open, onOpen, onPick, ring }: ColorDotP
                         // Tab out of the group closes it
                         if (!popoverRef.current?.contains(event.relatedTarget as Node | null) && event.relatedTarget !== triggerRef.current) onOpen(false)
                     }}
-                    className="absolute left-0 top-full mt-1 z-20 p-2 rounded-lg border border-white/15 bg-[#26262a] shadow-xl"
+                    className="absolute left-0 top-full mt-1 z-20 p-2 rounded-lg border border-white/10 bg-[#1e1e20] shadow-xl"
                 >
                     <div className="flex items-center gap-1.5" role="radiogroup" aria-label={`Colour for “${label}”`}>
                         {OPTIONS.map((option) => {
