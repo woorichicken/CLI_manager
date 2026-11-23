@@ -642,6 +642,24 @@ export class TerminalManager {
         })
     }
 
+    /**
+     * Terminals whose foreground program is Claude Code or Codex right now, from one `ps` read
+     * for all of them (the Getting started checklist's "agent is running" step). Null when the
+     * process list could not be read.
+     */
+    async foregroundAgentKinds(): Promise<Map<string, 'claude' | 'codex'> | null> {
+        if (this.terminals.size === 0) return new Map()
+        const processes = await readAgentProcesses()
+        if (!processes) return null
+        const kinds = new Map<string, 'claude' | 'codex'>()
+        for (const [id, ptyProcess] of this.terminals) {
+            const current = selectForegroundAgentProcess(processes, ptyProcess.pid)
+            const kind = current ? classifyAgentProcess(current) : null
+            if (kind) kinds.set(id, kind)
+        }
+        return kinds
+    }
+
     /** Read-only process inspection for the manual conversation picker. */
     async foregroundAgent(id: string): Promise<AgentConversationFront> {
         const ptyProcess = this.terminals.get(id)

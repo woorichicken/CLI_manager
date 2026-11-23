@@ -329,6 +329,7 @@ User Action (Renderer)
   ],
   playgroundPath: string,
   customTemplates: TerminalTemplate[],  // each may carry logo?: 32×32 PNG data URL (picked PNG/SVG shrunk in the renderer, utils/templateLogo.ts)
+  gettingStarted?: { startedAt, dismissed, done: { folder?, agent?, chat? } },  // first-run checklist (shared/gettingStarted.ts) — own key, not inside settings
   settings: UserSettings,           // settings.controlApi = { enabled, port }
   controlApiToken?: string,         // Kept outside settings so a stale save-settings cannot rotate it
   sessionFolders?: [                // All sessions view folders (SessionFolders) — membership is on the session
