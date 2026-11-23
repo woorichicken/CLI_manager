@@ -64,7 +64,7 @@ rules stay in the root; this file is the inventory.
   - Codex: `agent-turn-complete` (유일한 이벤트 — 턴 **시작**은 입력 가로채기로 보완)
 - **Permission Inbox 신호**: 승인 대기 세션은 사이드바에서 앰버 펄스 + OS 알림
 - **기존 heuristic은 fallback으로 유지** — 훅 미설치 세션은 이전과 동일하게 동작
-- **화면으로 읽는 상태 점(hook 없이, 1.23.0)** — Settings › General 「Show Session Status」(기본 끔). main 의 `SessionScreenStatusPoller` 가 1초마다 미러 화면을 읽어 작업 중(파란 점)·질문 대기(노란 점, 툴팁에 질문 줄)를 정한다. 켜져 있으면 위 두 방식의 사이드바 배지를 대신한다(hook 의 running·awaitingInput 은 판정에 그대로 들어간다)
+- **화면으로 읽는 상태 점(hook 없이, 1.23.0)** — Settings › Sidebar 「Show Session Status」(기본 끔). main 의 `SessionScreenStatusPoller` 가 1초마다 미러 화면을 읽어 작업 중(파란 점)·질문 대기(노란 점, 툴팁에 질문 줄)를 정한다. 켜져 있으면 위 두 방식의 사이드바 배지를 대신한다(hook 의 running·awaitingInput 은 판정에 그대로 들어간다)
 
 #### 9. Usage / Rate Limit Tracking (NEW)
 - 제공자가 **직접 보고한 값** (추정 아님, `/usage`·`/status`와 일치)
@@ -153,7 +153,7 @@ rules stay in the root; this file is the inventory.
   (자리 `dictationText.ts`). 결과 글은 **한 번의 받아쓰기 전체**다 — 말이 잠깐 멈추면 인식기의 결과가 새 말만 담고 다시 시작해서, 헬퍼(`Transcript.swift`)와
   main(`src/shared/dictationTranscript.ts`, 옛 헬퍼 대비 · 이미 누적된 글엔 아무것도 안 함)이 앞 글을 이어 붙인다(11-09 제보 「공백이 있으면 내용이 사라진다」). 두 규칙은
   `tests/terminal/fixtures/dictation-transcript-cases.json` 하나로 T106 이 둘 다 본다(헬퍼는 `climanager-dictation accumulate`)
-- **받아쓰기 기록**(Settings › Terminal › Chat view 「Keep dictation log」, 기본 꺼짐 — [`../decisions/0012-dictation-log-stays-on-this-mac.md`](../decisions/0012-dictation-log-stays-on-this-mac.md)):
+- **받아쓰기 기록**(Settings › Chat 「Keep dictation log」, 기본 꺼짐 — [`../decisions/0012-dictation-log-stays-on-this-mac.md`](../decisions/0012-dictation-log-stays-on-this-mac.md)):
   `src/main/DictationLog.ts` 가 `userData/dictation-log/YYYY-MM-DD.jsonl`(시작한 날, 0600, 폴더 0700)에 받아쓰기 한 번에 한 줄을 쓴다 —
   `{ v, id, startedAt, durationMs, locale, agent, partialCount, finalText, sentText, outcome, error?, audioFile }`.
   `outcome`: `sent`(Chat 이 보낸 입력칸 전체 = `sentText`, 첨부 경로는 빼고) · `edited-away`(보내지 않고 칸을 비움) · `cancelled`(Esc) · `discarded`(다른 세션·창 닫힘·
@@ -437,7 +437,7 @@ User Action (Renderer)
 - 2회차: `chat-discard-queued(sessionId, id)` · `chat-send-queued-now(sessionId, id)` → `ChatSendResult` · `chat-interrupt(sessionId)` → `InterruptResult` ·
   `chat-image(sessionId, ref)` → data: URL | null · `chat-tool-output(sessionId, ref)` → string | null · `chat-commands(sessionId)` → `ChatCommand[]` ·
   `chat-save-attachment(name, bytes)` → `AttachResult`(32MB) · `chat-open-path(path)` → `shell.openPath`. `@` 파일 찾기는 기존 `search-files` 를 쓴다
-- 설정(`settings.chat`, Settings › Terminal › Chat view): `enterSends` · `showQuickReplies`·`quickReplies`·`quickReplyColors`(문구 → 정해진 색 7개 중 하나, 목록 옆에 따로 — `quickReplies` 는 그대로 문자열 목록이라 옛 앱·폰이 그대로 읽는다, `/me` 도 같이 보낸다, 모르는 색 값은 무색 칩) · `pinLastMessage`(기본 끔 — 내 마지막 말이 화면 밖으로 나가면 위에 고정) · `openFilesInApp`(기본 켬, 끄면 `chat-open-path`). 입력칸의 명령 글자는 textarea 를 투명하게 두고 그 아래 같은 글을 그려 칠한다(`commandPieces`). 모드 칩(`ConversationMeta.mode`)은 화면의 입력 상자 아래 줄 → 없으면 마지막 프롬프트의 `permissionMode`(Codex: `turn_context` 의 collaboration·sandbox) 순이고, 기본 모드는 칩이 없다
+- 설정(`settings.chat`, Settings › Chat): `enterSends` · `showQuickReplies`·`quickReplies`·`quickReplyColors`(문구 → 정해진 색 7개 중 하나, 목록 옆에 따로 — `quickReplies` 는 그대로 문자열 목록이라 옛 앱·폰이 그대로 읽는다, `/me` 도 같이 보낸다, 모르는 색 값은 무색 칩) · `pinLastMessage`(기본 끔 — 내 마지막 말이 화면 밖으로 나가면 위에 고정) · `openFilesInApp`(기본 켬, 끄면 `chat-open-path`). 입력칸의 명령 글자는 textarea 를 투명하게 두고 그 아래 같은 글을 그려 칠한다(`commandPieces`). 모드 칩(`ConversationMeta.mode`)은 화면의 입력 상자 아래 줄 → 없으면 마지막 프롬프트의 `permissionMode`(Codex: `turn_context` 의 collaboration·sandbox) 순이고, 기본 모드는 칩이 없다
 - 폰(☰ ⚙, 브라우저 저장 `phone-chat-settings`): Return 으로 보내기 · 빠른 답(Mac 에 직접 넣은 문구가 있으면 기본 켬 — `/me` 의 `quickRepliesSet`, 폰에서 끈 것은 유지) · 내 마지막 말(Mac 설정을 따르다 폰에서 고르면 그대로 — `/me` 의 `pinLastMessage`) · 다른 세션 알림(띠와 ☰ 숫자, 끄면 상태 점만)
 - 받아쓰기: `dictation-status` · `dictation-start(context: { agent })` · `dictation-stop(id)` · `dictation-cancel(id, 'cancelled'|'discarded')` · 이벤트 `dictation-event`.
   기록: `dictation-report(id, { type: 'sent', text } | { type: 'edited-away' })`(기록이 꺼져 있으면 main 이 버린다) · `dictation-log-open-folder` → `'opened'|'missing'|오류` ·

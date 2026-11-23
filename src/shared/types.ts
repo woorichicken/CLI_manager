@@ -233,7 +233,7 @@ export interface UserSettings {
     /**
      * Status dots on sidebar session rows, read from each screen in main
      * (default: false). Off stops the reader entirely — no timer, no IPC.
-     * Independent of Settings > Hooks (the renderer heuristic) and of agent hooks.
+     * Independent of Settings > Agents > Session Monitoring (the renderer heuristic) and of agent hooks.
      */
     showSessionStatus?: boolean
     hasCompletedOnboarding?: boolean
@@ -265,7 +265,7 @@ export interface UserSettings {
     loopDetection?: LoopDetectionConfig
     // Local HTTP/MCP API that lets an AI open and drive terminal sessions
     controlApi?: ControlApiSettings
-    // Chat view (Settings › Terminal › Chat view): Enter behavior, quick replies
+    // Chat view (Settings › Chat): Enter behavior, quick replies
     chat?: ChatPreferences
     // Phone connection (Settings › Phone): a small server on 127.0.0.1 for `tailscale serve`
     phone?: PhoneSettings

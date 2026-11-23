@@ -396,7 +396,7 @@ export interface ChatCommand {
     uses?: number
 }
 
-/** The chat's own preferences (Settings › Terminal › Chat view), handed to the view as a prop. */
+/** The chat's own preferences (Settings › Chat), handed to the view as a prop. */
 export interface ChatPreferences {
     /** Enter sends (Shift+Enter breaks the line); off: Enter breaks the line and ⌘/Ctrl+Enter sends. Default on. */
     enterSends?: boolean

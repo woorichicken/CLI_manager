@@ -14,7 +14,7 @@ import type { SessionRelation } from '../../src/shared/types'
  * session onto another. Tree shows each session under its parent — the dropped-on
  * session for a hand-added pair — oldest first, with its workspace path cut at the
  * front; sessions without a parent or child sit under "Not in a tree". A row click goes to that
- * session. Settings › General turns the layout off (list only, no switch) and
+ * session. Settings › Sidebar turns the layout off (list only, no switch) and
  * back on (the tree returns). Judged in the DOM and the computed visibility.
  */
 
@@ -191,6 +191,8 @@ test.describe('T63 All sessions tree', () => {
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible()
 
         await page.locator('button[title^="Settings"]').click()
+
+        await page.getByTestId('settings-category-sidebar').click()
         await page.getByTestId('settings-show-session-tree').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(page.getByTestId('sidebar-session-tree')).toHaveCount(0, { timeout: 15_000 })
@@ -199,6 +201,7 @@ test.describe('T63 All sessions tree', () => {
 
         // Back on: the switch returns with the layout chosen before.
         await page.locator('button[title^="Settings"]').click()
+        await page.getByTestId('settings-category-sidebar').click()
         await page.getByTestId('settings-show-session-tree').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible({ timeout: 15_000 })

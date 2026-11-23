@@ -1,8 +1,8 @@
 import { ChatViewSettings } from './ChatViewSettings'
 import React, { useState, useEffect } from 'react'
 import { UserSettings, EditorType, TerminalTemplate, HooksSettings, LoopDetectionConfig, LoopCountMode, DEFAULT_LOOP_DETECTION, DEFAULT_PHONE } from '../../../shared/types'
-import { Smartphone } from 'lucide-react'
-import { X, Check, AlertCircle, CircleAlert, Plus, Trash2, Code2, Play, Package, GitBranch, Terminal, Settings as SettingsIcon, Bell, Monitor, Github, FolderOpen, Folder, Download, RefreshCw, Loader2, Home, Keyboard, Bug, Webhook, HelpCircle, ExternalLink, GripVertical, Bot } from 'lucide-react'
+import { Smartphone, PanelLeft, MessageSquare } from 'lucide-react'
+import { X, Check, AlertCircle, CircleAlert, Plus, Trash2, Code2, Play, Package, GitBranch, Terminal, Settings as SettingsIcon, Monitor, Github, FolderOpen, Folder, Download, RefreshCw, Loader2, Home, Keyboard, Bug, HelpCircle, ExternalLink, GripVertical, Bot } from 'lucide-react'
 import { Reorder } from 'framer-motion'
 import { v4 as uuidv4 } from 'uuid'
 import { KeyboardSettings } from './KeyboardSettings'
@@ -33,7 +33,7 @@ interface SettingsProps {
     onResetOnboarding?: () => void
 }
 
-type SettingsCategory = 'general' | 'editor' | 'terminal' | 'keyboard' | 'agents' | 'phone' | 'hooks' | 'notifications' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'loop' | 'developer'
+type SettingsCategory = 'general' | 'sidebar' | 'editor' | 'terminal' | 'chat' | 'keyboard' | 'agents' | 'phone' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'loop' | 'developer'
 
 export function Settings({ isOpen, onClose, onSave, initialCategory = 'general', onResetOnboarding }: SettingsProps) {
     const [settings, setSettings] = useState<UserSettings>({
@@ -255,22 +255,44 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
 
     if (!isOpen) return null
 
-    const categories = [
-        { id: 'general' as const, label: 'General', icon: <SettingsIcon size={16} /> },
-        { id: 'editor' as const, label: 'Editor', icon: <Code2 size={16} /> },
-        { id: 'terminal' as const, label: 'Terminal', icon: <Terminal size={16} /> },
-        { id: 'keyboard' as const, label: 'Keyboard', icon: <Keyboard size={16} /> },
-        { id: 'agents' as const, label: 'Agents', icon: <Bot size={16} /> },
-        { id: 'phone' as const, label: 'Phone', icon: <Smartphone size={16} /> },
-        { id: 'hooks' as const, label: 'Hooks', icon: <Webhook size={16} /> },
-        { id: 'notifications' as const, label: 'Notifications', icon: <Bell size={16} /> },
-        { id: 'port-monitoring' as const, label: 'Port Monitoring', icon: <Monitor size={16} /> },
-        { id: 'templates' as const, label: 'Templates', icon: <Play size={16} /> },
-        { id: 'git' as const, label: 'Git (Local)', icon: <GitBranch size={16} /> },
-        { id: 'github' as const, label: 'GitHub', icon: <Github size={16} /> },
-        { id: 'loop' as const, label: 'Loop', icon: <RefreshCw size={16} /> },
-        // Developer tools - uncomment to enable testing dialogs
-        // { id: 'developer' as const, label: 'Developer', icon: <Bug size={16} /> },
+    // Grouped so a long flat list reads as four places (e3ac1981). Ids, labels and stored values are
+    // unchanged; only the order and the headings are new.
+    const categoryGroups: { label: string; items: { id: SettingsCategory; label: string; icon: React.ReactNode }[] }[] = [
+        {
+            label: 'App',
+            items: [
+                { id: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
+                { id: 'keyboard', label: 'Keyboard', icon: <Keyboard size={16} /> },
+                { id: 'sidebar', label: 'Sidebar', icon: <PanelLeft size={16} /> },
+            ],
+        },
+        {
+            label: 'Sessions',
+            items: [
+                { id: 'terminal', label: 'Terminal', icon: <Terminal size={16} /> },
+                { id: 'chat', label: 'Chat', icon: <MessageSquare size={16} /> },
+                { id: 'templates', label: 'Templates', icon: <Play size={16} /> },
+                { id: 'agents', label: 'Agents', icon: <Bot size={16} /> },
+            ],
+        },
+        {
+            label: 'Connections',
+            items: [
+                { id: 'phone', label: 'Phone', icon: <Smartphone size={16} /> },
+                { id: 'git', label: 'Git (Local)', icon: <GitBranch size={16} /> },
+                { id: 'github', label: 'GitHub', icon: <Github size={16} /> },
+                { id: 'port-monitoring', label: 'Port Monitoring', icon: <Monitor size={16} /> },
+                { id: 'loop', label: 'Loop', icon: <RefreshCw size={16} /> },
+            ],
+        },
+        {
+            label: 'Editor',
+            items: [
+                { id: 'editor', label: 'Editor', icon: <Code2 size={16} /> },
+                // Developer tools - uncomment to enable testing dialogs
+                // { id: 'developer', label: 'Developer', icon: <Bug size={16} /> },
+            ],
+        },
     ]
 
     return (
@@ -293,19 +315,26 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                         {/* Left Sidebar - Categories */}
                         <div className="w-48 border-r border-white/10 bg-black/20 overflow-hidden flex flex-col">
                             <div className="flex-1 overflow-y-auto p-2">
-                                {categories.map(category => (
-                                    <button
-                                        key={category.id}
-                                        data-testid={`settings-category-${category.id}`}
-                                        onClick={() => setActiveCategory(category.id)}
-                                        className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors ${activeCategory === category.id
-                                                ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
-                                                : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                                            }`}
-                                    >
-                                        {category.icon}
-                                        <span>{category.label}</span>
-                                    </button>
+                                {categoryGroups.map(group => (
+                                    <div key={group.label} data-settings-group={group.label} className="mb-2 last:mb-0">
+                                        <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 select-none">
+                                            {group.label}
+                                        </div>
+                                        {group.items.map(category => (
+                                            <button
+                                                key={category.id}
+                                                data-testid={`settings-category-${category.id}`}
+                                                onClick={() => setActiveCategory(category.id)}
+                                                className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors ${activeCategory === category.id
+                                                        ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
+                                                        : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                                                    }`}
+                                            >
+                                                {category.icon}
+                                                <span>{category.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 ))}
                             </div>
                             {/* Version and Update Section */}
@@ -486,48 +515,6 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                     <option value="light">Light</option>
                                                 </select>
                                             </div>
-
-                                            <div>
-                                                <label className="block text-xs text-gray-400 mb-1">Sidebar Font Size</label>
-                                                <p className="text-xs text-gray-500 mb-2">
-                                                    Adjust the font size for workspace and session names in the sidebar
-                                                </p>
-                                                <input
-                                                    type="number"
-                                                    min={10}
-                                                    max={18}
-                                                    value={settings.fontSize}
-                                                    onChange={e => setSettings(prev => ({ ...prev, fontSize: parseInt(e.target.value) || 14 }))}
-                                                    className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                                                />
-                                            </div>
-
-                                            {/* Session Count Badge */}
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <p className="text-sm text-gray-300">Show Session Count</p>
-                                                    <p className="text-xs text-gray-500 mt-1">
-                                                        Display the number of open sessions next to workspace names
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    onClick={() => setSettings(prev => ({
-                                                        ...prev,
-                                                        showSessionCount: !(prev.showSessionCount ?? false)
-                                                    }))}
-                                                    className={`relative w-11 h-6 rounded-full transition-colors ${
-                                                        (settings.showSessionCount ?? false)
-                                                            ? 'bg-blue-600'
-                                                            : 'bg-gray-600'
-                                                    }`}
-                                                >
-                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                        (settings.showSessionCount ?? false)
-                                                            ? 'translate-x-6'
-                                                            : 'translate-x-1'
-                                                    }`} />
-                                                </button>
-                                            </div>
                                         </div>
                                     </div>
                                     
@@ -570,6 +557,96 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                             >
                                                 Show Again
                                             </button>
+                                        </div>
+                                    </div>
+
+                                    <StatusCommandSetting
+                                        command={settings.statusCommand}
+                                        onChange={next => setSettings(prev => ({ ...prev, statusCommand: next }))}
+                                        actionCommand={settings.statusActionCommand}
+                                        onActionChange={next => setSettings(prev => ({ ...prev, statusActionCommand: next }))}
+                                    />
+                                </>
+                            )}
+
+                            {/* Sidebar — what the sidebar and header show */}
+                            {activeCategory === 'sidebar' && (
+                                <>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-white mb-1">Sidebar</h3>
+                                        <p className="text-xs text-gray-400 mb-4">
+                                            What the sidebar and header show
+                                        </p>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-1">Sidebar Font Size</label>
+                                                <p className="text-xs text-gray-500 mb-2">
+                                                    Adjust the font size for workspace and session names in the sidebar
+                                                </p>
+                                                <input
+                                                    type="number"
+                                                    min={10}
+                                                    max={18}
+                                                    value={settings.fontSize}
+                                                    onChange={e => setSettings(prev => ({ ...prev, fontSize: parseInt(e.target.value) || 14 }))}
+                                                    className="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                                />
+                                            </div>
+
+                                            {/* Session Count Badge */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Show Session Count</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Display the number of open sessions next to workspace names
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        showSessionCount: !(prev.showSessionCount ?? false)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors ${
+                                                        (settings.showSessionCount ?? false)
+                                                            ? 'bg-blue-600'
+                                                            : 'bg-gray-600'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.showSessionCount ?? false)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
+                                            {/* Show / hide worktrees */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Show Worktrees</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Off hides worktree workspaces and their menu entries, and skips
+                                                        the worktree scan on startup. Running sessions are left alone.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        showWorktrees: !(prev.showWorktrees ?? true)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
+                                                        (settings.showWorktrees ?? true)
+                                                            ? 'bg-emerald-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.showWorktrees ?? true)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -737,7 +814,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                     <p className="text-xs text-gray-500 mt-1">
                                                         A dot on sidebar session rows: blue while an agent is working, yellow when it is waiting
                                                         for you (hover for the question). Read from each terminal's screen — no hooks, no files.
-                                                        While on, it replaces the status badges from Settings &gt; Hooks.
+                                                        While on, it replaces the status badges from Agents &gt; Session Monitoring.
                                                     </p>
                                                 </div>
                                                 <button
@@ -804,13 +881,6 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                             )}
                                         </div>
                                     </div>
-
-                                    <StatusCommandSetting
-                                        command={settings.statusCommand}
-                                        onChange={next => setSettings(prev => ({ ...prev, statusCommand: next }))}
-                                        actionCommand={settings.statusActionCommand}
-                                        onActionChange={next => setSettings(prev => ({ ...prev, statusActionCommand: next }))}
-                                    />
                                 </>
                             )}
 
@@ -904,41 +974,6 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                     </p>
                                                 </div>
                                             )}
-                                        </div>
-                                    </div>
-
-                                    {/* Terminal File Links */}
-                                    <div className="mt-6 pt-6 border-t border-white/10">
-                                        <h3 className="text-sm font-semibold text-white mb-1">File Links in Terminal</h3>
-                                        <p className="text-xs text-gray-400 mb-4">
-                                            Underline file paths in terminal output so they can be opened in your editor
-                                        </p>
-
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm text-gray-300">Open File Paths on ⌘-Click</p>
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    Off means terminal output is never scanned for file paths, and no
-                                                    click can pull the editor in front of this window
-                                                </p>
-                                            </div>
-                                            <button
-                                                onClick={() => setSettings(prev => ({
-                                                    ...prev,
-                                                    terminalFileLinks: !(prev.terminalFileLinks ?? true)
-                                                }))}
-                                                className={`relative w-11 h-6 rounded-full transition-colors ${
-                                                    (settings.terminalFileLinks ?? true)
-                                                        ? 'bg-emerald-600'
-                                                        : 'bg-white/20'
-                                                }`}
-                                            >
-                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                    (settings.terminalFileLinks ?? true)
-                                                        ? 'translate-x-6'
-                                                        : 'translate-x-1'
-                                                }`} />
-                                            </button>
                                         </div>
                                     </div>
                                 </>
@@ -1083,9 +1118,6 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                         </div>
                                     </div>
 
-                                    {/* Chat view (the Terminal / Chat switch in agent sessions' headers) */}
-                                    <ChatViewSettings settings={settings} setSettings={setSettings} />
-
                                     {/* Terminal Preview */}
                                     <div className="mt-6 pt-6 border-t border-white/10">
                                         <h3 className="text-sm font-semibold text-white mb-3">Terminal Preview</h3>
@@ -1149,6 +1181,41 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                         </div>
                                     </div>
 
+                                    {/* Terminal File Links */}
+                                    <div className="mt-6 pt-6 border-t border-white/10">
+                                        <h3 className="text-sm font-semibold text-white mb-1">File Links in Terminal</h3>
+                                        <p className="text-xs text-gray-400 mb-4">
+                                            Underline file paths in terminal output so they can be opened in your editor
+                                        </p>
+
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm text-gray-300">Open File Paths on ⌘-Click</p>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    Off means terminal output is never scanned for file paths, and no
+                                                    click can pull the editor in front of this window
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => setSettings(prev => ({
+                                                    ...prev,
+                                                    terminalFileLinks: !(prev.terminalFileLinks ?? true)
+                                                }))}
+                                                className={`relative w-11 h-6 rounded-full transition-colors ${
+                                                    (settings.terminalFileLinks ?? true)
+                                                        ? 'bg-emerald-600'
+                                                        : 'bg-white/20'
+                                                }`}
+                                            >
+                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                    (settings.terminalFileLinks ?? true)
+                                                        ? 'translate-x-6'
+                                                        : 'translate-x-1'
+                                                }`} />
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <TerminalLinkSchemesSetting
                                         schemes={settings.terminalLinkSchemes}
                                         onChange={next => setSettings(prev => ({ ...prev, terminalLinkSchemes: next }))}
@@ -1172,6 +1239,11 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                 </>
                             )}
 
+                            {/* Chat view (the Terminal / Chat switch in agent sessions' headers) */}
+                            {activeCategory === 'chat' && (
+                                <ChatViewSettings settings={settings} setSettings={setSettings} />
+                            )}
+
                             {/* Keyboard Settings */}
                             {activeCategory === 'keyboard' && (
                                 <KeyboardSettings settings={settings} setSettings={setSettings} />
@@ -1193,202 +1265,175 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                     }
                                 />
                             )}
+                            {/* Session Monitoring (sidebar status badges) — was its own Hooks tab */}
+                            {activeCategory === 'agents' && (
+                                <div className="mt-6 pt-6 border-t border-white/10">
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-white mb-1">Session Monitoring</h3>
+                                            <p className="text-xs text-gray-400 mb-4">
+                                                Show status indicator next to AI tool sessions in the sidebar
+                                            </p>
+
+                                            {/* Master Toggle */}
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Enable Session Monitoring</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Monitor AI tool session status
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        const newEnabled = !(settings.hooks?.enabled ?? false)
+                                                        setSettings(prev => ({
+                                                            ...prev,
+                                                            hooks: {
+                                                                enabled: newEnabled,
+                                                                claudeCode: prev.hooks?.claudeCode ?? {
+                                                                    enabled: true,
+                                                                    detectRunning: true,
+                                                                    detectReady: true,
+                                                                    detectError: false,
+                                                                    showInSidebar: true,
+                                                                    autoDismissSeconds: 5
+                                                                }
+                                                            }
+                                                        }))
+                                                    }}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors ${
+                                                        (settings.hooks?.enabled ?? false)
+                                                            ? 'bg-blue-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.hooks?.enabled ?? false)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
+                                            {/* Claude Code Section - only show when enabled */}
+                                            {(settings.hooks?.enabled ?? false) && (
+                                                <div className="mt-6 pt-4 border-t border-white/10">
+                                                    <h4 className="text-sm font-medium text-white mb-3 flex items-center gap-2">
+                                                        <Terminal size={14} className="text-blue-400" />
+                                                        Claude Code
+                                                    </h4>
+
+                                                    {/* Status toggles */}
+                                                    <div className="space-y-3">
+                                                        {/* Running */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                                                                <span className="text-sm text-gray-300">Running</span>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setSettings(prev => ({
+                                                                    ...prev,
+                                                                    hooks: {
+                                                                        ...prev.hooks!,
+                                                                        claudeCode: {
+                                                                            ...prev.hooks!.claudeCode,
+                                                                            detectRunning: !(prev.hooks?.claudeCode?.detectRunning ?? true)
+                                                                        }
+                                                                    }
+                                                                }))}
+                                                                className={`relative w-9 h-5 rounded-full transition-colors ${
+                                                                    (settings.hooks?.claudeCode?.detectRunning ?? true)
+                                                                        ? 'bg-blue-600'
+                                                                        : 'bg-white/20'
+                                                                }`}
+                                                            >
+                                                                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                                    (settings.hooks?.claudeCode?.detectRunning ?? true)
+                                                                        ? 'translate-x-4'
+                                                                        : 'translate-x-0.5'
+                                                                }`} />
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Ready */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                                                <span className="text-sm text-gray-300">Ready (Waiting)</span>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setSettings(prev => ({
+                                                                    ...prev,
+                                                                    hooks: {
+                                                                        ...prev.hooks!,
+                                                                        claudeCode: {
+                                                                            ...prev.hooks!.claudeCode,
+                                                                            detectReady: !(prev.hooks?.claudeCode?.detectReady ?? true)
+                                                                        }
+                                                                    }
+                                                                }))}
+                                                                className={`relative w-9 h-5 rounded-full transition-colors ${
+                                                                    (settings.hooks?.claudeCode?.detectReady ?? true)
+                                                                        ? 'bg-blue-600'
+                                                                        : 'bg-white/20'
+                                                                }`}
+                                                            >
+                                                                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                                    (settings.hooks?.claudeCode?.detectReady ?? true)
+                                                                        ? 'translate-x-4'
+                                                                        : 'translate-x-0.5'
+                                                                }`} />
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Error */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                                                                <span className="text-sm text-gray-300">Error</span>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setSettings(prev => ({
+                                                                    ...prev,
+                                                                    hooks: {
+                                                                        ...prev.hooks!,
+                                                                        claudeCode: {
+                                                                            ...prev.hooks!.claudeCode,
+                                                                            detectError: !(prev.hooks?.claudeCode?.detectError ?? true)
+                                                                        }
+                                                                    }
+                                                                }))}
+                                                                className={`relative w-9 h-5 rounded-full transition-colors ${
+                                                                    (settings.hooks?.claudeCode?.detectError ?? true)
+                                                                        ? 'bg-blue-600'
+                                                                        : 'bg-white/20'
+                                                                }`}
+                                                            >
+                                                                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                                    (settings.hooks?.claudeCode?.detectError ?? true)
+                                                                        ? 'translate-x-4'
+                                                                        : 'translate-x-0.5'
+                                                                }`} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Tip Box */}
+                                                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded mt-4">
+                                                        <p className="text-xs text-blue-200">
+                                                            <strong>Tip:</strong> Currently only Claude Code is supported. More AI tools will be added in future updates.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                </div>
+                            )}
 
                             {activeCategory === 'phone' && (
                                 <PhoneSettings
                                     onEnabledChange={(enabled) => setSettings(prev => ({ ...prev, phone: { ...DEFAULT_PHONE, ...(prev.phone ?? {}), enabled } }))}
                                 />
-                            )}
-
-                            {activeCategory === 'hooks' && (
-                                <>
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-white mb-1">Session Monitoring</h3>
-                                        <p className="text-xs text-gray-400 mb-4">
-                                            Show status indicator next to AI tool sessions in the sidebar
-                                        </p>
-
-                                        {/* Master Toggle */}
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm text-gray-300">Enable Session Monitoring</p>
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    Monitor AI tool session status
-                                                </p>
-                                            </div>
-                                            <button
-                                                onClick={() => {
-                                                    const newEnabled = !(settings.hooks?.enabled ?? false)
-                                                    setSettings(prev => ({
-                                                        ...prev,
-                                                        hooks: {
-                                                            enabled: newEnabled,
-                                                            claudeCode: prev.hooks?.claudeCode ?? {
-                                                                enabled: true,
-                                                                detectRunning: true,
-                                                                detectReady: true,
-                                                                detectError: false,
-                                                                showInSidebar: true,
-                                                                autoDismissSeconds: 5
-                                                            }
-                                                        }
-                                                    }))
-                                                }}
-                                                className={`relative w-11 h-6 rounded-full transition-colors ${
-                                                    (settings.hooks?.enabled ?? false)
-                                                        ? 'bg-blue-600'
-                                                        : 'bg-white/20'
-                                                }`}
-                                            >
-                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                    (settings.hooks?.enabled ?? false)
-                                                        ? 'translate-x-6'
-                                                        : 'translate-x-1'
-                                                }`} />
-                                            </button>
-                                        </div>
-
-                                        {/* Claude Code Section - only show when enabled */}
-                                        {(settings.hooks?.enabled ?? false) && (
-                                            <div className="mt-6 pt-4 border-t border-white/10">
-                                                <h4 className="text-sm font-medium text-white mb-3 flex items-center gap-2">
-                                                    <Terminal size={14} className="text-blue-400" />
-                                                    Claude Code
-                                                </h4>
-
-                                                {/* Status toggles */}
-                                                <div className="space-y-3">
-                                                    {/* Running */}
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                                                            <span className="text-sm text-gray-300">Running</span>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => setSettings(prev => ({
-                                                                ...prev,
-                                                                hooks: {
-                                                                    ...prev.hooks!,
-                                                                    claudeCode: {
-                                                                        ...prev.hooks!.claudeCode,
-                                                                        detectRunning: !(prev.hooks?.claudeCode?.detectRunning ?? true)
-                                                                    }
-                                                                }
-                                                            }))}
-                                                            className={`relative w-9 h-5 rounded-full transition-colors ${
-                                                                (settings.hooks?.claudeCode?.detectRunning ?? true)
-                                                                    ? 'bg-blue-600'
-                                                                    : 'bg-white/20'
-                                                            }`}
-                                                        >
-                                                            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                                (settings.hooks?.claudeCode?.detectRunning ?? true)
-                                                                    ? 'translate-x-4'
-                                                                    : 'translate-x-0.5'
-                                                            }`} />
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Ready */}
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                                                            <span className="text-sm text-gray-300">Ready (Waiting)</span>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => setSettings(prev => ({
-                                                                ...prev,
-                                                                hooks: {
-                                                                    ...prev.hooks!,
-                                                                    claudeCode: {
-                                                                        ...prev.hooks!.claudeCode,
-                                                                        detectReady: !(prev.hooks?.claudeCode?.detectReady ?? true)
-                                                                    }
-                                                                }
-                                                            }))}
-                                                            className={`relative w-9 h-5 rounded-full transition-colors ${
-                                                                (settings.hooks?.claudeCode?.detectReady ?? true)
-                                                                    ? 'bg-blue-600'
-                                                                    : 'bg-white/20'
-                                                            }`}
-                                                        >
-                                                            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                                (settings.hooks?.claudeCode?.detectReady ?? true)
-                                                                    ? 'translate-x-4'
-                                                                    : 'translate-x-0.5'
-                                                            }`} />
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Error */}
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                                                            <span className="text-sm text-gray-300">Error</span>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => setSettings(prev => ({
-                                                                ...prev,
-                                                                hooks: {
-                                                                    ...prev.hooks!,
-                                                                    claudeCode: {
-                                                                        ...prev.hooks!.claudeCode,
-                                                                        detectError: !(prev.hooks?.claudeCode?.detectError ?? true)
-                                                                    }
-                                                                }
-                                                            }))}
-                                                            className={`relative w-9 h-5 rounded-full transition-colors ${
-                                                                (settings.hooks?.claudeCode?.detectError ?? true)
-                                                                    ? 'bg-blue-600'
-                                                                    : 'bg-white/20'
-                                                            }`}
-                                                        >
-                                                            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                                (settings.hooks?.claudeCode?.detectError ?? true)
-                                                                    ? 'translate-x-4'
-                                                                    : 'translate-x-0.5'
-                                                            }`} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Tip Box */}
-                                                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded mt-4">
-                                                    <p className="text-xs text-blue-200">
-                                                        <strong>Tip:</strong> Currently only Claude Code is supported. More AI tools will be added in future updates.
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-
-                            {/* Notification Settings */}
-                            {activeCategory === 'notifications' && (
-                                <>
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-white mb-1">Terminal Output Notifications</h3>
-                                        <p className="text-xs text-gray-400 mb-3">
-                                            Configure when to receive notifications from terminal output
-                                        </p>
-
-                                        {/* Coming Soon Notice */}
-                                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                                            <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
-                                                <Bell size={28} className="text-blue-400" />
-                                            </div>
-                                            <h4 className="text-lg font-medium text-white mb-2">Coming Soon</h4>
-                                            <p className="text-sm text-gray-400 max-w-sm">
-                                                Terminal output notifications for Claude Code, Codex, and other AI tools
-                                                will be available in a future update.
-                                            </p>
-                                            <div className="mt-4 px-3 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full">
-                                                <span className="text-xs text-blue-300">In Development</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </>
                             )}
 
                             {/* Port Monitoring Settings */}
@@ -1715,34 +1760,6 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                         </p>
 
                                         <div className="space-y-4">
-                                            {/* Show / hide worktrees */}
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <p className="text-sm text-gray-300">Show Worktrees</p>
-                                                    <p className="text-xs text-gray-500 mt-1">
-                                                        Off hides worktree workspaces and their menu entries, and skips
-                                                        the worktree scan on startup. Running sessions are left alone.
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    onClick={() => setSettings(prev => ({
-                                                        ...prev,
-                                                        showWorktrees: !(prev.showWorktrees ?? true)
-                                                    }))}
-                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
-                                                        (settings.showWorktrees ?? true)
-                                                            ? 'bg-emerald-600'
-                                                            : 'bg-white/20'
-                                                    }`}
-                                                >
-                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                        (settings.showWorktrees ?? true)
-                                                            ? 'translate-x-6'
-                                                            : 'translate-x-1'
-                                                    }`} />
-                                                </button>
-                                            </div>
-
                                             <div>
                                                 <label className="block text-xs text-gray-400 mb-1">Worktree Storage Path</label>
                                                 <div className="flex gap-2">

@@ -5,7 +5,7 @@ import path from 'path'
 import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './helpers'
 
 /**
- * T149 — the tab row under the main header (Settings › General 「Show Session Tabs」, default on).
+ * T149 — the tab row under the main header (Settings › Sidebar 「Show Session Tabs」, default on).
  *
  * A session that comes on screen gets a tab right after the one the person was on. Clicking a tab shows
  * it; ⌘⇧. / ⌘⇧, (⌘> ⌘<) step through the tabs; × closes the tab and keeps the session; ⌘W ends the
@@ -239,8 +239,9 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => visibleSession(page)).toBe('s-1')
         await expect(sidebarRow(page, 's-2')).toBeVisible()
 
-        // Settings › General 「Show Session Tabs」 off: no row; on again: the tabs are still there.
+        // Settings › Sidebar 「Show Session Tabs」 off: no row; on again: the tabs are still there.
         await page.locator('button[title^="Settings"]').click()
+        await page.getByTestId('settings-category-sidebar').click()
         await page.getByTestId('settings-show-session-tabs').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(page.getByTestId('session-tab-bar')).toHaveCount(0, { timeout: 10_000 })
@@ -249,6 +250,7 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => visibleSession(page)).toBe('s-3')
         await shot(page, 'before-no-tabs-1280')
         await page.locator('button[title^="Settings"]').click()
+        await page.getByTestId('settings-category-sidebar').click()
         await page.getByTestId('settings-show-session-tabs').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect.poll(() => tabOrder(page), { timeout: 10_000 }).toEqual(['s-1', 's-3'])

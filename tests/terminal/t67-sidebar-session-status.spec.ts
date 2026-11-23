@@ -5,7 +5,7 @@ import { launchAppWithWorkspaces, closeApp, writeToTerminal, LaunchResult, REPO_
 /**
  * T67 — sidebar status dots read from the screen in main (fb-1029b · d499aed0 · 1dbd271b).
  *
- * Seeds the user's own setup — Settings > Hooks off, no agent hooks — and four
+ * Seeds the user's own setup — Settings > Agents > Session Monitoring off, no agent hooks — and four
  * sessions next to the one on screen: an agent mid-turn, an agent showing an
  * approval question, an agent sitting at its prompt, and a shell printing logs.
  * Only the first two get a dot (blue / yellow with the question); a busy shell
@@ -101,6 +101,7 @@ test.describe('T67 sidebar status dots', () => {
 
         // Off in Settings: dots gone, and main stops reading screens.
         await page.locator('button[title^="Settings"]').click()
+        await page.getByTestId('settings-category-sidebar').click()
         await expect(page.getByTestId('settings-show-session-status')).toHaveAttribute('aria-pressed', 'true')
         await page.getByTestId('settings-show-session-status').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
@@ -111,6 +112,7 @@ test.describe('T67 sidebar status dots', () => {
 
         // On again: the working agent lights up again.
         await page.locator('button[title^="Settings"]').click()
+        await page.getByTestId('settings-category-sidebar').click()
         await page.getByTestId('settings-show-session-status').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(dot(page, WORK)).toHaveAttribute('data-session-status', 'working', { timeout: 15_000 })
@@ -125,6 +127,7 @@ test.describe('T67 sidebar status dots', () => {
         await expect(page.locator('[data-session-status]')).toHaveCount(0)
         expect(await ticks(ctx)).toBe(0)
         await page.locator('button[title^="Settings"]').click()
+        await page.getByTestId('settings-category-sidebar').click()
         await expect(page.getByTestId('settings-show-session-status')).toHaveAttribute('aria-pressed', 'false')
     })
 })

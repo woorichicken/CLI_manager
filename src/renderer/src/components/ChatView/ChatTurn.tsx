@@ -41,7 +41,7 @@ export const ChatTurn = memo(function ChatTurn({
     agent: ConversationAgent
     /** its place among the turns shown, for the rail's jumps */
     index: number
-    /** Settings › Terminal › Chat view «Collapse work» (default on): every block starts folded */
+    /** Settings › Chat «Collapse work» (default on): every block starts folded */
     foldWork?: boolean
     /** Reply in thread; Shift opens the existing fork options. */
     onFork?: (index: number, options: boolean) => void

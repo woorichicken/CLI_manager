@@ -7,7 +7,7 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
 /**
  * T115 — the dictation log in the app (people's decision 11-09, decision 0012), with T107's fake helper.
  *
- *  - Settings › Terminal › Chat view: "Keep dictation log" (off) and "Also keep audio" (off, only with the log)
+ *  - Settings › Chat: "Keep dictation log" (off) and "Also keep audio" (off, only with the log)
  *  - on: dictate across a pause → fix the words → send. userData/dictation-log/<day>.jsonl holds one line:
  *    the whole run heard (final) next to the box as sent, agent, locale; folder 0700, file 0600
  *  - off (the default): the same run leaves no folder at all
@@ -124,7 +124,7 @@ async function dictateFixAndSend(page: Page, answer: number): Promise<string> {
 
 async function openChatSettings(page: Page): Promise<void> {
     await page.keyboard.press(`${MOD}+Comma`)
-    await page.getByTestId('settings-category-terminal').click()
+    await page.getByTestId('settings-category-chat').click()
     await page.getByTestId('chat-view-settings').scrollIntoViewIfNeeded()
 }
 

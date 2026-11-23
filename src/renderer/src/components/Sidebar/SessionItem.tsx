@@ -32,7 +32,7 @@ const SESSION_STATUS_TITLES: Record<SessionStatus, string> = {
 // two apart (PermissionRequest / Notification); the screen heuristic cannot.
 const AWAITING_INPUT_COLOR = 'bg-amber-400 animate-pulse ring-2 ring-amber-400/30'
 
-// Dots read from the screen in main (Settings > General "Show Session Status").
+// Dots read from the screen in main (Settings > Sidebar "Show Session Status").
 // No pulse on "working": dozens of rows animating at once is noise, and the
 // dot itself already says the agent is mid-turn.
 export const SCREEN_STATUS_COLORS = {

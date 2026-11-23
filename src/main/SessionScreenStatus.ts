@@ -1,7 +1,7 @@
 import type { AgentStatusUpdate, SessionScreenState, SessionScreenStatus, SessionScreenStatusMessage } from '../shared/types'
 
 /**
- * Sidebar status dots without hooks (Settings > General "Show Session Status").
+ * Sidebar status dots without hooks (Settings > Sidebar "Show Session Status").
  *
  * Every second, read each session's screen mirror (decision 0008 keeps one for
  * every terminal) and send the renderer only the sessions whose dot changed.

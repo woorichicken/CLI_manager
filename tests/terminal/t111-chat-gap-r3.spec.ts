@@ -7,7 +7,7 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
 /**
  * T111 — Chat gaps, round 3, in the app (chat-gap-r3-1109).
  *
- * C-1 (fb 4c6ea086) work blocks start folded — the running one too — under Settings › Terminal › Chat view
+ * C-1 (fb 4c6ea086) work blocks start folded — the running one too — under Settings › Chat
  * «Collapse work» (on by default); off brings back the open running block. C-2 (d05e93fc) a drag that starts
  * on a file link selects the words and opens nothing; a click still opens. C-3 (d89cfc4a) a .md file opens
  * rendered in the Mac preview, with Preview / Source. C-4 (babcdbc9) the pinned last message opens in place
@@ -251,9 +251,9 @@ test('T111 chat gaps round 3: fold work, link drag, md preview, pinned message, 
     await chat(page).getByTestId('chat-prompt-option').first().click()
     await expect(chat(page).getByTestId('chat-prompt-card')).toHaveCount(0, { timeout: 10_000 })
 
-    // --- C-1 off: Settings › Terminal › Chat view «Collapse work» --------------------------------------------
+    // --- C-1 off: Settings › Chat «Collapse work» --------------------------------------------
     await page.keyboard.press('Meta+Comma')
-    await page.getByTestId('settings-category-terminal').click()
+    await page.getByTestId('settings-category-chat').click()
     const fold = page.getByTestId('chat-setting-fold-work')
     await fold.scrollIntoViewIfNeeded().catch(() => undefined)
     await shot(page, 'c1-setting')

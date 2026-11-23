@@ -49,7 +49,7 @@ export function PhoneSettingsMenu({ quickReplies, quickRepliesOn, pinLastOn }: {
                         <span>Quick replies over the chat box</span>
                     </label>
                     <p className="phone-menu-note">
-                        {quickReplies.length > 0 ? quickReplies.join(' · ') : 'None set'} — edit them on the Mac: Settings › Terminal › Chat view.
+                        {quickReplies.length > 0 ? quickReplies.join(' · ') : 'None set'} — edit them on the Mac: Settings › Chat.
                     </p>
                     <label className="phone-menu-switch">
                         <input
