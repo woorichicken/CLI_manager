@@ -282,6 +282,26 @@ export function artifactLinks(turns: { parts: ConversationPart[] }[]): { url: st
 }
 
 /** `12s`, `3m 05s`, `1h 02m` — how long a turn has been working. */
+/**
+ * An answer to paste to another agent (fb-1123 45127b82 «메타데이터 복사»): which session and which turn it is,
+ * then the answer — like the checklist's and the Related dialog's «Copy for agent». The session link carries the
+ * id's first 8 characters (a full id breaks across Claude Code's wrapped rows — sessionLink.ts).
+ */
+export function answerForAgent(input: { sessionName?: string; sessionId: string; at: string | null; turnNumber: number; totalTurns: number; answer: string }): string {
+    const name = input.sessionName ? `"${input.sessionName}"` : 'a session'
+    const date = input.at ? new Date(input.at) : null
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const when = date && !Number.isNaN(date.getTime())
+        ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+        : null
+    return [
+        `Answer from ${name} in CLI Manager · climanager://session/${input.sessionId.slice(0, 8)}`,
+        [`Turn ${input.turnNumber} of ${input.totalTurns}`, when ? `answered ${when}` : null].filter(Boolean).join(' · '),
+        '',
+        input.answer.trim()
+    ].join('\n')
+}
+
 export function formatElapsed(ms: number): string {
     const seconds = Math.max(0, Math.floor(ms / 1000))
     if (seconds < 60) return `${seconds}s`

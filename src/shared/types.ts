@@ -719,13 +719,16 @@ export interface AgentStatusUpdate {
  * human can answer is on screen. Plain shell output (a dev server's logs) is
  * neither, so a busy shell does not light up.
  */
-export type SessionScreenState = 'working' | 'waiting' | 'idle'
+/** `error`: the agent's last turn ended on an API error (a dropped connection — fb-1123 3239a243) and no turn came since. */
+export type SessionScreenState = 'working' | 'waiting' | 'error' | 'idle'
 
 export interface SessionScreenStatus {
     sessionId: string
     state: SessionScreenState
     /** The question line from the screen, when waiting. */
     question?: string
+    /** The error's words as the agent printed them (`API Error: Connection dropped (ECONNRESET). …`), when error. */
+    error?: string
 }
 
 /** One message on SESSION_SCREEN_STATUS_CHANNEL. `reset` replaces everything the renderer holds. */

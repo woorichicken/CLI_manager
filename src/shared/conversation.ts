@@ -224,6 +224,8 @@ export interface UnsentMessage extends QueuedMessage {
 
 export interface ConversationSnapshot {
     sessionId: string
+    /** the session's sidebar name (an answer's «Copy for agent» names it — fb-1123 45127b82) */
+    sessionName?: string
     /** the session's working folder: relative paths in the chat resolve against it */
     cwd?: string
     /** the home folder of the Mac running the agent: `~/` paths resolve against it */

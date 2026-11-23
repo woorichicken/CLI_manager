@@ -115,7 +115,7 @@ test('T164 019248e1: a long Chat message is either sent or kept, never silently 
     await expect(chat(page).getByTestId('chat-queued-item')).toHaveCount(1, { timeout: 5_000 })
     await waitForBufferText(page, 't164-queue', `[Pasted text #1 +${lines - 1} lines]`, 20_000)
     const unsent = chat(page).getByTestId('chat-unsent-item')
-    await expect.soft(unsent).toHaveCount(1, { timeout: 20_000 })
+    await expect.soft(unsent).toHaveCount(1, { timeout: 30_000 })
     await shot(page, '019248e1')
     await expect.soft(unsent).toContainText('Review: five items')
     await expect.soft(unsent.getByTestId('chat-unsent-reason')).toContainText('not submitted')
@@ -179,4 +179,80 @@ test('T164 f7bff999: four question tabs with previews — a card with the previe
     await card.getByTestId('chat-prompt-option').filter({ hasText: 'Submit answers' }).click()
     await waitForBufferText(page, 't164-form', 'CHOSE: submit4 목록 칸만 내림; 한 줄; 같이 고침; 보류', 10_000)
     await expect(card).toHaveCount(0, { timeout: 10_000 })
+})
+
+const DROPPED = 'API Error: Connection dropped (ECONNRESET). A VPN, firewall, or security software can cause this. Check those or switch networks, then try again.'
+const ANSWERED_AT = '2026-11-23T09:15:00.000Z'
+
+test('T164 3239a243 · 45127b82: a turn that ended on a dropped connection is a red dot; an answer copies for an agent', async () => {
+    test.setTimeout(180_000)
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t164-'))
+    const project = path.join(home, 'project')
+    fs.mkdirSync(project)
+    const claudeDir = path.join(home, 'claude')
+    const transcript = path.join(claudeDir, 'projects', slug(project), `${id(7)}.jsonl`)
+    fs.mkdirSync(path.dirname(transcript), { recursive: true })
+    // what Claude Code 2.1.330 writes when the connection drops (shape read from real transcripts; words synthetic)
+    // (one chain of uuids: the reader shows the branch the last record is on, and chat-mock --continue goes on from it)
+    const record = (uuid: string, parentUuid: string | null, type: 'user' | 'assistant', text: string, at: string, extra: Record<string, unknown> = {}): string =>
+        JSON.stringify({ type, uuid, parentUuid, timestamp: at, message: { role: type, ...(type === 'assistant' ? { model: 'claude-opus-5-5' } : {}), content: [{ type: 'text', text }] }, ...extra })
+    fs.writeFileSync(transcript, [
+        record('u1', null, 'user', 'Plan the review', '2026-11-23T09:14:00.000Z'),
+        record('a1', 'u1', 'assistant', 'Here is the plan.\n\n- tighten the header\n- keep the tab row', ANSWERED_AT),
+        record('u2', 'a1', 'user', 'go on', '2026-11-23T09:20:00.000Z'),
+        record('e1', 'u2', 'assistant', DROPPED, '2026-11-23T09:20:05.000Z', { apiError: 'connection_failed', error: 'server_error', isApiErrorMessage: true })
+    ].join('\n').replace('"model":"claude-opus-5-5","content":[{"type":"text","text":"API Error', '"model":"<synthetic>","content":[{"type":"text","text":"API Error') + '\n')
+    result = await launchAppWithWorkspaces(
+        [{
+            id: 'w-t164e',
+            name: 'T164 project',
+            path: project,
+            sessions: [
+                { id: 't164-home', name: 'T164 Home' },
+                { id: 't164-dropped', name: 'T164 Dropped', cliSessionId: id(7), cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --continue` }
+            ]
+        }],
+        { env: { CLAUDE_CONFIG_DIR: claudeDir }, settings: { showSessionStatus: true } }
+    )
+    const { app, page } = result
+    await resizeMainWindow(app, 1280, 800)
+    await page.getByText('T164 Dropped', { exact: true }).first().click()
+    await waitForBufferText(page, 't164-dropped', 'Claude Code (mock)', 20_000)
+    await page.getByText('T164 Home', { exact: true }).first().click()
+
+    // --- 3239a243: red while the last turn is the error ------------------------------------------
+    const dot = page.locator('[data-session-item="t164-dropped"] [data-session-status]')
+    await expect.soft(dot).toHaveAttribute('data-session-status', 'error', { timeout: 10_000 })
+    await shot(page, '3239a243')
+    await expect.soft(dot).toHaveAttribute('title', /Connection dropped \(ECONNRESET\)/)
+    // the next turn starts (and answers): the dot goes
+    await writeToTerminal(page, 't164-dropped', 'try again\r')
+    await expect(dot).toHaveCount(0, { timeout: 15_000 })
+
+    // --- 45127b82: «Copy for agent» beside the answer's copy buttons ------------------------------
+    await page.getByText('T164 Dropped', { exact: true }).first().click()
+    await page.getByTestId('view-toggle-chat').click()
+    await expect(chat(page)).toBeVisible()
+    const answer = chat(page).locator('[data-testid="chat-turn"][data-role="assistant"]').filter({ hasText: 'Here is the plan.' })
+    await answer.hover()
+    const button = answer.getByTestId('chat-copy-for-agent')
+    await expect.soft(button).toBeVisible({ timeout: 5_000 })
+    await shot(page, '45127b82')
+    if (await button.isVisible()) {
+        const saved = await app.evaluate(({ clipboard }) => clipboard.readText())
+        try {
+            await button.click()
+            const pad = (n: number): string => String(n).padStart(2, '0')
+            const local = new Date(ANSWERED_AT)
+            const when = `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())} ${pad(local.getHours())}:${pad(local.getMinutes())}`
+            await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText()), { timeout: 5_000 }).toContain('Here is the plan.')
+            const copied = (await app.evaluate(({ clipboard }) => clipboard.readText())).split('\n')
+            expect(copied[0]).toBe(`Answer from "T164 Dropped" in CLI Manager · climanager://session/${'t164-dropped'.slice(0, 8)}`)
+            // the answer is the conversation's second turn; how many follow depends on the turns sent since
+            expect(copied[1]).toMatch(new RegExp(`^Turn 2 of \\d+ · answered ${when}$`))
+            expect(copied.slice(2).join('\n')).toBe('\nHere is the plan.\n\n- tighten the header\n- keep the tab row')
+        } finally {
+            await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved)
+        }
+    }
 })

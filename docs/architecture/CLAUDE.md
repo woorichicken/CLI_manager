@@ -64,7 +64,7 @@ rules stay in the root; this file is the inventory.
   - Codex: `agent-turn-complete` (유일한 이벤트 — 턴 **시작**은 입력 가로채기로 보완)
 - **Permission Inbox 신호**: 승인 대기 세션은 사이드바에서 앰버 펄스 + OS 알림
 - **기존 heuristic은 fallback으로 유지** — 훅 미설치 세션은 이전과 동일하게 동작
-- **화면으로 읽는 상태 점(hook 없이, 1.23.0)** — Settings › Sidebar 「Show Session Status」(기본 끔). main 의 `SessionScreenStatusPoller` 가 1초마다 미러 화면을 읽어 작업 중(파란 점)·질문 대기(노란 점, 툴팁에 질문 줄)를 정한다. 켜져 있으면 위 두 방식의 사이드바 배지를 대신한다(hook 의 running·awaitingInput 은 판정에 그대로 들어간다)
+- **화면으로 읽는 상태 점(hook 없이, 1.23.0)** — Settings › Sidebar 「Show Session Status」(기본 끔). main 의 `SessionScreenStatusPoller` 가 1초마다 미러 화면을 읽어 작업 중(파란 점)·질문 대기(노란 점, 툴팁에 질문 줄)를 정한다. 켜져 있으면 위 두 방식의 사이드바 배지를 대신한다(hook 의 running·awaitingInput 은 판정에 그대로 들어간다). 작업 중도 질문도 아닌 Claude 세션은 대화 기록의 마지막 턴이 API 오류(`isApiErrorMessage` — 연결 끊김 `connection_failed` 등, 2.1.330 실측)로 끝났으면 빨간 점(`error`, 툴팁에 그 오류 글)이고 다음 턴(뒤에 `user` 기록)이 오면 꺼진다(fb-1123 3239a243, `transcript/apiError.ts` — 화면이 아니라 기록: 대화 글이 그 문장을 인용해도 오류로 안 읽게. 파일이 안 바뀌었으면 stat 하나). 인박스·자동 재시도·폰 점은 없다(폰 푸시의 「턴 끝남」은 그대로)
 
 #### 9. Usage / Rate Limit Tracking (NEW)
 - 제공자가 **직접 보고한 값** (추정 아님, `/usage`·`/status`와 일치)

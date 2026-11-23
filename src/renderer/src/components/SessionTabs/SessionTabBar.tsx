@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useSessionScreenStatus } from '../../hooks/useSessionScreenStatus'
-import { SCREEN_STATUS_COLORS } from '../Sidebar/SessionItem'
+import { SCREEN_STATUS_COLORS, screenStatusTitle } from '../Sidebar/SessionItem'
 import { SessionTabMenu, type SessionTabMenuActions } from './SessionTabMenu'
 
 export interface SessionTabEntry {
@@ -245,7 +245,7 @@ function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onC
                 <span
                     data-session-tab-status={dot.state}
                     className={`w-2 h-2 rounded-full shrink-0 ${SCREEN_STATUS_COLORS[dot.state as keyof typeof SCREEN_STATUS_COLORS] ?? ''}`}
-                    title={dot.state === 'waiting' ? `Waiting for you${dot.question ? ` — ${dot.question}` : ''}` : 'Working'}
+                    title={screenStatusTitle(dot)}
                 />
             )}
             {renaming

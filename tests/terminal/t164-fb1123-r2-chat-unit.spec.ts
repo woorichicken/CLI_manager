@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
+import { ApiErrorTails, lastTurnApiError } from '../../src/main/transcript/apiError'
+import { SessionScreenStatusPoller } from '../../src/main/SessionScreenStatus'
+import { answerForAgent } from '../../src/renderer/src/components/ChatView/chatLib'
 import { ConversationService, type ConversationServiceDeps } from '../../src/main/ConversationService'
 import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { readPrompt } from '../../src/main/promptScreen'
@@ -286,5 +290,89 @@ test.describe('T164 019248e1 a queued message that did not go stays, with the re
         expect((await conversations.getConversation('s')).unsent).toHaveLength(1)
         expect(conversations.dropQueuedFrom('device:abc')).toBe(1)
         expect((await conversations.getConversation('s')).unsent).toEqual([])
+    })
+})
+
+// ---- 3239a243: a turn that ended on an API error is a red dot ---------------------------------
+
+/** Records shaped as Claude Code 2.1.330 writes them (read from real transcripts; words and ids synthetic). */
+const claudeRecord = (type: 'user' | 'assistant', text: string, extra: Record<string, unknown> = {}): string =>
+    JSON.stringify({ type, timestamp: '2026-11-23T10:44:20.358Z', message: { role: type, ...(type === 'assistant' ? { model: 'claude-opus-5-5' } : {}), content: [{ type: 'text', text }] }, ...extra })
+const DROPPED = 'API Error: Connection dropped (ECONNRESET). A VPN, firewall, or security software can cause this. Check those or switch networks, then try again.'
+const apiErrorRecord = (text = DROPPED): string =>
+    JSON.stringify({
+        type: 'assistant',
+        timestamp: '2026-11-23T10:44:20.358Z',
+        message: { model: '<synthetic>', role: 'assistant', stop_reason: 'stop_sequence', type: 'message', content: [{ type: 'text', text }] },
+        apiError: 'connection_failed',
+        error: 'server_error',
+        isApiErrorMessage: true
+    })
+
+test.describe('T164 3239a243 the last turn’s API error, from the transcript', () => {
+    test('an error record last (other records after it) is the error; a prompt after it ends it', async () => {
+        const snapshot = JSON.stringify({ type: 'file-history-snapshot', snapshot: {} })
+        expect(lastTurnApiError([claudeRecord('user', 'hello'), claudeRecord('assistant', 'Hi.'), claudeRecord('user', 'go on'), apiErrorRecord()].join('\n'))).toBe(DROPPED)
+        expect(lastTurnApiError([claudeRecord('user', 'go on'), apiErrorRecord(), snapshot, JSON.stringify({ type: 'system', subtype: 'turn_duration' }), ''].join('\n'))).toBe(DROPPED)
+        // the next prompt: over
+        expect(lastTurnApiError([apiErrorRecord(), snapshot, claudeRecord('user', 'try again')].join('\n'))).toBeNull()
+        // answered after: over
+        expect(lastTurnApiError([apiErrorRecord(), claudeRecord('user', 'try again'), claudeRecord('assistant', 'Done.')].join('\n'))).toBeNull()
+        // an answer that only quotes the words is no error
+        expect(lastTurnApiError([claudeRecord('user', 'what is this?'), claudeRecord('assistant', `It says «${DROPPED}»`)].join('\n'))).toBeNull()
+        // a subagent's error (sidechain) is not the session's turn; a cut first line is skipped
+        expect(lastTurnApiError([claudeRecord('assistant', 'Fine.'), JSON.stringify({ ...JSON.parse(apiErrorRecord()), isSidechain: true })].join('\n'))).toBeNull()
+        expect(lastTurnApiError(['ated":"cut"}', apiErrorRecord('API Error: The response stopped arriving')].join('\n'))).toBe('API Error: The response stopped arriving')
+    })
+
+    test('ApiErrorTails reads a file again only when it changed', async () => {
+        const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t164-')), 'c.jsonl')
+        fs.writeFileSync(file, [claudeRecord('user', 'go'), apiErrorRecord()].join('\n') + '\n')
+        const tails = new ApiErrorTails()
+        expect(tails.read(file)).toBe(DROPPED)
+        fs.appendFileSync(file, claudeRecord('user', 'try again') + '\n')
+        expect(tails.read(file)).toBeNull()
+        expect(tails.read(path.join(path.dirname(file), 'missing.jsonl'))).toBeNull()
+    })
+
+    test('the poller: red while idle after the error; working, a question and the next turn win', async () => {
+        let screen = { busy: false, question: null as string | null }
+        let error: string | null = DROPPED
+        const published: unknown[] = []
+        const poller = new SessionScreenStatusPoller({
+            mirror: { ids: () => ['s1'], hasExited: () => false, lastOutputAt: () => Date.now(), screenStatus: () => screen },
+            hookStatus: () => null,
+            lastTurnError: () => error,
+            publish: (message) => published.push(message)
+        })
+        expect(poller.tick()).toEqual([{ sessionId: 's1', state: 'error', error: DROPPED }])
+        expect(poller.tick()).toEqual([])
+        screen = { busy: true, question: null }
+        expect(poller.tick()).toEqual([{ sessionId: 's1', state: 'working' }])
+        screen = { busy: false, question: 'Do you want to proceed?' }
+        expect(poller.tick()).toEqual([{ sessionId: 's1', state: 'waiting', question: 'Do you want to proceed?' }])
+        screen = { busy: false, question: null }
+        error = null
+        expect(poller.tick()).toEqual([{ sessionId: 's1', state: 'idle' }])
+        // what the renderer is told: the first change carries the error's words for the tooltip
+        expect(published[0]).toEqual({ enabled: true, reset: false, changes: [{ sessionId: 's1', state: 'error', error: DROPPED }] })
+    })
+})
+
+// ---- 45127b82: an answer copied for another agent ---------------------------------------------
+
+test.describe('T164 45127b82 «Copy for agent» on an answer', () => {
+    test('the session’s name and link, the turn’s place and time, then the answer', () => {
+        const at = '2026-11-23T09:15:00.000Z'
+        const local = new Date(at)
+        const pad = (n: number): string => String(n).padStart(2, '0')
+        const when = `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())} ${pad(local.getHours())}:${pad(local.getMinutes())}`
+        expect(answerForAgent({ sessionName: 'Review: header', sessionId: '0123abcd-ffff-4000-8000-000000000000', at, turnNumber: 2, totalTurns: 4, answer: '\nHere is the plan.\n\n- one\n' })).toBe(
+            [`Answer from "Review: header" in CLI Manager · climanager://session/0123abcd`, `Turn 2 of 4 · answered ${when}`, '', 'Here is the plan.\n\n- one'].join('\n')
+        )
+        // no name, no time: still which session and which turn
+        expect(answerForAgent({ sessionId: 'abcdef0123456789', at: null, turnNumber: 1, totalTurns: 1, answer: 'Done.' })).toBe(
+            ['Answer from a session in CLI Manager · climanager://session/abcdef01', 'Turn 1 of 1', '', 'Done.'].join('\n')
+        )
     })
 })

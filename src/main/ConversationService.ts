@@ -320,6 +320,7 @@ export class ConversationService {
         const info = this.deps.session(sessionId)
         const base = {
             sessionId,
+            ...(info?.name ? { sessionName: info.name } : {}),
             ...(info?.cwd ? { cwd: info.cwd } : {}),
             ...(this.deps.home ? { home: this.deps.home } : {}),
             working: entry.working,

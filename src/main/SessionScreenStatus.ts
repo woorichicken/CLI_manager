@@ -33,6 +33,11 @@ interface ScreenReader {
 interface Deps {
     mirror: ScreenReader
     hookStatus: (sessionId: string) => AgentStatusUpdate | null
+    /**
+     * The API error a session's last turn ended on, from its transcript (fb-1123 3239a243), or null. Asked only for
+     * a session neither working nor asking; expected to cost a stat when nothing changed (ApiErrorTails).
+     */
+    lastTurnError?: (sessionId: string) => string | null
     publish: (message: SessionScreenStatusMessage) => void
     /** Test instrumentation: how long one tick took and how many sessions it covered. */
     onTick?: (ms: number, sessions: number) => void
@@ -103,7 +108,7 @@ export class SessionScreenStatusPoller {
                 }
                 continue
             }
-            if (!prev || prev.state !== next.state || prev.question !== next.question) {
+            if (!prev || prev.state !== next.state || prev.question !== next.question || prev.error !== next.error) {
                 this.shown.set(id, next)
                 changes.push(next)
             }
@@ -140,6 +145,20 @@ export class SessionScreenStatusPoller {
             return question ? { sessionId: id, state: 'waiting', question } : { sessionId: id, state: 'waiting' }
         }
         const state: SessionScreenState = read.busy || (hook?.source === 'hook' && hook.status === 'running') ? 'working' : 'idle'
+        if (state === 'idle') {
+            // a turn that ended on an API error (the connection dropped): red until the next turn starts
+            const error = this.lastTurnError(id)
+            if (error) return { sessionId: id, state: 'error', error }
+        }
         return { sessionId: id, state }
+    }
+
+    private lastTurnError(id: string): string | null {
+        try {
+            return this.deps.lastTurnError?.(id) ?? null
+        } catch (err) {
+            console.error('[session-screen-status] could not read the last turn:', err)
+            return null
+        }
     }
 }

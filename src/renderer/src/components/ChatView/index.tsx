@@ -863,6 +863,10 @@ function Turns({ snapshot, foldWork, onFork, onShowEarlier, threads, onOpenThrea
                     onFork={onFork}
                     threads={threadsForTurn(threadGroups, turn.ts, hidden + index)}
                     onOpenThread={onOpenThread}
+                    sessionId={snapshot.sessionId}
+                    sessionName={snapshot.sessionName}
+                    turnNumber={hidden + index + 1}
+                    totalTurns={snapshot.totalTurns}
                 />
             ))}
         </>

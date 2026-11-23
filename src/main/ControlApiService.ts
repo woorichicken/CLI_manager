@@ -906,10 +906,18 @@ export class ControlApiService {
             return box !== null && (box.typed.includes(head) || countPastePlaceholders(box.typed) > placeholdersBefore)
         }
 
+        // «gone» is believed on two reads in a row: a read can land between the clear and the rows of the
+        // program's redraw (seen under load with a mock that redraws the whole screen), where no box — or an
+        // empty one — is drawn for a moment though the text is still there (019248e1)
+        const goneTwice = async (): Promise<boolean> => {
+            if (await stillInBox()) return false
+            await sleep(SUBMIT_CONFIRM_POLL_MS)
+            return !(await stillInBox())
+        }
         for (let attempt = 0; attempt <= SUBMIT_RETRIES; attempt++) {
             const deadline = Date.now() + SUBMIT_CONFIRM_MS
             while (Date.now() < deadline) {
-                if (!(await stillInBox())) return true
+                if (await goneTwice()) return true
                 await sleep(SUBMIT_CONFIRM_POLL_MS)
             }
             if (attempt === SUBMIT_RETRIES) break
@@ -917,7 +925,7 @@ export class ControlApiService {
             beforeEnter()
             this.write(sessionId, '\r')
         }
-        return !(await stillInBox())
+        return goneTwice()
     }
 
     /**
