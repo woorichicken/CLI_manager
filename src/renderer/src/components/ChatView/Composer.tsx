@@ -4,7 +4,7 @@ import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, Cha
 import { InputBusyNote } from './InputBusyNote'
 import { ComposerSuggestion } from './ComposerSuggestion'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH, quickReplyColorOf } from '../../../../shared/conversation'
-import { activeTrigger, commandPieces, fileMention, mayNameCommand, rankCommands, sendsQueuedNow, skillTriggerFor } from './chatLib'
+import { activeTrigger, commandPieces, fileMention, mayNameCommand, isComposerEmpty, rankCommands, sendsQueuedNow, skillTriggerFor } from './chatLib'
 import { QuickReplyRow } from './QuickReplyRow'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 import { DictationButton } from './DictationButton'
@@ -363,7 +363,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const message = [ready.map((item) => fileMention(item.path!)).join(' '), text].filter((part) => part.trim()).join(ready.length > 0 && text ? ' ' : '')
     const over = message.length - MAX_CHAT_TEXT_LENGTH
     const empty = !message.trim()
-    useEffect(() => onEmptyChange?.(empty), [empty, onEmptyChange])
+    /** nothing typed and no file at all — a file still attaching or one that failed is not an empty box (send-now) */
+    const boxEmpty = isComposerEmpty(text, attachments)
+    useEffect(() => onEmptyChange?.(boxEmpty), [boxEmpty, onEmptyChange])
     const showStop = working && text.trim() === '' && attachments.length === 0
     // only in an empty box, and not while the agent works, a card asks, or the mic or a menu has the box
     const shownSuggestion =
@@ -503,7 +505,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 sendKey: shouldSend,
                 composing: event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229,
                 repeat: event.repeat,
-                boxEmpty: empty && text.trim() === '',
+                boxEmpty,
                 queued: queuedCount,
                 question: promptOptions !== null || pendingPick,
                 boxSending: sending > 0,
@@ -512,7 +514,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             })
         ) {
             event.preventDefault()
-            onSendQueuedNow()
+            // the same quiet window after a send-now: Enter pressed twice fast sends one queued message, not two
+            if (onSendQueuedNow()) lastBoxSendAt.current = now
             return
         }
         if (event.key === 'Escape' && working) {

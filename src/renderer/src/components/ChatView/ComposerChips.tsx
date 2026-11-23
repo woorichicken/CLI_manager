@@ -74,21 +74,30 @@ export function ModelChip({
      */
     const [refused, setRefused] = useState<string | null>(null)
     const [running, setRunning] = useState(false)
+    /** the panel's opening the answer belongs to: one that comes after it was closed (or reopened) is dropped */
+    const opening = useRef(0)
     const model = meta?.model ? modelLabel(meta.model) : null
     const close = (): void => {
+        opening.current++
         setOpen(false)
         setConfirm(null)
         setRefused(null)
+        setRunning(false)
     }
     const run = async (text: string): Promise<void> => {
+        const mine = opening.current
         setRunning(true)
+        let outcome: string | null = null
         try {
             const result = await onCommand(text)
-            if (result && result.status === 'rejected') setRefused(result.message)
-            else close()
-        } finally {
-            setRunning(false)
+            if (result && result.status === 'rejected') outcome = result.message
+        } catch (error) {
+            outcome = error instanceof Error ? error.message : String(error)
         }
+        if (mine !== opening.current) return
+        setRunning(false)
+        if (outcome !== null) setRefused(outcome)
+        else close()
     }
     if (!agent) return null
     return (
@@ -100,7 +109,7 @@ export function ModelChip({
                 aria-haspopup="dialog"
                 aria-expanded={open}
                 title={`${meta?.model ?? 'Model not recorded yet'}${meta?.effort ? ` · reasoning ${meta.effort}` : ''} — change model`}
-                onClick={() => (open ? close() : setOpen(true))}
+                onClick={() => (open ? close() : (opening.current++, setOpen(true)))}
             >
                 <Bot size={12} aria-hidden="true" />
                 <span className={model && !model.named ? 'chat-meta-id' : undefined} data-testid="chat-model-name">

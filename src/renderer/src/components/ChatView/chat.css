@@ -311,6 +311,10 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-confirm-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #fbbf24; }
 .chat-confirm-note { color: var(--chat-dim); }
 .chat-confirm-title.is-error { color: #fca5a5; }
+/* light: red-700 (red-300 is too faint on white) */
+:root.light .chat-notice.is-error { border-left-color: rgba(185, 28, 28, 0.7); color: #b91c1c; }
+:root.light .chat-notice.is-error .chat-notice-source,
+:root.light .chat-confirm-title.is-error { color: #b91c1c; }
 .chat-confirm-actions { display: flex; gap: 6px; }
 .chat-confirm-actions button { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--chat-line); }
 .chat-confirm-actions .chat-confirm-primary { background: #2563eb; border-color: #2563eb; color: #fff; }

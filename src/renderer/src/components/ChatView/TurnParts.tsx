@@ -8,7 +8,7 @@ import { useChatActions } from './chatContext'
 import { isMac } from '../../utils/platform'
 
 /** What the person's seat holds: their words, a `!` command, a notice, a subagent's result. */
-export const UserParts = memo(function UserParts({ parts }: { parts: ConversationPart[] }) {
+export const UserParts = memo(function UserParts({ parts, last = false }: { parts: ConversationPart[]; /** the conversation's last turn: a failure there is announced */ last?: boolean }) {
     const skills = parts.filter((part): part is Extract<ConversationPart, { kind: 'skill' }> => part.kind === 'skill')
     const images = parts.flatMap((part) => (part.kind === 'image' ? [{ ref: part.ref, media_type: part.media_type }] : []))
     return (
@@ -48,7 +48,8 @@ export const UserParts = memo(function UserParts({ parts }: { parts: Conversatio
                                 className={`chat-notice${part.source === ERROR_SOURCE ? ' is-error' : ''}`}
                                 data-testid="chat-notice"
                                 data-source={part.source}
-                                role={part.source === ERROR_SOURCE ? 'alert' : undefined}
+                                // announced once, where it just happened; earlier failures are notes (not re-read on every render)
+                                role={part.source === ERROR_SOURCE ? (last ? 'alert' : 'note') : undefined}
                             >
                                 <span className="chat-notice-source">
                                     {part.source === ERROR_SOURCE && <AlertTriangle size={11} aria-hidden="true" />} {noticeSource(part.source)}

@@ -93,7 +93,7 @@ test('T160 fb-1123: a failed Codex turn shows why, the Codex chip follows /model
                 path: project,
                 sessions: [
                     { id: 't160-codex', name: 'T160 Codex', cliSessionId: CODEX_ID, cliToolName: 'codex', cliCommand: `node ${MOCK} --agent codex --transcript ${rollout} --continue` },
-                    { id: 't160-claude', name: 'T160 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 9000` }
+                    { id: 't160-claude', name: 'T160 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --work-ms 60000` }
                 ]
             }
         ],
@@ -124,9 +124,8 @@ test('T160 fb-1123: a failed Codex turn shows why, the Codex chip follows /model
         { timestamp: at(40), type: 'event_msg', payload: { type: 'thread_settings_applied', thread_id: CODEX_ID, thread_settings: { model: 'gpt-6-sol', reasoning_effort: 'medium' } } },
         { timestamp: at(40), type: 'event_msg', payload: { type: 'thread_settings_applied', thread_id: CODEX_ID, thread_settings: { model: 'gpt-6-sol', reasoning_effort: 'medium' } } }
     ]))
-    await page.waitForTimeout(3_000)
-    await shot(page, '0adc1255')
     await expect.soft(chip).toHaveAttribute('title', /gpt-6-sol · reasoning medium/, { timeout: 5_000 })
+    await shot(page, '0adc1255')
     await expect.soft(chat(page).getByTestId('chat-model-effort')).toHaveText('· medium')
 
     // After a usage-limit failure Codex 0.171 asks «Switch to gpt-6-luna?» (the real screen, copied into chat-mock
@@ -185,7 +184,9 @@ test('T160 fb-1123: a failed Codex turn shows why, the Codex chip follows /model
     await expect(queued).toHaveCount(2)
     await shot(page, '00c4df83')
     await expect.soft(chat(page).getByTestId('chat-queued-key')).toHaveText('· Enter sends the first now')
-    // a deliberate Enter later: the oldest goes now, as its Send now button would send it
+    // a deliberate Enter later: the oldest goes now, as its Send now button would send it — and a second
+    // press right behind it does not send the next one too (the same quiet window)
+    await composer.press('Enter')
     await composer.press('Enter')
     await expect.poll(async () => (await termText(page, 't160-claude')).includes('HELD: second'), { timeout: 10_000 }).toBe(true)
     await expect.soft(queued.filter({ hasText: 'third' })).toHaveCount(1)

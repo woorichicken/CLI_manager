@@ -7,7 +7,7 @@ import { foldMetadata } from '../../src/main/transcript/metadata'
 import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { TerminalMirror } from '../../src/main/TerminalMirror'
 import { EventEmitter } from 'events'
-import { QUEUED_SEND_QUIET_MS, sendKeyName, sendsQueuedNow } from '../../src/renderer/src/components/ChatView/chatLib'
+import { isComposerEmpty, QUEUED_SEND_QUIET_MS, sendKeyName, sendsQueuedNow } from '../../src/renderer/src/components/ChatView/chatLib'
 
 /**
  * T160 — fb-1123 Chat reports, without Electron.
@@ -160,6 +160,27 @@ test.describe('T160 0adc1255 Codex 0.171 menus are questions', () => {
         expect(idle.asksQuestion('s1')).toBe(false)
         expect(idle.showsAwaitingInput('s1')).toBe(false)
     })
+
+    test('an answer quoting the footer is no menu: only the screen\'s last line counts', async () => {
+        const quoted = await mirrorShowing([
+            '• The picker ends on «enter select · esc back», and the effort one on',
+            '  enter default · s session · esc back',
+            '  — both are Codex menus.',
+            '',
+            '› Ask Codex to do anything',
+            '',
+            '  GPT-6-Sol medium · ~/work',
+            '  ← for agents · ? for shortcuts'
+        ])
+        expect(quoted.asksQuestion('s1')).toBe(false)
+        expect(quoted.showsAwaitingInput('s1')).toBe(false)
+    })
+
+    test('a menu that asks nothing in words shows its heading, not the key footer', async () => {
+        const mirror = await mirrorShowing(EFFORT_MENU)
+        expect(mirror.screenStatus('s1').question).toBe('Select Reasoning Level for GPT-6-Sol')
+        expect((await mirrorShowing(LIMIT_MENU)).screenStatus('s1').question).toBe('Switch to gpt-6-luna for lower credit usage?')
+    })
 })
 
 test.describe('T160 00c4df83 the send key sends the first queued message now', () => {
@@ -185,6 +206,14 @@ test.describe('T160 00c4df83 the send key sends the first queued message now', (
         expect(sendsQueuedNow({ ...base, queued: 0 })).toBe(false)
         expect(sendsQueuedNow({ ...base, question: true })).toBe(false)
         expect(sendsQueuedNow({ ...base, sendKey: false })).toBe(false)
+    })
+
+    test('a file still attaching, or one that failed, is not an empty box', () => {
+        expect(isComposerEmpty('', [])).toBe(true)
+        expect(isComposerEmpty('  \n', [])).toBe(true)
+        expect(isComposerEmpty('', [{ state: 'attaching' }])).toBe(false)
+        expect(isComposerEmpty('', [{ state: 'error', error: 'too large' }])).toBe(false)
+        expect(isComposerEmpty('hi', [])).toBe(false)
     })
 
     test('the key the queued row names follows the send setting', () => {

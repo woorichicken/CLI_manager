@@ -530,6 +530,11 @@ export function sendsQueuedNow(key: {
     )
 }
 
+/** The message box holds nothing: no words and no file — attaching, ready or failed (send-now's «empty box»). */
+export function isComposerEmpty(text: string, attachments: readonly unknown[]): boolean {
+    return text.trim() === '' && attachments.length === 0
+}
+
 /** The key that sends from the box, as the queued row names it; null where no key sends (a phone's Return breaks the line). */
 export function sendKeyName(preferences: { enterSends?: boolean; returnSendsOnTouch?: boolean }, touch: boolean, mac: boolean): string | null {
     if (touch) return preferences.returnSendsOnTouch === true ? 'Return' : null

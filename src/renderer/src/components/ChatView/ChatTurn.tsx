@@ -55,7 +55,7 @@ export const ChatTurn = memo(function ChatTurn({
             .join('\n\n')
         return (
             <div className="chat-turn chat-turn-user" data-testid="chat-turn" data-role="user" data-turn-index={index} title={turnTime(turn.ts)}>
-                <UserParts parts={turn.parts} />
+                <UserParts parts={turn.parts} last={last} />
                 {said.trim() && <CopyMine text={said} />}
             </div>
         )
