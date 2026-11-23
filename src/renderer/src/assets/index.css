@@ -136,10 +136,10 @@ body {
   app-region: no-drag;
 }
 
-/* A full-window overlay (Settings, file preview, dialogs) is drawn over the title strip and the
-   headers. Electron subtracts no-drag areas from drag areas whatever the paint order, so the overlay
-   says no-drag and its own top row (Settings' close button at 32–72px in a short window) gets clicks.
-   The window does not drag while one is open (91fce7bf moved the drag band from 8–48 to 0–72).
+/* A full-window overlay (Settings, file preview, dialogs) is drawn over the headers, which are the
+   window's drag band (8–48px). Electron subtracts no-drag areas from drag areas whatever the paint
+   order, so the overlay says no-drag and its own top row gets clicks — Settings is 600px tall, so in a
+   window under ~700px its close button sits in that band. The window does not drag while one is open.
    The busy screen (Restoring sessions…, Installing update…) has nothing to press: the window still drags. */
 .fixed.inset-0:not([data-busy-overlay]) {
   -webkit-app-region: no-drag;

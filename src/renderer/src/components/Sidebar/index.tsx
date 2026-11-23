@@ -20,7 +20,7 @@ import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice 
 import { sessionsInSidebarOrder, sidebarWorkspaceOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
 import { isOrderHeldFor, setAllSessionsListElement } from '../../utils/allSessionsNav'
 import { useDragAutoScroll } from '../../utils/dragAutoScroll'
-import { PANEL_TOP_MARGIN } from '../../utils/platform'
+import { SidebarHeaderStart } from './SidebarTitle'
 import { CopyNotice, useCopyWithNotice } from './CopyNotice'
 import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
@@ -1133,13 +1133,12 @@ export function Sidebar({
                     sidebarRef.current = el
                     sidebarContainerRef.current = el
                 }}
-                className={`glass-panel mx-2 mb-2 ${PANEL_TOP_MARGIN} rounded-lg flex flex-col overflow-hidden relative`}
+                className="glass-panel m-2 rounded-lg flex flex-col overflow-hidden relative"
                 style={{ width: width, minWidth: 50, maxWidth: 480 }}
             >
                 {/* Same height and top edge as the main header (App.tsx) so the two divider lines meet */}
-                <div className={`${splitLayout ? 'h-6' : 'h-10'} px-2 border-b border-white/10 flex items-center justify-between draggable transition-all`}>
-                    {/* The label gives way first, so a narrow sidebar never clips the buttons */}
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider truncate min-w-0">{isAllSessionsView ? 'All sessions' : 'Workspaces'}</span>
+                <div data-testid="sidebar-header" className={`${splitLayout ? 'h-6' : 'h-10'} px-2 border-b border-white/10 flex items-center justify-between draggable transition-all`}>
+                    <SidebarHeaderStart title={isAllSessionsView ? 'All sessions' : 'Workspaces'} />
                     <div className="flex items-center gap-0.5 no-drag shrink-0">
                         {inboxSlot}
                         <button
@@ -1205,7 +1204,8 @@ export function Sidebar({
                             data-state={viewMode}
                             onClick={toggleViewMode}
                             className={`p-1 hover:bg-white/10 rounded transition-colors ${isAllSessionsView ? 'bg-white/10' : ''}`}
-                            title={isAllSessionsView ? 'Back to folders' : 'All sessions'}
+                            // Names the view first: on macOS the header title gives way to the traffic lights (91fce7bf r2)
+                            title={isAllSessionsView ? 'All sessions — back to folders' : 'Workspaces — show all sessions'}
                         >
                             {isAllSessionsView
                                 ? <FolderTree size={14} className="text-blue-400" />

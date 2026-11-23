@@ -7,10 +7,8 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
 /**
  * T161 — fb-1123 sidebar reports.
  *
- *  - 91fce7bf: the macOS traffic lights get a strip of their own above both panels. The lights are
- *    native and never in a capture, so the check reads where main put them (getWindowButtonPosition)
- *    and asserts no panel — sidebar or main, with the sidebar open or closed — starts above their
- *    bottom edge, and that the strip over the panels drags the window.
+ *  - 91fce7bf: a full-window overlay (Settings) is no-drag over the headers' drag band; the busy
+ *    screen keeps the window draggable. The traffic lights' own spot (round 2) is checked in T163.
  *  - 78a79526: a button with a shortcut says the shortcut and, on a second line, what it does — the
  *    description Settings › Keyboard shows. The first line stays "Label (keys)", so `title^=` selectors
  *    keep working. Labels that already say what the button does (Related) carry no second line.
@@ -25,8 +23,6 @@ const CLAUDE = 's-t161-claude'
 const SHELL = 's-t161-shell'
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
 const LABEL = process.env.T161_LABEL ?? 'run'
-/** A generous box for the three lights from their top-left corner (macOS 26: ~13px buttons, ~9px apart). */
-const LIGHTS = { width: 70, height: 16 }
 
 let result: LaunchResult | null = null
 const temps: string[] = []
@@ -82,45 +78,13 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page; home: s
     return { app: result.app, page: result.page, home }
 }
 
-const lightsBox = (app: ElectronApplication): Promise<{ x: number; y: number } | null> =>
-    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getWindowButtonPosition?.() ?? null)
-
-/** Top edges of every panel on screen (sidebar card, main card). */
-const panelTops = (page: Page): Promise<number[]> =>
-    page.evaluate(() => Array.from(document.querySelectorAll('.glass-panel')).map((el) => el.getBoundingClientRect().top))
-
-test('T161 91fce7bf: the traffic lights sit in their own strip — no panel starts under them, open or closed sidebar', async () => {
-    const { app, page } = await launch()
+test('T161 91fce7bf: a full-window overlay opts out of the header drag band; the busy screen does not', async () => {
+    // Where the traffic lights sit (round 2: their spot inside the header row, no strip) is T163.
+    const { page } = await launch()
     await expect(page.getByText('T161 Shell', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
-    await shot(page, 't161-lights-open')
 
-    const lights = await lightsBox(app)
-    expect(lights, 'main reports the traffic light position').not.toBeNull()
-    const lightsBottom = lights!.y + LIGHTS.height
-
-    // The sidebar title starts where it always did — the strip takes height, not the header's width.
-    const tops = await panelTops(page)
-    expect(tops.length).toBeGreaterThanOrEqual(2)
-    for (const top of tops) expect(top, `panel top ${top} clears the lights (bottom ${lightsBottom})`).toBeGreaterThanOrEqual(lightsBottom)
-
-    // The strip above the panels drags the window like the headers do.
-    const region = await page.evaluate(([x, y]) => {
-        const el = document.elementFromPoint(x, y) as HTMLElement | null
-        return el ? getComputedStyle(el).getPropertyValue('-webkit-app-region') || getComputedStyle(el).getPropertyValue('app-region') : 'none'
-    }, [600, 4])
-    expect(region).toBe('drag')
-
-    // Sidebar closed: the main header's first button (Open Sidebar) is the one under the lights before.
-    await page.locator('button[title^="Close Sidebar"]').click()
-    const open = page.locator('button[title^="Open Sidebar"]')
-    await expect(open).toBeVisible()
-    await shot(page, 't161-lights-closed')
-    const openBox = (await open.boundingBox())!
-    expect(openBox.y, 'Open Sidebar is below the lights').toBeGreaterThanOrEqual(lightsBottom)
-    for (const top of await panelTops(page)) expect(top).toBeGreaterThanOrEqual(lightsBottom)
-
-    // A full-window overlay over the strip opts out of the drag band, or its top row (Settings'
-    // close button in a short window) would move the window instead of taking the click.
+    // A full-window overlay over the headers opts out of the drag band, or its top row (Settings'
+    // close button in a window under ~700px) would move the window instead of taking the click.
     await page.locator('button[title^="Settings"]').click()
     const overlay = page.locator('.fixed.inset-0').filter({ has: page.getByTestId('settings-category-sidebar') }).first()
     await expect(overlay).toBeVisible()

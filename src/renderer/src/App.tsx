@@ -36,7 +36,7 @@ import { UpdateNotification, UpdateStatus } from './components/UpdateNotificatio
 import { BusyOverlay } from './components/BusyOverlay'
 import { FeedbackGate } from './components/Feedback/FeedbackGate'
 import { resumeCommandFor } from './utils/resumeCommand'
-import { isMac, PANEL_TOP_MARGIN } from './utils/platform'
+import { isMac, TRAFFIC_LIGHTS_CLEAR_X } from './utils/platform'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { mostRecentOtherSession, neighborSession, sessionsInSidebarOrder, sidebarWorkspaceOrder, type SessionLanding } from './utils/sessionNavigation'
 import { describeSessionLinkProblems, MAX_LINKED_SESSIONS, parseSessionLink, resolveSessionLink } from './utils/sessionLink'
@@ -74,6 +74,10 @@ const SESSION_LINK_NOTICE_MS = 4000
 /** How long to keep trying to focus a terminal that is still being shown. */
 const TERMINAL_FOCUS_RETRY_MS = 50
 const TERMINAL_FOCUS_TRIES = 20
+/** Main header, sidebar closed: the panel starts at x 0, the row has px-4 and gap-2 before the next item. */
+const MAIN_HEADER_LIGHTS_SPACER = Math.max(0, TRAFFIC_LIGHTS_CLEAR_X - 16 - 8)
+/** The left group's floor with the sidebar closed: the lights' spot plus the Open Sidebar button (390 wide). */
+const CLOSED_HEADER_MIN_WIDTH = 32 + (MAIN_HEADER_LIGHTS_SPACER > 0 ? MAIN_HEADER_LIGHTS_SPACER + 8 : 0)
 
 /**
  * Put the keys in a session's terminal input — after a switch to its terminal, the picker's arrows and
@@ -123,6 +127,12 @@ function App() {
     const [isDraggingSession, setIsDraggingSession] = useState(false)
     const [dragOverZone, setDragOverZone] = useState<'split' | null>(null)
     const [activeSplitIndex, setActiveSplitIndex] = useState<number>(0) // Which pane is active in split view
+    // Split view's headers are shorter (h-6): main re-centres the macOS traffic lights in them (91fce7bf r2).
+    // main ignores it from any window but the main one (the grid window renders App too).
+    const headerCompact = Boolean(splitLayout)
+    useEffect(() => {
+        if (isMac) window.api.setHeaderCompact(headerCompact)
+    }, [headerCompact])
 
     // What went wrong with the last session link clicked (closed or ambiguous session)
     const [sessionLinkNotice, setSessionLinkNotice] = useState<string | null>(null)
@@ -1655,8 +1665,6 @@ function App() {
 
     return (
         <div className="flex h-screen w-screen bg-transparent">
-            {/* macOS: the traffic lights' strip above the panels drags the window like the headers (91fce7bf) */}
-            {isMac && <div aria-hidden data-window-title-strip className="fixed top-0 inset-x-0 h-8 draggable" />}
             {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
 
             {installingUpdate ? (
@@ -1727,13 +1735,17 @@ function App() {
                     }
                 />
             )}
-            <div className={`flex-1 glass-panel m-2 ml-0 ${PANEL_TOP_MARGIN} rounded-lg overflow-hidden flex flex-col`}>
+            <div className="flex-1 glass-panel m-2 ml-0 rounded-lg overflow-hidden flex flex-col">
                 {/* Header - minimized in split view */}
                 <div className={`${splitLayout ? 'h-6' : 'h-10'} border-b border-white/10 flex items-center px-4 draggable justify-between relative z-10 transition-all`}>
                     {/* min-w-0 flex-1: the path may only take what the buttons on the right leave, or its fold never triggers.
                         overflow-hidden: when the right row needs the whole width (390 wide), this side is cut rather than
                         drawn under it; the sidebar button keeps its room (found-defects 「390 헤더 겹침」) */}
-                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden" style={!isSidebarOpen ? { minWidth: 32 } : undefined}>
+                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden" style={!isSidebarOpen ? { minWidth: CLOSED_HEADER_MIN_WIDTH } : undefined}>
+                        {/* macOS, sidebar closed: the traffic lights sit over this end of the header — keep their spot (91fce7bf r2) */}
+                        {!isSidebarOpen && MAIN_HEADER_LIGHTS_SPACER > 0 && (
+                            <div aria-hidden data-traffic-lights-spacer className="shrink-0 self-stretch" style={{ width: MAIN_HEADER_LIGHTS_SPACER }} />
+                        )}
                         {!isSidebarOpen && (
                             <button
                                 onClick={() => setIsSidebarOpen(true)}

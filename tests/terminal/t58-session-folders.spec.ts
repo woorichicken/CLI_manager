@@ -135,9 +135,10 @@ test.describe('T58 session folders', () => {
         await page.getByTestId('sidebar-more').click()
         await expect(page.getByTestId('sidebar-more-menu').getByTestId('sidebar-collapse-session-folders')).toHaveCount(0)
         await page.keyboard.press('Escape')
-        // at the default width the title is whole and the view toggle stands where the folder view has it
+        // at the default width the title is whole (or, on macOS, hidden for the traffic lights — 91fce7bf r2, T163)
+        // and the view toggle stands where the folder view has it
         const title = page.locator('.glass-panel > div').first().locator('span').first()
-        expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth), 'All sessions title not cut').toBe(true)
+        expect(await title.evaluate((el) => getComputedStyle(el).visibility === 'hidden' || el.scrollWidth <= el.clientWidth), 'All sessions title not cut').toBe(true)
         const toggle = page.getByTestId('sidebar-view-toggle')
         const allX = (await toggle.boundingBox())!.x
         await toggle.click()

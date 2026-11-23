@@ -79,7 +79,8 @@ test.describe('T136 All sessions New session (c63a93c0)', () => {
         expect((await toggle.boundingBox())!.x).toBe(toggleXInFolders)
         const titleCut = await page.evaluate(() => {
             const title = Array.from(document.querySelectorAll('span')).find(el => el.textContent === 'All sessions')
-            return title ? title.scrollWidth > title.clientWidth : true
+            // hidden on macOS at the default width for the traffic lights (91fce7bf r2, T163) — hidden is not cut
+            return title ? getComputedStyle(title).visibility !== 'hidden' && title.scrollWidth > title.clientWidth : true
         })
         expect(titleCut).toBe(false)
 
