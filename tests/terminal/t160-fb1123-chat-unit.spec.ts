@@ -5,6 +5,8 @@ import path from 'path'
 import { parseCodexTranscript } from '../../src/main/transcript/codexTranscript'
 import { foldMetadata } from '../../src/main/transcript/metadata'
 import { TranscriptReader } from '../../src/main/TranscriptReader'
+import { TerminalMirror } from '../../src/main/TerminalMirror'
+import { EventEmitter } from 'events'
 import { QUEUED_SEND_QUIET_MS, sendKeyName, sendsQueuedNow } from '../../src/renderer/src/components/ChatView/chatLib'
 
 /**
@@ -120,6 +122,43 @@ test.describe('T160 0adc1255 the Codex model chip follows /model', () => {
         const after = reader.read('s', 'codex', id)!
         expect(after.changed).toBe(true)
         expect(after.meta).toMatchObject({ model: 'gpt-6.2-astra', effort: 'high' })
+    })
+})
+
+async function mirrorShowing(screen: string[]): Promise<TerminalMirror> {
+    const events = new EventEmitter()
+    const mirror = new TerminalMirror({ events, getSize: () => ({ cols: 110, rows: 30 }), hasTerminal: () => true } as never)
+    events.emit('created', 's1', 110, 30)
+    events.emit('output', 's1', screen.join('\r\n'))
+    await mirror.flush('s1')
+    return mirror
+}
+
+test.describe('T160 0adc1255 Codex 0.171 menus are questions', () => {
+    // the bottom of a real codex-cli 0.171 screen after a usage-limit failure (probe 2026-11-23, links neutral)
+    const LIMIT_MENU = [
+        '› Reply with the word yes only.',
+        '■ You’ve hit your usage limit. Upgrade to Pro (https://example.invalid/pro), visit https://example.invalid/',
+        'usage to purchase more credits or try again at Nov 24th, 2026 11:15 PM.',
+        '  Approaching rate limits',
+        '  Switch to gpt-6-luna for lower credit usage?',
+        '› 1. Switch to gpt-6-luna                   Fast and affordable model for easier tasks.',
+        '  2. Keep current model',
+        '  3. Keep current model (never show again)  Hide future rate limit reminders about switching models',
+        '  enter select · esc back'
+    ]
+    const EFFORT_MENU = ['  Select Reasoning Level for GPT-6-Sol', '  1. Low               Fast responses with lighter reasoning', '› 2. Medium (default)  Balances speed and reasoning depth for everyday tasks', '  enter default · s session · esc back']
+    const IDLE = ['• Model changed to gpt-6-sol medium', '', '› Ask Codex to do anything', '', '  GPT-6-Sol medium · ~/work', '  ← for agents · ? for shortcuts']
+
+    test('the rate-limit menu and the /model picker: waiting (Enter would pick); the idle prompt: not', async () => {
+        for (const screen of [LIMIT_MENU, EFFORT_MENU]) {
+            const mirror = await mirrorShowing(screen)
+            expect(mirror.asksQuestion('s1'), screen.at(-1)).toBe(true)
+            expect(mirror.showsAwaitingInput('s1')).toBe(true)
+        }
+        const idle = await mirrorShowing(IDLE)
+        expect(idle.asksQuestion('s1')).toBe(false)
+        expect(idle.showsAwaitingInput('s1')).toBe(false)
     })
 })
 

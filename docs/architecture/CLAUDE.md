@@ -141,7 +141,7 @@ rules stay in the root; this file is the inventory.
     Codex 가 돌리지 못한 턴(사용량 한도 등 `task_complete.error`·옛 `error` 이벤트)은 그 프롬프트 뒤 「Turn failed」 알림(빨강, source `error`)으로 보인다(fb-1123 8a3a326f)
   - 모델: `transcript/metadata.ts`(ovis conversation-metadata 이식) — Claude 답의 `message.model`·`effort`·usage, /model 답(「Set model to `Sonnet 5`」),
     Codex `turn_context`·`token_count`(창 크기 → %)·`thread_settings_applied`(Codex `/model` 이 턴 없이 바로 쓰는 새 모델·추론 — fb-1123 0adc1255). 바꾸기는 에이전트의 `/model` 뿐: Claude 는 그 선택을 새 세션 기본값(settings.json)으로도 저장하므로
-    칩은 반드시 확인을 거친다. 인자 없는 `/model`·`/config` 처럼 터미널만 그리는 명령(`chatCommands.ts` 의 `terminal`)은 보낸 뒤 터미널 + 「Back to Chat」 띠
+    칩은 반드시 확인을 거친다. 거절되면(질문·입력줄에 글) 칩이 닫히지 않고 「Not sent」 이유와 Open Terminal 을 보인다 — Codex 0.17x 메뉴 꼬리 `enter select · esc back` 도 질문으로 읽는다(fb-1123 0adc1255). 인자 없는 `/model`·`/config` 처럼 터미널만 그리는 명령(`chatCommands.ts` 의 `terminal`)은 보낸 뒤 터미널 + 「Back to Chat」 띠
   - 화면 읽기: `refreshScreen` 하나 — 미러를 flush 한 뒤 읽고 그 출력 시각까지만 「읽음」. (flush 없이 읽던 1회차는 그리기 전 화면을 읽어 답한 뒤에도
     카드가 남거나, 새 질문 카드가 안 뜰 수 있었다)
   - 단축키: `toggleChatView` ⌘⇧M · `focusChatInput` ⌘⇧I · `scrollPaneUp/Down` ⌘⇧PgUp/PgDn(그룹 「Chat View」). 입력칸 안에서도 먹도록 입력 칸 건너뛰기

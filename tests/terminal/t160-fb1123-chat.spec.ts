@@ -32,12 +32,12 @@ test.afterEach(async () => {
 
 const chat = (page: Page): Locator => page.locator('[data-testid="chat-view"][data-session-id]:visible')
 
-async function shot(page: Page, report: string): Promise<void> {
+async function shot(page: Page, report: string, name = ''): Promise<void> {
     const dir = process.env.T160_SHOTS
     if (!dir) return
     fs.mkdirSync(path.join(dir, report), { recursive: true })
     await page.waitForTimeout(400)
-    await page.screenshot({ path: path.join(dir, report, `${process.env.T160_LABEL ?? 'after'}.png`), clip: { x: 0, y: 0, width: 1280, height: 800 } })
+    await page.screenshot({ path: path.join(dir, report, `${process.env.T160_LABEL ?? 'after'}${name ? `-${name}` : ''}.png`), clip: { x: 0, y: 0, width: 1280, height: 800 } })
 }
 
 async function openChat(page: Page, name: string): Promise<void> {
@@ -128,6 +128,30 @@ test('T160 fb-1123: a failed Codex turn shows why, the Codex chip follows /model
     await shot(page, '0adc1255')
     await expect.soft(chip).toHaveAttribute('title', /gpt-6-sol · reasoning medium/, { timeout: 5_000 })
     await expect.soft(chat(page).getByTestId('chat-model-effort')).toHaveText('· medium')
+
+    // After a usage-limit failure Codex 0.171 asks «Switch to gpt-6-luna?» (the real screen, copied into chat-mock
+    // LIMIT). The chip's /model is refused there (Enter would pick the highlighted row) — the chip said nothing and
+    // closed, so it «did not change». Now it says why and offers the terminal.
+    const composerCx = chat(page).getByTestId('chat-composer')
+    await composerCx.fill('LIMIT')
+    await composerCx.press('Enter')
+    await waitForBufferText(page, 't160-codex', 'Approaching rate limits', 10_000)
+    await expect.soft(failures).toHaveCount(3, { timeout: 10_000 })
+    await chip.click()
+    await chat(page).getByTestId('chat-model-picker').click()
+    await chat(page).getByTestId('chat-model-confirm-ok').click()
+    await page.waitForTimeout(1_500)
+    await shot(page, '0adc1255', 'menu')
+    const refused = chat(page).getByTestId('chat-model-refused')
+    await expect.soft(refused).toBeVisible({ timeout: 5_000 })
+    await expect.soft(refused).toContainText('asking a question')
+    expect(await termText(page, 't160-codex')).not.toContain('PANEL: /model')
+    // the menu is still there: nothing was typed into it
+    expect(await termText(page, 't160-codex')).not.toContain('CHOSE:')
+    if (await refused.isVisible()) {
+        await chat(page).getByTestId('chat-model-open-terminal').click()
+        await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal')
+    }
 
     // --- 00c4df83: Enter in the empty box sends the first queued message now ----------------------
     await openChat(page, 'T160 Claude')
