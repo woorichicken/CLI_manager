@@ -16,8 +16,8 @@ interface RelatedSessionsButtonProps {
 export function RelatedSessionsButton({ sessionId, count, onOpen, compact = false }: RelatedSessionsButtonProps) {
     const hint = useShortcutHint()
     const title = count === 0
-        ? hint('Related sessions — none yet. Open to add one.', 'toggleRelated')
-        : hint(`Related sessions: ${count}`, 'toggleRelated')
+        ? hint('Related sessions — none yet. Open to add one.', 'toggleRelated', false)
+        : hint(`Related sessions: ${count}`, 'toggleRelated', false)
 
     return (
         <button
