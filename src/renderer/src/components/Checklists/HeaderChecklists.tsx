@@ -101,7 +101,7 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
                 data-progress={current ? `${done}/${total}` : ''}
                 onClick={() => onOpenChange(!open)}
                 title={tooltip}
-                aria-label="Checklists"
+                aria-label={current ? `Checklists — ${done} of ${total} done` : 'Checklists'}
                 aria-expanded={open}
                 className={`no-drag shrink-0 flex items-center gap-1 rounded-md border transition-colors ${
                     compact ? 'h-5 px-1 text-[10px]' : 'h-7 px-1.5 text-xs'

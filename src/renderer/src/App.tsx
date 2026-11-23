@@ -1466,7 +1466,9 @@ function App() {
 
         // Pick the landing tab before the session leaves the list. Sidebar order,
         // because that is where the user looks for "the one above".
-        const owner = sortedWorkspaces.find(w => w.id === workspaceId)
+        // Reply threads the sidebar hides are not "the one above" either (1b965ad1): landing on one
+        // would pop a hidden row back into the list. The closing session itself stays so its place is known.
+        const owner = withoutThreadSessions(sortedWorkspaces, sidebarThreadIds, [sessionId]).find(w => w.id === workspaceId)
         // ⌘W with the tab row on: the tab beside it (right, else left), as a browser does.
         const tabNeighborId = landing === 'tab' ? closeSessionTab(sessionTabs.ids, sessionId).neighbor : null
         const tabTarget = tabNeighborId ? sessionOwnerById.get(tabNeighborId) ?? null : null
