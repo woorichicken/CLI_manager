@@ -60,6 +60,23 @@ export interface CronRun {
     /** The CLI Manager session it opened or typed into — «Open session». */
     sessionId?: string
     note?: string
+    /**
+     * A «new» run's background session was closed once its work was done (idle CRON_IDLE_CLOSE_MS,
+     * no question on screen, nobody opened it). «Open session» then resumes `conversation` in a new session.
+     */
+    closedAt?: number
+    /** The agent conversation the closed session held — copied at closing, before the session is gone. */
+    conversation?: CronRunConversation
+}
+
+/** Enough to resume a closed run's conversation: the agent, its id and the person's start command. */
+export interface CronRunConversation {
+    agent: 'claude' | 'codex'
+    id: string
+    /** The session's own start command (`cldy`, not `claude`), as TerminalSession.cliCommand keeps it. */
+    command?: string
+    cwd: string
+    name: string
 }
 
 /** One job as the window and the API show it. */

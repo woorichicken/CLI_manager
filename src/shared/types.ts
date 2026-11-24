@@ -62,6 +62,13 @@ export interface TerminalSession {
      */
     templateId?: string
     /**
+     * Opened in the background by Autocron (CronService «new» runs): the sidebar's lists, ⌘[ ] and the
+     * phone's list leave it out — as reply threads (1b965ad1) — and search still finds it. A person
+     * brings it into the lists by opening it: the Loop window's «Open session», or by viewing it in the
+     * main window any other way (search, an inbox request, a session link). Cleared then, for good.
+     */
+    hidden?: boolean
+    /**
      * Set while an external AI works in this session through the Control API:
      * when the API opens it, or the first time the API reads, types into, waits
      * on or focuses it. A visible mark, not a permission — the API reaches every

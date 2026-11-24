@@ -232,6 +232,23 @@ export class CronStore {
         return record
     }
 
+    /**
+     * Changes a run already recorded — a background session closed (closedAt · conversation) or resumed
+     * in a new session (sessionId). Null when the run is gone (its job removed, or cut at CRON_RUNS_MAX).
+     */
+    updateRun(id: string, patch: Partial<Pick<CronRun, 'sessionId' | 'closedAt' | 'conversation'>>): CronRun | null {
+        const all = this.runs()
+        const index = all.findIndex((r) => r.id === id)
+        if (index < 0) return null
+        const next: CronRun = { ...all[index], ...patch }
+        if (patch.closedAt === undefined && 'closedAt' in patch) delete next.closedAt
+        const updated = [...all]
+        updated[index] = next
+        this.store.set(CRON_RUNS_KEY, updated)
+        this.onChange()
+        return next
+    }
+
     lastRun(cronId: string): CronRun | null {
         return this.runs(cronId)[0] ?? null
     }

@@ -277,6 +277,8 @@ export interface OpenSessionInput {
     sessionFolder?: string
     /** Unregister the new workspace when its last session closes. Ignored when it already exists. */
     ephemeral?: boolean
+    /** Open it out of the session lists (TerminalSession.hidden) — Autocron's background runs. Not on the HTTP API. */
+    hidden?: boolean
     client: string
     /** Session id from X-Caller-Session: the session asking, if it said so. */
     caller?: string
@@ -592,7 +594,8 @@ export class ControlApiService {
             // Remembered so the sidebar row can show the template's logo (report 8062e68c).
             ...(template ? { templateId: template.id } : {}),
             aiControl: { client: input.client, since: Date.now() },
-            ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {})
+            ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {}),
+            ...(input.hidden ? { hidden: true } : {})
         }
         if (madeSessionFolder) this.deps.broadcast(SESSION_FOLDERS_CHANNEL, this.deps.sessionFolders.list())
         const caller = input.caller && this.hasSession(input.caller) ? input.caller : undefined
@@ -979,8 +982,33 @@ export class ControlApiService {
 
     focusSession(sessionId: string, client?: string, caller?: string, terminal?: { command?: string }): ApiSession {
         const { workspace, session } = this.connect(sessionId, client, caller, 'none')
+        // shown on purpose: a background session joins the lists before the window moves to it
+        this.revealSession(sessionId)
         this.emit({ type: 'focus', workspaceId: workspace.id, sessionId, ...(terminal ? { terminal } : {}) })
         return this.describe(workspace, session)
+    }
+
+    /**
+     * Clears TerminalSession.hidden: the session joins the sidebar, ⌘[ ] and the phone list. False when
+     * it was not hidden (or is gone) — nothing is written then.
+     */
+    revealSession(sessionId: string): boolean {
+        const workspaces = this.workspaces()
+        for (const workspace of workspaces) {
+            const session = workspace.sessions.find((s) => s.id === sessionId)
+            if (!session) continue
+            if (!session.hidden) return false
+            delete session.hidden
+            this.deps.store.set('workspaces', workspaces)
+            this.emit({ type: 'updated', workspaceId: workspace.id, sessionId, session: { ...session } })
+            return true
+        }
+        return false
+    }
+
+    /** Sessions carrying TerminalSession.hidden (Autocron's background runs). */
+    hiddenSessionIds(): string[] {
+        return this.workspaces().flatMap((w) => (w.sessions ?? []).filter((s) => s.hidden).map((s) => s.id))
     }
 
     /**
