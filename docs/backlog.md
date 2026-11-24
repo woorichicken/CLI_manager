@@ -130,6 +130,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Discovered: 2026-11-14 v1.34.0 릴리즈 뒤 열린 의존성 PR 을 보다가.
 - Evidence: `pnpm audit --prod` → critical 0 · high 18 · moderate 9 · low 5. 고치려면 ① `electron` `^39.8.10` → 41.10.4+/42.11.16+(메이저, high·moderate·low) — 그 안의 `extract-zip@2.0.1` high 는 패치 없음 ② `electron-updater@6.8.9` 의 `js-yaml@4.1.1` → 4.3.2+ ③ `electron-store@11.0.2 > conf > ajv@8.17.1 > fast-uri@3.1.0` → fast-uri 3.1.9+·ajv 8.18.0+ ④ 직접 의존 `uuid@13.0.0` → 13.0.1+. 열린 dependabot PR 9개(#2~#5·#7~#10 은 08-18, #115 는 11-10) 중 이 넷을 고치는 것은 없다. `gh api repos/woorichicken/CLI_manager/dependabot/alerts` → 403 「Dependabot alerts are disabled」 — 버전 올리기 PR 은 오지만 보안 알림·보안 PR 은 꺼져 있다.
 - Why deferred: 사람 결정 2026-11-14 「일단 백로그로」. Electron 메이저는 node-pty ABI·xterm·`install-app-deps`·공증 빌드까지 다시 봐야 하는 작업이다.
+- Decided 2026-11-24(사람, v1.37.0 뒤 fb-1123): 다시 보류. 다음 릴리즈 준비 때 또 묻지 않는다 — critical 이 생기거나 사람이 시작을 말할 때.
 - Trigger: 다음 릴리즈 준비 때, 또는 audit 에 critical 이 생길 때. 순서 추천: ②③④(패치 버전, 작음) → ① Electron 메이저를 따로 한 갈래. 08-18 PR 8개는 충돌 상태라 닫고 dependabot 이 다시 열게 두고, #115 는 CI 다시 돌려 초록이면 머지. 저장소 설정 Security › Dependabot alerts 켜기는 사람 몫.
 - Owner: 없음
 
@@ -463,6 +464,8 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 히스토리 유실 수정과 별개 결정이다(보관 줄 수를 줄이면 사용자가 위로 스크롤할 수 있는 양이 준다).
 - Trigger: 하얀 화면이 다시 나올 때 — 이제 main 로그에 `[renderer] gone: <reason>` 이 남으니 `oom` 인지부터 본다.
 - Fix direction: main 미러가 2,000줄을 들고 있으니 렌더러 스크롤백을 줄여도 새 창·재시작 복원은 그대로다. 줄이기 전에 세션 수별 렌더러 RSS 를 잰다.
+- Measured 2026-11-24 (fb-1123, 제보 아님 — 사람 질문 「탭이 늘면 느려지는 것 같다」): 같은 출력 12,000줄·103칸·세션 40개에서 렌더러 833MB(탭 40)·889MB(탭 2)·스크롤백 빈 40개 116MB, 세션 5개 173MB(`/usr/bin/footprint`). 메모리는 탭 수가 아니라 세션 수 × 스크롤백 채움이다(세션당 약 16.5MB). 탭 전환은 5·40세션 모두 15~17ms(숨김 창 rAF 하한) — 출력이 흐르는 중의 전환은 안 쟀다. 기록 `~/Downloads/_batches/fb-1123/work/perf-tabs-ram.md`. 제안은 Settings 에 줄 수(기본 5000).
+- Decided 2026-11-24(사람): 「40개 기준으로 800MB 면 크다는 느낌은 안 든다」 — 기본값·설정 추가 보류. 위 Trigger 그대로.
 - Owner: 없음
 
 ### `scripts/post-release.cjs` — README 의 다운로드 링크는 릴리즈 때 갱신하지 않는다
