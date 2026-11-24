@@ -118,6 +118,8 @@ export class CronService {
     private ticking: Promise<void> | null = null
     /** «Waiting for you» already sent for this session and question — the inbox is asked once per question. */
     private readonly asked = new Map<string, string>()
+    /** «Resume» on a closed run while its new session is still starting — a second click joins it, no second session. */
+    private readonly resuming = new Map<string, Promise<string>>()
     /** «new» runs between opening their session and recording the run: their hidden session has no record yet. */
     private startingNew = 0
 
@@ -298,7 +300,9 @@ export class CronService {
                 }
                 continue
             }
-            if (state.kind !== 'idle' || now - state.since < (this.deps.timing?.idleCloseMs ?? CRON_IDLE_CLOSE_MS)) continue
+            // since 0: no output yet (a restored session whose terminal has not drawn) — not idle, just not started
+            if (state.kind !== 'idle' || state.since <= 0) continue
+            if (now - state.since < (this.deps.timing?.idleCloseMs ?? CRON_IDLE_CLOSE_MS)) continue
             const conversation = background.close(sessionId)
             if (conversation) this.deps.store.updateRun(entry.run.id, { closedAt: now, conversation })
             // nothing to resume it from (no conversation id yet, another program): show it rather than lose it
@@ -379,8 +383,19 @@ export class CronService {
         if (this.deps.focusSession(sessionId, terminal)) return true
         const run = this.deps.store.runs().find((r) => r.sessionId === sessionId && r.conversation)
         if (!run?.conversation || !this.deps.background) return false
-        const resumedId = await this.deps.background.resume(run.conversation)
-        this.deps.store.updateRun(run.id, { sessionId: resumedId, closedAt: undefined })
-        return true
+        const pending = this.resuming.get(run.id)
+        if (pending) {
+            await pending
+            return true
+        }
+        const resuming = this.deps.background.resume(run.conversation)
+        this.resuming.set(run.id, resuming)
+        try {
+            const resumedId = await resuming
+            this.deps.store.updateRun(run.id, { sessionId: resumedId, closedAt: undefined })
+            return true
+        } finally {
+            this.resuming.delete(run.id)
+        }
     }
 }

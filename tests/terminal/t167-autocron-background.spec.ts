@@ -63,7 +63,7 @@ test.describe('T167 autocron background sessions', () => {
         for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
     })
 
-    async function launch(idleCloseMs: number) {
+    async function launch(idleCloseMs: number, seeded = true) {
         const home = tempDir('climanger-t167-home-')
         const jobFolder = tempDir('climanger-t167-job-')
         const claudeDir = tempDir('climanger-t167-claude-')
@@ -72,7 +72,7 @@ test.describe('T167 autocron background sessions', () => {
         fs.mkdirSync(transcripts, { recursive: true })
         const agent = path.join(bin, 'claude')
         fs.writeFileSync(agent, `#!/bin/sh\nexec node ${MOCK} --transcript ${path.join(transcripts, 'seed.jsonl')} --copy-transcript --show-args --work-ms 500 "$@"\n`, { mode: 0o755 })
-        ctx = await launchAppWithWorkspaces([{ id: 'ws-1', name: 'T167WS', path: jobFolder, sessions: [{ id: SEEDED, name: 'Person' }] }], {
+        ctx = await launchAppWithWorkspaces([{ id: 'ws-1', name: 'T167WS', path: jobFolder, sessions: seeded ? [{ id: SEEDED, name: 'Person' }] : [] }], {
             settings: { controlApi: { enabled: true, port: 0 } },
             env: { CLIMANAGER_HOME: home, CLAUDE_CONFIG_DIR: claudeDir, CLIMANAGER_TEST_CRON_TIMING: `1000,${idleCloseMs}` }
         })
@@ -115,6 +115,16 @@ test.describe('T167 autocron background sessions', () => {
         await expect(c.page.locator(`[data-session-id="${sessionId}"] .xterm`)).toBeVisible()
     })
 
+    test('with no other session in the window, the background session is not picked as the one on screen', async () => {
+        test.setTimeout(120_000)
+        const { api, sessionId, ctx: c } = await launch(600_000, false)
+        await expect.poll(async () => (await api('GET', `/v1/sessions/${sessionId}/output?mode=tail&lines=100`)).json.lines?.join('\n') ?? '', { timeout: 60_000 })
+            .toContain('hello background')
+        await c.page.waitForTimeout(3000)
+        expect(sessionsIn(c.userDataDir).find((s) => s.id === sessionId)).toMatchObject({ hidden: true })
+        await expect(sidebarRow(c.page, sessionId)).toHaveCount(0)
+    })
+
     test('done and idle → closed with its conversation kept; Resume opens it again in a listed session', async () => {
         test.setTimeout(240_000)
         const { agent, sessionId, ctx: c } = await launch(15_000)
@@ -148,7 +158,10 @@ test.describe('T167 autocron background sessions', () => {
         expect(session.initialCommand).toContain(`--resume ${conversationId}`)
         expect(session.initialCommand).toContain(agent)
         await expect(sidebarRow(c.page, session.id)).toBeVisible()
-        await expect.poll(async () => c.page.evaluate((id) => document.querySelector(`[data-session-id="${id}"] .xterm-rows`)?.textContent ?? '', session.id), { timeout: 30_000 })
-            .toContain(`ARGS: --resume ${conversationId}`)
+        const argsLine = async () => (await c.page.evaluate((id) => document.querySelector(`[data-session-id="${id}"] .xterm-rows`)?.textContent ?? '', session.id))
+            .match(/ARGS:[^\n]*?(?=\s{2,}|$)/)?.[0] ?? ''
+        await expect.poll(argsLine, { timeout: 30_000 }).toContain(`ARGS: --resume ${conversationId}`)
+        // nothing else rides along — a real Claude refuses --session-id next to --resume (CLISessionTracker skips it)
+        expect(await argsLine()).not.toContain('--session-id')
     })
 })

@@ -200,6 +200,35 @@ test.describe('T166 autocron background sessions', () => {
         expect([...h.hidden]).toEqual(['s1'])
     })
 
+    test('no output yet (since 0, a restored terminal not drawn) is not idle', async () => {
+        const h = harness()
+        await h.cron.runNow(h.job().id)
+        h.states.set('s1', { kind: 'idle', since: 0 })
+        h.advance(CRON_IDLE_CLOSE_MS * 10)
+        await h.cron.tick()
+        expect(h.log).toEqual([])
+    })
+
+    test('Resume clicked twice while the first is starting opens one session', async () => {
+        const h = harness()
+        await h.cron.runNow(h.job().id)
+        h.states.set('s1', { kind: 'idle', since: h.now() })
+        h.advance(CRON_IDLE_CLOSE_MS)
+        await h.cron.tick()
+        h.focusable.delete('s1')
+        let release: (id: string) => void = () => {}
+        let resumes = 0
+        h.deps.background!.resume = () => {
+            resumes++
+            return new Promise<string>((resolve) => { release = resolve })
+        }
+        const first = h.cron.openSession('s1')
+        const second = h.cron.openSession('s1')
+        release('resumed-1')
+        expect(await Promise.all([first, second])).toEqual([true, true])
+        expect(resumes).toBe(1)
+    })
+
     test('the test timing shortens the idle close', async () => {
         const h = harness({ timing: { idleCloseMs: 1000 } })
         await h.cron.runNow(h.job().id)
