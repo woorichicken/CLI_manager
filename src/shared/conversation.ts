@@ -419,6 +419,19 @@ export interface ChatCommand {
     uses?: number
 }
 
+/** How a session on the `@` menu relates to the one being typed in (the Related window's groups). */
+export type SessionMentionRelation = 'below' | 'beside' | 'above' | 'also'
+
+/** One session the composer's `@` menu offers to name in a message (89755e23). */
+export interface SessionMention {
+    id: string
+    name: string
+    /** the workspace's name, shown dim beside the session's */
+    workspace: string
+    /** absent for a session with no relation to this one */
+    relation?: SessionMentionRelation
+}
+
 /** The chat's own preferences (Settings › Chat), handed to the view as a prop. */
 export interface ChatPreferences {
     /** Enter sends (Shift+Enter breaks the line); off: Enter breaks the line and ⌘/Ctrl+Enter sends. Default on. */
@@ -536,6 +549,11 @@ export interface ChatTransport {
     listBackgroundTasks(sessionId: string): Promise<BackgroundTaskList>
     /** Files under the session's folder whose name or path matches, as paths relative to it. */
     searchFiles(sessionId: string, query: string): Promise<string[]>
+    /**
+     * The sessions the `@` menu offers, related ones first (89755e23). Absent on a transport that does not
+     * know the app's sessions (the phone for now): the menu then lists files only.
+     */
+    listSessionMentions?(sessionId: string, query: string): Promise<SessionMention[]>
     /**
      * Shows a file the chat names (absolute, or relative to the session's folder), at a line when given.
      * `mode` is how the click asked for it (⌘-click: outside the app, ⌥-click: beside the session); a phone ignores it.

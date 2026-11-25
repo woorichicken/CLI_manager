@@ -1,3 +1,4 @@
+import { templateOpensInChat } from '../shared/agentCommand'
 import { AgentConversations, AgentConversationError } from './agentConversations'
 import type { LoopTypeResult } from './CronService'
 import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList, ChatForkRequest, ChatForkResult } from '../shared/conversation'
@@ -382,6 +383,8 @@ export function localDateKey(date = new Date()): string {
 }
 
 export interface ControlApiDeps {
+    /** shell aliases, so a template command like `cld` counts as an agent (open-in-Chat flag) */
+    resolveAlias?: (name: string) => string | undefined
     // electron-store has no usable generic type in this codebase (see index.ts)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     store: any
@@ -591,6 +594,7 @@ export class ControlApiService {
             ...(command ? { initialCommand: command } : {}),
             // Remembered so the sidebar row can show the template's logo (report 8062e68c).
             ...(template ? { templateId: template.id } : {}),
+            ...(template && templateOpensInChat(template, this.deps.resolveAlias) ? { openInChat: true } : {}),
             aiControl: { client: input.client, since: Date.now() },
             ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {})
         }
