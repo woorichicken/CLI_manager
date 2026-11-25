@@ -1890,7 +1890,9 @@ app.whenReady().then(async () => {
             cwd: workspace.path,
             type,
             initialCommand,
-            ...(knownTemplateId ? { templateId: knownTemplateId } : {})
+            ...(knownTemplateId ? { templateId: knownTemplateId } : {}),
+            // a template that opens in Chat: the renderer switches this new session once (fbe10f54)
+            ...(templates.some(t => t.id === knownTemplateId && t.openIn === 'chat') ? { openInChat: true } : {})
         }
 
         workspace.sessions.push(newSession)

@@ -18,7 +18,7 @@ import { SessionViewToggle } from './components/SessionViewToggle'
 import { SessionChatSlot } from './components/SessionChatSlot'
 import { ChatFilePreview } from './components/ChatFilePreview'
 import { isAgentSession, setAgentPending, useAgentPendingVersion } from './utils/agentSession'
-import { getSessionViewMode, setSessionPeek, setSessionViewMode } from './hooks/useSessionViewMode'
+import { applyOpenInChat, getSessionViewMode, setSessionPeek, setSessionViewMode } from './hooks/useSessionViewMode'
 import { sendChatCommand } from './components/ChatView/chatContext'
 import { HandoffNoticeToast } from './components/ChatView/HandoffNoticeToast'
 import { showHandoffNotice } from './components/ChatView/draftHandoff'
@@ -147,6 +147,10 @@ function App() {
     const relatedCountBySession = useMemo(() => relatedCounts(sessionRelations, workspaces), [sessionRelations, workspaces])
     // the Chat composer's `@` menu names sessions: it reads this list from a module store, not through props
     useEffect(() => setSessionCatalog({ workspaces, relations: sessionRelations }), [workspaces, sessionRelations])
+    // a session made from a template that opens in Chat starts on Chat (once)
+    useEffect(() => {
+        if (workspaces.length > 0) applyOpenInChat(workspaces.flatMap(workspace => workspace.sessions ?? []))
+    }, [workspaces])
 
     // The session the user is looking at: the focused split pane, else the active tab. One place reports it
     // for the recently viewed order (sidebar All sessions, Related sort); main skips a repeat of the id already in front.

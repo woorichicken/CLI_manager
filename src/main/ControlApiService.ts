@@ -591,6 +591,7 @@ export class ControlApiService {
             ...(command ? { initialCommand: command } : {}),
             // Remembered so the sidebar row can show the template's logo (report 8062e68c).
             ...(template ? { templateId: template.id } : {}),
+            ...(template?.openIn === 'chat' ? { openInChat: true } : {}),
             aiControl: { client: input.client, since: Date.now() },
             ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {})
         }

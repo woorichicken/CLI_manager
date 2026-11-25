@@ -320,6 +320,7 @@ User Action (Renderer)
           cliCommand?: string,        // What started it (`cldy`) — resume repeats this, not `claude`
           sessionFolderId?: string,   // All sessions view folder it also sits in (SessionFolders); a missing folder = none
           templateId?: string,        // Template it was opened from — sidebar row shows that template's logo (after 1.33.0; sessions opened before have none)
+          openInChat?: boolean,       // Created from a template with openIn 'chat' — App switches it to Chat once (hooks/useSessionViewMode applyOpenInChat), then the person's own choice rules
           aiControl?: { client: string, since: number }  // Mark: an AI works in this session (Control API)
         }
       ],
@@ -330,7 +331,7 @@ User Action (Renderer)
     }
   ],
   playgroundPath: string,
-  customTemplates: TerminalTemplate[],  // each may carry logo?: 32×32 PNG data URL (picked PNG/SVG shrunk in the renderer, utils/templateLogo.ts)
+  customTemplates: TerminalTemplate[],  // each may carry logo?: 32×32 PNG data URL (picked PNG/SVG shrunk in the renderer, utils/templateLogo.ts) and openIn?: 'terminal' | 'chat' (how new sessions first show; unset = terminal)
   gettingStarted?: { startedAt, dismissed, done: { folder?, agent?, chat? } },  // first-run checklist (shared/gettingStarted.ts) — own key, not inside settings
   settings: UserSettings,           // settings.controlApi = { enabled, port }
   controlApiToken?: string,         // Kept outside settings so a stale save-settings cannot rotate it

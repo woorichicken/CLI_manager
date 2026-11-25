@@ -62,6 +62,12 @@ export interface TerminalSession {
      */
     templateId?: string
     /**
+     * Set when the session was created from a template that opens in Chat (`TerminalTemplate.openIn`).
+     * The renderer switches such a session to Chat once, the first time it sees it (fbe10f54); after
+     * that the person's own Terminal / Chat choice rules, so the flag is only a hint.
+     */
+    openInChat?: boolean
+    /**
      * Set while an external AI works in this session through the Control API:
      * when the API opens it, or the first time the API reads, types into, waits
      * on or focuses it. A visible mark, not a permission — the API reaches every
@@ -84,6 +90,11 @@ export interface TerminalTemplate {
      * to the original file, which may move or vanish. Unset: the `icon` glyph.
      */
     logo?: string
+    /**
+     * How a session opened from this template first shows: its terminal (default, also when unset —
+     * templates stored before this existed) or the Chat view. Applies to sessions created afterwards only.
+     */
+    openIn?: 'terminal' | 'chat'
 }
 
 export interface Workspace {
