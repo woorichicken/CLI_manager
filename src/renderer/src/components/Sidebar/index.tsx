@@ -864,7 +864,9 @@ export function Sidebar({
     const sessionResults = isSearching ? findMatchingSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), searchQuery) : []
     const isAllSessionsView = viewMode === 'all'
     // Rows picked with their check boxes in All sessions (0d1e3d34). Closed sessions drop out.
-    const sessionIdsKey = allSessionEntries.map(entry => entry.session.id).join('\n')
+    // A row the label filter hides drops out of the pick, so Copy IDs and Side by side act only on what
+    // is on screen (the Related filter's rule, T137 r2).
+    const sessionIdsKey = shownSessionEntries.map(entry => entry.session.id).join('\n')
     const existingSessionIds = useMemo(() => new Set(sessionIdsKey.split('\n')), [sessionIdsKey])
     const { selected: selectedSessionIds, selection: sessionSelection, clear: clearSessionSelection } = useSessionSelection(existingSessionIds)
     // The bar lives in All sessions; leaving the view drops the pick rather than hiding it.
@@ -1419,7 +1421,10 @@ export function Sidebar({
                         ) : sessionFolderActions ? (
                             <SidebarAllSessions
                                 entries={orderForAllSessions(shownSessionEntries, recentIds)}
-                                sessionFolders={sessionFolders}
+                                // While filtering, a folder with no matching session is not drawn as an empty "(0)".
+                                sessionFolders={labelFilter.active
+                                    ? sessionFolders.filter(folder => shownSessionEntries.some(entry => entry.session.sessionFolderId === folder.id))
+                                    : sessionFolders}
                                 folderActions={sessionFolderActions}
                                 listProps={allSessionsListProps}
                                 fontSize={fontSize}

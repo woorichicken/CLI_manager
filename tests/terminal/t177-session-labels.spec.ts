@@ -1,8 +1,8 @@
-import { test, expect, Page } from '@playwright/test'
+import { test, expect, Page, _electron as electron } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './helpers'
 
 /**
  * T177 — a session's role and tags (decision 0015), in the app.
@@ -34,6 +34,7 @@ const shownIds = (page: Page) =>
 
 test.describe('T177 session role and tags', () => {
     let ctx: LaunchResult | undefined
+    let relaunched: Awaited<ReturnType<typeof electron.launch>> | null = null
     const dirs: string[] = []
     const dir = (prefix: string): string => {
         const made = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -43,22 +44,28 @@ test.describe('T177 session role and tags', () => {
     test.afterEach(async () => {
         if (ctx) await closeApp(ctx)
         ctx = undefined
+        if (relaunched) await relaunched.close().catch(() => undefined)
+        relaunched = null
         for (const made of dirs.splice(0)) fs.rmSync(made, { recursive: true, force: true })
     })
 
-    async function launch(labels = true): Promise<{ page: Page; userDataDir: string; home: string; folder: string }> {
+    async function launch(labels = true, sessionFolders = false): Promise<{ page: Page; userDataDir: string; home: string; folder: string }> {
         const home = dir('climanger-t177-home-')
         const folder = dir('climanger-t177-ws-')
         ctx = await launchAppWithWorkspaces(
             [{ id: 'ws-t177', name: 'T177WS', path: folder, sessions: [
                 { id: 's-lead', name: 'T177 lead', ...(labels ? { role: 'lead', tags: ['night-1125'] } : {}) },
-                { id: 's-a', name: 'T177 fix the sidebar' },
+                { id: 's-a', name: 'T177 fix the sidebar', ...(sessionFolders ? { sessionFolderId: 'sf-work' } : {}) },
                 { id: 's-b', name: 'T177 phone icons' },
-                { id: 's-c', name: 'T177 plain' }
+                { id: 's-c', name: 'T177 plain', ...(sessionFolders ? { sessionFolderId: 'sf-other' } : {}) }
             ] }],
             {
                 settings: { showHomeWorkspace: false, controlApi: { enabled: true, port: 0 } },
-                env: { CLIMANAGER_HOME: home }
+                env: { CLIMANAGER_HOME: home },
+                ...(sessionFolders ? { config: { sessionFolders: [
+                    { id: 'sf-work', name: 'T177 Work folder', isExpanded: true, createdAt: 1000 },
+                    { id: 'sf-other', name: 'T177 Other folder', isExpanded: true, createdAt: 1001 }
+                ] } } : {})
             }
         )
         await ctx.page.getByTestId('sidebar-view-toggle').click()
@@ -247,5 +254,58 @@ test.describe('T177 session role and tags', () => {
         await page.getByTestId('session-menu-role').click()
         await page.getByTestId('session-menu-role-submenu').locator('[data-role-option="watch"]').click()
         await expect(page.getByTestId('all-sessions-label-filter')).toBeVisible()
+    })
+
+    test('labels survive a reorder and an app restart', async () => {
+        const { page, userDataDir } = await launch()
+        await page.locator('[data-session-item="s-b"]').click({ button: 'right' })
+        await page.getByTestId('session-menu-role').click()
+        await page.getByTestId('session-menu-role-submenu').locator('[data-role-option="talk"]').click()
+        await page.locator('[data-session-item="s-b"]').click({ button: 'right' })
+        await page.getByTestId('session-menu-edit-tags').click()
+        await page.locator('[data-session-labels-dialog] [data-labels-tag-input]').fill('planning')
+        await page.locator('[data-session-labels-dialog] [data-labels-save]').click()
+        await expect.poll(() => stored(userDataDir, 's-b')).toMatchObject({ role: 'talk', tags: ['planning'] })
+        // A reorder writes the workspace's session list again; the labels must ride along.
+        await page.evaluate(() => window.api.reorderSessions('ws-t177', ['s-c', 's-b', 's-a', 's-lead']))
+        expect(stored(userDataDir, 's-b')).toMatchObject({ role: 'talk', tags: ['planning'] })
+
+        // closeApp deletes userData; the relaunch needs it.
+        await ctx!.app.close()
+        dirs.push(userDataDir)
+        ctx!.userDataDir = path.join(userDataDir, '..', 'climanger-t177-unused')
+        ctx = undefined
+        relaunched = await electron.launch({
+            args: [path.join(REPO_ROOT, 'out/main/index.js')],
+            env: { ...process.env, CLIMANGER_TEST_USERDATA: userDataDir, CLIMANGER_TERM_DEBUG: '1', CLIMANGER_TEST_HEADLESS: '1' } as Record<string, string>
+        })
+        const again = await relaunched.firstWindow()
+        await expect(again.getByTestId('sidebar-all-sessions')).toBeVisible({ timeout: 30_000 })
+        await expect(again.locator('[data-session-item="s-b"] [data-work-role-icon="talk"]')).toBeVisible()
+        await expect(again.locator('[data-session-item="s-b"] [data-session-tags-text]')).toHaveText(' · #planning')
+        expect(stored(userDataDir, 's-b')).toMatchObject({ role: 'talk', tags: ['planning'] })
+    })
+
+    test('while filtering, empty session folders are not drawn and hidden rows leave the pick', async () => {
+        const { page } = await launch(true, true)
+        // s-a sits in "Work folder", s-c in "Other folder"; give s-a the Work role.
+        await page.locator('[data-session-item="s-a"]').click({ button: 'right' })
+        await page.getByTestId('session-menu-role').click()
+        await page.getByTestId('session-menu-role-submenu').locator('[data-role-option="work"]').click()
+        await expect(page.getByTestId('session-folder-header-sf-other')).toBeVisible()
+
+        // Pick two rows, then filter to Work: the hidden one leaves the pick.
+        for (const id of ['s-a', 's-c']) {
+            await page.locator(`[data-session-item="${id}"]`).hover()
+            await page.locator(`[data-session-select="${id}"]`).check()
+        }
+        await expect(page.getByTestId('session-selection-count')).toHaveText('2 selected')
+        await page.getByTestId('all-sessions-label-filter').click()
+        await page.getByTestId('all-sessions-label-filter-menu').locator('[data-filter-role="work"]').click()
+        await page.keyboard.press('Escape')
+        await expect.poll(() => shownIds(page)).toEqual(['s-a'])
+        await expect(page.getByTestId('session-folder-header-sf-work')).toBeVisible()
+        await expect(page.getByTestId('session-folder-header-sf-other')).toHaveCount(0)
+        await expect(page.getByTestId('session-selection-count')).toHaveText('1 selected')
     })
 })
