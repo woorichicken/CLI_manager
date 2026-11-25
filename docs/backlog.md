@@ -19,6 +19,20 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### t170 `@` 세션 태그 시험 — Tab 직후 `fill` 이 앞 글 뒤에 붙는 경합(가끔 실패)
+- Discovered: 2026-11-25 fb-1125 ship-bar 독립 검증(7f57caf).
+- Evidence: 1차 실행 41/42, `t170-session-mentions.spec.ts:157-159` 가 `Received: "T170 kid old (…) @zeta"`. Tab 이 건 `requestAnimationFrame(setSelectionRange)`(`Composer.tsx:212`)가 바로 뒤 `composer.fill('@zeta')` 의 전체 선택을 풀어 값이 이어 붙는다. 단독 2회·전체 재실행 통과. 사람 타이핑 속도로는 안 난다.
+- Why deferred: 시험 쪽 경합이고 GO 판정에 영향 없음.
+- Trigger: CI·pre-push 에서 t170 이 한 번 더 떨어지면 — `fill` 전에 입력칸 값·선택을 기다리는 줄을 넣는다.
+- Owner: 없음
+
+### Control API `template` 로 연 세션 — 별칭을 다 읽기 전이면 Open in Chat 표시가 안 붙을 수 있다
+- Discovered: 2026-11-25 fb-1125 ship-bar 독립 검증(7f57caf).
+- Evidence: `ControlApiService.ts:597` 의 `templateOpensInChat(template, resolveAlias)` 는 `ensureShellAliases()` 를 기다리지 않는다(사이드바 길 `index.ts:1883` 은 기다림). 앱 시작 직후 별칭 명령(`cld`) 템플릿으로 API 가 세션을 열면 표시가 빠져 Terminal 로 열린다. 이론상 — 재현 안 해 봄.
+- Why deferred: 결과가 「Terminal 로 열림」(옛 동작)이라 해가 작다.
+- Trigger: 「API 로 연 세션이 템플릿 설정과 달리 Terminal 로 열린다」 제보 — `createSession` 에서 별칭 준비를 기다리게 한다.
+- Owner: 없음
+
 ### t150 디스크 기대값이 10GB 미만 여유에서 틀린다 — 시험의 반올림이 앱과 다르다
 - Discovered: 2026-11-20 fb-1120b 상태 패널(t157) 작업 중 회귀 확인으로 t150 을 돌렸을 때.
 - Evidence: 여유 9.9GB(`df -k /System/Volumes/Data` 사용 가능 9,655,596 KiB)에서 `Expected: "10 GB free" · Received: "9.9 GB free"`. 시험의 `expectedDisk()` 는 늘 `Math.round` 로 정수 GB 를 만들고, 앱 `formatStorage` 는 10GB 미만이면 `toFixed(1)` 이다. 앞선 회차는 사용량이 측정 사이에 1GB 바뀌어 `985 GB` vs `986 GB` 로도 실패했다(다른 세션이 디스크를 쓰는 중).
