@@ -1,6 +1,7 @@
+import { useRef } from 'react'
 import { ChevronRight, Globe, X } from 'lucide-react'
 import type { DocPane } from '../../utils/docPanes'
-import { HtmlDocView } from './HtmlDocView'
+import { HtmlDocView, type DocLeaveGuard } from './HtmlDocView'
 
 interface DocSplitPaneProps {
     paneId: string
@@ -20,6 +21,8 @@ interface DocSplitPaneProps {
  * Preview/Source · Browser · close — and the page in the sandboxed frame below (decision 0013).
  */
 export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onActivate, onSetSource, onNavigate, onClose }: DocSplitPaneProps) {
+    // typed and not copied in the page: closing this pane asks first (ec4c1682)
+    const leaveGuard: DocLeaveGuard = useRef(null)
     const parts = pane.path.split('/').filter(Boolean)
     const name = parts.pop() ?? pane.path
     const folders = parts.slice(-2)
@@ -84,7 +87,8 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
                     data-testid="doc-pane-close"
                     onClick={(event) => {
                         event.stopPropagation()
-                        onClose()
+                        if (leaveGuard.current) leaveGuard.current(onClose)
+                        else onClose()
                     }}
                     className="p-1 shrink-0 hover:bg-red-500/20 rounded transition-colors text-gray-400 hover:text-red-400"
                     title="Remove from split"
@@ -93,7 +97,7 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
                 </button>
             </div>
             <div className="flex-1 min-h-0">
-                <HtmlDocView path={pane.path} line={pane.line} source={pane.source} onNavigate={onNavigate} onFrameFocus={onActivate} />
+                <HtmlDocView path={pane.path} line={pane.line} source={pane.source} onNavigate={onNavigate} onFrameFocus={onActivate} leaveGuard={leaveGuard} />
             </div>
         </div>
     )

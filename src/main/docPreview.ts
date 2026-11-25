@@ -142,6 +142,40 @@ export const DOC_PREVIEW_BRIDGE = String.raw`(function () {
     try { Object.defineProperty(window, 'localStorage', { value: makeStore(), configurable: true }) } catch (e) {}
     try { Object.defineProperty(window, 'sessionStorage', { value: makeStore(), configurable: true }) } catch (e) {}
     try { Object.defineProperty(document, 'cookie', { get: function () { return '' }, set: function () {}, configurable: true }) } catch (e) {}
+    // Typed and not copied (ec4c1682): what a person wrote in a field of the page is lost when the window closes, so the window is
+    // told when the page holds writing that no copy has taken. Only a real key or paste counts (isTrusted) - a page filling its own
+    // fields while it loads, or keeping a draft in the storage above, is not a person writing. The words never leave the page.
+    var touched = []
+    var dirty = false
+    var editable = function (el) {
+        if (!el || el.nodeType !== 1) return false
+        var tag = String(el.tagName || '').toUpperCase()
+        if (tag === 'TEXTAREA') return true
+        if (tag === 'INPUT') return !/^(button|submit|reset|checkbox|radio|range|file|image|color|hidden)$/i.test(String(el.type || 'text'))
+        return !!el.isContentEditable
+    }
+    var holdsText = function (el) {
+        var text = typeof el.value === 'string' ? el.value : el.textContent
+        return !!text && String(text).trim().length > 0
+    }
+    var setDirty = function (next) {
+        if (next === dirty) return
+        dirty = next
+        post({ dirty: next })
+    }
+    document.addEventListener('input', function (event) {
+        if (!event.isTrusted || !editable(event.target)) return
+        if (touched.indexOf(event.target) < 0) touched.push(event.target)
+        setDirty(touched.some(holdsText))
+    }, true)
+    var copied = function () { touched = []; setDirty(false) }
+    document.addEventListener('copy', copied, true)
+    // a copy button that writes to the clipboard itself fires no copy event
+    try {
+        var clip = navigator.clipboard
+        var write = clip && clip.writeText
+        if (write) clip.writeText = function () { copied(); return write.apply(clip, arguments) }
+    } catch (e) {}
     // a press inside the page: the window cannot see it, and it makes this pane the active one
     window.addEventListener('pointerdown', function () { post({ pressed: true }) }, true)
     var base = location.pathname.split('/').slice(0, 2).join('/') + '/'
