@@ -355,6 +355,7 @@ const api = {
         ipcRenderer.on('session-relations', listener)
         return () => ipcRenderer.removeListener('session-relations', listener)
     },
+    clearOpenInChat: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('clear-open-in-chat', sessionId),
     addSessionRelation: (from: string, to: string): Promise<boolean> => ipcRenderer.invoke('add-session-relation', from, to),
     removeSessionRelation: (a: string, b: string): Promise<boolean> => ipcRenderer.invoke('remove-session-relation', a, b),
     getSessionFolders: (): Promise<SessionFolder[]> => ipcRenderer.invoke('get-session-folders'),
@@ -381,6 +382,7 @@ const api = {
     },
     markInboxRead: (id: string): Promise<void> => ipcRenderer.invoke('mark-inbox-read', id),
     markInboxAllRead: (): Promise<void> => ipcRenderer.invoke('mark-inbox-all-read'),
+    clearInboxRead: (): Promise<number> => ipcRenderer.invoke('clear-inbox-read'),
     getChecklists: (): Promise<Checklist[]> => ipcRenderer.invoke('get-checklists'),
     onChecklists: (callback: (checklists: Checklist[]) => void) => {
         const listener = (_e: unknown, checklists: Checklist[]) => callback(checklists)

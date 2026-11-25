@@ -18,7 +18,7 @@ import { SessionViewToggle } from './components/SessionViewToggle'
 import { SessionChatSlot } from './components/SessionChatSlot'
 import { ChatFilePreview } from './components/ChatFilePreview'
 import { isAgentSession, setAgentPending, useAgentPendingVersion } from './utils/agentSession'
-import { getSessionViewMode, setSessionPeek, setSessionViewMode } from './hooks/useSessionViewMode'
+import { applyOpenInChat, getSessionViewMode, setSessionPeek, setSessionViewMode } from './hooks/useSessionViewMode'
 import { sendChatCommand } from './components/ChatView/chatContext'
 import { HandoffNoticeToast } from './components/ChatView/HandoffNoticeToast'
 import { showHandoffNotice } from './components/ChatView/draftHandoff'
@@ -45,6 +45,7 @@ import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts, unlistedSessionIds, withoutThreadSessions } from './utils/relatedSessions'
+import { setSessionCatalog } from './utils/sessionMentions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 import { useSessionTabs } from './hooks/useSessionTabs'
 import { SessionTabBar, type SessionTabEntry } from './components/SessionTabs/SessionTabBar'
@@ -144,6 +145,13 @@ function App() {
     const [checklistsOpen, setChecklistsOpen] = useState(false)
     const sessionRelations = useSessionRelations()
     const relatedCountBySession = useMemo(() => relatedCounts(sessionRelations, workspaces), [sessionRelations, workspaces])
+    // the Chat composer's `@` menu names sessions: it reads this list from a module store, not through props
+    useEffect(() => setSessionCatalog({ workspaces, relations: sessionRelations }), [workspaces, sessionRelations])
+    // a session made from a template that opens in Chat starts on Chat (once)
+    useEffect(() => {
+        if (workspaces.length === 0) return
+        for (const id of applyOpenInChat(workspaces.flatMap(workspace => workspace.sessions ?? []))) void window.api.clearOpenInChat(id)
+    }, [workspaces])
 
     // The session the user is looking at: the focused split pane, else the active tab. One place reports it
     // for the recently viewed order (sidebar All sessions, Related sort); main skips a repeat of the id already in front.
@@ -618,9 +626,14 @@ function App() {
             if (existingIndex >= 0) {
                 setActiveSplitIndex(existingIndex)
             } else {
-                // Replace the active pane's session
-                sessionIds[activeSplitIndex] = session.id
-                setSplitLayout({ ...splitLayout, sessionIds })
+                // Replace the active pane's session — a document pane there goes, so a page with uncopied words asks first (ec4c1682)
+                const replaced = sessionIds[activeSplitIndex]
+                const replaceActivePane = (): void => {
+                    sessionIds[activeSplitIndex] = session.id
+                    setSplitLayout({ ...splitLayout, sessionIds })
+                }
+                if (replaced && isDocPaneId(replaced)) docPanes.guardLeave([replaced], replaceActivePane)
+                else replaceActivePane()
             }
 
             // Reset status for this session
@@ -659,9 +672,13 @@ function App() {
         if (linked.length === 1) {
             handleSelect(linked[0].workspace, linked[0].session)
         } else if (linked.length > 1) {
-            setSplitLayout({ sessionIds: linked.map(entry => entry.session.id) })
-            setActiveSplitIndex(0)
-            setActiveSession(null)
+            // a new split replaces the one on screen, document panes with it (ec4c1682)
+            const openSplit = (): void => {
+                setSplitLayout({ sessionIds: linked.map(entry => entry.session.id) })
+                setActiveSplitIndex(0)
+                setActiveSession(null)
+            }
+            docPanes.guardLeave((splitLayout?.sessionIds ?? []).filter(isDocPaneId), openSplit)
         }
     }
 
@@ -688,7 +705,6 @@ function App() {
     // split view; when the session on screen goes, `focusId` (the right-clicked tab) takes its place.
     const handleCloseTabs = (closing: string[], focusId: string | null): void => {
         if (closing.length === 0) return
-        sessionTabs.closeTabs(closing)
         const gone = new Set(closing)
         const showOnly = (id: string | null): void => {
             const owner = id ? sessionOwnerById.get(id) : undefined
@@ -699,19 +715,29 @@ function App() {
                 setActiveSession(null)
             }
         }
+        // The tabs leave the row only when the action runs: a document pane's «Keep open» (ec4c1682) must leave them as they were.
         if (splitLayout) {
-            if (!splitLayout.sessionIds.some(id => gone.has(id))) return
+            if (!splitLayout.sessionIds.some(id => gone.has(id))) {
+                sessionTabs.closeTabs(closing)
+                return
+            }
             const kept = splitLayout.sessionIds.filter(id => !gone.has(id))
             if (kept.length >= 2) {
+                sessionTabs.closeTabs(closing)
                 setSplitLayout({ ...splitLayout, sessionIds: kept, sizes: undefined })
                 setActiveSplitIndex(Math.max(0, focusId ? kept.indexOf(focusId) : 0))
                 return
             }
-            setSplitLayout(null)
-            setActiveSplitIndex(0)
-            showOnly(sessionPaneIds(kept)[0] ?? focusId)
+            // fewer than two panes left: the split ends, and a document pane left in `kept` goes with it (ec4c1682)
+            docPanes.guardLeave(kept.filter(isDocPaneId), () => {
+                sessionTabs.closeTabs(closing)
+                setSplitLayout(null)
+                setActiveSplitIndex(0)
+                showOnly(sessionPaneIds(kept)[0] ?? focusId)
+            })
             return
         }
+        sessionTabs.closeTabs(closing)
         if (activeSession && gone.has(activeSession.id)) showOnly(focusId)
     }
 
@@ -2006,6 +2032,7 @@ function App() {
                                                 isActive={index === activeSplitIndex}
                                                 wide={splitHeadersWide(splitAreaWidth, splitLayout.sessionIds.length)}
                                                 className={splitLayout.sessionIds.length === 3 && index === 2 ? 'col-span-2' : ''}
+                                                leaveGuard={docPanes.guardFor(sessionId)}
                                                 onActivate={() => setActiveSplitIndex(index)}
                                                 onSetSource={source => docPanes.setSource(sessionId, source)}
                                                 onNavigate={path => docPanes.setPath(sessionId, path)}

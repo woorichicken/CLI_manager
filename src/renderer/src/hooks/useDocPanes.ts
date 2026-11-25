@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { DocLeaveGuard } from '../components/HtmlDoc/HtmlDocView'
 import type { SplitTerminalLayout, TerminalSession } from '../../../shared/types'
 import { DOC_PANE_PREFIX, type DocPane, docSideBlockedReason, isDocPaneId, splitWithDoc } from '../utils/docPanes'
 
@@ -21,6 +22,29 @@ export function useDocPanes({ splitLayout, setSplitLayout, activeSplitIndex, set
     const nextId = useRef(1)
     /** The session a document was put beside from the single view: where closing the last pane returns. */
     const returnTo = useRef<string | null>(null)
+
+    /**
+     * One guard per pane, filled by that pane's drawn page (HtmlDocView.leaveGuard). A way a pane can vanish that is not its own ×
+     * goes through `guardLeave`: each pane that would go is asked, in turn, and the first «Keep open» stops the whole action.
+     */
+    const guards = useRef(new Map<string, DocLeaveGuard>())
+    const guardFor = useCallback((id: string): DocLeaveGuard => {
+        let guard = guards.current.get(id)
+        if (!guard) {
+            guard = { current: null }
+            guards.current.set(id, guard)
+        }
+        return guard
+    }, [])
+    const guardLeave = useCallback((ids: readonly string[], action: () => void): void => {
+        const ask = (index: number): void => {
+            const guard = index < ids.length ? guards.current.get(ids[index]) : undefined
+            if (index >= ids.length) action()
+            else if (guard?.current) guard.current(() => ask(index + 1), 'close')
+            else ask(index + 1)
+        }
+        ask(0)
+    }, [])
 
     const placeBeside = useCallback((pane: Omit<DocPane, 'source'> & { source?: boolean }): boolean => {
         const id = `${DOC_PANE_PREFIX}${nextId.current++}`
@@ -57,6 +81,7 @@ export function useDocPanes({ splitLayout, setSplitLayout, activeSplitIndex, set
     useEffect(() => {
         const shown = new Set(shownIds ? shownIds.split(',') : [])
         setPanes((current) => ([...current.keys()].every((id) => shown.has(id)) ? current : new Map([...current].filter(([id]) => shown.has(id)))))
+        for (const id of [...guards.current.keys()]) if (!shown.has(id)) guards.current.delete(id)
         if (!splitLayout) returnTo.current = null
     }, [shownIds, splitLayout])
 
@@ -65,6 +90,8 @@ export function useDocPanes({ splitLayout, setSplitLayout, activeSplitIndex, set
         placeBeside,
         setSource,
         setPath,
+        guardFor,
+        guardLeave,
         /** why Side by side is off now, or null */
         blockedReason: docSideBlockedReason(splitLayout?.sessionIds ?? null),
         returnTo: () => returnTo.current

@@ -82,6 +82,7 @@ export function InboxButton({ placement, workspaces, linkSchemes, onShowSession,
                     onOpenLink={openLink}
                     onMarkRead={(request) => void window.api.markInboxRead(request.id)}
                     onMarkAllRead={() => void window.api.markInboxAllRead()}
+                    onClearRead={() => void window.api.clearInboxRead()}
                     onClose={close}
                 />
             )}

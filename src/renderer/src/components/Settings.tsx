@@ -2190,6 +2190,35 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                 </div>
                             </div>
 
+                            <div>
+                                <label className="block text-xs text-gray-400 mb-1">Open in</label>
+                                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Open in" data-testid="template-open-in">
+                                    {(['terminal', 'chat'] as const).map(view => (
+                                        <button
+                                            key={view}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={(editingTemplate.openIn ?? 'terminal') === view}
+                                            data-testid={`template-open-in-${view}`}
+                                            onClick={() => {
+                                                // Terminal is the default: only Chat is stored, so older templates save as before.
+                                                const { openIn: _dropped, ...rest } = editingTemplate
+                                                setEditingTemplate(view === 'chat' ? { ...rest, openIn: 'chat' } : rest)
+                                            }}
+                                            className={`px-3 py-2 rounded border text-sm transition-colors ${(editingTemplate.openIn ?? 'terminal') === view
+                                                    ? 'border-blue-500 bg-blue-500/20 text-blue-300'
+                                                    : 'border-white/10 bg-black/30 text-gray-400 hover:border-white/20'
+                                                }`}
+                                        >
+                                            {view === 'chat' ? 'Chat' : 'Terminal'}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    How a new session from this template first shows. Sessions that already exist keep their view. Applies to templates that start Claude Code or Codex.
+                                </p>
+                            </div>
+
                             <TemplateLogoField
                                 logo={editingTemplate.logo}
                                 onChange={logo => {

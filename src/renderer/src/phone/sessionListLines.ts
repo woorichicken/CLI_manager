@@ -8,7 +8,17 @@ import type { PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
  */
 
 export type ListLine =
-    | { kind: 'folder'; key: string; title: string; folderId: string | null }
+    | {
+          kind: 'folder'
+          key: string
+          title: string
+          folderId: string | null
+          /** List only: a heading a tap folds (b61af757) — «Not in a tree» is a plain label */
+          collapsible?: boolean
+          /** how many sessions the part holds, whether or not they are shown */
+          count?: number
+          collapsed?: boolean
+      }
     | { kind: 'divider'; key: string }
     | { kind: 'row'; key: string; session: PhoneSession; /** Tree only: levels under its root (0 = a root) */ depth?: number }
 
@@ -17,12 +27,20 @@ export function listedSessions(data: PhoneSessionsResponse): PhoneSession[] {
     return data.sessions.filter((session) => !session.thread)
 }
 
-/** The rows with the Mac's folder headings and pinned lines between them; the order is untouched. */
-export function listLines(data: PhoneSessionsResponse): ListLine[] {
+/** What a folded part is called in the saved list: a session folder's id, or this for «No folder». */
+export const NO_FOLDER_PART = 'none'
+
+/**
+ * The rows with the Mac's folder headings and pinned lines between them; the order is untouched.
+ * `collapsed` names the parts folded shut (b61af757, as the Mac sidebar's cbc0ee48): their heading stays
+ * with its count, their rows and pinned line do not.
+ */
+export function listLines(data: PhoneSessionsResponse, collapsed: ReadonlySet<string> = new Set()): ListLine[] {
     const folderName = new Map(data.sessionFolders.map((folder) => [folder.id, folder.name]))
     const lines: ListLine[] = []
     let part: string | null | undefined
     let pinnedInPart = false
+    let heading: (ListLine & { kind: 'folder' }) | null = null
     for (const session of data.sessions) {
         // a reply's thread is not a row, as in the Mac sidebar (1b965ad1); search still finds it
         if (session.thread) continue
@@ -31,10 +49,22 @@ export function listLines(data: PhoneSessionsResponse): ListLine[] {
             part = folderId
             pinnedInPart = false
             // the Mac shows folder headings only once there are session folders; "No folder" then heads the rest
+            heading = null
             if (data.sessionFolders.length > 0) {
-                lines.push({ kind: 'folder', key: `folder-${folderId ?? 'none'}`, title: folderId ? folderName.get(folderId)! : 'No folder', folderId })
+                heading = {
+                    kind: 'folder',
+                    key: `folder-${folderId ?? 'none'}`,
+                    title: folderId ? folderName.get(folderId)! : 'No folder',
+                    folderId,
+                    collapsible: true,
+                    count: 0,
+                    collapsed: collapsed.has(folderId ?? NO_FOLDER_PART)
+                }
+                lines.push(heading)
             }
         }
+        if (heading) heading.count = (heading.count ?? 0) + 1
+        if (heading?.collapsed) continue
         if (session.pinned) pinnedInPart = true
         else if (pinnedInPart) {
             // as the Mac's dividePinned: one line between the pinned sessions and the rest of a part
