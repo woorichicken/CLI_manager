@@ -37,6 +37,7 @@ import { ScrollbackStore } from './ScrollbackStore'
 import { TerminalEventLog } from './TerminalEventLog'
 import { buildFeedbackTerminalContext } from './feedbackTerminalContext'
 import { ClaudeSessionSync } from './ClaudeSessionSync'
+import { AgySessionSync, agyStartCommand } from './AgySessionSync'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
@@ -667,6 +668,11 @@ const dictation = new DictationService({
 // what its screen says (working, a question menu). Watches only sessions a view is open on.
 const claudeConfigDir = (): string => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
 const codexHome = (): string => process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
+/** Antigravity CLI's data folder — ANTIGRAVITY_APP_DATA_DIR is agy's own override (as ovis reads it) */
+const agyHome = (): string => process.env.ANTIGRAVITY_APP_DATA_DIR || path.join(os.homedir(), '.gemini', 'antigravity-cli')
+/** The ledger a stored agy conversation reads from (TranscriptReader.locateAgy). */
+const agyConversationExists = (id: string): boolean =>
+    /^[0-9a-f-]{36}$/i.test(id) && existsSync(path.join(agyHome(), 'brain', id, '.system_generated', 'logs', 'transcript_full.jsonl'))
 const conversationService = new ConversationService({
     session: (id) => {
         const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
@@ -679,7 +685,7 @@ const conversationService = new ConversationService({
         }
         return null
     },
-    reader: new TranscriptReader({ claudeConfigDir, codexHome }),
+    reader: new TranscriptReader({ claudeConfigDir, codexHome, agyHome }),
     listCommands: createChatCommandLister({ home: os.homedir(), claudeConfigDir, codexHome }),
     home: os.homedir(),
     mirror: terminalMirror,
@@ -758,9 +764,14 @@ function persistDetectedSession(info: { terminalId: string; cliSessionId: string
         if (!session) continue
         session.cliSessionId = info.cliSessionId
         session.cliToolName = info.cliToolName
-        const agent = info.cliToolName === 'claude' ? 'claude' : 'codex'
-        const decision = decideAgentCommand(info.baseCommand, agent, (name) => cliSessionTracker.resolveAlias(name))
-        if (decision.recognized) session.cliCommand = decision.storedCommand
+        if (info.cliToolName === 'agy') {
+            // AgySessionSync hands over the command without its conversation flags (resumableCommand)
+            session.cliCommand = info.baseCommand
+        } else {
+            const agent = info.cliToolName === 'claude' ? 'claude' : 'codex'
+            const decision = decideAgentCommand(info.baseCommand, agent, (name) => cliSessionTracker.resolveAlias(name))
+            if (decision.recognized) session.cliCommand = decision.storedCommand
+        }
         store.set('workspaces', workspaces)
         broadcast('cli-session-detected', {
             workspaceId: ws.id, sessionId: info.terminalId,
@@ -1472,6 +1483,15 @@ function validateCliSessionIds(): void {
     let modified = false
     for (const ws of workspaces) {
         for (const session of ws.sessions) {
+            if (session.cliSessionId && session.cliToolName === 'agy') {
+                if (agyConversationExists(session.cliSessionId)) continue
+                console.log(`[validateCliSessionIds] CLEAR stale agy conversation ${session.cliSessionId} (no ledger)`)
+                delete session.cliSessionId
+                delete session.cliToolName
+                delete session.cliCommand
+                modified = true
+                continue
+            }
             if (session.cliSessionId) {
                 const agent = session.cliToolName === 'codex' ? 'codex' : 'claude'
                 if (agent === 'claude' && !claudeStorageKnown) continue
@@ -1516,7 +1536,7 @@ app.whenReady().then(async () => {
     void ensureShellAliases()
     validateCliSessionIds()
     for (const ws of (store.get('workspaces') as Workspace[])) {
-        for (const session of ws.sessions) if (session.cliSessionId && (session.cliToolName === 'codex' || session.cliToolName === 'claude')) pendingSessionRestores.add(session.id)
+        for (const session of ws.sessions) if (session.cliSessionId && (session.cliToolName === 'codex' || session.cliToolName === 'claude' || session.cliToolName === 'agy')) pendingSessionRestores.add(session.id)
     }
 
     // Histories of sessions deleted since the last run; then keep saving.
@@ -1796,8 +1816,10 @@ app.whenReady().then(async () => {
     ipcMain.handle('get-session-resume-command', async (_event, terminalId: string): Promise<string | undefined> => {
         await ensureShellAliases()
         const session = ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => w.sessions).find((s) => s.id === terminalId)
-        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude')) { pendingSessionRestores.delete(terminalId); return undefined }
+        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude' && session.cliToolName !== 'agy')) { pendingSessionRestores.delete(terminalId); return undefined }
         if (!CONVERSATION_ID.test(session.cliSessionId)) { pendingSessionRestores.delete(terminalId); return undefined }
+        // agy: the command it was started with (AgySessionSync stored it without conversation flags)
+        if (session.cliToolName === 'agy') return `${agyStartCommand(session.cliCommand)} --conversation ${session.cliSessionId}`
         return agentResumeCommand(session.cliToolName, session.cliSessionId, session.cliCommand)
     })
 
@@ -1844,8 +1866,25 @@ app.whenReady().then(async () => {
             })
         }
     })
-    forgetClaudeSession = (id) => claudeSessionSync.forget(id)
+    // The Antigravity CLI conversation each terminal shows (the lock its agy holds), the same way.
+    const agySessionSync = new AgySessionSync({
+        dataDir: agyHome,
+        ptyPids: () => terminalManager.listPtyPids(),
+        intervalMs: Number(process.env.CLIMANAGER_AGY_SYNC_MS) || undefined,
+        onConversation: (terminalId, cliSessionId, command) => {
+            const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
+            const session = workspaces.flatMap((w) => w.sessions ?? []).find((s) => s.id === terminalId)
+            if (!session || (session.cliToolName === 'agy' && session.cliSessionId === cliSessionId)) return
+            console.log(`[agy-session] ${terminalId} → ${cliSessionId} (was ${session.cliSessionId ?? 'none'})`)
+            persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'agy', baseCommand: command })
+        }
+    })
+    forgetClaudeSession = (id) => {
+        claudeSessionSync.forget(id)
+        agySessionSync.forget(id)
+    }
     claudeSessionSync.start()
+    agySessionSync.start()
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)
     ipcMain.handle('update-session-cli-info', (_, workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string): boolean => {

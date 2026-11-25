@@ -5,19 +5,19 @@ import path from 'path'
 import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './helpers'
 
 /**
- * T177 — a session's role and tags (decision 0015), in the app.
+ * T191 — a session's role and tags (decision 0015), in the app.
  *
  * Seeded: a lead with a role and tags from the store (proves the app reads them), three plain
  * sessions. Then the session menu's Role ▸ and Edit Tags…, the tab menu's Role & Tags…, the All
  * sessions filter button, and the Control API / MCP (set, clear, 400 bad_role, filters, open with a
  * role) — each judged in config.json and the sidebar DOM. Setting a label never adds the AI mark.
- * `T177_SHOTS=<dir>` keeps captures of the list, the menu, the editor and the filter.
+ * `T191_SHOTS=<dir>` keeps captures of the list, the menu, the editor and the filter.
  */
 
 interface Discovery { url: string; mcpUrl: string; token: string }
 interface ApiSession { id: string; name: string; role: string | null; tags: string[]; aiControlled: boolean }
 
-const SHOTS = process.env.T177_SHOTS
+const SHOTS = process.env.T191_SHOTS
 
 const stored = (userDataDir: string, id: string): { role?: string; tags?: string[] } | undefined =>
     (JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8')).workspaces as Array<{ sessions: Array<{ id: string; role?: string; tags?: string[] }> }>)
@@ -32,7 +32,7 @@ async function shot(page: Page, name: string): Promise<void> {
 const shownIds = (page: Page) =>
     page.locator('[data-testid="sidebar-all-sessions"] [data-session-item]').evaluateAll(rows => rows.map(r => r.getAttribute('data-session-item')))
 
-test.describe('T177 session role and tags', () => {
+test.describe('T191 session role and tags', () => {
     let ctx: LaunchResult | undefined
     let relaunched: Awaited<ReturnType<typeof electron.launch>> | null = null
     const dirs: string[] = []
@@ -50,21 +50,21 @@ test.describe('T177 session role and tags', () => {
     })
 
     async function launch(labels = true, sessionFolders = false): Promise<{ page: Page; userDataDir: string; home: string; folder: string }> {
-        const home = dir('climanger-t177-home-')
-        const folder = dir('climanger-t177-ws-')
+        const home = dir('climanger-t191-home-')
+        const folder = dir('climanger-t191-ws-')
         ctx = await launchAppWithWorkspaces(
-            [{ id: 'ws-t177', name: 'T177WS', path: folder, sessions: [
-                { id: 's-lead', name: 'T177 lead', ...(labels ? { role: 'lead', tags: ['night-1125'] } : {}) },
-                { id: 's-a', name: 'T177 fix the sidebar', ...(sessionFolders ? { sessionFolderId: 'sf-work' } : {}) },
-                { id: 's-b', name: 'T177 phone icons' },
-                { id: 's-c', name: 'T177 plain', ...(sessionFolders ? { sessionFolderId: 'sf-other' } : {}) }
+            [{ id: 'ws-t191', name: 'T191WS', path: folder, sessions: [
+                { id: 's-lead', name: 'T191 lead', ...(labels ? { role: 'lead', tags: ['night-1125'] } : {}) },
+                { id: 's-a', name: 'T191 fix the sidebar', ...(sessionFolders ? { sessionFolderId: 'sf-work' } : {}) },
+                { id: 's-b', name: 'T191 phone icons' },
+                { id: 's-c', name: 'T191 plain', ...(sessionFolders ? { sessionFolderId: 'sf-other' } : {}) }
             ] }],
             {
                 settings: { showHomeWorkspace: false, controlApi: { enabled: true, port: 0 } },
                 env: { CLIMANAGER_HOME: home },
                 ...(sessionFolders ? { config: { sessionFolders: [
-                    { id: 'sf-work', name: 'T177 Work folder', isExpanded: true, createdAt: 1000 },
-                    { id: 'sf-other', name: 'T177 Other folder', isExpanded: true, createdAt: 1001 }
+                    { id: 'sf-work', name: 'T191 Work folder', isExpanded: true, createdAt: 1000 },
+                    { id: 'sf-other', name: 'T191 Other folder', isExpanded: true, createdAt: 1001 }
                 ] } } : {})
             }
         )
@@ -180,7 +180,7 @@ test.describe('T177 session role and tags', () => {
         const api = async <T = any>(method: string, route: string, body?: unknown): Promise<{ status: number; json: T }> => {
             const res = await fetch(discovery.url + route, {
                 method,
-                headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't177' },
+                headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't191' },
                 body: body === undefined ? undefined : JSON.stringify(body)
             })
             const text = await res.text()
@@ -218,9 +218,9 @@ test.describe('T177 session role and tags', () => {
 
         // Opening with a role and tags; a bad role opens nothing.
         const before = (await api<ApiSession[]>('GET', '/v1/sessions?scope=all')).json.length
-        expect((await api('POST', '/v1/sessions', { path: folder, name: 'T177 bad', role: 'chief' })).status).toBe(400)
+        expect((await api('POST', '/v1/sessions', { path: folder, name: 'T191 bad', role: 'chief' })).status).toBe(400)
         expect((await api<ApiSession[]>('GET', '/v1/sessions?scope=all')).json.length).toBe(before)
-        const opened = await api<{ session: ApiSession }>('POST', '/v1/sessions', { path: folder, name: 'T177 watcher', role: 'watch', tags: ['night-1125'] })
+        const opened = await api<{ session: ApiSession }>('POST', '/v1/sessions', { path: folder, name: 'T191 watcher', role: 'watch', tags: ['night-1125'] })
         expect(opened.status).toBe(200)
         expect(opened.json.session).toMatchObject({ role: 'watch', tags: ['night-1125'] })
         await expect(page.locator(`[data-session-item="${opened.json.session.id}"] [data-work-role-icon="watch"]`)).toBeVisible()
@@ -229,7 +229,7 @@ test.describe('T177 session role and tags', () => {
         let rpc = 0
         const mcp = async (method: string, params: unknown): Promise<any> => JSON.parse(await (await fetch(discovery.mcpUrl, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-Client-Name': 't177-mcp' },
+            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-Client-Name': 't191-mcp' },
             body: JSON.stringify({ jsonrpc: '2.0', id: ++rpc, method, params })
         })).text())
         const tools = (await mcp('tools/list', {})).result.tools.map((t: { name: string }) => t.name)
@@ -267,13 +267,13 @@ test.describe('T177 session role and tags', () => {
         await page.locator('[data-session-labels-dialog] [data-labels-save]').click()
         await expect.poll(() => stored(userDataDir, 's-b')).toMatchObject({ role: 'talk', tags: ['planning'] })
         // A reorder writes the workspace's session list again; the labels must ride along.
-        await page.evaluate(() => window.api.reorderSessions('ws-t177', ['s-c', 's-b', 's-a', 's-lead']))
+        await page.evaluate(() => window.api.reorderSessions('ws-t191', ['s-c', 's-b', 's-a', 's-lead']))
         expect(stored(userDataDir, 's-b')).toMatchObject({ role: 'talk', tags: ['planning'] })
 
         // closeApp deletes userData; the relaunch needs it.
         await ctx!.app.close()
         dirs.push(userDataDir)
-        ctx!.userDataDir = path.join(userDataDir, '..', 'climanger-t177-unused')
+        ctx!.userDataDir = path.join(userDataDir, '..', 'climanger-t191-unused')
         ctx = undefined
         relaunched = await electron.launch({
             args: [path.join(REPO_ROOT, 'out/main/index.js')],

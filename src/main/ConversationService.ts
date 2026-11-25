@@ -7,6 +7,7 @@ import type {
     ChatSendResult,
     DraftFromTerminalResult,
     DraftToTerminalResult,
+    ChatAgent,
     ConversationAgent,
     ConversationSnapshot,
     InterruptResult,
@@ -16,10 +17,10 @@ import type {
     QueuedMessage,
     UnsentMessage
 } from '../shared/conversation'
-import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
+import { CHAT_TURN_LIMIT, drivesChat, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
 // the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
 import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatView/chatMentions'
-import { isBusyRow, screenAgentMode, screenBackground } from './screenLines'
+import { screenAgentMode, screenBackground, screenShowsBusy } from './screenLines'
 import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 import { BackgroundTaskReader, settleBackground } from './transcript/backgroundTasks'
@@ -450,7 +451,8 @@ export class ConversationService {
         const sender = senderOf(from)
         const info = this.deps.session(sessionId)
         if (!info) return { status: 'rejected', reason: 'unknown_session', message: 'This session no longer exists.' }
-        const agent = agentOf(info)
+        if (agentOf(info) === 'agy') return { status: 'rejected', reason: 'no_conversation', message: 'Antigravity conversations cannot be forked from the chat yet.' }
+        const agent = drivenAgentOf(info)
         if (!agent || !info.cliSessionId || !this.deps.openFork) {
             return { status: 'rejected', reason: 'no_conversation', message: 'This session has no agent conversation to fork yet.' }
         }
@@ -959,7 +961,7 @@ export class ConversationService {
     /** The `/` commands the session's agent offers in its folder. */
     listCommands(sessionId: string): ChatCommand[] {
         const info = this.deps.session(sessionId)
-        const agent = agentOf(info)
+        const agent = drivenAgentOf(info)
         if (!agent || !this.deps.listCommands) return []
         return this.deps.listCommands(agent, info?.cwd)
     }
@@ -996,7 +998,9 @@ export class ConversationService {
             return { status: 'rejected', reason: 'not_running', message: 'The terminal for this session is not running.' }
         }
         await this.deps.mirror.flush(sessionId)
-        const current = readPrompt(this.deps.mirror.screen(sessionId), agentOf(this.deps.session(sessionId)) ?? 'claude')
+        const driven = drivenAgentOf(this.deps.session(sessionId))
+        // agy's dialogs have no card yet (no reader for them): answered in the terminal
+        const current = agentOf(this.deps.session(sessionId)) === 'agy' ? null : readPrompt(this.deps.mirror.screen(sessionId), driven ?? 'claude')
         const answered = this.lastAnswer.get(sessionId)
         // the same menu with nothing printed since its answer went: the agent has not read those keys yet
         const alreadyAnswered = answered?.signature === answer.signature && answered.outputAt === this.deps.mirror.lastOutputAt(sessionId)
@@ -1055,7 +1059,7 @@ export class ConversationService {
      * keys already sent. Ticks may differ: the keys sent so far tick rows.
      */
     private async highlightsOption(sessionId: string, menu: PromptMenu, target: number): Promise<boolean> {
-        const agent = agentOf(this.deps.session(sessionId)) ?? 'claude'
+        const agent = drivenAgentOf(this.deps.session(sessionId)) ?? 'claude'
         const deadline = Date.now() + CONFIRM_MS
         for (;;) {
             await this.deps.mirror.flush(sessionId)
@@ -1227,11 +1231,13 @@ export class ConversationService {
         entry.lastScreenAt = outputAt
         this.settleUnsent(sessionId)
         const screen = this.deps.mirror.screen(sessionId)
-        const agent = agentOf(this.deps.session(sessionId))
+        const reading = agentOf(this.deps.session(sessionId))
+        const agent = drivesChat(reading) ? reading : null
         // readPrompt reads a turn in progress only from the dialog's own rows: a dialog drawn last is what the
-        // agent waits on, whatever its words above it say (f7bff999 — «(esc to interrupt)» in them hid the card)
-        entry.prompt = readPrompt(screen, agent ?? 'claude')
-        entry.working = entry.prompt === null && screen.some(isBusyRow)
+        // agent waits on, whatever its words above it say (f7bff999 — «(esc to interrupt)» in them hid the card).
+        // agy's dialogs have no card reader yet: none, and the chat says to answer in the terminal.
+        entry.prompt = reading === 'agy' ? null : readPrompt(screen, agent ?? 'claude')
+        entry.working = entry.prompt === null && screenShowsBusy(screen)
         entry.screenMode = screenAgentMode(screen)
         entry.background = screenBackground(screen)
         entry.suggestion = chatSuggestion(mirror.inputBox(sessionId), {
@@ -1408,9 +1414,15 @@ function clearableDraft(box: { typed: string; clipped?: boolean; typedRows?: num
     return typed
 }
 
-function agentOf(info: ConversationSessionInfo | null): ConversationAgent | null {
+function agentOf(info: ConversationSessionInfo | null): ChatAgent | null {
     if (!info?.cliToolName) return null
-    return info.cliToolName === 'codex' ? 'codex' : info.cliToolName === 'claude' ? 'claude' : null
+    return info.cliToolName === 'codex' || info.cliToolName === 'claude' || info.cliToolName === 'agy' ? info.cliToolName : null
+}
+
+/** The agent when the chat drives it (sends, answers, forks); null for one it only reads (agy). */
+function drivenAgentOf(info: ConversationSessionInfo | null): ConversationAgent | null {
+    const agent = agentOf(info)
+    return drivesChat(agent) ? agent : null
 }
 
 function rejection(error: unknown): ChatSendResult {

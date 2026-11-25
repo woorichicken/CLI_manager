@@ -1,12 +1,13 @@
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readSync, statSync } from 'fs'
 import { open as openFile } from 'fs/promises'
 import { join } from 'path'
-import type { ConversationAgent, ConversationMeta, ConversationTurn } from '../shared/conversation'
+import type { ChatAgent, ConversationMeta, ConversationTurn } from '../shared/conversation'
 import { CLAUDE_IMAGE_REF } from './transcript/claudeTranscript'
 import { inlineImageType } from './transcript/images'
 import { foldMetadata } from './transcript/metadata'
 import { createClaudeTranscriptParser } from './transcript/claudeTranscript'
 import { createCodexTranscriptParser } from './transcript/codexTranscript'
+import { AGY_OUTPUT_REF, createAgyTranscriptParser, agyResultText } from './transcript/agyTranscript'
 import type { TranscriptParser } from './transcript/records'
 import { claudeForks, followClaudeBranch, newClaudeBranch, type ClaudeBranch } from './transcript/claudeBranch'
 
@@ -54,6 +55,8 @@ const MAX_TOOL_OUTPUT_CHARS = 2_000_000
 export interface TranscriptReaderDeps {
     claudeConfigDir: () => string
     codexHome: () => string
+    /** Antigravity CLI's data folder (`~/.gemini/antigravity-cli`); without it no agy conversation is found */
+    agyHome?: () => string
     /** Tests shrink it; the app uses MAX_FIRST_READ_BYTES. */
     firstReadBytes?: number
     /** Tests shrink it so a record straddles chunks; the app uses FIND_CHUNK_BYTES. */
@@ -94,7 +97,7 @@ interface FileCursor {
 const MARK_BYTES = 64
 
 interface ReadState {
-    agent: ConversationAgent
+    agent: ChatAgent
     id: string
     files: FileCursor[]
     locatedAt: number
@@ -128,14 +131,14 @@ export class TranscriptReader {
     constructor(private readonly deps: TranscriptReaderDeps) {}
 
     /** The transcript files of a conversation, in order; [] when none is on disk. */
-    locate(agent: ConversationAgent, id: string, cwd?: string): string[] {
+    locate(agent: ChatAgent, id: string, cwd?: string): string[] {
         if (!UUID_LIKE.test(id)) return []
         const key = `${agent}:${id}`
         const cached = this.located.get(key)
         if (cached && cached.length > 0 && cached.every((file) => existsSync(file))) {
             if (agent === 'claude') return cached
         }
-        const files = agent === 'claude' ? this.locateClaude(id, cwd) : this.locateCodex(id)
+        const files = agent === 'claude' ? this.locateClaude(id, cwd) : agent === 'agy' ? this.locateAgy(id) : this.locateCodex(id)
         if (files.length > 0) this.located.set(key, files)
         return files
     }
@@ -144,7 +147,7 @@ export class TranscriptReader {
      * The conversation's turns, reading only what was added since the last call
      * for this `key` (a terminal session id). Null when no file is found.
      */
-    read(key: string, agent: ConversationAgent, id: string, cwd?: string): TranscriptRead | null {
+    read(key: string, agent: ChatAgent, id: string, cwd?: string): TranscriptRead | null {
         let state = this.states.get(key)
         let restarted = false
         if (!state || state.agent !== agent || state.id !== id) {
@@ -237,6 +240,12 @@ export class TranscriptReader {
             const content = asRecord(entry?.message).content
             const block = Array.isArray(content) ? content.find((item) => asRecord(item).tool_use_id === ref) : undefined
             text = resultText(asRecord(block).content)
+        } else if (state.agent === 'agy') {
+            const step = AGY_OUTPUT_REF.exec(ref)
+            if (!step) return null
+            const index = Number(step[1])
+            const entry = await this.findRecord(files, `"step_index":${index},`, (value) => value.step_index === index && value.type === 'GENERIC')
+            text = typeof entry?.content === 'string' ? agyResultText(entry.content) : null
         } else {
             const entry = await this.findRecord(files, `"${ref}"`, (value) => {
                 const payload = asRecord(value.payload)
@@ -313,13 +322,13 @@ export class TranscriptReader {
         this.states.delete(key)
     }
 
-    private freshState(agent: ConversationAgent, id: string, segments: Segment[]): ReadState {
+    private freshState(agent: ChatAgent, id: string, segments: Segment[]): ReadState {
         return {
             agent,
             id,
             files: segments.map((segment) => ({ ...segment, offset: 0, carry: Buffer.alloc(0) })),
             locatedAt: Date.now(),
-            parser: agent === 'claude' ? createClaudeTranscriptParser() : createCodexTranscriptParser(),
+            parser: agent === 'claude' ? createClaudeTranscriptParser() : agent === 'agy' ? createAgyTranscriptParser() : createCodexTranscriptParser(),
             truncated: false,
             turns: null,
             meta: null,
@@ -530,7 +539,7 @@ export class TranscriptReader {
      * goes on from, the turns after that cut were discarded); a thread whose newest rollout names
      * none is every file of the thread in name order, as before.
      */
-    private segments(agent: ConversationAgent, id: string, cwd?: string): Segment[] {
+    private segments(agent: ChatAgent, id: string, cwd?: string): Segment[] {
         const files = this.locate(agent, id, cwd)
         if (agent !== 'codex' || files.length === 0) return files.map((path) => ({ path }))
         const newest = files[files.length - 1]
@@ -620,6 +629,14 @@ export class TranscriptReader {
             // an unreadable folder: nothing found
         }
         return []
+    }
+
+    /** agy keeps each conversation's step ledger in its brain folder (agy 1.5.16). */
+    private locateAgy(id: string): string[] {
+        const home = this.deps.agyHome?.()
+        if (!home) return []
+        const file = join(home, 'brain', id, '.system_generated', 'logs', 'transcript_full.jsonl')
+        return existsSync(file) ? [file] : []
     }
 
     private locateCodex(id: string): string[] {

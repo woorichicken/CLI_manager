@@ -8,7 +8,7 @@ import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.js'
 // Same reason as above: bundled by file so the packaged app does not need it in node_modules.
 import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.js'
 import { TerminalManager } from './TerminalManager'
-import { isBusyRow, isInputBoxRule, ScreenSummary, screenSummary } from './screenLines'
+import { isAgyCancelFooter, isInputBoxRule, ScreenSummary, screenShowsBusy, screenSummary } from './screenLines'
 import { resizeKeepingBottom } from '../shared/terminalResize'
 
 /**
@@ -71,7 +71,10 @@ const AWAITING_INPUT_PATTERNS = [
     /Do you want to (proceed|make|create|allow|run)/i,
     /No, and tell Claude what to do differently/,
     /Would you like to (run|make|apply)/i,
-    /\bYes, proceed\b/i
+    /\bYes, proceed\b/i,
+    // Antigravity CLI's dialogs (agy 1.5.16, recorded 2026-11-25): its question, its permission prompt,
+    // its folder-trust question. Its slash menu (`enter Select · tab Complete`) asks nothing.
+    /↑\/↓ Navigate · (?:enter Select · esc Skip|tab Amend|enter Confirm)/
 ]
 
 /**
@@ -401,6 +404,11 @@ export class TerminalMirror {
         let firstAfterPrompt = true
         let cursor = ''
         let grey = false
+        // agy's box starts with `>` (Claude's with `❯`) and draws its empty-box hint — «Auto mode: edits & safe
+        // commands auto-approved (shift+tab to cycle)» — in bright black (SGR 90), not dim: read as typed, it
+        // refused every Chat send to an idle agy (agy 1.5.16, recorded 2026-11-25). Only under a `>` box.
+        const firstRow = buffer.getLine(buffer.viewportY + top + 1)?.translateToString(true).trimStart() ?? ''
+        const greyHint = firstRow.startsWith('>')
         for (let row = top + 1; row < bottom; row++) {
             const line = buffer.getLine(buffer.viewportY + row)
             if (!line) continue
@@ -432,7 +440,7 @@ export class TerminalMirror {
                 }
                 const first = promptSeen && firstAfterPrompt
                 if (promptSeen) firstAfterPrompt = false
-                if (cell.isDim()) {
+                if (cell.isDim() || (greyHint && cell.isFgPalette() && cell.getFgColor() === BRIGHT_BLACK)) {
                     grey = true
                     suggestionRow += chars
                 } else if (first && cell.isInverse()) {
@@ -492,7 +500,7 @@ export class TerminalMirror {
 
     /** The screen currently shows an agent turn in progress. */
     showsBusy(id: string): boolean {
-        return this.screen(id).some((line) => isBusyRow(line))
+        return screenShowsBusy(this.screen(id))
     }
 
     /**
@@ -521,7 +529,7 @@ export class TerminalMirror {
      */
     screenStatus(id: string): { busy: boolean; question: string | null } {
         const lines = this.screen(id)
-        if (lines.some((line) => isBusyRow(line))) return { busy: true, question: null }
+        if (screenShowsBusy(lines)) return { busy: true, question: null }
         const region = questionRegion(linesUnderInputBox(lines))
         return { busy: false, question: showsQuestion(region) ? questionLine(region) : null }
     }
@@ -608,6 +616,9 @@ function idePillCells(afterPrompt: string): number {
 /** Stands in for Claude's drawn cursor until the box tells typed from suggested. */
 const CURSOR_MARK = '\u0000'
 
+/** Palette index of SGR 90 — agy's grey hint in its empty input box. */
+const BRIGHT_BLACK = 8
+
 /** Codex's composer glyph at the left edge (codex-cli 0.166.0); bold there, dim on a past prompt. */
 const CODEX_PROMPT_GLYPH = '›'
 
@@ -668,7 +679,9 @@ function questionRegion(screen: string[]): string[] {
 }
 
 function showsQuestion(region: string[]): boolean {
-    const text = region.join('\n')
+    // agy's own footer says `esc to cancel` under its input box while it works: not a question (it
+    // read as one, and the Control API refused every input to a working agy session — backlog 11-20)
+    const text = region.filter((line) => !isAgyCancelFooter(line)).join('\n')
     return AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(text)) || CODEX_MENU_FOOTER.test(region.at(-1) ?? '')
 }
 
@@ -686,7 +699,7 @@ function questionLine(region: string[]): string {
     const firstOption = cleaned.findIndex((line) => FIRST_OPTION.test(line))
     const above = firstOption >= 0 ? cleaned.slice(0, firstOption) : cleaned
     const asked = [...above].reverse().find((line) => /[?？]$/.test(line))
-    const matched = cleaned.find((line) => AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(line)))
+    const matched = cleaned.find((line) => !isAgyCancelFooter(line) && AWAITING_INPUT_PATTERNS.some((pattern) => pattern.test(line)))
     // a menu that asks nothing in words (Codex's effort picker): its heading above the options, not the key footer
     const heading = firstOption > 0 ? [...above].reverse().find((line) => line.trim() !== '') : undefined
     const chars = Array.from(asked ?? matched ?? heading ?? cleaned.at(-1) ?? '')

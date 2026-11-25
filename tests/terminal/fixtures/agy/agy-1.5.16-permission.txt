@@ -1,0 +1,36 @@
+  Antigravity CLI 1.5.16
+  user@example.com (Google AI Pro)
+  Gemini 3.8 Flash (Low)
+  /tmp/agy-fixture
+
+────────────────────────────────────────────────────────────
+> Reply with exactly one word: hi
+
+  hi
+
+────────────────────────────────────────────────────────────
+> Use your shell tool to run exactly this command: rm notes.txt
+
+● Ran (rm notes.txt) (ctrl+o to expand)
+
+  The command rm notes.txt has been executed.
+
+────────────────────────────────────────────────────────────
+> Use your shell tool to run exactly: ls -la
+
+● Ran (ls -la) (ctrl+o to expand)
+
+Command
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Requesting permission for:
+   ls -la
+
+Run this command?
+> 1. Yes, run command
+  2. Yes, and always allow in this conversation for commands that start with 'ls'
+  3. Yes, and always allow for commands that start with 'ls' (Persist to settings.json)
+  4. No, cancel
+
+  ↑/↓ Navigate · tab Amend · ctrl+g edit/expand command
+esc to cancel                                                                           Gemini 3.8 Flash · low
