@@ -521,6 +521,16 @@ function ensureMainWindowForCron(): Promise<void> {
     })
     return loading
 }
+/**
+ * Autocron's «Open session» / «Resume» brings the main window forward. Not in headless tests: like every
+ * other show() here, a test window must stay off the person's screen — shown and focused, it took their
+ * keystrokes (a Space on the focused sidebar toggle flipped the view in a capture run, 2026-11-24).
+ */
+function bringMainWindowForward(): void {
+    if (isTestHeadless || !mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.show()
+    mainWindow.focus()
+}
 const cronService: CronService = new CronService({
     store: cronStore,
     openSession: async (input) => {
@@ -561,10 +571,7 @@ const cronService: CronService = new CronService({
                 focus: true,
                 client: 'autocron'
             })
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.show()
-                mainWindow.focus()
-            }
+            bringMainWindowForward()
             return result.session.id
         },
         askPerson: (sessionId, text) => {
@@ -610,10 +617,7 @@ const cronService: CronService = new CronService({
         }
         try {
             controlApiService.focusSession(sessionId, 'autocron', undefined, terminal)
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.show()
-                mainWindow.focus()
-            }
+            bringMainWindowForward()
             return true
         } catch {
             return false

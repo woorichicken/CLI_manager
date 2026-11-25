@@ -46,6 +46,10 @@ function runsIn(userDataDir: string): Array<{ id: string; sessionId?: string; cl
     return JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8')).autocronRuns ?? []
 }
 
+/** A headless test window must stay off the person's screen: shown, it takes their keystrokes. */
+const mainWindowShown = (c: LaunchResult) => c.app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().some((w) => !w.webContents.getURL().includes('mode=') && w.isVisible()))
+
 const sidebarRow = (page: Page, id: string) => page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${id}"]`)
 
 test.describe('T167 autocron background sessions', () => {
@@ -113,6 +117,7 @@ test.describe('T167 autocron background sessions', () => {
         await expect.poll(() => sessionsIn(c.userDataDir).find((s) => s.id === sessionId)?.hidden ?? false).toBe(false)
         await expect(sidebarRow(c.page, sessionId)).toBeVisible()
         await expect(c.page.locator(`[data-session-id="${sessionId}"] .xterm`)).toBeVisible()
+        expect(await mainWindowShown(c)).toBe(false)
     })
 
     test('with no other session in the window, the background session is not picked as the one on screen', async () => {
@@ -161,6 +166,7 @@ test.describe('T167 autocron background sessions', () => {
         const argsLine = async () => (await c.page.evaluate((id) => document.querySelector(`[data-session-id="${id}"] .xterm-rows`)?.textContent ?? '', session.id))
             .match(/ARGS:[^\n]*?(?=\s{2,}|$)/)?.[0] ?? ''
         await expect.poll(argsLine, { timeout: 30_000 }).toContain(`ARGS: --resume ${conversationId}`)
+        expect(await mainWindowShown(c)).toBe(false)
         // nothing else rides along — a real Claude refuses --session-id next to --resume (CLISessionTracker skips it)
         expect(await argsLine()).not.toContain('--session-id')
     })
