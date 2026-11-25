@@ -89,6 +89,18 @@ export interface ConversationTurn {
 
 export type ConversationAgent = 'claude' | 'codex'
 
+/**
+ * Every agent whose conversation the chat reads. `ConversationAgent` stays the agents the chat can
+ * also drive (send, Stop, fork, question cards, `/` commands): a function typed with it cannot be
+ * handed another agent by mistake. Antigravity CLI (`agy`) is read only so far.
+ */
+export type ChatAgent = ConversationAgent | 'agy'
+
+/** The agents the chat drives (see ChatAgent). */
+export function drivesChat(agent: ChatAgent | null): agent is ConversationAgent {
+    return agent === 'claude' || agent === 'codex'
+}
+
 /** One option of a question menu read off the screen. */
 export interface PromptOption {
     /** 0-based position in the menu, top to bottom */
@@ -235,7 +247,7 @@ export interface ConversationSnapshot {
     /** the home folder of the Mac running the agent: `~/` paths resolve against it */
     home?: string
     /** which agent's transcript; null when the session has no conversation linked yet */
-    agent: ConversationAgent | null
+    agent: ChatAgent | null
     /** why there is nothing to show (no conversation id, file not found, read failed) */
     unavailable?: 'no-conversation' | 'not-found' | 'read-failed'
     /** the last `limit` turns, oldest first */
