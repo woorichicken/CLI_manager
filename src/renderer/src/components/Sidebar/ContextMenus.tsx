@@ -5,6 +5,8 @@ import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared
 import { TemplateIcon } from '../TemplateIcon'
 import { AgentTemplateRows } from './AgentTemplateRows'
 import { MENU_Z_INDEX } from '../../constants/styles'
+import type { SessionWorkRole } from '../../../../shared/sessionLabels'
+import { SessionLabelMenuItems, SUBMENU_ATTRIBUTE } from './SessionLabelMenuItems'
 
 /**
  * Closes the menu on a press anywhere outside it, and on Esc (report 540ceb60). A window `click`
@@ -18,7 +20,10 @@ export function useCloseOnOutside(onClose: () => void): React.RefObject<HTMLDivE
     closeRef.current = onClose
     useEffect(() => {
         const onPointerDown = (e: PointerEvent): void => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) closeRef.current()
+            const target = e.target as Node
+            // A submenu portalled out of the menu (the session menu's Role ▸) counts as inside.
+            const inSubmenu = target instanceof Element && target.closest(`[${SUBMENU_ATTRIBUTE}]`) !== null
+            if (menuRef.current && !menuRef.current.contains(target) && !inSubmenu) closeRef.current()
         }
         const onKeyDown = (e: KeyboardEvent): void => {
             if (e.key !== 'Escape') return
@@ -679,6 +684,11 @@ interface SessionContextMenuProps {
     onConnectConversation: () => void
     /** Present only for a session an AI is driving through the Control API. */
     onDisconnectAi?: () => void
+    /** The session's role and tags (decision 0015). */
+    role?: SessionWorkRole
+    tagCount: number
+    onSetRole: (role: SessionWorkRole | null) => void
+    onEditLabels: () => void
     onClose: () => void
 }
 
@@ -701,6 +711,10 @@ export function SessionContextMenu({
     onClear,
     onConnectConversation,
     onDisconnectAi,
+    role,
+    tagCount,
+    onSetRole,
+    onEditLabels,
     onClose
 }: SessionContextMenuProps) {
     const menuRef = useCloseOnOutside(onClose)
@@ -802,6 +816,14 @@ export function SessionContextMenu({
                 <span>Connect to agent conversation…</span>
             </button>
             <div className="border-t border-white/10 my-0.5"></div>
+            <SessionLabelMenuItems
+                sessionId={sessionId}
+                role={role}
+                tagCount={tagCount}
+                onSetRole={onSetRole}
+                onEditLabels={onEditLabels}
+                onClose={onClose}
+            />
             <button
                 className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
                 onClick={() => {

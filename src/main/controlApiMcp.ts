@@ -33,6 +33,8 @@ Folders you open that are not registered yet are added to the user's sidebar (in
 
 You can also work in sessions the user opened: list_sessions with scope "all" (use query — there can be hundreds) finds them, and the same tools apply. Do this only when the user's request points at that session. A session's screen may be missing older output when screenPartial is true.
 
+Name a session for its work ("Fix the sidebar overlap"), not for its role or batch. Put those in open_session's role (lead · work · talk · watch) and tags (the batch, the project) — or set_session_labels later — and find them again with list_sessions role / tag.
+
 When you coordinate work across sessions, keep the plan in a checklist the user sees in CLI Manager's header: checklist_create with a title, the items, a due date (YYYY-MM-DD) and the project (workspace name). Give the work to sessions as usual with send_input, and check items off with checklist_check as they finish — any session may check them. Checklists belong to no session: closing a session leaves them alone.
 
 When the user explicitly asks to split the conversation — to move one topic into a new session and keep going here ("split this off", "fork this into a new session", "세션 나눠줘") — call fork_session on the session the conversation is in (your own: $CLIMANAGER_SESSION_ID), not open_session with the context retyped. scope "whole" (the default) gives the new session the agent's own fork of the whole conversation (Claude --fork-session, Codex fork); "excerpt" starts a fresh agent whose first message is the last few turns, copied. Put what the new session should work on in message. The new session opens in the background under this one in Related; tell the user its name. Do not split on your own initiative.
@@ -81,7 +83,9 @@ const TOOLS: ToolDefinition[] = [
             type: 'object',
             properties: {
                 scope: { type: 'string', enum: ['ai', 'all'], description: 'Default "ai".' },
-                query: { type: 'string', description: 'Case-insensitive substring of the session name, workspace name or folder.' }
+                query: { type: 'string', description: 'Case-insensitive substring of the session name, workspace name or folder.' },
+                role: { type: 'string', enum: ['lead', 'work', 'talk', 'watch'], description: 'Only sessions with this role.' },
+                tag: { type: 'string', description: 'Only sessions carrying this tag (case ignored).' }
             }
         }
     },
@@ -120,6 +124,12 @@ const TOOLS: ToolDefinition[] = [
                     type: 'boolean',
                     description:
                         'Unregister the new workspace automatically when its last session closes — use it for scratch or temporary folders. Ignored when the path is already registered.'
+                },
+                role: { type: 'string', enum: ['lead', 'work', 'talk', 'watch'], description: 'What the session is for: lead (hands out work), work (one piece of work), talk (a person talks here), watch (watches other sessions).' },
+                tags: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Free words shown beside the name, e.g. the batch or project. Keep the name for the work summary — put no role or batch prefix in it.'
                 }
             }
         }
@@ -216,6 +226,20 @@ const TOOLS: ToolDefinition[] = [
             type: 'object',
             properties: { ...sessionIdProperty, name: { type: 'string', description: 'The new name.' } },
             required: ['session_id', 'name']
+        }
+    },
+    {
+        name: 'set_session_labels',
+        description:
+            "Set a session's role and/or tags, shown beside its name in the sidebar. Omit a field to keep it; role null clears the role; tags replaces the whole list ([] clears). Does not mark the session as AI-driven.",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                ...sessionIdProperty,
+                role: { type: ['string', 'null'], enum: ['lead', 'work', 'talk', 'watch', null], description: 'lead · work · talk · watch, or null to clear.' },
+                tags: { type: 'array', items: { type: 'string' }, description: 'The new tag list.' }
+            },
+            required: ['session_id']
         }
     },
     {
@@ -480,7 +504,13 @@ async function callTool(
         {
             const scope = str(args, 'scope')
             if (scope !== undefined && scope !== 'ai' && scope !== 'all') throw new InvalidParams('scope must be "ai" or "all"')
-            return JSON.stringify(service.listSessions({ scope, query: str(args, 'query') }), null, 1)
+            const role = str(args, 'role')
+            return JSON.stringify(service.listSessions({
+                scope,
+                query: str(args, 'query'),
+                role: role ? service.checkRole(role) ?? undefined : undefined,
+                tag: str(args, 'tag') || undefined
+            }), null, 1)
         }
         case 'open_session': {
             const result = await service.openSession({
@@ -494,6 +524,8 @@ async function callTool(
                 folder: str(args, 'folder'),
                 sessionFolder: str(args, 'session_folder'),
                 ephemeral: bool(args, 'ephemeral'),
+                role: args.role,
+                tags: args.tags,
                 client,
                 caller
             })
@@ -546,6 +578,10 @@ async function callTool(
             return JSON.stringify(service.focusSession(str(args, 'session_id', true)!, client, caller), null, 1)
         case 'rename_session':
             return JSON.stringify(service.renameSession(str(args, 'session_id', true)!, str(args, 'name', true)!), null, 1)
+        case 'set_session_labels': {
+            if (args.role === undefined && args.tags === undefined) throw new InvalidParams('Give role, tags or both.')
+            return JSON.stringify(service.setSessionLabels(str(args, 'session_id', true)!, { role: args.role, tags: args.tags }), null, 1)
+        }
         case 'release_session':
             service.releaseSession(str(args, 'session_id', true)!)
             return 'Released. The session keeps running for the user and is no longer marked as AI-driven.'

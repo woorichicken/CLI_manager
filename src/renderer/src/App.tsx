@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { SessionLabelsHost } from './components/Sidebar/SessionLabelsDialog'
+import { isSessionWorkRole, type SessionWorkRole } from '../../shared/sessionLabels'
 import { Sidebar } from './components/Sidebar/index'
 import { PhoneBadge } from './components/PhoneBadge'
 import { TerminalView, requestOpenTerminalPath, requestTerminalPage } from './components/TerminalView'
@@ -1225,6 +1227,23 @@ function App() {
         }))
     }
 
+    const labelSessions = useMemo(() => workspaces.flatMap(w => w.sessions), [workspaces])
+    // Role and tags beside the name (decision 0015). The store answers with what it kept (normalized).
+    const handleSetSessionLabels = async (sessionId: string, change: { role?: SessionWorkRole | null; tags?: string[] }): Promise<boolean> => {
+        const saved = await window.api.setSessionLabels(sessionId, change)
+        if (!saved) return false
+        const role = isSessionWorkRole(saved.role) ? saved.role : undefined
+        setWorkspaces(prev => prev.map(w => !w.sessions.some(s => s.id === sessionId) ? w : {
+            ...w,
+            sessions: w.sessions.map(s => {
+                if (s.id !== sessionId) return s
+                const { role: _role, tags: _tags, ...rest } = s
+                return { ...rest, ...(role ? { role } : {}), ...(saved.tags.length ? { tags: saved.tags } : {}) }
+            })
+        }))
+        return true
+    }
+
     // Folder handlers
     const handleCreateFolder = async (name: string) => {
         const newFolder = await window.api.createFolder(name)
@@ -1725,6 +1744,8 @@ function App() {
                 <BusyOverlay title="Restoring sessions…" />
             )}
 
+            {/* Mounted here, not in the sidebar: a tab's menu opens it while the sidebar is closed. */}
+            <SessionLabelsHost sessions={labelSessions} onSave={handleSetSessionLabels} />
             {isSidebarOpen && (
                 <Sidebar
                     workspaces={sortedWorkspaces}
@@ -1748,6 +1769,7 @@ function App() {
                     onReorderWorkspaces={handleReorderWorkspaces}
                     onTogglePin={handleTogglePin}
                     onToggleSessionPin={handleToggleSessionPin}
+                    onSetSessionLabels={handleSetSessionLabels}
                     folders={folders}
                     onCreateFolder={handleCreateFolder}
                     onRenameFolder={handleRenameFolder}

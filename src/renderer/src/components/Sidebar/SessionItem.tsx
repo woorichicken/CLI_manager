@@ -1,4 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react'
+import { describeSessionLabels } from '../../../../shared/sessionLabels'
+import { SessionRoleIcon } from './SessionRoleIcon'
 import { createPortal } from 'react-dom'
 import { Terminal, Trash2, GripVertical, Bot, Crown, Pin, ChevronDown, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
@@ -269,6 +271,8 @@ export function SessionItem({
     const screenStatus = useSessionScreenStatus(session.id)
     const role: SessionRole = orchestrator ? 'master' : session.aiControl ? 'ai' : 'user'
     const templateLogo = useTemplateLogo(session.templateId)
+    const labelsTitle = describeSessionLabels(session)
+    const tagsText = session.tags?.length ? `#${session.tags[0]}${session.tags.length > 1 ? ` +${session.tags.length - 1}` : ''}` : ''
     // The template's logo takes the icon slot (report 8062e68c); the crown stays — it counts the
     // sessions a master opened. An AI-driven row keeps its tooltip, and its colour still says AI.
     const roleIcon = orchestrator ? (
@@ -278,6 +282,16 @@ export function SessionItem({
             title={`Master session — opened ${orchestrator.openedCount} AI session${orchestrator.openedCount === 1 ? '' : 's'}`}
         >
             <Crown size={14} className="text-rose-400" />
+        </span>
+    ) : session.role ? (
+        // The session's role (decision 0015) takes the slot ahead of the template logo and the robot:
+        // it says what the session is for. The row's colour still says AI.
+        <span
+            className="shrink-0 flex"
+            data-work-role-icon={session.role}
+            title={[labelsTitle, session.aiControl ? `Driven by AI (${session.aiControl.client})` : ''].filter(Boolean).join(' — ')}
+        >
+            <SessionRoleIcon role={session.role} />
         </span>
     ) : templateLogo ? (
         <span
@@ -482,6 +496,8 @@ export function SessionItem({
                 transition={{ layout: { duration: 0 } }}
                 data-session-item={session.id}
                 data-session-role={role}
+                data-work-role={session.role}
+                data-session-tags={session.tags?.join(' ') || undefined}
                 data-tree-depth={treeDepth > 0 ? treeDepth : undefined}
                 data-tree-holds-active={treeBranch?.holdsActive ? session.id : undefined}
                 data-tree-connector={treeGuide && treeDepth > 0 ? (treeGuide.continues ? 'tee' : 'elbow') : undefined}
@@ -610,9 +626,11 @@ export function SessionItem({
                         <span
                             data-testid="session-workspace-label"
                             className="flex-1 min-w-0 truncate text-[10px] text-gray-500"
-                            title={workspaceLabel}
+                            title={labelsTitle ? `${workspaceLabel} · ${labelsTitle}` : workspaceLabel}
                         >
                             {workspaceLabel}
+                            {/* Tags ride in the dim label, which gives way before the name does. */}
+                            {tagsText && <span data-session-tags-text>{` · ${tagsText}`}</span>}
                         </span>
                     )}
                     {getSessionStatusBadge()}

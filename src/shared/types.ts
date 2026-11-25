@@ -1,4 +1,5 @@
 import type { ChatPreferences } from './conversation'
+import type { SessionWorkRole } from './sessionLabels'
 export type NotificationStatus = 'none' | 'info' | 'error' | 'success' | 'warning'
 
 // Session status for Claude Code monitoring (claude-squad 방식)
@@ -74,6 +75,13 @@ export interface TerminalSession {
      * that the person's own Terminal / Chat choice rules, so the flag is only a hint.
      */
     openInChat?: boolean
+    /**
+     * What the session is for — one of a fixed list (decision 0015). Unset: none. Drives the
+     * sidebar row's icon and the All sessions filter; set from the session menu or the Control API.
+     */
+    role?: SessionWorkRole
+    /** Free words beside the name (a batch, a project). Normalized by `normalizeTags`; unset when empty. */
+    tags?: string[]
     /**
      * Set while an external AI works in this session through the Control API:
      * when the API opens it, or the first time the API reads, types into, waits

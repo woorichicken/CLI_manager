@@ -398,7 +398,14 @@ export class ControlApiServer {
                 if (scope !== undefined && scope !== 'ai' && scope !== 'all') {
                     throw new ControlApiError(400, 'bad_request', 'scope must be "ai" or "all"')
                 }
-                return service.listSessions({ scope, query: query.get('query') ?? undefined })
+                const role = query.get('role')
+                return service.listSessions({
+                    scope,
+                    query: query.get('query') ?? undefined,
+                    // An empty role means no filter; a misspelt one is refused like on a write.
+                    role: role ? service.checkRole(role) ?? undefined : undefined,
+                    tag: query.get('tag') || undefined
+                })
             }),
             route('POST', '/v1/sessions', ({ body, client, caller }) =>
                 service.openSession({
@@ -412,6 +419,8 @@ export class ControlApiServer {
                     folder: optionalString(body, 'folder'),
                     sessionFolder: optionalString(body, 'sessionFolder'),
                     ephemeral: optionalBoolean(body, 'ephemeral'),
+                    role: body.role,
+                    tags: body.tags,
                     client,
                     caller
                 })
@@ -460,6 +469,12 @@ export class ControlApiServer {
                 const name = optionalString(body, 'name')
                 if (name === undefined) throw new ControlApiError(400, 'bad_request', 'name is required')
                 return service.renameSession(params.id, name)
+            }),
+            route('POST', '/v1/sessions/:id/labels', ({ params, body }) => {
+                if (body.role === undefined && body.tags === undefined) {
+                    throw new ControlApiError(400, 'bad_request', 'Give role, tags or both.')
+                }
+                return service.setSessionLabels(params.id, { role: body.role, tags: body.tags })
             }),
             route('POST', '/v1/sessions/:id/release', ({ params }) => {
                 service.releaseSession(params.id)

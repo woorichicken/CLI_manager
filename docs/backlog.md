@@ -19,6 +19,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 세션 역할·태그 2차 — 폰 목록·Related·탭 줄 표시, 거르기 켠 채 새 세션
+- Discovered: 2026-11-25 세션 역할·태그 구현(decision 0015, feat/session-role-tags-1125).
+- Evidence: 1차는 Mac 사이드바 줄(아이콘 자리·작업 영역 글 뒤 태그)·우클릭·탭 메뉴·편집 창·All sessions 거르기·Control API/MCP 만. 폰 `GET /api/phone/sessions` 의 `icon`(`phone/phoneSetup.ts`)·Related 창 줄·탭 줄에는 역할이 안 나온다. 거르기는 localStorage 에 남아, 켜 둔 채면 새로 연 세션(API 가 연 것 포함)이 All sessions 에 안 보인다 — 버튼의 파란 점만 알린다. Tree 에서 부모가 걸러진 자식은 「Not in a tree」로 내려간다.
+- Why deferred: 사람이 고른 1차 범위(사이드바에서 부여·보기). 폰·Related 는 아이콘 자리 순서(T22·T134·T152)를 같이 정해야 한다.
+- Trigger: 「폰에서 역할이 안 보인다」·「새 세션이 목록에 없다」 제보, 또는 스킬 쪽이 role/tag 조회로 바뀐 뒤(그 일 자체는 `docs/release-todos.md`).
+- Owner: 없음
+
 ### t170 `@` 세션 태그 시험 — Tab 직후 `fill` 이 앞 글 뒤에 붙는 경합(가끔 실패)
 - Discovered: 2026-11-25 fb-1125 ship-bar 독립 검증(7f57caf).
 - Evidence: 1차 실행 41/42, `t170-session-mentions.spec.ts:157-159` 가 `Received: "T170 kid old (…) @zeta"`. Tab 이 건 `requestAnimationFrame(setSelectionRange)`(`Composer.tsx:212`)가 바로 뒤 `composer.fill('@zeta')` 의 전체 선택을 풀어 값이 이어 붙는다. 단독 2회·전체 재실행 통과. 사람 타이핑 속도로는 안 난다.

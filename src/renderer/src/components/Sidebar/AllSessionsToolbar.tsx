@@ -1,3 +1,4 @@
+import type React from 'react'
 import { MessagesSquare, Plus } from 'lucide-react'
 
 export type AllSessionsLayout = 'list' | 'tree'
@@ -17,6 +18,8 @@ interface AllSessionsToolbarProps {
     onToggleThreads: () => void
     /** threads waiting for the person; the icon's badge, none at 0 */
     waitingThreads: number
+    /** The role/tag filter button (decision 0015), drawn after the Threads icon. */
+    labelFilter?: React.ReactNode
 }
 
 /**
@@ -38,7 +41,8 @@ export function AllSessionsToolbar({
     newSessionOpen,
     threadsOpen,
     onToggleThreads,
-    waitingThreads
+    waitingThreads,
+    labelFilter
 }: AllSessionsToolbarProps) {
     return (
         <div className="flex items-center gap-1 px-1 pb-1.5" data-testid="all-sessions-toolbar">
@@ -85,6 +89,7 @@ export function AllSessionsToolbar({
                     </span>
                 )}
             </button>
+            {labelFilter}
             <button
                 data-testid="all-sessions-new-session"
                 onClick={onNewSession}
