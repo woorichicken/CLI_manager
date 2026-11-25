@@ -29,21 +29,4 @@ whose version has shipped, then deletes them in a commit that says what was done
 
 ## Open
 
-### Session role and tags — teach the skill (decision 0015)
-
-- **Waits for**: PR of `feat/session-role-tags-1125`. Shipped when `GET /v1/sessions/<id>` answers with a
-  `role` field (null or a value).
-- **Do** (skill repository `~/skills/macbook-cc/climanager-session`, `no-auto-push` 「스킬 개선」):
-  - `scripts/clim.mjs` — `open --role <lead|work|talk|watch> --tag <t>` (repeatable), `sessions --role --tag`,
-    a `label <session> [--role r|none] [--tag t …]` command; help says `앱 1.38+` (or the shipped version).
-  - `scripts/watch-sessions.sh` — select by `SESSION_ROLE` / `SESSION_TAG` (through `GET /v1/sessions?role=&tag=`),
-    keep `SESSION_PREFIX` as a fallback for one release.
-  - `SKILL.md` (naming rule near the `AI: <배치>` line) and `references/conducting.md` (the 「대화:」 rules,
-    cleanup exemption, folder rule) — name = the work summary; role and batch go in `--role` / `--tag`;
-    cleanup skips `role=talk` instead of the `대화:` prefix.
-  - HQ `roles/team-lead.md` (the two prefix rules) — same change.
-  - A one-time script: read every session's name, set `role` from the prefix (`AI:`·`작업:` → work, `대화:` →
-    talk, `팀장:` → lead, `Q ` → watch) and the batch as a tag. Whether it also strips the prefix from the name
-    is the person's call (asked 2026-11-25, not decided) — default leave names alone.
-- **Not before**: an old app ignores `role` on open and `?role=` on list — a watcher would watch every session
-  and cleanup would no longer recognise talk sessions.
+None right now. The last row (session role and tags — teach the skill) was done after v1.38.0 shipped; see the commit that removed it.
