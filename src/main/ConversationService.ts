@@ -19,7 +19,7 @@ import type {
 import { CHAT_TURN_LIMIT, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
 // the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
 import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatView/chatMentions'
-import { isBusyRow, screenAgentMode, screenBackground } from './screenLines'
+import { screenAgentMode, screenBackground, screenShowsBusy } from './screenLines'
 import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 import { BackgroundTaskReader, settleBackground } from './transcript/backgroundTasks'
@@ -1231,7 +1231,7 @@ export class ConversationService {
         // readPrompt reads a turn in progress only from the dialog's own rows: a dialog drawn last is what the
         // agent waits on, whatever its words above it say (f7bff999 — «(esc to interrupt)» in them hid the card)
         entry.prompt = readPrompt(screen, agent ?? 'claude')
-        entry.working = entry.prompt === null && screen.some(isBusyRow)
+        entry.working = entry.prompt === null && screenShowsBusy(screen)
         entry.screenMode = screenAgentMode(screen)
         entry.background = screenBackground(screen)
         entry.suggestion = chatSuggestion(mirror.inputBox(sessionId), {

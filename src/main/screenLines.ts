@@ -41,6 +41,33 @@ export function isBusyRow(row: string): boolean {
     return (ESC_TO_INTERRUPT.test(row) && !CODEX_ASK_HINT.test(row)) || CLAUDE_SPINNER_ROW.test(row)
 }
 
+/**
+ * Antigravity CLI's footer under its input box while a turn runs, and under its dialogs: `esc to cancel`,
+ * lowercase, at the row's start (agy 1.5.16, recorded 2026-11-25; herdr manifests/antigravity.toml,
+ * Apache-2.0). Idle, it reads `? for shortcuts`. Claude's dialog hints say «Esc to cancel» capitalised
+ * and mid-row, so they never match. Case-sensitive on purpose.
+ */
+const AGY_CANCEL_FOOTER = /^esc to cancel(?:\s{2,}|$)/
+/** agy's spinner row above its input box: a braille glyph and a word (`⡿  Generating...`, `⡿  Running command...`). */
+const AGY_SPINNER_ROW = /^\s*[⠁-⣿]\s+\S/
+
+/** The row is agy's `esc to cancel` footer. */
+export function isAgyCancelFooter(row: string): boolean {
+    return AGY_CANCEL_FOOTER.test(row.trimStart())
+}
+
+/**
+ * The screen shows a turn in progress: a busy row (above), or agy's spinner over its `esc to cancel`
+ * footer. agy keeps that footer under its dialogs too, but a dialog draws no spinner — both are
+ * required, so a shell with a braille progress bar (npm) never reads as an agent at work.
+ */
+export function screenShowsBusy(rows: readonly string[]): boolean {
+    if (rows.some(isBusyRow)) return true
+    const shown = rows.filter((row) => row.trim() !== '')
+    const last = shown.at(-1)
+    return last !== undefined && isAgyCancelFooter(last) && shown.some((row) => AGY_SPINNER_ROW.test(row))
+}
+
 /** One edge of an agent's input box. `trimmed` is a row with its edges' blanks removed. */
 export function isInputBoxRule(trimmed: string): boolean {
     return INPUT_BOX_RULE.test(trimmed) || BOX_LABELED_RULE.test(trimmed)

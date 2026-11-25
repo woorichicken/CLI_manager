@@ -1,0 +1,16 @@
+
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.16
+  user@example.com (Google AI Pro)
+  Gemini 3.8 Flash (Low)
+  /tmp/agy-fixture
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                  auto · Gemini 3.8 Flash · low
