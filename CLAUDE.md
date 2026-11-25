@@ -411,6 +411,7 @@ main 이 로드 중 죽고 앱 구동 시험마다 `electron.launch` 가 180초�
 터미널 출력/스크롤/리사이즈 회귀를 잡는 Playwright Electron 테스트.
 
 - **위치**: `tests/terminal/` — 261건 (2026-10-24 `--list`)
+  - **새 시험 번호는 `origin/main` 에서 고른다** — `git fetch origin main && git ls-tree --name-only origin/main tests/terminal/ | sed 's#.*/##' | grep -oE '^t[0-9]+' | sort -V | uniq | tail -1` 다음 번호(머지 직전에 한 번 더). 브랜치 안에서 고르면 그동안 main 에 들어간 번호와 겹친다(2026-11-25 agy 시험 T166~T169 가 main 과 겹쳐 T176~T179 로 다시 매김)
   - T1 데이터유실 · T2 스크롤튕김 6종 · T3 히스토리보존 · T4 리사이즈폭풍 · T5 그리드창 · T6 Loop
   - T7 에이전트 통합(앱 구동) · T8 훅 설치 안전성 · T9 모듈 단위 · T10 공개 전 게이트
   - T11 UI 왕복 — 설정 토글을 실제로 클릭해 훅을 켜고 끈다. 모듈 테스트가 다 green인 채로
