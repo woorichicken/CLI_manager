@@ -1,5 +1,5 @@
 import { execFile } from 'child_process'
-import { statSync } from 'fs'
+import { realpathSync, statSync } from 'fs'
 import path from 'path'
 
 /**
@@ -86,9 +86,12 @@ export class AgySessionSync {
     private async sync(now: number): Promise<void> {
         const presence = path.join(this.deps.dataDir(), 'presence')
         let mark: string
+        // lsof prints resolved paths: a data folder under a symlink (/var → /private/var, a linked ~/.gemini)
+        let folders: string[]
         try {
             const stat = statSync(presence)
             mark = `${stat.ino}:${stat.mtimeMs}`
+            folders = [presence, realpathSync(presence)]
         } catch {
             return // agy never ran here
         }
@@ -104,7 +107,7 @@ export class AgySessionSync {
             if (!isInteractiveAgy(row.args)) continue
             const terminalId = terminalOf(row.pid, parents, ptyPids)
             if (!terminalId) continue
-            const id = lockedConversation(await (this.deps.openFiles ?? readOpenFiles)(row.pid), presence)
+            const id = lockedConversation(await (this.deps.openFiles ?? readOpenFiles)(row.pid), folders)
             if (!id || this.reported.get(terminalId) === id) continue
             this.reported.set(terminalId, id)
             this.deps.onConversation(terminalId, id, resumableCommand(row.args))
@@ -113,10 +116,11 @@ export class AgySessionSync {
 }
 
 /** The one conversation lock among a process's open files, or null (none, or more than one). */
-export function lockedConversation(files: readonly string[], presence: string): string | null {
+export function lockedConversation(files: readonly string[], presence: string | readonly string[]): string | null {
+    const folders = typeof presence === 'string' ? [presence] : presence
     const ids = new Set<string>()
     for (const file of files) {
-        if (path.dirname(file) !== presence) continue
+        if (!folders.includes(path.dirname(file))) continue
         const match = LOCK.exec(path.basename(file))
         if (match) ids.add(match[1].toLowerCase())
     }

@@ -39,12 +39,11 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Why deferred: 이번 변경은 디스크 코드를 건드리지 않았다(`git diff origin/main -- src/main/systemMonitorInfo.ts` 0줄). 고칠 때는 시험이 `formatStorage` 와 같은 규칙으로 만들고, 사용량은 ±1GB 를 허용한다.
 - Trigger: 디스크 여유가 10GB 아래인 기계에서 t150 을 돌릴 때.
 
-### Antigravity CLI(`agy`) 세션 파싱 — Claude·Codex 처럼 상태·대화·사용량을 읽기
-- Discovered: 2026-11-20 brand 총괄 세션 — 사람 「climanager 에 백로그로 안티그래비티 파싱도 넣어줘」.
-- Evidence: `agy` 1.5.13(`~/.local/bin/agy`)이 Claude·Codex 와 같은 터미널 에이전트다 — `-p --output-format json` 한 번 실행이 7.2초에 `"status":"SUCCESS"`(conversation_id 포함), `--conversation <id>` 이어 하기, `--dangerously-skip-permissions`, `agy models` 6개(Gemini 3.8 Flash high·medium·low · Claude Sonnet 4.6 · Opus 4.6 thinking · GPT-OSS 120B). 대화 기록은 JSONL 이 아니라 `~/.gemini/antigravity-cli/conversations/<id>.db`(SQLite — `steps`·`trajectory_meta`·`gen_metadata` 표, 본문은 blob) + 목록 `conversation_summaries.db`(FTS) · 실행 중 표시는 `presence/<id>.lock`. 지금 앱의 읽는 쪽은 Claude·Codex 전용이다(`src/main/transcript/claudeTranscript.ts`·`codexTranscript.ts`·`CodexSessionLocator.ts`·`UsageTracker.ts`, 화면 판정 `SessionScreenStatus.ts`·`promptScreen.ts`).
-- Evidence 2(같은 날 11:40): 사이드바 템플릿 `antigravity`·`antigravity neon` 을 `config.json` customTemplates 에 더했다(`agy --dangerously-skip-permissions [--model gemini-4-neon-high]`). 첫 `clim open --agent agy` 가 종료 3(질문 대기)을 냈는데 화면은 일하는 중이었다 — agy 화면은 `esc to cancel` · `⣽  Running command...` · 아래 줄 `auto · Gemini 4 Neon · high` 이고 우리 판정(`esc to interrupt` 등)에 없다. 계정에 따라 모델 수가 다르다(회사 계정 6 · 개인 계정 23 — Gemini 4 Neon·Argon·Hydrogen · Orchestrator · Claude 5.5 · GPT-OSS). 로그인 계정은 `cli.log` 의 `authenticated successfully as …` 줄.
-- Why deferred: 이번 일은 공모전 운영이었고, `steps.metadata` blob 이 protobuf 로 보여 형식을 아직 재지 않았다.
-- Trigger: agy 를 템플릿·`clim open --agent` 로 상시 쓰기 시작하거나 「agy 세션이 Chat·상태·사용량에 안 보인다」는 제보가 오면 — ① 세션 ↔ conversation id 찾기(presence lock) ② `.db` steps 를 Chat 기록으로 ③ 화면 상태(일하는 중·질문 대기) 문구 ④ 사용량 순서로 잰다.
+### Antigravity CLI(`agy`) — 남은 것: 되감기 반영 · 질문 카드 · `/` 명령 · 사용량 · fork
+- Discovered: 2026-11-20 brand 총괄 세션(「climanager 에 백로그로 안티그래비티 파싱도 넣어줘」). 1차는 2026-11-25 `feat/agents-1125` 에서 했다 — 대화 찾기(presence lock)·재시작 resume·Chat 읽기/보내기/Stop·화면 상태·읽기만 모델 칩(T166–T169, CLAUDE.md `AgySessionSync.ts` 줄).
+- Evidence: 본문은 `.db` blob 이 아니라 `brain/<id>/.system_generated/logs/transcript_full.jsonl`(JSONL)에 있다(이 Mac 590개 전부). ovis 는 `.db` 를 되감기 색인(살아 있는 step 번호)으로만 읽는다(server/agy.ts:30–110, bun:sqlite — Electron 39 의 `node:sqlite` `DatabaseSync` 로 열리는 것 확인, ExperimentalWarning 1줄). agy 대화상자는 `↑/↓ Navigate · enter Select · esc Skip`(질문)·`tab Amend`(권한)·`enter Confirm`(신뢰) 힌트로 읽히지만 카드 파서(`promptScreen.ts`)는 Claude·Codex 형식뿐 — ovis 도 agy 카드 없음(server/dialogs/agy.ts 빈 파일). `/` 명령은 ovis server/skills/agy.ts(`~/.gemini/config/skills`). 사용량은 ovis 가 키체인 `gemini/antigravity` OAuth 토큰으로 `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` 를 부른다(server/usage.ts:684) — 새 외부 통신·자격증명 읽기라 사람 결정.
+- Why deferred: 1차 범위는 「정상 사용」(사람 11-25). 되감기는 ledger 가 step_index 를 다시 쓸 때만 반영된다 — idle 되감기는 DB 가 먼저 바뀐다(ovis 주석).
+- Trigger: agy 에서 되감은 턴이 Chat 에 남는다는 제보 → `.db` 색인 이식 · agy 질문에 Chat 에서 답하고 싶다는 제보 → 화면 사본(`tests/terminal/fixtures/agy/agy-1.5.16-question.txt`·`-permission.txt`)으로 카드 · 사용량은 사람이 외부 호출을 허락하면.
 - Owner: 없음
 
 ### Control API — 입력·fork 가 거절돼도 관계(`connected`)는 이미 남는다

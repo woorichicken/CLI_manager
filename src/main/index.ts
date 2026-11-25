@@ -1799,6 +1799,7 @@ app.whenReady().then(async () => {
     const agySessionSync = new AgySessionSync({
         dataDir: agyHome,
         ptyPids: () => terminalManager.listPtyPids(),
+        intervalMs: Number(process.env.CLIMANAGER_AGY_SYNC_MS) || undefined,
         onConversation: (terminalId, cliSessionId, command) => {
             const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
             const session = workspaces.flatMap((w) => w.sessions ?? []).find((s) => s.id === terminalId)

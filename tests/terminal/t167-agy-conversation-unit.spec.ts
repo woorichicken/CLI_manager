@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, rmSync, utimesSync } from 'fs'
+import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, realpathSync, rmSync, utimesSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createAgyTranscriptParser, agyUserText, agyModelOf } from '../../src/main/transcript/agyTranscript'
@@ -238,5 +238,14 @@ test.describe('T167 AgySessionSync', () => {
         expect(agyStartCommand('agy; rm -rf ~')).toBe('agy')
         expect(agyStartCommand(undefined)).toBe('agy')
         expect(lockedConversation([lock(ID.toUpperCase())], join(home, 'presence'))).toBe(ID)
+    })
+
+    test('the data folder under a symlink: lsof names the resolved path, the lock still counts', async () => {
+        // macOS tmpdir is /var/folders/… → /private/var/folders/…; lsof prints the second
+        const real = realpathSync(home)
+        expect(real).not.toBe(home)
+        const { sync, seen } = harness([{ pid: 100, ppid: 1, args: 'zsh' }, { pid: 101, ppid: 100, args: 'agy' }], { 101: [join(real, 'presence', `${ID}.lock`)] })
+        await sync.tick(1_000)
+        expect(seen).toEqual([['term-a', ID, 'agy']])
     })
 })
