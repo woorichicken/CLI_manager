@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage, Tray, Menu, Notification, webContents, powerMonitor } from 'electron'
+import { applySessionLabels, parseSessionWorkRole } from '../shared/sessionLabels'
 import path, { join } from 'path'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -2171,6 +2172,17 @@ app.whenReady().then(async () => {
         if (!session.isPinned) delete session.isPinned
         store.set('workspaces', workspaces)
         return session.isPinned === true
+    })
+
+    // Role and tags beside the name (decision 0015). A label change: no AI mark, no relation.
+    ipcMain.handle('set-session-labels', (_, sessionId: string, change: { role?: unknown; tags?: unknown }) => {
+        const role = change.role === undefined ? undefined : parseSessionWorkRole(change.role)
+        if (role === 'invalid') return null
+        const workspaces = store.get('workspaces') as Workspace[]
+        const session = workspaces.flatMap(w => w.sessions).find(s => s.id === sessionId)
+        if (!session) return null
+        if (applySessionLabels(session, { role, tags: change.tags })) store.set('workspaces', workspaces)
+        return { role: session.role ?? null, tags: session.tags ?? [] }
     })
 
     ipcMain.handle('toggle-pin-workspace', (_, workspaceId: string) => {

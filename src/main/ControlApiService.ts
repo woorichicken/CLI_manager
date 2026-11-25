@@ -1,4 +1,5 @@
 import { templateOpensInChat } from '../shared/agentCommand'
+import { applySessionLabels, matchesSessionLabels, parseSessionWorkRole, SESSION_WORK_ROLES, type SessionWorkRole } from '../shared/sessionLabels'
 import { AgentConversations, AgentConversationError } from './agentConversations'
 import type { LoopTypeResult } from './CronService'
 import type { AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationList, ChatForkRequest, ChatForkResult } from '../shared/conversation'
@@ -212,6 +213,10 @@ export interface ApiSession {
      * like the app's own page list.)
      */
     memoPages: string[]
+    /** What the session is for (decision 0015): `lead` · `work` · `talk` · `watch`, or null. */
+    role: SessionWorkRole | null
+    /** Free words beside the name; `[]` when none. */
+    tags: string[]
 }
 
 export interface ApiSessionFolder {
@@ -258,6 +263,10 @@ export interface ListSessionsInput {
     scope?: 'ai' | 'all'
     /** Case-insensitive substring of the session name, workspace name or folder. */
     query?: string
+    /** Only sessions with this role (already checked). */
+    role?: SessionWorkRole
+    /** Only sessions carrying this tag (case and a leading `#` ignored). */
+    tag?: string
 }
 
 export interface OpenSessionInput {
@@ -278,6 +287,10 @@ export interface OpenSessionInput {
     sessionFolder?: string
     /** Unregister the new workspace when its last session closes. Ignored when it already exists. */
     ephemeral?: boolean
+    /** Role of the new session (decision 0015) — `lead` · `work` · `talk` · `watch` or its label. */
+    role?: unknown
+    /** Tags of the new session; normalized like the app's own editor. */
+    tags?: unknown
     client: string
     /** Session id from X-Caller-Session: the session asking, if it said so. */
     caller?: string
@@ -505,6 +518,7 @@ export class ControlApiService {
         return this.workspaces()
             .flatMap((workspace) => workspace.sessions.map((session) => ({ workspace, session })))
             .filter(({ session }) => input.scope === 'all' || session.aiControl)
+            .filter(({ session }) => matchesSessionLabels(session, { role: input.role, tag: input.tag }))
             .filter(({ workspace, session }) =>
                 !needle ||
                 session.name.toLowerCase().includes(needle) ||
@@ -548,6 +562,11 @@ export class ControlApiService {
     // ------------------------------------------------------------------
 
     async openSession(input: OpenSessionInput): Promise<OpenSessionResult> {
+        // Checked before anything is made, so a refused call leaves nothing behind.
+        const role = input.role === undefined ? undefined : this.checkRole(input.role)
+        if (input.tags !== undefined && !Array.isArray(input.tags)) {
+            throw new ControlApiError(400, 'bad_request', 'tags must be an array of strings.')
+        }
         const command = this.resolveCommand(input.template, input.command)
         const { workspace, created } = this.resolveWorkspace(input.workspaceId, input.path)
         const notes: string[] = []
@@ -598,6 +617,7 @@ export class ControlApiService {
             aiControl: { client: input.client, since: Date.now() },
             ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {})
         }
+        applySessionLabels(session, { role, tags: input.tags })
         if (madeSessionFolder) this.deps.broadcast(SESSION_FOLDERS_CHANNEL, this.deps.sessionFolders.list())
         const caller = input.caller && this.hasSession(input.caller) ? input.caller : undefined
 
@@ -1005,6 +1025,37 @@ export class ControlApiService {
             return this.describe(workspace, session)
         }
         throw new ControlApiError(404, 'not_found', `No session with id ${sessionId}. It may have been closed.`)
+    }
+
+    /**
+     * Sets a session's role and/or tags (decision 0015). Omitted keys stay, `role: null` clears,
+     * `tags` replaces the list. A label change like a rename: no AI mark, no relation.
+     */
+    setSessionLabels(sessionId: string, change: { role?: unknown; tags?: unknown }): ApiSession {
+        const role = change.role === undefined ? undefined : this.checkRole(change.role)
+        if (change.tags !== undefined && !Array.isArray(change.tags)) {
+            throw new ControlApiError(400, 'bad_request', 'tags must be an array of strings.')
+        }
+        const workspaces = this.workspaces()
+        for (const workspace of workspaces) {
+            const session = workspace.sessions.find((s) => s.id === sessionId)
+            if (!session) continue
+            if (applySessionLabels(session, { role, tags: change.tags })) {
+                this.deps.store.set('workspaces', workspaces)
+                this.emit({ type: 'updated', workspaceId: workspace.id, sessionId, session: { ...session } })
+            }
+            return this.describe(workspace, session)
+        }
+        throw new ControlApiError(404, 'not_found', `No session with id ${sessionId}. It may have been closed.`)
+    }
+
+    /** A role from a client, or `400 bad_role` — storing nothing would hide the typo. */
+    checkRole(value: unknown): SessionWorkRole | null {
+        const role = parseSessionWorkRole(value)
+        if (role === 'invalid') {
+            throw new ControlApiError(400, 'bad_role', `role must be one of ${SESSION_WORK_ROLES.join(', ')}, or null to clear it.`)
+        }
+        return role
     }
 
     /** Hands the session to the user: it keeps running and loses its AI mark. */
@@ -1780,7 +1831,9 @@ export class ControlApiService {
             orchestrator: this.describeOrchestrator(session.id),
             openedBy: this.openedBy.get(session.id) ?? null,
             sessionFolder: this.sessionFolderOf(session),
-            memoPages: [session.memo ?? '', ...(session.memoPages ?? [])]
+            memoPages: [session.memo ?? '', ...(session.memoPages ?? [])],
+            role: session.role ?? null,
+            tags: session.tags ?? []
         }
     }
 

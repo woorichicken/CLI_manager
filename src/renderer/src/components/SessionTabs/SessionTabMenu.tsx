@@ -1,7 +1,8 @@
 import React, { useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Columns2, Pencil, SquareX, Trash2, X } from 'lucide-react'
+import { Columns2, Pencil, SquareX, Tag, Trash2, X } from 'lucide-react'
 import { useCloseOnOutside } from '../Sidebar/ContextMenus'
+import { requestEditSessionLabels } from '../Sidebar/SessionLabelsDialog'
 import { MENU_Z_INDEX } from '../../constants/styles'
 import { tabsToClose, type TabCloseScope } from '../../../../shared/sessionTabs'
 import { useShortcutHint } from '../../utils/shortcutHints'
@@ -70,6 +71,10 @@ export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onRen
                     <button className={ITEM} data-tab-menu-item="rename" title={hint('Rename the session', 'renameSession', false)} onClick={run(() => onRenameTab(tabId))}>
                         <Pencil size={12} className="text-gray-400 shrink-0" />
                         <span className="truncate">Rename…</span>
+                    </button>
+                    <button className={ITEM} data-tab-menu-item="labels" title="What the session is for (shown as its icon) and tags beside its name" onClick={run(() => requestEditSessionLabels(tabId))}>
+                        <Tag size={12} className="text-gray-400 shrink-0" />
+                        <span className="truncate">Role & Tags…</span>
                     </button>
                     <div className="border-t border-white/10 my-0.5" />
                 </>

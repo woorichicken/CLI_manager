@@ -1,16 +1,16 @@
 ---
 description: When adding a session field that classifies sessions, when an agent tells sessions apart by their name, or when changing how a session's role or tags are set, shown or filtered
 authority: Rationale and plan for a session's role and tags living beside its name, not in it
-status: review-needed
+status: active
 owner: maintainer
 last-reviewed: 2026-11-25
 ---
 
 # 0015. A session's role and tags live beside its name, not in it
 
-> **Proposed 2026-11-25 — not implemented.** Approved in direction (role: fixed list · batch: tags ·
-> set from the app as well). The screens are planned in a before/after review; implementation waits for
-> the go-ahead on those screens.
+> Decided 2026-11-25 with the author (role: fixed list · batch: tags · set inside the app too). The
+> screens went through two rounds of before/after review; round 2 replaced text pills and a filter row
+> with icons after 「아이콘으로 하는게, 좋아보임, 화면이 좁은데 더 좁아보여」.
 
 ## Context
 
@@ -38,16 +38,19 @@ stored), session folders (one per session), and the AI mark. None says what a se
     at most 8 per session, duplicates removed ignoring case (the first spelling wins), empty dropped.
   - Not the existing `data-session-role`: that one is derived from who drives the session. The new one is
     `data-work-role` in the DOM to keep the two apart.
-- **Shown in the sidebar row**: a small role pill before the name, then the name, workspace label, and the
-  first tag (`#night-1125 +1`) dim at the end. Space runs out in that order from the end — the tag shrinks
-  first, the name last (the name-first rule of T63/T65). The icon slot (crown · template logo · AI) and the
-  status/inbox dots are untouched.
-- **Filter**: All sessions gets a row under List · Tree — All · Lead · Work · Talk · Watch · `#` (a tag picker).
-  Kept in localStorage like the layout; never saved into the store.
-- **Set in the app**: the session context menu (sidebar row and tab) gains `Role ▸` (Lead · Work · Talk ·
-  Watch · None, saved on click) and `Edit Tags…` (a small dialog: role buttons, tag chips, suggestions from
-  tags other sessions use, Save/Cancel). Setting either is a label change: no AI mark, no relation.
-- **Control API / MCP**:
+- **Shown in the sidebar row — no added width.** The role is an icon (Lead flag · Work hammer · Talk
+  speech bubble · Watch eye) **in the row's icon slot**: after the master crown, before the template logo and
+  the AI robot (the row's colour still says AI). The first tag (`· #night-1125 +1`) rides inside the dim
+  workspace label of the flat lists, which already gives way before the name; Tree and the folder view show
+  tags in the icon's tooltip only. A session with neither looks exactly as before.
+- **Filter**: one icon button in the All sessions toolbar (after Threads) opens Role and Tag lists; picking
+  both shows sessions with both, a dot says a filter is on. The button appears only once some session has a
+  role or a tag — until then it would only squeeze "New session". Kept in localStorage like the layout.
+- **Set in the app**: the sidebar row's menu gains `Role ▸` (Lead · Work · Talk · Watch · None, saved on
+  click) and `Edit Tags…`; the tab's menu gains `Role & Tags…`. Both open one editor (role buttons, tag chips,
+  suggestions from tags other sessions use, Save/Cancel), mounted in `App` so a tab can open it with the
+  sidebar closed. Setting either is a label change: no AI mark, no relation.
+- **Control API / MCP** ([`control-api.md`](../architecture/control-api.md)):
   - `POST /v1/sessions` takes `role` and `tags`.
   - `POST /v1/sessions/:id/labels` `{ role?: string | null, tags?: string[] }` — omitted keys stay, `null`
     clears the role, `tags` replaces the list. MCP `set_session_labels`.
@@ -67,8 +70,8 @@ stored), session folders (one per session), and the AI mark. None says what a se
 - Every code path that writes `workspaces` must keep the two fields. Most mutate the stored session in place;
   any that rebuilds a session object (restart, move, fork) is checked during implementation — `memoPages`
   was lost that way once (T56).
-- The sidebar row gets busier. The pill and tag are the first things to give way, and a session with
-  neither looks exactly as today.
+- The role takes the icon slot, so a template logo or the AI robot is hidden on a row with a role. The
+  row's colour still marks AI; the tooltip names the driver.
 - Phone list, Related dialog and tab bar do not show role or tags in the first round (tracked below).
 
 ## Plan
@@ -78,13 +81,14 @@ stored), session folders (one per session), and the AI mark. None says what a se
 | Types + normalization (pure, shared) | `src/shared/types.ts`, `src/shared/sessionLabels.ts` |
 | Store write + IPC `set-session-labels` | `src/main/index.ts`, `src/preload/index.ts` |
 | Control API + MCP | `ControlApiService.ts`, `ControlApiServer.ts`, `controlApiMcp.ts`, `docs/architecture/control-api.md` |
-| Row pill + tag, filter row | `Sidebar/SessionItem.tsx`, `AllSessionsToolbar.tsx`, `SidebarAllSessions.tsx` |
-| Menu items + editor dialog | `Sidebar/ContextMenus.tsx`, `SessionTabs/SessionTabMenu.tsx`, new `SessionLabelsDialog.tsx` |
+| Row icon + tag, filter button | `Sidebar/SessionItem.tsx`, `SessionRoleIcon.tsx`, `SessionLabelFilter.tsx`, `AllSessionsToolbar.tsx`, `Sidebar/index.tsx` |
+| Menu items + editor dialog | `Sidebar/SessionLabelMenuItems.tsx`, `ContextMenus.tsx`, `SessionTabs/SessionTabMenu.tsx`, `SessionLabelsDialog.tsx` (host in `App.tsx`) |
 
-Tests: a unit spec for normalization and filtering (Electron-free), an API spec (`POST` with role/tags,
-`labels` set/clear/400, `GET ?role=&tag=`, no AI mark, sidebar follows without reload, survives restart),
-and a UI round trip (menu → config.json → row; editor → config.json; filter row hides other roles; the
-name keeps its room at the default width).
+Tests: T166 (unit — role parsing, tag normalization, apply/clear, filter, tooltip) and T167 (app — the
+seeded labels are read, menu → config.json → row icon, editor Esc/Save/suggestions, tab menu, filter
+role/tag/empty/clear, the button only once labels exist; REST set/keep/clear/400/404, `GET ?role=&tag=`,
+open with labels, a bad role opens nothing, no AI mark, the sidebar follows without reload; MCP
+`set_session_labels` and `list_sessions role`).
 
 Later, not in the first round: phone list pill · Related and tab bar · the `clim` migration script and its
 consumers (another repository, after the release).

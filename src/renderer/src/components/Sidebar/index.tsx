@@ -29,6 +29,9 @@ import { AllSessionsToolbar, type AllSessionsLayout } from './AllSessionsToolbar
 import { SidebarThreads } from './SidebarThreads'
 import { useThreadsView } from './useThreadsView'
 import { NewSessionDialog } from '../NewSessionDialog'
+import { requestEditSessionLabels } from './SessionLabelsDialog'
+import { SessionLabelFilterButton, useSessionLabelFilter } from './SessionLabelFilter'
+import { matchesSessionLabels, tagsInUse, type SessionWorkRole } from '../../../../shared/sessionLabels'
 
 /**
  * ReorderableRow - 워크스페이스·폴더 드래그 앤 드롭을 위한 래퍼 컴포넌트
@@ -131,6 +134,8 @@ interface SidebarProps {
     onReorderWorkspaces: (workspaces: Workspace[]) => void
     onTogglePin: (workspaceId: string) => void
     onToggleSessionPin: (workspaceId: string, sessionId: string) => void
+    /** Sets a session's role and/or tags (decision 0015); resolves false when refused. */
+    onSetSessionLabels: (sessionId: string, change: { role?: SessionWorkRole | null; tags?: string[] }) => Promise<boolean>
     folders: WorkspaceFolder[]
     onCreateFolder: (name: string) => void
     onRenameFolder: (folderId: string, newName: string) => void
@@ -197,6 +202,7 @@ export function Sidebar({
     onReorderWorkspaces,
     onTogglePin,
     onToggleSessionPin,
+    onSetSessionLabels,
     folders,
     onCreateFolder,
     onRenameFolder,
@@ -824,6 +830,14 @@ export function Sidebar({
         : []
 
     const allSessionEntries = sessionsInSidebarOrder(listedWorkspaces, folders, showWorktrees, showPlayground)
+    // The role/tag filter (decision 0015) narrows only what All sessions shows; selection, counts in
+    // the folder view and ⌘[ ] keep every session.
+    const labelFilter = useSessionLabelFilter()
+    const knownTags = useMemo(() => tagsInUse(workspaces.flatMap(w => w.sessions)), [workspaces])
+    const anyLabels = knownTags.length > 0 || workspaces.some(w => w.sessions.some(s => s.role))
+    const shownSessionEntries = labelFilter.active
+        ? allSessionEntries.filter(entry => matchesSessionLabels(entry.session, labelFilter.filter))
+        : allSessionEntries
     // All sessions' "New session" (c63a93c0) offers the projects the sidebar shows, in its order.
     const [newSessionOpen, setNewSessionOpen] = useState(false)
     // Opened from a session folder's right-click menu: the new session is filed there (b9038a0e).
@@ -838,9 +852,13 @@ export function Sidebar({
     // first, then sidebar order.
     const sessionForest = useMemo(
         () => allSessionsLayout === 'tree'
-            ? sessionForestFor(sessionRelations, orderForAllSessions(sessionsInSidebarOrder(listedWorkspaces, folders, showWorktrees, showPlayground), []))
+            ? sessionForestFor(sessionRelations, orderForAllSessions(
+                sessionsInSidebarOrder(listedWorkspaces, folders, showWorktrees, showPlayground)
+                    .filter(entry => !labelFilter.active || matchesSessionLabels(entry.session, labelFilter.filter)),
+                []
+            ))
             : null,
-        [allSessionsLayout, sessionRelations, listedWorkspaces, folders, showWorktrees, showPlayground]
+        [allSessionsLayout, sessionRelations, listedWorkspaces, folders, showWorktrees, showPlayground, labelFilter.active, labelFilter.filter]
     )
     const sessionResults = isSearching ? findMatchingSessions(sessionsInSidebarOrder(workspaces, folders, showWorktrees, showPlayground), searchQuery) : []
     const isAllSessionsView = viewMode === 'all'
@@ -1080,6 +1098,10 @@ export function Sidebar({
                                 ? () => { void window.api.releaseAiSession(sessionMenuOpen.sessionId) }
                                 : undefined
                         }
+                        role={menuSession?.role}
+                        tagCount={menuSession?.tags?.length ?? 0}
+                        onSetRole={role => { void onSetSessionLabels(sessionMenuOpen.sessionId, { role }) }}
+                        onEditLabels={() => requestEditSessionLabels(sessionMenuOpen.sessionId)}
                         onClose={() => setSessionMenuOpen(null)}
                     />
                 )
@@ -1358,6 +1380,16 @@ export function Sidebar({
                             threadsOpen={threadsView.threadsOpen}
                             onToggleThreads={() => threadsView.setThreadsOpen(!threadsView.threadsOpen)}
                             waitingThreads={threadsView.waitingThreads}
+                            // Only once some session has a role or a tag: until then the button would only
+                            // squeeze "New session" in a narrow sidebar.
+                            labelFilter={(labelFilter.active || anyLabels) && (
+                                <SessionLabelFilterButton
+                                    filter={labelFilter.filter}
+                                    active={labelFilter.active}
+                                    onChange={labelFilter.setFilter}
+                                    knownTags={knownTags}
+                                />
+                            )}
                         />
                         {threadsView.threadsOpen ? (
                             <SidebarThreads
@@ -1376,11 +1408,16 @@ export function Sidebar({
                             />
                         ) : allSessionEntries.length === 0 ? (
                             <div className="px-2 py-3 text-xs text-gray-500">No sessions yet</div>
+                        ) : shownSessionEntries.length === 0 ? (
+                            <div className="px-2 py-3 text-xs text-gray-500" data-testid="all-sessions-filter-empty">
+                                No session matches the filter.{' '}
+                                <button className="text-blue-300 hover:underline" onClick={() => labelFilter.setFilter({ role: null, tag: null })}>Clear filter</button>
+                            </div>
                         ) : sessionForest ? (
                             <SidebarSessionTree forest={sessionForest} listProps={allSessionsListProps} />
                         ) : sessionFolderActions ? (
                             <SidebarAllSessions
-                                entries={orderForAllSessions(allSessionEntries, recentIds)}
+                                entries={orderForAllSessions(shownSessionEntries, recentIds)}
                                 sessionFolders={sessionFolders}
                                 folderActions={sessionFolderActions}
                                 listProps={allSessionsListProps}
@@ -1392,7 +1429,7 @@ export function Sidebar({
                                 onNewSessionIn={(folderId) => { setNewSessionFolderId(folderId); setNewSessionOpen(true) }}
                             />
                         ) : (
-                            <SidebarSessionList entries={orderForAllSessions(allSessionEntries, recentIds)} dividePinned {...allSessionsListProps} />
+                            <SidebarSessionList entries={orderForAllSessions(shownSessionEntries, recentIds)} dividePinned {...allSessionsListProps} />
                         )}
                     </div>
                     {onShowSessions && (

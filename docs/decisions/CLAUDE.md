@@ -36,7 +36,7 @@ know X".
 | [0012](0012-dictation-log-stays-on-this-mac.md) | The dictation log stays on this Mac, off by default, and expires | active |
 | [0013](0013-mac-documents-on-a-custom-scheme.md) | The Mac draws a report in a sandboxed frame on a custom scheme | active |
 | [0014](0014-queue-actions-only-what-the-report-offers.md) | A queue action runs only what the report offers, with the names as arguments | active |
-| [0015](0015-session-role-and-tags.md) | A session's role and tags live beside its name, not in it | proposed (not implemented) |
+| [0015](0015-session-role-and-tags.md) | A session's role and tags live beside its name, not in it | active |
 
 ## Template
 

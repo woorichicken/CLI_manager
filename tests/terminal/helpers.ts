@@ -35,6 +35,9 @@ export interface SeedSession {
     memoPages?: string[]
     /** Pinned to the top of All sessions. */
     isPinned?: boolean
+    /** What the session is for (decision 0015) — stored as given, so a test can seed a bad value too. */
+    role?: string
+    tags?: string[]
 }
 
 export interface SeedWorkspace {
@@ -143,7 +146,9 @@ export async function launchAppWithWorkspaces(workspaces: SeedWorkspace[], optio
                 ...(agentCommands.get(s) ? { cliCommand: agentCommands.get(s) } : {}),
                 ...(s.memo ? { memo: s.memo } : {}),
                 ...(s.memoPages ? { memoPages: s.memoPages } : {}),
-                ...(s.isPinned ? { isPinned: true } : {})
+                ...(s.isPinned ? { isPinned: true } : {}),
+                ...(s.role ? { role: s.role } : {}),
+                ...(s.tags ? { tags: s.tags } : {})
             })),
             // get-workspaces sorts by createdAt, so seeded order has to be encoded here
             createdAt: 1700000000000 + index,
