@@ -45,6 +45,7 @@ import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts, threadSessionIds, withoutThreadSessions } from './utils/relatedSessions'
+import { setSessionCatalog } from './utils/sessionMentions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 import { useSessionTabs } from './hooks/useSessionTabs'
 import { SessionTabBar, type SessionTabEntry } from './components/SessionTabs/SessionTabBar'
@@ -144,6 +145,8 @@ function App() {
     const [checklistsOpen, setChecklistsOpen] = useState(false)
     const sessionRelations = useSessionRelations()
     const relatedCountBySession = useMemo(() => relatedCounts(sessionRelations, workspaces), [sessionRelations, workspaces])
+    // the Chat composer's `@` menu names sessions: it reads this list from a module store, not through props
+    useEffect(() => setSessionCatalog({ workspaces, relations: sessionRelations }), [workspaces, sessionRelations])
 
     // The session the user is looking at: the focused split pane, else the active tab. One place reports it
     // for the recently viewed order (sidebar All sessions, Related sort); main skips a repeat of the id already in front.

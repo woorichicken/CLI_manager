@@ -371,6 +371,8 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 }
 .chat-complete-row { width: 100%; display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; text-align: left; font-size: 0.86em; min-width: 0; }
 .chat-complete-row.is-selected { background: rgba(96, 165, 250, 0.14); }
+.chat-complete-group { padding: 4px 8px 2px; font-size: 0.72em; letter-spacing: 0.04em; text-transform: uppercase; color: var(--chat-faint); }
+.chat-complete-session { font-family: inherit; }
 .chat-complete-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; color: var(--chat-fg); overflow: hidden; text-overflow: ellipsis; }
 .chat-complete-description { flex: 1; color: var(--chat-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .chat-complete-source { color: var(--chat-faint); font-size: 0.85em; white-space: nowrap; }
