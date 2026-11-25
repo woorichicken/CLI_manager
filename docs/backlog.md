@@ -19,6 +19,20 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### agy 동기화의 `lsof` 에 시간 제한이 없다 — 한 번 걸리면 agy 대화 찾기가 멈춘다
+- Discovered: 2026-11-25 v1.38.0 릴리즈 전 독립 리뷰(harsh-critic, v1.37.0..35e7914 전체 diff — `~/Downloads/_batches/rel-1380/review-harsh-critic.md`).
+- Evidence: `src/main/AgySessionSync.ts:201` `readOpenFiles` 의 `execFile('lsof', …)` 에 `timeout` 이 없다. 응답이 안 오면 `running` 래치가 true 로 남아 다음 틱이 모두 건너뛴다. `ClaudeSessionSync` 도 같은 꼴(기존 설계)이라 실제로 걸린 사례는 아직 없음 — lsof 가 멈추는 건 대개 네트워크 마운트.
+- Why deferred: 릴리즈를 막는 결함이 아니고(BLOCK 0) 실측 사례가 없다.
+- Trigger: 「agy 세션 재시작 resume·Chat 이 어느 순간부터 안 된다」 제보, 또는 이 Mac 에 네트워크 볼륨을 붙여 쓰게 될 때 — 두 동기화 모두 `execFile` 에 `timeout: 10_000` 과 실패 시 래치 해제를 넣는다.
+- Owner: 없음
+
+### agy 판정 다듬기 — 점자 스피너 범위 · `>` 프롬프트 셸의 흐린 글 · 복원 감시 60초 · 목록의 hidden 표시
+- Discovered: 2026-11-25 v1.38.0 릴리즈 전 독립 리뷰(같은 파일, NIT 2~5).
+- Evidence: `screenLines.ts:52` `AGY_SPINNER_ROW` 가 점자 전체(npm 진행 바도 씀)를 받는다 — cancel 꼬리와 AND 라 오탐은 드묾 · `TerminalMirror.ts:437-443` greyHint 가 첫 줄 `>` 로 agy 를 추정해 `PS1='> '` 셸의 bright black 글을 추천으로 볼 수 있음 · `index.ts:1539` agy 복원에도 신뢰 질문 감시가 60초 돎(해 없음) · `ControlApiService.ts:521-523` `scope=all` 이 Autocron 숨김 세션을 돌려주지만 응답에 `hidden` 필드가 없다.
+- Why deferred: 넷 다 해가 작거나 드문 경우다.
+- Trigger: 「입력하지 않은 글이 추천으로 보인다」·「npm 설치 화면이 작업 중으로 보인다」 제보, 또는 AI 가 숨김 세션을 사람이 연 세션으로 착각한 기록이 나오면.
+- Owner: 없음
+
 ### 세션 역할·태그 2차 — 폰 목록·Related·탭 줄 표시, 거르기 켠 채 새 세션
 - Discovered: 2026-11-25 세션 역할·태그 구현(decision 0015, feat/session-role-tags-1125).
 - Evidence: 1차는 Mac 사이드바 줄(아이콘 자리·작업 영역 글 뒤 태그)·우클릭·탭 메뉴·편집 창·All sessions 거르기·Control API/MCP 만. 폰 `GET /api/phone/sessions` 의 `icon`(`phone/phoneSetup.ts`)·Related 창 줄·탭 줄에는 역할이 안 나온다. 거르기는 localStorage 에 남아, 켜 둔 채면 새로 연 세션(API 가 연 것 포함)이 All sessions 에 안 보인다 — 버튼의 파란 점만 알린다. Tree 에서 부모가 걸러진 자식은 「Not in a tree」로 내려간다.
