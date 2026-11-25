@@ -1,0 +1,26 @@
+
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.16
+  user@example.com (Google AI Pro)
+  Gemini 3.8 Flash (Low)
+  /tmp/agy-fixture
+
+────────────────────────────────────────────────────────────
+> Reply with exactly one word: hi
+
+  hi
+
+────────────────────────────────────────────────────────────
+> Use your shell tool to run exactly this command: rm notes.txt
+
+● Ran (rm notes.txt) (ctrl+o to expand)
+⡿  Running command...
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+esc to cancel                                                                    auto · Gemini 3.8 Flash · low

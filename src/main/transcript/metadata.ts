@@ -3,7 +3,8 @@
 // pi/omp/omo/gjc/cmd and Agy/Letta left out). `CLAUDE_FAMILY`/`VERSION` from server/start-screen.ts.
 // Folds line by line (`foldMetadata`) instead of re-reading a whole text, so TranscriptReader can feed it
 // the lines it already reads for the turns.
-import type { ConversationMeta } from '../../shared/conversation'
+import type { ChatAgent, ConversationMeta } from '../../shared/conversation'
+import { agyModelOf } from './agyTranscript'
 import { isContextClear } from './records'
 import { localCommandStdout } from './claudeTranscript'
 
@@ -95,8 +96,9 @@ function claudeSetting(entry: RecordValue): { model?: string; effort?: string | 
 }
 
 /** Lines that cannot name a model, skipped before JSON.parse (a busy transcript is mostly these). */
-function mayNameMeta(line: string, agent: 'claude' | 'codex'): boolean {
+function mayNameMeta(line: string, agent: ChatAgent): boolean {
     if (line.length === 0 || line.length > MAX_META_LINE) return false
+    if (agent === 'agy') return line.includes('"PLANNER_RESPONSE"') && line.includes('"model"')
     if (agent === 'codex') return line.includes('"turn_context"') || line.includes('"token_count"') || line.includes('"session_meta"') || line.includes('"thread_settings_applied"')
     return line.includes('"assistant"') || line.includes('"permissionMode"') || line.includes('local-command') || line.includes('local_command') || line.includes('/clear')
 }
@@ -105,7 +107,7 @@ function mayNameMeta(line: string, agent: 'claude' | 'codex'): boolean {
  * The meta after `text` (complete jsonl lines), from what it was before. Recorded settings only —
  * effort is never guessed from thinking text. Codex turn_context is a snapshot.
  */
-export function foldMetadata(text: string, agent: 'claude' | 'codex', before: ConversationMeta | null): ConversationMeta | null {
+export function foldMetadata(text: string, agent: ChatAgent, before: ConversationMeta | null): ConversationMeta | null {
     let meta: ConversationMeta | null = before ? { ...before } : null
     const ensure = (): ConversationMeta => (meta ??= { model: null, effort: null })
     for (const line of text.split('\n')) {
@@ -114,6 +116,16 @@ export function foldMetadata(text: string, agent: 'claude' | 'codex', before: Co
         try {
             entry = record(JSON.parse(line))
         } catch {
+            continue
+        }
+        if (agent === 'agy') {
+            // each planner response names the model it ran on, the effort last (`gemini-3.8-flash-low`)
+            if (entry.type === 'PLANNER_RESPONSE' && label(entry.model)) {
+                const { model, effort } = agyModelOf(label(entry.model)!)
+                const current = ensure()
+                current.model = model
+                current.effort = effort
+            }
             continue
         }
         if (agent === 'claude') {

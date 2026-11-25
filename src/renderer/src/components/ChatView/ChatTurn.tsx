@@ -1,6 +1,6 @@
 import { memo, useRef, useState } from 'react'
 import { Bot, Check, Copy, FileText, GitFork } from 'lucide-react'
-import type { ChatThread, ConversationAgent, ConversationTurn } from '../../../../shared/conversation'
+import type { ChatAgent, ChatThread, ConversationTurn } from '../../../../shared/conversation'
 import { Markdown } from './markdown/Markdown'
 import { UserParts } from './TurnParts'
 import { WorkBlock } from './WorkBlock'
@@ -8,7 +8,7 @@ import { isLiveWorkTurn, turnSegments, workBlockStartsOpen } from './workBlocks'
 import { answerForAgent, formatElapsed, INTERRUPTED_TEXT } from './chatLib'
 import { ThreadChip } from './ThreadChip'
 
-const AGENT_NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
+const AGENT_NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', agy: 'Antigravity' }
 const COPIED_MS = 1500
 
 /** "14:02" today, "11/2 14:02" another day — on hover (ovis TurnTime). */
@@ -42,7 +42,7 @@ export const ChatTurn = memo(function ChatTurn({
     working: boolean
     /** a question menu is on screen: the running turn waits on the person */
     waiting: boolean
-    agent: ConversationAgent
+    agent: ChatAgent
     /** its place among the turns shown, for the rail's jumps */
     index: number
     /** Settings › Chat «Collapse work» (default on): every block starts folded */
