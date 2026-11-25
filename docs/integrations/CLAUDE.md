@@ -3,7 +3,7 @@ description: When adding or debugging an integration with an external AI CLI (ho
 authority: Observed behaviour of external CLIs that CLI Manager depends on and cannot control
 status: active
 owner: maintainer
-last-reviewed: 2026-08-18
+last-reviewed: 2026-11-26
 ---
 
 # External CLI Integrations
@@ -22,6 +22,7 @@ invariants live in the root [`CLAUDE.md`](../../CLAUDE.md).
 |---|---|---|---|
 | Claude Code | 6 lifecycle hooks | `statusLine` stdin payload | `~/.claude/settings.json` |
 | Codex | `notify` → `agent-turn-complete` only | `~/.codex/sessions/**/rollout-*.jsonl` | `~/.codex/config.toml` |
+| Antigravity (`agy`) | screen only (spinner + footer) | not integrated | none — read only |
 | Gemini CLI | not integrated | not integrated | — |
 
 ### Claude Code (verified 2026-08-15)
@@ -54,6 +55,25 @@ invariants live in the root [`CLAUDE.md`](../../CLAUDE.md).
   (10080 = weekly), never by slot position.
 - Rollout files are appended to when a session is resumed, so the newest limits are regularly in a
   file whose **name** is days old. Select by modification time.
+
+### Antigravity CLI `agy` (verified 2026-11-25, v1.5.16)
+
+- No hooks, no status line. Status comes from the screen alone: working = a braille spinner row
+  plus a bottom line `esc to cancel`. Dialogs (question, permission, folder trust) end with
+  `↑/↓ Navigate · enter Select · esc Skip` (or `tab Amend` / `enter Confirm`). The working footer
+  contains "Esc to cancel", which an older question pattern matched — agy looked like it was
+  waiting for an answer while it worked. Rules: herdr `manifests/antigravity.toml` (Apache-2.0).
+- The conversation id is not printed. A running agy holds `<data dir>/presence/<id>.lock`; find it
+  with `lsof`. Old lock files stay in the folder after exit, so a file alone is not evidence.
+  `lsof` prints real paths (`/private/var/…`), so compare both the path and its `realpath`.
+- Ledger: `<data dir>/brain/<id>/.system_generated/logs/transcript_full.jsonl`, one step per line
+  (`step_index`, `type` USER_INPUT · PLANNER_RESPONSE · GENERIC · SYSTEM_MESSAGE · ERROR_MESSAGE,
+  `status`, `model` like `gemini-3.8-flash-low`). A step index that goes backwards is a rewind.
+  Data dir: `ANTIGRAVITY_APP_DATA_DIR` or `~/.gemini/antigravity-cli`. Resume: `agy --conversation <id>`.
+- The empty input box shows a grey hint in palette colour 8 (SGR 90), not dim. Read as typed
+  text, it blocked every Chat send on the real tool while the mock passed.
+- `agy --conversation <id>` clears its own resume command from the scrollback.
+- Re-verify with `REAL_AGY=1 REAL_AGY_CWD=<trusted folder>` (T179) whenever agy updates.
 
 ### Claude Code as a driven TUI — AI Control API (verified 2026-09-22, v2.1.278)
 
@@ -120,6 +140,28 @@ phone server reads one line from it (`src/main/phone/phoneDock.ts`):
 - `artifact-open` adds `sessionId` from `CLIMANAGER_SESSION_ID` (`TerminalManager` sets it in every terminal). The last open that
   carried one wins, and opening again without one keeps it.
 - Real round trip through Chromium, extension and host: median 0.9–2.7 ms for 6 rows (`tests/dock-list.e2e.mjs`).
+
+## Adding an agent CLI — where it has to be named
+
+Found while adding `agy` (PR #195): the reader worked and the renderer still could not resume it,
+because one list did not know the new name. Check each of these, and grep the new name in `src/`
+before calling it done.
+
+| Place | What it decides |
+|---|---|
+| `src/shared/conversation.ts` | `ChatAgent` (read) vs `ConversationAgent` (driven). Read-only first; `drivesChat()` keeps fork, `/` commands and question cards off |
+| `src/main/TranscriptReader.ts` · `transcript/` | Finding and parsing the transcript, `toolOutput` for long results |
+| `src/main/transcript/metadata.ts` | Model and effort chips |
+| `src/main/ConversationService.ts` | `agentOf` / `drivenAgentOf`: which features apply |
+| `src/main/screenLines.ts` · `TerminalMirror.ts` | Working, question and input-box rules — check them against a recorded real screen |
+| `src/main/index.ts` | Saving the detected id, keeping it on start, `get-session-resume-command` |
+| A session sync (`ClaudeSessionSync`, `CodexSessionLocator`, `AgySessionSync`) | How a hand-started session gets its conversation id |
+| `src/renderer/src/utils/agentSession.ts` · `resumeCommand.ts` | Whether the UI treats the session as an agent, and what it types to resume |
+| `src/renderer/src/components/ChatView/` | Display name, read-only chips, hidden actions |
+
+Tests: a unit spec with masked real-screen fixtures, an app spec on a mock, and an opt-in spec on
+the real tool. The mock is drawn from what we expected to see; only the real tool caught the
+grey hint. Take the test number from `origin/main`, not from your branch (root `CLAUDE.md`).
 
 ## Research notes
 
