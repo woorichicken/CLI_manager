@@ -64,6 +64,24 @@ test.describe('T177 agy ledger → chat turns', () => {
         expect(turns[1].parts[0]).toMatchObject({ kind: 'tool', summary: 'sleep 30', state: 'pending' })
     })
 
+    test('calls left unanswered are settled, and the next call gets its own result (measured: 10 of 944 planner responses)', () => {
+        const turns = parse(
+            user(0, 'two calls') +
+            planner(1, '', { tool_calls: [{ name: 'run_command', args: { CommandLine: 'a' } }, { name: 'run_command', args: { CommandLine: 'b' } }] }) +
+            generic(2, 'result a') +
+            planner(3, '', { tool_calls: [{ name: 'run_command', args: { CommandLine: 'c' } }] }) +
+            generic(4, 'result c')
+        )
+        const tools = turns[1].parts.filter((part) => part.kind === 'tool')
+        expect(tools.map((tool) => tool.kind === 'tool' && [tool.summary, tool.output, tool.state ?? null])).toEqual([
+            ['a', 'result a', null], ['b', '', null], ['c', 'result c', null]
+        ])
+        // a new prompt settles what the last turn left open
+        const next = parse(user(0, 'x') + planner(1, '', { tool_calls: [{ name: 'run_command', args: { CommandLine: 'z' } }] }) + user(2, 'y'))
+        expect(next[1].parts[0]).toMatchObject({ summary: 'z' })
+        expect(next[1].parts[0].kind === 'tool' && next[1].parts[0].state).toBeUndefined()
+    })
+
     test("agy's 1.5.16 file argument (`Path`) is the summary; thinking is a thinking part; SYSTEM_MESSAGE is not shown", () => {
         const turns = parse(
             user(0, 'Read it') +

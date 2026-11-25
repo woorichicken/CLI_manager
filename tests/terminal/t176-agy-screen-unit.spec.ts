@@ -96,6 +96,16 @@ test.describe('T176 agy screens', () => {
         expect((await read('answered'))?.typed).toBe('')
     })
 
+    // herdr manifests/antigravity.toml (Apache-2.0, ee5bfb5) — its rules as cases: «some captures hold only
+    // the two footer rows, so dialog rules must not require the question text», and the 1.1.28–1.2.16 hints
+    for (const hint of ['↑/↓ Navigate · tab Amend · ctrl+g edit/expand command', '↑/↓ Navigate · tab Amend · f full diff', '↑/↓ Navigate · enter Select · esc Skip', '↑/↓ Navigate · enter Confirm']) {
+        test(`herdr: a dialog captured as its two footer rows only is waiting — ${hint}`, async () => {
+            const mirror = await mirrorShowing(['', `  ${hint}`, 'esc to cancel                                    auto · Gemini 3.8 Flash · low'])
+            expect(mirror.screenStatus('s1').question).not.toBeNull()
+            expect(mirror.showsAwaitingInput('s1')).toBe(true)
+        })
+    }
+
     test("agy's slash menu is no question", async () => {
         const rows = [...fixture('idle').slice(0, -3), '> /', '  /help   Show help', '  ↑/↓ Navigate · enter Select · tab Complete', '? for shortcuts']
         const mirror = await mirrorShowing(rows)

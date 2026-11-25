@@ -10,6 +10,7 @@
  * - `test.fail(true, 'ovis-port bug: …')`: our port differs from ovis with no recorded reason —
  *   a defect left for a separate fix (the test starts failing once it is fixed, as a reminder).
  */
+import './ovis-port/agy'
 import './ovis-port/chatlib'
 import './ovis-port/claude'
 import './ovis-port/codex'
