@@ -697,7 +697,6 @@ function App() {
     // split view; when the session on screen goes, `focusId` (the right-clicked tab) takes its place.
     const handleCloseTabs = (closing: string[], focusId: string | null): void => {
         if (closing.length === 0) return
-        sessionTabs.closeTabs(closing)
         const gone = new Set(closing)
         const showOnly = (id: string | null): void => {
             const owner = id ? sessionOwnerById.get(id) : undefined
@@ -708,22 +707,29 @@ function App() {
                 setActiveSession(null)
             }
         }
+        // The tabs leave the row only when the action runs: a document pane's «Keep open» (ec4c1682) must leave them as they were.
         if (splitLayout) {
-            if (!splitLayout.sessionIds.some(id => gone.has(id))) return
+            if (!splitLayout.sessionIds.some(id => gone.has(id))) {
+                sessionTabs.closeTabs(closing)
+                return
+            }
             const kept = splitLayout.sessionIds.filter(id => !gone.has(id))
             if (kept.length >= 2) {
+                sessionTabs.closeTabs(closing)
                 setSplitLayout({ ...splitLayout, sessionIds: kept, sizes: undefined })
                 setActiveSplitIndex(Math.max(0, focusId ? kept.indexOf(focusId) : 0))
                 return
             }
             // fewer than two panes left: the split ends, and a document pane left in `kept` goes with it (ec4c1682)
             docPanes.guardLeave(kept.filter(isDocPaneId), () => {
+                sessionTabs.closeTabs(closing)
                 setSplitLayout(null)
                 setActiveSplitIndex(0)
                 showOnly(sessionPaneIds(kept)[0] ?? focusId)
             })
             return
         }
+        sessionTabs.closeTabs(closing)
         if (activeSession && gone.has(activeSession.id)) showOnly(focusId)
     }
 

@@ -412,3 +412,41 @@ test('T175 a sidebar click that would replace the active document pane asks firs
     await page.getByText('T175 Other', { exact: true }).first().click()
     await expect(docPanes).toHaveCount(0)
 })
+
+test('T175 Close Other Tabs that would end the split and a typed document pane: Keep open leaves the tabs as they were (fb-1125 round 3)', async () => {
+    test.setTimeout(180_000)
+    const { page } = await launch()
+    const docPanes = page.locator('[data-doc-pane]')
+    const tabs = (): Promise<string[]> => page.locator('[data-session-tab]').evaluateAll((els) => els.map((el) => el.getAttribute('data-session-tab') ?? ''))
+    // two session tabs, then the page beside the session on screen
+    await page.getByText('T175 Other', { exact: true }).first().click()
+    await page.getByText('T175 Claude', { exact: true }).first().click()
+    await expect.poll(async () => (await tabs()).length).toBe(2)
+    const before = await tabs()
+    expect(before).toContain(CLAUDE)
+    expect(before).toContain('t175-other')
+    await openPage(page, 'review.html')
+    await page.getByTestId('file-preview-side-by-side').click()
+    await expect(docPanes).toHaveCount(1)
+    const frame = await frameOf(docPanes.first())
+    await typeNote(frame, 'tabs stay')
+    const tabsInSplit = await tabs()
+    expect(tabsInSplit).toContain('t175-other')
+
+    // Close Other Tabs from the other session's tab: the session pane would go, the split would end, the page with it
+    await page.locator('[data-session-tab="t175-other"]').click({ button: 'right' })
+    await page.locator('[data-tab-menu-item="close-others"]').click()
+    await expect(confirmBand(docPanes.first())).toBeVisible()
+    await confirmBand(docPanes.first()).getByTestId('html-doc-leave-keep').click()
+    // Keep open: nothing happened — the tabs, the split and the words
+    expect(await tabs()).toEqual(tabsInSplit)
+    await expect(docPanes).toHaveCount(1)
+    await expect(frame.locator('#note')).toHaveValue('tabs stay')
+
+    // Close anyway: the tabs go and the split ends
+    await page.locator('[data-session-tab="t175-other"]').click({ button: 'right' })
+    await page.locator('[data-tab-menu-item="close-others"]').click()
+    await confirmBand(docPanes.first()).getByTestId('html-doc-leave-anyway').click()
+    await expect(docPanes).toHaveCount(0)
+    await expect.poll(tabs).toEqual(['t175-other'])
+})
