@@ -1,4 +1,4 @@
-import { CronInput, CronJob, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
+import { CronInput, CronJob, CronOpenTerminal, CronRun, CronRunConversation, CronState, CronView } from '../shared/autocron'
 import type { LoopState } from '../shared/types'
 import { nextRun, parseCron, planTick } from '../shared/cron'
 import { Checked, CronStore } from './CronStore'
@@ -24,6 +24,40 @@ const LOOP_TYPE_NOTES: Record<Exclude<LoopTypeResult, 'submitted'>, string> = {
     gone: 'the loop terminal is gone'
 }
 
+/**
+ * A «new» run's session sits out of the session lists while it works (TerminalSession.hidden). Once it has
+ * been idle this long — no output, nothing running, no question on the screen — it is closed and its
+ * conversation kept on the run, so «Open session» resumes it. Ten minutes leaves room for a person who
+ * glances at the Loop window's Chat after the run, without keeping finished agents around for hours.
+ */
+export const CRON_IDLE_CLOSE_MS = 10 * 60_000
+
+/** What a background session is doing, read from the screen mirror. */
+export type CronBackgroundState =
+    | { kind: 'gone' }
+    | { kind: 'working' }
+    | { kind: 'question'; question: string }
+    /** `since`: the last output (or the exit) — the clock the idle close counts from. */
+    | { kind: 'idle'; since: number }
+
+/** The parts of the app a background «new» run needs. Absent: runs open ordinary sessions (the unit tests). */
+export interface CronBackgroundDeps {
+    /** Sessions carrying the hidden flag now. */
+    hiddenSessionIds(): string[]
+    state(sessionId: string): CronBackgroundState
+    /** Clears the hidden flag: the session joins the lists, and is never closed by Autocron again. */
+    reveal(sessionId: string): void
+    /**
+     * Closes the session and returns its conversation — only when one can be resumed (a Claude or Codex
+     * conversation id). Otherwise null, and nothing is closed: closing would lose the scrollback for good.
+     */
+    close(sessionId: string): CronRunConversation | null
+    /** Opens a new session that resumes the conversation, shown in the main window. Its id. */
+    resume(conversation: CronRunConversation): Promise<string>
+    /** The session stopped on a question: the person is asked once, in the app's inbox. */
+    askPerson(sessionId: string, text: string): void
+}
+
 export interface OpenedSession {
     sessionId: string
     terminalStarted: boolean
@@ -34,7 +68,7 @@ export interface OpenedSession {
 export interface CronServiceDeps {
     store: CronStore
     /** Opens a session the way the Control API does (ControlApiService.openSession). */
-    openSession(input: { path: string; template?: string; command?: string; name: string; prompt: string }): Promise<OpenedSession>
+    openSession(input: { path: string; template?: string; command?: string; name: string; prompt: string; hidden?: boolean }): Promise<OpenedSession>
     loops(): LoopState
     /**
      * Types one line into a loop terminal and presses Enter the Control API's way: refused while the
@@ -61,6 +95,10 @@ export interface CronServiceDeps {
     /** Focus a session in the main window — «Open session». False when it is gone.
      *  With `terminal`, the main window also switches that session to its terminal. */
     focusSession(sessionId: string, terminal?: CronOpenTerminal): boolean
+    /** Background sessions for «new» runs: opened hidden, closed when done, resumed on «Open session». */
+    background?: CronBackgroundDeps
+    /** Tests only (CLIMANGER_TEST_USERDATA): a shorter tick and idle close, so an app test can watch one. */
+    timing?: { tickMs?: number; idleCloseMs?: number }
     now?: () => number
 }
 
@@ -78,6 +116,12 @@ export class CronService {
     /** Typing into one loop terminal, one job at a time: text, pause, Enter must not interleave. */
     private readonly terminalQueue = new Map<string, Promise<unknown>>()
     private ticking: Promise<void> | null = null
+    /** «Waiting for you» already sent for this session and question — the inbox is asked once per question. */
+    private readonly asked = new Map<string, string>()
+    /** «Resume» on a closed run while its new session is still starting — a second click joins it, no second session. */
+    private readonly resuming = new Map<string, Promise<string>>()
+    /** «new» runs between opening their session and recording the run: their hidden session has no record yet. */
+    private startingNew = 0
 
     constructor(private readonly deps: CronServiceDeps) {}
 
@@ -87,7 +131,7 @@ export class CronService {
 
     start(): void {
         if (this.timer) return
-        this.timer = setInterval(() => void this.tick(), CRON_TICK_MS)
+        this.timer = setInterval(() => void this.tick(), this.deps.timing?.tickMs ?? CRON_TICK_MS)
         void this.tick()
     }
 
@@ -107,6 +151,7 @@ export class CronService {
 
     private async runTick(): Promise<void> {
         const now = this.now()
+        this.sweepBackground(now)
         const work: Promise<unknown>[] = []
         for (const job of this.deps.store.list()) {
             if (!job.enabled) continue
@@ -161,16 +206,23 @@ export class CronService {
             return this.deps.store.addRun({ ...base, at: this.now(), status: 'failed', note: 'the previous run was still starting' })
         }
         this.inFlight.add(job.id)
+        if (job.mode === 'new') this.startingNew++
         try {
             const result = job.mode === 'attach' ? await this.runAttach(job) : await this.runNew(job)
             const run = this.deps.store.addRun({ ...base, at: this.now(), ...result })
-            if (run.status === 'failed') this.deps.notify(`Autocron failed: ${job.name}`, run.note ?? '')
+            if (run.status === 'failed') {
+                this.deps.notify(`Autocron failed: ${job.name}`, run.note ?? '')
+                // a session that did not get its prompt needs a person (a trust question, a slow start):
+                // it must not sit out of the lists waiting for someone who cannot see it
+                if (job.mode === 'new' && run.sessionId) this.deps.background?.reveal(run.sessionId)
+            }
             return run
         } catch (error) {
             const note = error instanceof Error ? error.message : String(error)
             this.deps.notify(`Autocron failed: ${job.name}`, note)
             return this.deps.store.addRun({ ...base, at: this.now(), status: 'failed', note })
         } finally {
+            if (job.mode === 'new') this.startingNew--
             this.inFlight.delete(job.id)
         }
     }
@@ -183,7 +235,8 @@ export class CronService {
             path: job.cwd!,
             ...(job.template ? { template: job.template } : { command: job.agent }),
             name: `${job.name} · ${label}`,
-            prompt: job.prompt
+            prompt: job.prompt,
+            ...(this.deps.background ? { hidden: true } : {})
         })
         if (!opened.terminalStarted) {
             return { status: 'failed', sessionId: opened.sessionId, note: opened.note ?? 'the terminal did not start' }
@@ -211,6 +264,50 @@ export class CronService {
             if (result === 'submitted') return { status: 'started', sessionId: terminalId }
             return { status: 'failed', ...(result === 'gone' ? {} : { sessionId: terminalId }), note: LOOP_TYPE_NOTES[result] }
         })
+    }
+
+    /**
+     * Background sessions, each tick: a hidden session whose run is done is closed (its conversation kept
+     * for «Open session»); one stopped on a question asks the person in the inbox and stays; one no live
+     * run points at any more (its job deleted, its record cut at CRON_RUNS_MAX, a failed start) is shown,
+     * so no session is ever left where nobody can see it. Reads the screen mirror only for hidden sessions.
+     */
+    private sweepBackground(now: number): void {
+        const background = this.deps.background
+        if (!background) return
+        const hidden = new Set(background.hiddenSessionIds())
+        for (const id of this.asked.keys()) if (!hidden.has(id)) this.asked.delete(id)
+        if (hidden.size === 0) return
+        const owned = new Map<string, { run: CronRun; job: CronJob }>()
+        for (const run of this.deps.store.runs()) {
+            if (!run.sessionId || !hidden.has(run.sessionId) || owned.has(run.sessionId)) continue
+            const job = this.deps.store.get(run.cronId)
+            if (run.status === 'started' && run.closedAt === undefined && job?.mode === 'new') owned.set(run.sessionId, { run, job })
+        }
+        for (const sessionId of hidden) {
+            const entry = owned.get(sessionId)
+            if (!entry) {
+                // a run still starting has opened its session but not recorded it: not an orphan yet
+                if (this.startingNew === 0) background.reveal(sessionId)
+                continue
+            }
+            const state = background.state(sessionId)
+            if (state.kind !== 'question') this.asked.delete(sessionId)
+            if (state.kind === 'question') {
+                if (this.asked.get(sessionId) !== state.question) {
+                    this.asked.set(sessionId, state.question)
+                    background.askPerson(sessionId, `Autocron "${entry.job.name}" is waiting for you: ${state.question}`.slice(0, 200))
+                }
+                continue
+            }
+            // since 0: no output yet (a restored session whose terminal has not drawn) — not idle, just not started
+            if (state.kind !== 'idle' || state.since <= 0) continue
+            if (now - state.since < (this.deps.timing?.idleCloseMs ?? CRON_IDLE_CLOSE_MS)) continue
+            const conversation = background.close(sessionId)
+            if (conversation) this.deps.store.updateRun(entry.run.id, { closedAt: now, conversation })
+            // nothing to resume it from (no conversation id yet, another program): show it rather than lose it
+            else background.reveal(sessionId)
+        }
     }
 
     private oneAtATime<T>(terminalId: string, work: () => Promise<T>): Promise<T> {
@@ -276,8 +373,29 @@ export class CronService {
         return job ? this.deps.store.runs(job.id) : undefined
     }
 
-    /** «Open session» on a run: focuses it in the main window (new) or opens the Loop window (attach). */
-    openSession(sessionId: string, terminal?: CronOpenTerminal): boolean {
-        return this.deps.focusSession(sessionId, terminal)
+    /**
+     * «Open session» on a run: focuses it in the main window (new) or opens the Loop window (attach).
+     * Showing a background session brings it into the lists (focusSession clears the hidden flag). A
+     * session Autocron closed is resumed in a new one, which the run then points at — so «Talk here»
+     * and the Chat follow it. False when the session is gone and there is nothing to resume.
+     */
+    async openSession(sessionId: string, terminal?: CronOpenTerminal): Promise<boolean> {
+        if (this.deps.focusSession(sessionId, terminal)) return true
+        const run = this.deps.store.runs().find((r) => r.sessionId === sessionId && r.conversation)
+        if (!run?.conversation || !this.deps.background) return false
+        const pending = this.resuming.get(run.id)
+        if (pending) {
+            await pending
+            return true
+        }
+        const resuming = this.deps.background.resume(run.conversation)
+        this.resuming.set(run.id, resuming)
+        try {
+            const resumedId = await resuming
+            this.deps.store.updateRun(run.id, { sessionId: resumedId, closedAt: undefined })
+            return true
+        } finally {
+            this.resuming.delete(run.id)
+        }
     }
 }

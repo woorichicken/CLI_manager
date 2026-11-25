@@ -411,6 +411,19 @@ export function threadSessionIds(relations: SessionRelation[]): Set<string> {
 }
 
 /**
+ * Every session the session lists leave out: reply threads, and sessions Autocron runs in the background
+ * (TerminalSession.hidden, until a person opens one). Search still finds both, and the one on screen keeps
+ * its row (withoutThreadSessions). The phone list follows the same set (phoneSetup.ts).
+ */
+export function unlistedSessionIds(relations: SessionRelation[], workspaces: Workspace[]): Set<string> {
+    const ids = threadSessionIds(relations)
+    for (const workspace of workspaces) {
+        for (const session of workspace.sessions ?? []) if (session.hidden) ids.add(session.id)
+    }
+    return ids
+}
+
+/**
  * The workspaces as the sidebar lists them: thread sessions out, except those on screen (`onScreen`:
  * the active session, split panes) — a thread looked at keeps its row, so the selection, ⌘[ ] and
  * ⌘W do not lose it. Workspaces without a hidden thread keep their identity (memoised rows do not

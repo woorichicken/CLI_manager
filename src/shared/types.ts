@@ -62,6 +62,13 @@ export interface TerminalSession {
      */
     templateId?: string
     /**
+     * Opened in the background by Autocron (CronService «new» runs): the sidebar's lists, ⌘[ ] and the
+     * phone's list leave it out — as reply threads (1b965ad1) — and search still finds it. A person
+     * brings it into the lists by opening it: the Loop window's «Open session», or by viewing it in the
+     * main window any other way (search, an inbox request, a session link). Cleared then, for good.
+     */
+    hidden?: boolean
+    /**
      * Set when the session was created from a template that opens in Chat (`TerminalTemplate.openIn`).
      * The renderer switches such a session to Chat once, the first time it sees it (fbe10f54); after
      * that the person's own Terminal / Chat choice rules, so the flag is only a hint.
