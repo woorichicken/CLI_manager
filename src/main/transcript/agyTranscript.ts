@@ -75,6 +75,13 @@ function turnsOf(steps: readonly Step[]): ConversationTurn[] {
     // tool calls waiting for their GENERIC result, oldest first: agy records no call id, and writes
     // each call's result as the next GENERIC step
     let pending: ToolPart[] = []
+    // calls a later step shows will never be answered (agy wrote fewer results — 10 of 944 planner
+    // responses on this Mac's ledgers, 2026-11-25): done, outcome unknown, not spinning forever, and
+    // the next planner's results do not land on them
+    const settle = (): void => {
+        for (const tool of pending) delete tool.state
+        pending = []
+    }
     const assistant = (ts: string | null): ConversationTurn => {
         const last = turns.at(-1)
         if (last?.role === 'assistant') {
@@ -90,13 +97,14 @@ function turnsOf(steps: readonly Step[]): ConversationTurn[] {
             if (step.status !== 'DONE') continue
             const text = agyUserText(step.content)
             if (!text.trim()) continue
-            pending = []
+            settle()
             turns.push({ role: 'user', ts: step.ts, parts: [{ kind: 'text', text }] })
             continue
         }
         if (step.type === 'PLANNER_RESPONSE') {
             if (step.status !== 'DONE') continue
             const parts: ConversationPart[] = []
+            if (step.calls.length > 0) settle()
             if (step.thinking.trim()) parts.push({ kind: 'thinking', text: step.thinking })
             if (step.content.trim()) parts.push({ kind: 'text', text: step.content })
             for (const call of step.calls) {
