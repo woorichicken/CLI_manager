@@ -2215,7 +2215,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                     ))}
                                 </div>
                                 <p className="text-xs text-gray-500 mt-1">
-                                    How a new session from this template first shows. Sessions that already exist keep their view.
+                                    How a new session from this template first shows. Sessions that already exist keep their view. Applies to templates that start Claude Code or Codex.
                                 </p>
                             </div>
 

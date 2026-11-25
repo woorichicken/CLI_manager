@@ -320,7 +320,7 @@ User Action (Renderer)
           cliCommand?: string,        // What started it (`cldy`) — resume repeats this, not `claude`
           sessionFolderId?: string,   // All sessions view folder it also sits in (SessionFolders); a missing folder = none
           templateId?: string,        // Template it was opened from — sidebar row shows that template's logo (after 1.33.0; sessions opened before have none)
-          openInChat?: boolean,       // Created from a template with openIn 'chat' — App switches it to Chat once (hooks/useSessionViewMode applyOpenInChat), then the person's own choice rules
+          openInChat?: boolean,       // Created from a template with openIn 'chat' — App switches it to Chat once (hooks/useSessionViewMode applyOpenInChat) and main deletes the flag (clear-open-in-chat); only templates whose command is Claude Code/Codex set it
           aiControl?: { client: string, since: number }  // Mark: an AI works in this session (Control API)
         }
       ],

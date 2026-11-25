@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import { test, expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -22,6 +22,7 @@ const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/chat-mock.cjs')
 const LABEL = process.env.T171_LABEL ?? 'run'
 const CHAT_TEMPLATE: TerminalTemplate = { id: 'tpl-t171-chat', name: 'T171Chat', icon: 'terminal', description: '', command: 'claude' }
 const TERMINAL_TEMPLATE: TerminalTemplate = { id: 'tpl-t171-term', name: 'T171Term', icon: 'code', description: '', command: 'claude' }
+const SHELL_TEMPLATE: TerminalTemplate = { id: 'tpl-t171-shell', name: 'T171Shell', icon: 'play', description: '', command: 'echo T171-SHELL', openIn: 'chat' }
 const OLD = { id: 's-t171-old', name: 'T171OLD' }
 
 function makeSandbox(): { root: string; home: string; claudeDir: string; bin: string; project: string } {
@@ -52,8 +53,11 @@ const sessionsOf = (dir: string): TerminalSession[] => readConfig(dir).workspace
 const row = (page: Page, id: string): Locator => page.locator(`[data-session-item="${id}"]`).first()
 
 let ctx: LaunchResult | null = null
+let relaunched: ElectronApplication | null = null
 let root = ''
 test.afterEach(async () => {
+    if (relaunched) await relaunched.close().catch(() => undefined)
+    relaunched = null
     if (ctx) await closeApp(ctx)
     ctx = null
     if (root) fs.rmSync(root, { recursive: true, force: true })
@@ -85,7 +89,7 @@ test('T171 a template that opens in Chat starts its new sessions on Chat — and
             }
         ],
         {
-            customTemplates: [CHAT_TEMPLATE, TERMINAL_TEMPLATE],
+            customTemplates: [CHAT_TEMPLATE, TERMINAL_TEMPLATE, SHELL_TEMPLATE],
             settings: { showHomeWorkspace: false, controlApi: { enabled: true, port: 0 } },
             env: {
                 HOME: box.home,
@@ -131,7 +135,9 @@ test('T171 a template that opens in Chat starts its new sessions on Chat — and
     await page.getByRole('button', { name: CHAT_TEMPLATE.name }).first().click()
     await expect.poll(() => created().length).toBe(1)
     const fromMenu = created()[0]
-    expect(fromMenu.openInChat).toBe(true)
+    expect(fromMenu.templateId).toBe(CHAT_TEMPLATE.id)
+    // switched once, the hint is spent: main deleted it from the stored session
+    await expect.poll(() => sessionsOf(userDataDir).find((s) => s.id === fromMenu.id)?.openInChat).toBeUndefined()
     await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'chat', { timeout: 60_000 })
     // the agent just started and wrote no conversation: the empty state shows, not a broken view
     const chat = page.locator('[data-testid="chat-view"][data-session-id]:visible')
@@ -146,12 +152,22 @@ test('T171 a template that opens in Chat starts its new sessions on Chat — and
     expect(plain.openInChat).toBeUndefined()
     await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal', { timeout: 60_000 })
 
+    // --- a Chat template whose command is no agent: no flag, and the view stays the terminal ------
+    await page.getByText('T171WS', { exact: true }).first().click({ button: 'right' })
+    await page.getByRole('button', { name: SHELL_TEMPLATE.name }).first().click()
+    await expect.poll(() => created().length).toBe(3)
+    const shell = created().find((s) => s.id !== fromMenu.id && s.id !== plain.id)!
+    expect(shell.templateId).toBe(SHELL_TEMPLATE.id)
+    expect(shell.openInChat).toBeUndefined()
+    await page.waitForTimeout(800)
+    expect(await page.evaluate((id) => JSON.parse(localStorage.getItem('session-view-modes') ?? '{}')[id] ?? 'terminal', shell.id)).toBe('terminal')
+
     // --- ⌘T + 1 (the first template is the Chat one) --------------------------------------------
     await row(page, OLD.id).click()
     await page.keyboard.press('Meta+t')
     await page.keyboard.press('1')
-    await expect.poll(() => created().length).toBe(3)
-    const fromShortcut = created().find((s) => s.id !== fromMenu.id && s.id !== plain.id)!
+    await expect.poll(() => created().length).toBe(4)
+    const fromShortcut = created().find((s) => ![fromMenu.id, plain.id, shell.id].includes(s.id))!
     expect(fromShortcut.templateId).toBe(CHAT_TEMPLATE.id)
     await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'chat', { timeout: 60_000 })
 
@@ -166,14 +182,44 @@ test('T171 a template that opens in Chat starts its new sessions on Chat — and
     })
     expect(res.status).toBe(200)
     const apiId = ((await res.json()) as { session: { id: string } }).session.id
-    await expect.poll(() => sessionsOf(userDataDir).find((s) => s.id === apiId)?.openInChat ?? false).toBe(true)
+    await expect.poll(() => sessionsOf(userDataDir).some((s) => s.id === apiId)).toBe(true)
     await row(page, apiId).click()
     await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'chat', { timeout: 60_000 })
 
     // --- the person's own choice wins afterwards, and the old session was never touched ----------
+    await expect.poll(() => sessionsOf(userDataDir).find((s) => s.id === apiId)?.openInChat).toBeUndefined()
     await page.getByTestId('view-toggle-terminal').click()
     await row(page, OLD.id).click()
     await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal')
     await row(page, apiId).click()
     await expect(page.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal')
+
+    // --- restart with the renderer's storage wiped: no flag in config.json, still Terminal ----------
+    const keptDir = userDataDir
+    await ctx.app.close()
+    fs.rmSync(path.join(keptDir, 'Local Storage'), { recursive: true, force: true })
+    ctx.userDataDir = path.join(keptDir, '..', 'climanger-t171-unused')
+    relaunched = await electron.launch({
+        args: [path.join(REPO_ROOT, 'out/main/index.js')],
+        env: {
+            ...process.env,
+            CLIMANGER_TEST_USERDATA: keptDir,
+            CLIMANGER_TERM_DEBUG: '1',
+            CLIMANGER_TEST_HEADLESS: '1',
+            HOME: box.home,
+            CLAUDE_CONFIG_DIR: box.claudeDir,
+            PATH: `${box.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
+            SHELL: '/bin/zsh',
+            CLIMANAGER_HOME: box.home
+        } as Record<string, string>
+    })
+    const page2 = await relaunched.firstWindow()
+    await page2.setViewportSize({ width: 1280, height: 800 })
+    await row(page2, apiId).click({ timeout: 30_000 })
+    await expect(page2.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal', { timeout: 60_000 })
+    await row(page2, fromMenu.id).click()
+    await expect(page2.getByTestId('view-toggle')).toHaveAttribute('data-mode', 'terminal', { timeout: 60_000 })
+    for (const id of [fromMenu.id, apiId, fromShortcut.id]) {
+        expect(sessionsOf(keptDir).find((s) => s.id === id)?.openInChat, 'no flag left in config.json').toBeUndefined()
+    }
 })

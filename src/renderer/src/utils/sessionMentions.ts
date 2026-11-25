@@ -64,7 +64,16 @@ export function sessionMentionsFor(input: {
         .slice(0, limit)
 }
 
-/** What a picked session turns into in the box: its name and a session link the message keeps. */
+/** A longer session name is cut here (with …) so it does not swamp the message. */
+export const MAX_MENTION_NAME_LENGTH = 60
+
+/**
+ * What a picked session turns into in the box: its name and a session link the message keeps. The name is
+ * folded to one line with single spaces (a name with a line break or a run of spaces would break the message
+ * and the link's detection) and cut at MAX_MENTION_NAME_LENGTH.
+ */
 export function sessionMentionText(mention: Pick<SessionMention, 'id' | 'name'>): string {
-    return `${mention.name} (climanager://session/${mention.id.slice(0, 8)})`
+    const folded = mention.name.replace(/\s+/g, ' ').trim() || 'session'
+    const name = folded.length > MAX_MENTION_NAME_LENGTH ? `${folded.slice(0, MAX_MENTION_NAME_LENGTH - 1).trimEnd()}…` : folded
+    return `${name} (climanager://session/${mention.id.slice(0, 8)})`
 }

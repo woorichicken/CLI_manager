@@ -157,7 +157,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const [attachments, setAttachments] = useState<Attachment[]>([])
     const [commands, setCommands] = useState<ChatCommand[] | null>(null)
     const [files, setFiles] = useState<string[]>([])
-    const [sessionMentions, setSessionMentions] = useState<SessionMention[]>([])
+    // the sessions found for one `@` query: kept with it, so rows for an older query are never offered for a newer one
+    const [sessionMentions, setSessionMentions] = useState<{ query: string; rows: SessionMention[] }>({ query: '', rows: [] })
     const [menuIndex, setMenuIndex] = useState(0)
     const [menuDismissed, setMenuDismissed] = useState(false)
     const [dragging, setDragging] = useState(false)
@@ -354,8 +355,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         let live = true
         void transport
             .listSessionMentions(sessionId, fileQuery)
-            .then((found) => live && setSessionMentions(found))
-            .catch(() => live && setSessionMentions([]))
+            .then((found) => live && setSessionMentions({ query: fileQuery, rows: found }))
+            .catch(() => live && setSessionMentions({ query: fileQuery, rows: [] }))
         return () => {
             live = false
         }
@@ -363,7 +364,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
     const usage = useMemo(readUsage, [trigger?.kind])
     const commandChoices = trigger?.kind === 'slash' && commands ? rankCommands(commands, trigger, usage) : []
-    const shownSessions = trigger?.kind === 'file' ? sessionMentions : []
+    const shownSessions = trigger?.kind === 'file' && sessionMentions.query === trigger.query ? sessionMentions.rows : []
     const choices: (ChatCommand | string | SessionMention)[] = trigger?.kind === 'slash' ? commandChoices : trigger?.kind === 'file' ? [...shownSessions, ...files] : []
     // Only the command reads light blue, wherever it stands (85259f8e · 1fcd9008 · e833d0b9). A textarea has one
     // colour, so its words go transparent and a copy underneath paints them.

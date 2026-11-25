@@ -149,7 +149,8 @@ function App() {
     useEffect(() => setSessionCatalog({ workspaces, relations: sessionRelations }), [workspaces, sessionRelations])
     // a session made from a template that opens in Chat starts on Chat (once)
     useEffect(() => {
-        if (workspaces.length > 0) applyOpenInChat(workspaces.flatMap(workspace => workspace.sessions ?? []))
+        if (workspaces.length === 0) return
+        for (const id of applyOpenInChat(workspaces.flatMap(workspace => workspace.sessions ?? []))) void window.api.clearOpenInChat(id)
     }, [workspaces])
 
     // The session the user is looking at: the focused split pane, else the active tab. One place reports it

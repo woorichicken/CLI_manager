@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { MAX_SESSION_MENTIONS, sessionMentionText, sessionMentionsFor } from '../../src/renderer/src/utils/sessionMentions'
+import { MAX_MENTION_NAME_LENGTH, MAX_SESSION_MENTIONS, sessionMentionText, sessionMentionsFor } from '../../src/renderer/src/utils/sessionMentions'
 import type { SessionRelation, TerminalSession, Workspace } from '../../src/shared/types'
 
 /**
@@ -77,5 +77,12 @@ test.describe('T170 session mentions', () => {
 
     test('T170 the text a pick leaves in the box: the name and a short session link', () => {
         expect(sessionMentionText({ id: KID_NEW, name: 'Kid new' })).toBe('Kid new (climanager://session/bbbbbbbb)')
+    })
+
+    test('T170 a name with line breaks or runs of spaces folds to one line, a long one is cut with …', () => {
+        expect(sessionMentionText({ id: KID_NEW, name: '  Kid\n  new\t\tone ' })).toBe('Kid new one (climanager://session/bbbbbbbb)')
+        const cut = sessionMentionText({ id: KID_NEW, name: 'x'.repeat(200) })
+        expect(cut).toBe(`${'x'.repeat(MAX_MENTION_NAME_LENGTH - 1)}… (climanager://session/bbbbbbbb)`)
+        expect(sessionMentionText({ id: KID_NEW, name: '   ' })).toBe('session (climanager://session/bbbbbbbb)')
     })
 })

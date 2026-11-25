@@ -1,44 +1,41 @@
 import { test, expect } from '@playwright/test'
 import * as mod from '../../src/renderer/src/hooks/useSessionViewMode'
+import { templateOpensInChat } from '../../src/shared/agentCommand'
 
 /**
- * T171 (unit) — `applyOpenInChat`: a session flagged `openInChat` is switched to Chat once. After the person put
- * it back on Terminal it stays there on the next call (a restart), unflagged sessions are never touched, and the
- * record of handled sessions drops the ones that are gone. A stand-in localStorage (no Electron).
+ * T171 (unit, no Electron) — the open-in-Chat hint (fbe10f54).
+ *
+ *  - `applyOpenInChat` switches a flagged session to Chat once and returns its id (the caller has main delete the
+ *    flag); an unflagged session is never touched, and a Terminal choice made right after is not undone by the
+ *    flag still sitting in the renderer's copy
+ *  - `templateOpensInChat`: only a template that asks for Chat AND starts Claude Code / Codex (aliases count) flags
+ *    its sessions — a shell command never does, so a `claude` typed into it later cannot flip it
  */
 
-function installStorage(): Map<string, string> {
-    const data = new Map<string, string>()
-    ;(globalThis as unknown as { localStorage: Storage }).localStorage = {
-        getItem: (k: string) => data.get(k) ?? null,
-        setItem: (k: string, v: string) => void data.set(k, v),
-        removeItem: (k: string) => void data.delete(k),
-        clear: () => data.clear(),
-        key: () => null,
-        length: 0
-    } as Storage
-    return data
-}
-
-test('T171 openInChat switches a flagged session once, never an unflagged one, and respects a later Terminal choice', async () => {
-    installStorage()
-    const sessions = [{ id: 'flagged' , openInChat: true }, { id: 'plain' }, { id: 'later', openInChat: true }]
-
-    mod.applyOpenInChat(sessions.slice(0, 2))
+test('T171 applyOpenInChat switches a flagged session once and hands back its id', () => {
+    const sessions = [{ id: 'flagged', openInChat: true }, { id: 'plain' }]
+    expect(mod.applyOpenInChat(sessions)).toEqual(['flagged'])
     expect(mod.getSessionViewMode('flagged')).toBe('chat')
     expect(mod.getSessionViewMode('plain')).toBe('terminal')
 
-    // the person goes back to the terminal; a restart applies again
+    // main has not answered yet and the person goes back to the terminal: the same list again changes nothing
     mod.setSessionViewMode('flagged', 'terminal')
-    mod.applyOpenInChat(sessions.slice(0, 2))
+    expect(mod.applyOpenInChat(sessions)).toEqual([])
     expect(mod.getSessionViewMode('flagged')).toBe('terminal')
 
-    // a session that appears later is switched; the earlier choice is still kept
-    mod.applyOpenInChat(sessions)
+    // a session that shows up later is handled on its own
+    expect(mod.applyOpenInChat([...sessions, { id: 'later', openInChat: true }])).toEqual(['later'])
     expect(mod.getSessionViewMode('later')).toBe('chat')
-    expect(mod.getSessionViewMode('flagged')).toBe('terminal')
+})
 
-    // a closed session leaves no record: the stored list holds only flagged sessions that still exist
-    mod.applyOpenInChat([{ id: 'later', openInChat: true }])
-    expect(JSON.parse(localStorage.getItem('session-open-in-applied') ?? '[]')).toEqual(['later'])
+test('T171 only a Chat template that starts Claude Code or Codex flags its sessions', () => {
+    const alias = (name: string): string | undefined => (name === 'cld' ? 'claude --dangerously-skip-permissions' : undefined)
+    expect(templateOpensInChat({ openIn: 'chat', command: 'claude' })).toBe(true)
+    expect(templateOpensInChat({ openIn: 'chat', command: 'codex --model x' })).toBe(true)
+    expect(templateOpensInChat({ openIn: 'chat', command: 'cld' }, alias)).toBe(true)
+    expect(templateOpensInChat({ openIn: 'chat', command: 'cld' })).toBe(false)
+    expect(templateOpensInChat({ openIn: 'chat', command: 'npm run dev' }, alias)).toBe(false)
+    expect(templateOpensInChat({ openIn: 'chat', command: '' })).toBe(false)
+    expect(templateOpensInChat({ openIn: 'terminal', command: 'claude' })).toBe(false)
+    expect(templateOpensInChat({ command: 'claude' })).toBe(false)
 })

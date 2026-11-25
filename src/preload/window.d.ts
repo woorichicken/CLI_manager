@@ -244,6 +244,7 @@ declare global {
             // Session header "Related sessions"
             getSessionRelations: () => Promise<SessionRelation[]>
             onSessionRelations: (callback: (relations: SessionRelation[]) => void) => () => void
+            clearOpenInChat: (sessionId: string) => Promise<boolean>
             addSessionRelation: (from: string, to: string) => Promise<boolean>
             removeSessionRelation: (a: string, b: string) => Promise<boolean>
             // Sidebar "All sessions" session folders

@@ -63,32 +63,20 @@ export function useSessionViewMode(sessionId: string | undefined): SessionViewMo
 
 /**
  * Sessions created from a template that opens in Chat (`TerminalSession.openInChat`) are switched to Chat
- * the first time they are seen, once (fbe10f54). The ids handled are kept (localStorage), so a session the
- * person later put back on its terminal stays there after a restart, and sessions that already existed
- * when the template got the setting are never touched (the flag is set at creation only).
+ * the first time they are seen, once (fbe10f54). Returns the ids switched now: the caller tells main, which
+ * deletes the flag from the stored session — so after that nothing can switch it again, not a restart and
+ * not an empty localStorage. `handled` only covers the moment before main's answer (the flag is still in
+ * the renderer's copy of the workspaces), so a Terminal choice made at once is not undone.
  */
-const OPEN_IN_APPLIED_KEY = 'session-open-in-applied'
+const openInHandled = new Set<string>()
 
-export function applyOpenInChat(sessions: Array<{ id: string; openInChat?: boolean }>): void {
-    let applied: string[] = []
-    try {
-        const parsed = JSON.parse(localStorage.getItem(OPEN_IN_APPLIED_KEY) ?? '[]') as unknown
-        if (Array.isArray(parsed)) applied = parsed.filter((id): id is string => typeof id === 'string')
-    } catch {
-        applied = []
+export function applyOpenInChat(sessions: Array<{ id: string; openInChat?: boolean }>): string[] {
+    const fresh = sessions.filter((session) => session.openInChat && !openInHandled.has(session.id)).map((session) => session.id)
+    for (const id of fresh) {
+        openInHandled.add(id)
+        setSessionViewMode(id, 'chat')
     }
-    const known = new Set(applied)
-    const flagged = sessions.filter((session) => session.openInChat)
-    const fresh = flagged.filter((session) => !known.has(session.id))
-    for (const session of fresh) setSessionViewMode(session.id, 'chat')
-    // only ids of sessions that still exist stay: closed ones leave nothing behind
-    const next = flagged.map((session) => session.id)
-    if (fresh.length === 0 && next.length === applied.length) return
-    try {
-        localStorage.setItem(OPEN_IN_APPLIED_KEY, JSON.stringify(next))
-    } catch {
-        // not kept: a restart could switch these sessions to Chat once more
-    }
+    return fresh
 }
 
 /*
