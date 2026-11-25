@@ -81,6 +81,21 @@ test.describe('T176 agy screens', () => {
         expect(screenShowsBusy(['⡿ x', 'Enter to select · ↑/↓ to navigate · Esc to cancel'])).toBe(false)
     })
 
+    test("the empty box's grey hint is not typed text; what is typed is (raw recordings)", async () => {
+        // the bytes agy wrote, account and folder masked: the hint is SGR 90 (bright black), not dim
+        const read = async (name: string) => {
+            const events = new EventEmitter()
+            const mirror = new TerminalMirror({ events, getSize: () => ({ cols: COLS, rows: ROWS }), hasTerminal: () => true } as never)
+            events.emit('created', 's1', COLS, ROWS)
+            events.emit('output', 's1', readFileSync(join(__dirname, 'fixtures', 'agy', `agy-1.5.16-${name}.ansi`), 'utf8'))
+            await mirror.flush('s1')
+            return mirror.inputBox('s1')
+        }
+        expect((await read('idle'))?.typed).toBe('')
+        expect((await read('typed'))?.typed).toBe('Reply with exactly one word: hi')
+        expect((await read('answered'))?.typed).toBe('')
+    })
+
     test("agy's slash menu is no question", async () => {
         const rows = [...fixture('idle').slice(0, -3), '> /', '  /help   Show help', '  ↑/↓ Navigate · enter Select · tab Complete', '? for shortcuts']
         const mirror = await mirrorShowing(rows)

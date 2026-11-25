@@ -79,7 +79,8 @@ function draw() {
         out.push('')
     } else {
         if (working) out.push('⡿  Generating...')
-        out.push(rule(), `> ${box}`, rule())
+        // agy's empty box shows a grey hint (SGR 90, not dim — recorded 2026-11-25)
+        out.push(rule(), box ? `> ${box}` : '> \x1b[90mAuto mode: edits & safe commands auto-approved (shift+tab to cycle)\x1b[m', rule())
     }
     out.push(...footer())
     process.stdout.write(out.join('\r\n'))

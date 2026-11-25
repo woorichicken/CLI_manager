@@ -46,6 +46,9 @@ const LOCK = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.l
 /** agy subcommands and one-shot flags: no conversation of their own on screen. */
 const NOT_INTERACTIVE = new Set(['acp', 'agent', 'agents', 'changelog', 'help', 'install', 'mcp', 'mic-serve', 'models', 'plugin', 'plugins', 'remote-control', 'update', '-p', '--print', '--prompt', '-h', '--help', '--version', '-v'])
 
+/** agy 1.5.16 options that take a value (`agy --help`), so the value is kept with its option. */
+const VALUE_FLAGS = new Set(['--add-dir', '--agent', '--effort', '--input-format', '--json-schema', '--log-file', '--mode', '--model', '--output-format', '--print-timeout', '--project', '--settings'])
+
 export class AgySessionSync {
     private timer: NodeJS.Timeout | null = null
     private running = false
@@ -163,7 +166,10 @@ export function resumableCommand(args: string): string {
             continue
         }
         if (/^--(?:conversation|resume)=/.test(word)) continue
+        // a bare word is no option: a first prompt (`agy fix the bug`) would be sent again on every restart
+        if (!word.startsWith('-')) continue
         kept.push(word)
+        if (VALUE_FLAGS.has(word) && i + 1 < rest.length) kept.push(rest[++i])
     }
     return kept.join(' ')
 }
@@ -208,5 +214,6 @@ function readOpenFiles(pid: number): Promise<string[]> {
  * Anything else (it is typed into the shell on restart) falls back to plain `agy`.
  */
 export function agyStartCommand(stored: string | undefined): string {
-    return stored && /^agy(?:\s+[A-Za-z0-9_.:=/@+,-]+)*$/.test(stored.trim()) ? stored.trim() : 'agy'
+    // single spaces only: `\s` would take a newline, and the shell runs what follows it (review 11-25)
+    return stored && /^agy(?: [A-Za-z0-9_.:=/@+,-]+)*$/.test(stored.trim()) ? stored.trim() : 'agy'
 }

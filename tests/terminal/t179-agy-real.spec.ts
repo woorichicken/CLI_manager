@@ -80,7 +80,9 @@ test('T179 real agy: found, read, sent to, stopped, resumed', async () => {
     result = await launchAppWithWorkspaces([{ ...workspace, sessions: [{ id: 't169', name: 'T179 agy', cliToolName: 'agy', cliSessionId: id, cliCommand: `agy --model ${MODEL}` }] }], { env: { CLIMANAGER_AGY_SYNC_MS: '500' } })
     ;({ page, userDataDir } = result)
     await page.getByText('T179 agy', { exact: true }).first().click()
-    await waitForBufferText(page, 't169', `--conversation ${id}`, 30_000)
+    // agy redraws the whole screen and drops the typed command from the scrollback (measured): what shows
+    // the resume is the earlier conversation on screen
+    await waitForBufferText(page, 't169', 'Reply with exactly one word: pong', 60_000)
     await waitForBufferText(page, 't169', '? for shortcuts', 60_000)
     await page.getByTestId('view-toggle-chat').click()
     await expect(chat(page).locator('[data-testid="chat-answer"]', { hasText: /pong/i })).toBeVisible({ timeout: 30_000 })

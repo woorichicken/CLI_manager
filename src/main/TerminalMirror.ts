@@ -404,6 +404,11 @@ export class TerminalMirror {
         let firstAfterPrompt = true
         let cursor = ''
         let grey = false
+        // agy's box starts with `>` (Claude's with `❯`) and draws its empty-box hint — «Auto mode: edits & safe
+        // commands auto-approved (shift+tab to cycle)» — in bright black (SGR 90), not dim: read as typed, it
+        // refused every Chat send to an idle agy (agy 1.5.16, recorded 2026-11-25). Only under a `>` box.
+        const firstRow = buffer.getLine(buffer.viewportY + top + 1)?.translateToString(true).trimStart() ?? ''
+        const greyHint = firstRow.startsWith('>')
         for (let row = top + 1; row < bottom; row++) {
             const line = buffer.getLine(buffer.viewportY + row)
             if (!line) continue
@@ -435,7 +440,7 @@ export class TerminalMirror {
                 }
                 const first = promptSeen && firstAfterPrompt
                 if (promptSeen) firstAfterPrompt = false
-                if (cell.isDim()) {
+                if (cell.isDim() || (greyHint && cell.isFgPalette() && cell.getFgColor() === BRIGHT_BLACK)) {
                     grey = true
                     suggestionRow += chars
                 } else if (first && cell.isInverse()) {
@@ -610,6 +615,9 @@ function idePillCells(afterPrompt: string): number {
 
 /** Stands in for Claude's drawn cursor until the box tells typed from suggested. */
 const CURSOR_MARK = '\u0000'
+
+/** Palette index of SGR 90 — agy's grey hint in its empty input box. */
+const BRIGHT_BLACK = 8
 
 /** Codex's composer glyph at the left edge (codex-cli 0.166.0); bold there, dim on a past prompt. */
 const CODEX_PROMPT_GLYPH = '›'
