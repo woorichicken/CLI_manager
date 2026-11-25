@@ -12,6 +12,10 @@ import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './he
  * session and lands on the tab beside it (right, else left) — not the sidebar neighbour. The tabs and
  * the one on screen come back after a restart.
  *
+ * Preview tabs (Settings › Sidebar 「Open Sessions as Preview Tabs」, default on): a new tab is an
+ * italic preview the next session shown takes the place of; typing in it, dragging it or Keep Open keeps
+ * it. The older tests below switch previews off — that is the every-session-keeps-a-tab row they describe.
+ *
  * The signal is what the person sees: which terminal is visible, the tab row's DOM, the sidebar rows,
  * and config.json for what survives a restart.
  */
@@ -40,6 +44,12 @@ async function shot(page: Page, name: string): Promise<void> {
     await page.waitForTimeout(300)
     await page.screenshot({ path: path.join(dir, `${name}.png`) })
 }
+
+const previewTabs = (page: Page): Promise<string[]> => page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-session-tab][data-preview="true"]')).map((el) => el.getAttribute('data-session-tab') ?? ''))
+
+/** Preview tabs off: every session shown keeps a tab (the row before preview tabs). */
+const KEEP_EVERY_TAB = { previewSessionTabs: false }
 
 const sidebarRow = (page: Page, id: string) => page.locator(`[data-session-item="${id}"]`).first()
 
@@ -94,7 +104,7 @@ test.describe('T149 session tabs', () => {
         for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
     })
 
-    const launchThree = async (): Promise<Page> => {
+    const launchThree = async (settings: Record<string, unknown> = KEEP_EVERY_TAB): Promise<Page> => {
         ctx = await launchAppWithWorkspaces([
             {
                 id: 'ws-a', name: 'T149WSA', path: tempDir(), sessions: [
@@ -104,14 +114,14 @@ test.describe('T149 session tabs', () => {
                 ]
             },
             { id: 'ws-b', name: 'T149WSB', path: tempDir(), sessions: [{ id: 's-b', name: 'T149BEE' }] }
-        ])
+        ], { settings })
         const { page } = ctx
         await page.setViewportSize({ width: 1280, height: 800 })
         await sidebarRow(page, 's-1').waitFor({ timeout: 15_000 })
         return page
     }
 
-    test('sessions opened from the sidebar become tabs; tabs switch, step, close and keep the session', async () => {
+    test('preview tabs off: sessions opened from the sidebar become tabs; tabs switch, step, close and keep the session', async () => {
         const page = await launchThree()
         // No session on screen yet: no row.
         await expect(page.getByTestId('session-tab-bar')).toHaveCount(0)
@@ -197,7 +207,7 @@ test.describe('T149 session tabs', () => {
         await expect(page.locator('[data-session-item="s-2"]')).toHaveCount(0, { timeout: 10_000 })
         await expect.poll(() => visibleSession(page)).toBe('s-3')
         await expect.poll(() => tabOrder(page)).toEqual(['s-1', 's-3'])
-        await expect.poll(() => readConfig(ctx!.userDataDir).sessionTabs).toEqual({ ids: ['s-1', 's-3'], activeId: 's-3' })
+        await expect.poll(() => readConfig(ctx!.userDataDir).sessionTabs).toEqual({ ids: ['s-1', 's-3'], activeId: 's-3', previewIds: [] })
 
         // --- Restart: the same tabs, and s-3 on screen without a click ---------------
         const keptDir = ctx!.userDataDir
@@ -254,6 +264,134 @@ test.describe('T149 session tabs', () => {
         await page.getByTestId('settings-show-session-tabs').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect.poll(() => tabOrder(page), { timeout: 10_000 }).toEqual(['s-1', 's-3'])
+    })
+
+    // talk-session-tabs-1125: opening a session no longer leaves a tab behind for good
+    test('preview tabs (default): walking through sessions leaves one italic tab; Keep Open, typing and a drag keep it; previews survive a restart', async () => {
+        const page = await launchThree({})
+        const italic = (id: string): Promise<boolean> => page.evaluate((tab) =>
+            getComputedStyle(document.querySelector(`[data-session-tab="${tab}"] [data-session-tab-name]`)!).fontStyle === 'italic', id)
+
+        // Three sidebar clicks: one tab, in the same place, the latest session in it.
+        await sidebarRow(page, 's-1').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1'])
+        await shot(page, 'preview-first-1280')
+        for (const id of ['s-2', 's-3']) {
+            await sidebarRow(page, id).click()
+            await expect.poll(() => visibleSession(page)).toBe(id)
+        }
+        await expect.poll(() => tabOrder(page)).toEqual(['s-3'])
+        expect(await previewTabs(page)).toEqual(['s-3'])
+        expect(await italic('s-3')).toBe(true)
+        await page.locator('[data-session-tab="s-3"]').hover()
+        await shot(page, 'preview-walk-1280')
+
+        // Right-click › Keep Open: the tab stays (upright) when the next session shows.
+        await page.locator('[data-session-tab="s-3"]').click({ button: 'right' })
+        await shot(page, 'preview-menu-1280')
+        await page.locator('[data-tab-menu-item="keep-open"]').click()
+        await expect.poll(() => previewTabs(page)).toEqual([])
+        expect(await italic('s-3')).toBe(false)
+        await sidebarRow(page, 's-1').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-3', 's-1'])
+        expect(await previewTabs(page)).toEqual(['s-1'])
+        // a kept tab has no Keep Open item
+        await page.locator('[data-session-tab="s-3"]').click({ button: 'right' })
+        await expect(page.locator('[data-session-tab-menu="s-3"]')).toBeVisible()
+        await expect(page.locator('[data-tab-menu-item="keep-open"]')).toHaveCount(0)
+        await page.keyboard.press('Escape')
+
+        // ⌘] (next session in sidebar order) three times: still one preview tab beside the kept one.
+        for (let i = 0; i < 3; i++) {
+            const before = await visibleSession(page)
+            await page.keyboard.press('Meta+BracketRight')
+            await expect.poll(() => visibleSession(page)).not.toBe(before)
+        }
+        const afterSteps = await tabOrder(page)
+        expect(afterSteps.length).toBeLessThanOrEqual(2)
+        expect(afterSteps).toContain('s-3')
+        expect((await previewTabs(page)).length).toBeLessThanOrEqual(1)
+
+        // Back to the kept tab: the preview, off screen now, closes.
+        await page.locator('[data-session-tab="s-3"]').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-3'])
+
+        // Typing in the session keeps its tab.
+        await sidebarRow(page, 's-2').click()
+        await expect.poll(() => previewTabs(page)).toEqual(['s-2'])
+        await page.locator('[data-session-id="s-2"] .xterm').click()
+        await page.keyboard.type('x')
+        await expect.poll(() => previewTabs(page)).toEqual([])
+        expect(await tabOrder(page)).toEqual(['s-3', 's-2'])
+
+        // A drag keeps it too.
+        await sidebarRow(page, 's-b').click()
+        await expect.poll(() => previewTabs(page)).toEqual(['s-b'])
+        await dragTab(page, 's-b', 's-3')
+        await expect.poll(() => tabOrder(page)).toEqual(['s-3', 's-b', 's-2'])
+        expect(await previewTabs(page)).toEqual([])
+
+        // Renaming it keeps it too (double-click on the tab = rename).
+        await sidebarRow(page, 's-1').click()
+        await expect.poll(() => previewTabs(page)).toEqual(['s-1'])
+        await page.locator('[data-session-tab="s-1"]').dblclick()
+        await page.locator('[data-session-tab-rename]').fill('T149ONE renamed')
+        await page.keyboard.press('Enter')
+        await expect.poll(() => previewTabs(page)).toEqual([])
+        await expect(page.locator('[data-session-tab="s-1"] [data-session-tab-name]')).toHaveText('T149ONE renamed')
+        await page.locator('[data-session-tab-close="s-1"]').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-3', 's-b', 's-2'])
+
+        // A preview on screen at quit comes back as a preview.
+        await sidebarRow(page, 's-1').click()
+        await expect.poll(() => previewTabs(page)).toEqual(['s-1'])
+        await expect.poll(() => readConfig(ctx!.userDataDir).sessionTabs?.previewIds).toEqual(['s-1'])
+        const keptDir = ctx!.userDataDir
+        const tabsAtQuit = await tabOrder(page)
+        await ctx!.app.close()
+        tempDirs.push(keptDir)
+        ctx = null
+        relaunched = await electron.launch({
+            args: [path.join(REPO_ROOT, 'out/main/index.js')],
+            env: { ...process.env, CLIMANGER_TEST_USERDATA: keptDir, CLIMANGER_TERM_DEBUG: '1', CLIMANGER_TEST_HEADLESS: '1' } as Record<string, string>
+        })
+        const page2 = await relaunched.firstWindow()
+        await page2.setViewportSize({ width: 1280, height: 800 })
+        await expect.poll(() => tabOrder(page2), { timeout: 30_000 }).toEqual(tabsAtQuit)
+        await expect.poll(() => visibleSession(page2), { timeout: 15_000 }).toBe('s-1')
+        expect(await previewTabs(page2)).toEqual(['s-1'])
+    })
+
+    test('preview tabs: ⌘W on the only tab lands on the sidebar neighbour; × on it leaves the screen empty', async () => {
+        const page = await launchThree({})
+        await sidebarRow(page, 's-2').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-2'])
+        // no tab beside it: the row above in the sidebar (as with tabs off), which then takes the preview
+        await page.keyboard.press('Meta+w')
+        await expect(page.locator('[data-session-item="s-2"]')).toHaveCount(0, { timeout: 10_000 })
+        await expect.poll(() => visibleSession(page)).toBe('s-1')
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1'])
+        expect(await previewTabs(page)).toEqual(['s-1'])
+        // × closes the only tab: nothing on screen, the session keeps running
+        await page.locator('[data-session-tab-close="s-1"]').click()
+        await expect(page.getByTestId('session-tab-bar')).toHaveCount(0)
+        await expect.poll(() => visibleSession(page)).toBe('none')
+        await expect(sidebarRow(page, 's-1')).toBeVisible()
+    })
+
+    test('preview tabs: the setting switches them off (previews become kept tabs)', async () => {
+        const page = await launchThree({})
+        await sidebarRow(page, 's-1').click()
+        await expect.poll(() => previewTabs(page)).toEqual(['s-1'])
+        await page.locator('button[title^="Settings"]').click()
+        await page.getByTestId('settings-category-sidebar').click()
+        await expect(page.getByTestId('settings-preview-session-tabs')).toHaveAttribute('aria-pressed', 'true')
+        await page.getByTestId('settings-preview-session-tabs').click()
+        await page.getByRole('button', { name: 'Save', exact: true }).click()
+        await expect.poll(() => previewTabs(page), { timeout: 10_000 }).toEqual([])
+        await sidebarRow(page, 's-2').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1', 's-2'])
+        expect(readConfig(ctx!.userDataDir).settings.previewSessionTabs).toBe(false)
     })
 
     // fb-1120b 8cc1128f: tabs keep their names' width (no shrinking to 80px) and the row scrolls sideways

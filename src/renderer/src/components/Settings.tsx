@@ -747,6 +747,38 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 </button>
                                             </div>
 
+                                            {/* Preview tabs toggle (only matters while the tab row is on) */}
+                                            <div className={`flex items-center justify-between ${(settings.showSessionTabs ?? true) ? '' : 'opacity-40'}`}>
+                                                <div>
+                                                    <p className="text-sm text-gray-300">Open Sessions as Preview Tabs</p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        A session you open gets an <em>italic</em> tab that the next one replaces, so walking through
+                                                        sessions leaves one tab. Type in it, drag it or right-click › Keep Open to keep it.
+                                                        Off: every session you open keeps a tab.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    data-testid="settings-preview-session-tabs"
+                                                    aria-pressed={settings.previewSessionTabs ?? true}
+                                                    disabled={!(settings.showSessionTabs ?? true)}
+                                                    onClick={() => setSettings(prev => ({
+                                                        ...prev,
+                                                        previewSessionTabs: !(prev.previewSessionTabs ?? true)
+                                                    }))}
+                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
+                                                        (settings.previewSessionTabs ?? true)
+                                                            ? 'bg-emerald-600'
+                                                            : 'bg-white/20'
+                                                    }`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                                        (settings.previewSessionTabs ?? true)
+                                                            ? 'translate-x-6'
+                                                            : 'translate-x-1'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
                                             {/* All sessions tree toggle */}
                                             <div className="flex items-center justify-between">
                                                 <div>

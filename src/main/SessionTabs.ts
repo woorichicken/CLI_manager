@@ -1,5 +1,5 @@
 import type { RelationStore } from './SessionRelations'
-import { SESSION_TABS_KEY, SessionTabsState, normalizeSessionTabs, pruneSessionTabs } from '../shared/sessionTabs'
+import { SESSION_TABS_KEY, SessionTabsState, normalizeSessionTabs, pruneSessionTabs, withTabIds } from '../shared/sessionTabs'
 
 /**
  * The tab row at the top of the main area (`shared/sessionTabs.ts`), kept in
@@ -32,6 +32,7 @@ export class SessionTabs {
         const current = this.get()
         const ids = pruneSessionTabs(current.ids, keep)
         if (ids === current.ids) return
-        this.store.set(SESSION_TABS_KEY, { ids, activeId: current.activeId && ids.includes(current.activeId) ? current.activeId : null })
+        // withTabIds keeps the preview marks of the tabs that stay (a plain { ids, activeId } would turn them into kept tabs)
+        this.store.set(SESSION_TABS_KEY, withTabIds(current, ids))
     }
 }
