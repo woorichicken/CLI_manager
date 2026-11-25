@@ -265,6 +265,8 @@ declare global {
             onInbox: (callback: (requests: InboxRequest[]) => void) => () => void
             markInboxRead: (id: string) => Promise<void>
             markInboxAllRead: () => Promise<void>
+            /** Drops every read request (the inbox's «Clear read»); resolves to how many went. */
+            clearInboxRead: () => Promise<number>
             getChecklists: () => Promise<Checklist[]>
             onChecklists: (callback: (checklists: Checklist[]) => void) => () => void
             createChecklist: (title: string, workspaceId?: string) => Promise<string | null>

@@ -133,6 +133,18 @@ export class InboxStore {
         return this.markWhere(() => true, now)
     }
 
+    /**
+     * «Clear read» (fb-1125 5b1198ba): drops every read request at once, keeps the unread ones as they are.
+     * Returns how many went; nothing is written (and no change announced) when none was read.
+     */
+    clearRead(): number {
+        const all = this.all()
+        const next = all.filter((r) => !r.readAt)
+        if (next.length === all.length) return 0
+        this.save(next)
+        return all.length - next.length
+    }
+
     /** A session closed or was deleted: its requests have nowhere to lead. */
     forget(sessionId: string): void {
         const all = this.all()
