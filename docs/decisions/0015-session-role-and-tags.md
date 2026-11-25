@@ -84,7 +84,7 @@ stored), session folders (one per session), and the AI mark. None says what a se
 | Row icon + tag, filter button | `Sidebar/SessionItem.tsx`, `SessionRoleIcon.tsx`, `SessionLabelFilter.tsx`, `AllSessionsToolbar.tsx`, `Sidebar/index.tsx` |
 | Menu items + editor dialog | `Sidebar/SessionLabelMenuItems.tsx`, `ContextMenus.tsx`, `SessionTabs/SessionTabMenu.tsx`, `SessionLabelsDialog.tsx` (host in `App.tsx`) |
 
-Tests: T166 (unit — role parsing, tag normalization, apply/clear, filter, tooltip) and T167 (app — the
+Tests: T176 (unit — role parsing, tag normalization, apply/clear, filter, tooltip) and T177 (app — the
 seeded labels are read, menu → config.json → row icon, editor Esc/Save/suggestions, tab menu, filter
 role/tag/empty/clear, the button only once labels exist; REST set/keep/clear/400/404, `GET ?role=&tag=`,
 open with labels, a bad role opens nothing, no AI mark, the sidebar follows without reload; MCP

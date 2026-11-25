@@ -14,11 +14,11 @@ import {
 } from '../../src/shared/sessionLabels'
 
 /**
- * T166 — a session's role and tags (decision 0015), Electron-free. Every write path (the menu, the
+ * T176 — a session's role and tags (decision 0015), Electron-free. Every write path (the menu, the
  * editor, the Control API) goes through these functions, so what they keep is what the store keeps.
  */
 
-test.describe('T166 session role and tags — unit', () => {
+test.describe('T176 session role and tags — unit', () => {
     test('a role is read from an id or a label in any case; empty, none and null clear; the rest is invalid', () => {
         expect(parseSessionWorkRole('work')).toBe('work')
         expect(parseSessionWorkRole('  Lead ')).toBe('lead')

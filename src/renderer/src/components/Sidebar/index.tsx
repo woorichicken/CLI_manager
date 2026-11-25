@@ -14,7 +14,7 @@ import { SidebarSearchInput, SidebarSearchStatus, SidebarGroupHeading, findMatch
 import { SidebarSessionList } from './SidebarSessionList'
 import { SidebarAllSessions } from './SidebarAllSessions'
 import { SidebarSessionTree } from './SidebarSessionTree'
-import { sessionForestFor, sessionTreeFor, wouldMakeLoop, handParentsInTheWay, threadSessionIds, withoutThreadSessions } from '../../utils/relatedSessions'
+import { sessionForestFor, sessionTreeFor, wouldMakeLoop, handParentsInTheWay, unlistedSessionIds, withoutThreadSessions } from '../../utils/relatedSessions'
 import { relatedForAgent } from '../../utils/relatedForAgent'
 import { DropNotice, SessionDropContext, SessionDropContextValue, useDropNotice } from './sessionDrop'
 import { sessionsInSidebarOrder, sidebarWorkspaceOrder, orderForAllSessions, type SessionLanding } from '../../utils/sessionNavigation'
@@ -800,8 +800,9 @@ export function Sidebar({
     }
 
     // Reply threads are not listed as sessions (1b965ad1): they live under their reply, in the thread
-    // pane and in the Threads list. Search still finds them, and the one on screen keeps its row.
-    const threadIds = useMemo(() => threadSessionIds(sessionRelations), [sessionRelations])
+    // pane and in the Threads list. Nor are Autocron's background sessions, until a person opens one
+    // (TerminalSession.hidden). Search still finds both, and the one on screen keeps its row.
+    const threadIds = useMemo(() => unlistedSessionIds(sessionRelations, workspaces), [sessionRelations, workspaces])
     const onScreenKey = [activeSessionId ?? '', ...(splitLayout?.sessionIds ?? [])].join('\n')
     const listedWorkspaces = useMemo(
         () => withoutThreadSessions(workspaces, threadIds, onScreenKey.split('\n')),

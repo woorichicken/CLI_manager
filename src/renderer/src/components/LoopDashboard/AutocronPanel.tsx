@@ -58,7 +58,8 @@ function runDetail(run: CronRun): string {
     return [
         run.trigger === 'manual' ? 'manual' : run.trigger === 'caught-up' ? `late, ran at ${formatWhen(run.at)}` : '',
         run.missedCount > 0 ? `${run.missedCount} earlier folded in` : '',
-        run.note ?? ''
+        run.note ?? '',
+        run.closedAt !== undefined ? `closed when done, ${formatWhen(run.closedAt)} — Resume opens the conversation again` : ''
     ].filter(Boolean).join(' · ')
 }
 
@@ -316,7 +317,8 @@ function CronDetail({ cron, runs, onEdit, runOnOpen, onRanOnOpen, onShowLoop }: 
     }
     const open = async (sessionId: string, terminal?: { command?: string }) => {
         const r = await window.api.openCronSession(sessionId, terminal)
-        if (!r.success || !r.data) setMessage('That session is closed.')
+        if (!r.success) setMessage(r.error ?? 'Could not open that session.')
+        else if (!r.data) setMessage('That session is closed.')
     }
 
     // a pinned run («Talk here») stays even when its session closed — that run's notice says so
@@ -407,7 +409,7 @@ function CronDetail({ cron, runs, onEdit, runOnOpen, onRanOnOpen, onShowLoop }: 
                                                 </button>
                                             )}
                                             <button className="inline-flex items-center gap-1 text-purple-300 hover:text-purple-200" onClick={() => open(run.sessionId!)} data-testid="autocron-open-session">
-                                                <ExternalLink size={11} /> Open session
+                                                <ExternalLink size={11} /> {run.closedAt !== undefined ? 'Resume' : 'Open session'}
                                             </button>
                                         </span>
                                     )}

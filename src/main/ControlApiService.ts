@@ -287,6 +287,8 @@ export interface OpenSessionInput {
     sessionFolder?: string
     /** Unregister the new workspace when its last session closes. Ignored when it already exists. */
     ephemeral?: boolean
+    /** Open it out of the session lists (TerminalSession.hidden) — Autocron's background runs. Not on the HTTP API. */
+    hidden?: boolean
     /** Role of the new session (decision 0015) — `lead` · `work` · `talk` · `watch` or its label. */
     role?: unknown
     /** Tags of the new session; normalized like the app's own editor. */
@@ -615,7 +617,8 @@ export class ControlApiService {
             ...(template ? { templateId: template.id } : {}),
             ...(template && templateOpensInChat(template, this.deps.resolveAlias) ? { openInChat: true } : {}),
             aiControl: { client: input.client, since: Date.now() },
-            ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {})
+            ...(sessionFolder ? { sessionFolderId: sessionFolder.id } : {}),
+            ...(input.hidden ? { hidden: true } : {})
         }
         applySessionLabels(session, { role, tags: input.tags })
         if (madeSessionFolder) this.deps.broadcast(SESSION_FOLDERS_CHANNEL, this.deps.sessionFolders.list())
@@ -1003,8 +1006,33 @@ export class ControlApiService {
 
     focusSession(sessionId: string, client?: string, caller?: string, terminal?: { command?: string }): ApiSession {
         const { workspace, session } = this.connect(sessionId, client, caller, 'none')
+        // shown on purpose: a background session joins the lists before the window moves to it
+        this.revealSession(sessionId)
         this.emit({ type: 'focus', workspaceId: workspace.id, sessionId, ...(terminal ? { terminal } : {}) })
         return this.describe(workspace, session)
+    }
+
+    /**
+     * Clears TerminalSession.hidden: the session joins the sidebar, ⌘[ ] and the phone list. False when
+     * it was not hidden (or is gone) — nothing is written then.
+     */
+    revealSession(sessionId: string): boolean {
+        const workspaces = this.workspaces()
+        for (const workspace of workspaces) {
+            const session = workspace.sessions.find((s) => s.id === sessionId)
+            if (!session) continue
+            if (!session.hidden) return false
+            delete session.hidden
+            this.deps.store.set('workspaces', workspaces)
+            this.emit({ type: 'updated', workspaceId: workspace.id, sessionId, session: { ...session } })
+            return true
+        }
+        return false
+    }
+
+    /** Sessions carrying TerminalSession.hidden (Autocron's background runs). */
+    hiddenSessionIds(): string[] {
+        return this.workspaces().flatMap((w) => (w.sessions ?? []).filter((s) => s.hidden).map((s) => s.id))
     }
 
     /**

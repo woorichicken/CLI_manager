@@ -5,19 +5,19 @@ import path from 'path'
 import { launchAppWithWorkspaces, closeApp, LaunchResult } from './helpers'
 
 /**
- * T167 — a session's role and tags (decision 0015), in the app.
+ * T177 — a session's role and tags (decision 0015), in the app.
  *
  * Seeded: a lead with a role and tags from the store (proves the app reads them), three plain
  * sessions. Then the session menu's Role ▸ and Edit Tags…, the tab menu's Role & Tags…, the All
  * sessions filter button, and the Control API / MCP (set, clear, 400 bad_role, filters, open with a
  * role) — each judged in config.json and the sidebar DOM. Setting a label never adds the AI mark.
- * `T167_SHOTS=<dir>` keeps captures of the list, the menu, the editor and the filter.
+ * `T177_SHOTS=<dir>` keeps captures of the list, the menu, the editor and the filter.
  */
 
 interface Discovery { url: string; mcpUrl: string; token: string }
 interface ApiSession { id: string; name: string; role: string | null; tags: string[]; aiControlled: boolean }
 
-const SHOTS = process.env.T167_SHOTS
+const SHOTS = process.env.T177_SHOTS
 
 const stored = (userDataDir: string, id: string): { role?: string; tags?: string[] } | undefined =>
     (JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8')).workspaces as Array<{ sessions: Array<{ id: string; role?: string; tags?: string[] }> }>)
@@ -32,7 +32,7 @@ async function shot(page: Page, name: string): Promise<void> {
 const shownIds = (page: Page) =>
     page.locator('[data-testid="sidebar-all-sessions"] [data-session-item]').evaluateAll(rows => rows.map(r => r.getAttribute('data-session-item')))
 
-test.describe('T167 session role and tags', () => {
+test.describe('T177 session role and tags', () => {
     let ctx: LaunchResult | undefined
     const dirs: string[] = []
     const dir = (prefix: string): string => {
@@ -47,14 +47,14 @@ test.describe('T167 session role and tags', () => {
     })
 
     async function launch(labels = true): Promise<{ page: Page; userDataDir: string; home: string; folder: string }> {
-        const home = dir('climanger-t167-home-')
-        const folder = dir('climanger-t167-ws-')
+        const home = dir('climanger-t177-home-')
+        const folder = dir('climanger-t177-ws-')
         ctx = await launchAppWithWorkspaces(
-            [{ id: 'ws-t167', name: 'T167WS', path: folder, sessions: [
-                { id: 's-lead', name: 'T167 lead', ...(labels ? { role: 'lead', tags: ['night-1125'] } : {}) },
-                { id: 's-a', name: 'T167 fix the sidebar' },
-                { id: 's-b', name: 'T167 phone icons' },
-                { id: 's-c', name: 'T167 plain' }
+            [{ id: 'ws-t177', name: 'T177WS', path: folder, sessions: [
+                { id: 's-lead', name: 'T177 lead', ...(labels ? { role: 'lead', tags: ['night-1125'] } : {}) },
+                { id: 's-a', name: 'T177 fix the sidebar' },
+                { id: 's-b', name: 'T177 phone icons' },
+                { id: 's-c', name: 'T177 plain' }
             ] }],
             {
                 settings: { showHomeWorkspace: false, controlApi: { enabled: true, port: 0 } },
@@ -173,7 +173,7 @@ test.describe('T167 session role and tags', () => {
         const api = async <T = any>(method: string, route: string, body?: unknown): Promise<{ status: number; json: T }> => {
             const res = await fetch(discovery.url + route, {
                 method,
-                headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't167' },
+                headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', 'X-Client-Name': 't177' },
                 body: body === undefined ? undefined : JSON.stringify(body)
             })
             const text = await res.text()
@@ -211,9 +211,9 @@ test.describe('T167 session role and tags', () => {
 
         // Opening with a role and tags; a bad role opens nothing.
         const before = (await api<ApiSession[]>('GET', '/v1/sessions?scope=all')).json.length
-        expect((await api('POST', '/v1/sessions', { path: folder, name: 'T167 bad', role: 'chief' })).status).toBe(400)
+        expect((await api('POST', '/v1/sessions', { path: folder, name: 'T177 bad', role: 'chief' })).status).toBe(400)
         expect((await api<ApiSession[]>('GET', '/v1/sessions?scope=all')).json.length).toBe(before)
-        const opened = await api<{ session: ApiSession }>('POST', '/v1/sessions', { path: folder, name: 'T167 watcher', role: 'watch', tags: ['night-1125'] })
+        const opened = await api<{ session: ApiSession }>('POST', '/v1/sessions', { path: folder, name: 'T177 watcher', role: 'watch', tags: ['night-1125'] })
         expect(opened.status).toBe(200)
         expect(opened.json.session).toMatchObject({ role: 'watch', tags: ['night-1125'] })
         await expect(page.locator(`[data-session-item="${opened.json.session.id}"] [data-work-role-icon="watch"]`)).toBeVisible()
@@ -222,7 +222,7 @@ test.describe('T167 session role and tags', () => {
         let rpc = 0
         const mcp = async (method: string, params: unknown): Promise<any> => JSON.parse(await (await fetch(discovery.mcpUrl, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-Client-Name': 't167-mcp' },
+            headers: { Authorization: `Bearer ${discovery.token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-Client-Name': 't177-mcp' },
             body: JSON.stringify({ jsonrpc: '2.0', id: ++rpc, method, params })
         })).text())
         const tools = (await mcp('tools/list', {})).result.tools.map((t: { name: string }) => t.name)
