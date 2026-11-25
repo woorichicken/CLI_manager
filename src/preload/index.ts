@@ -382,6 +382,7 @@ const api = {
     },
     markInboxRead: (id: string): Promise<void> => ipcRenderer.invoke('mark-inbox-read', id),
     markInboxAllRead: (): Promise<void> => ipcRenderer.invoke('mark-inbox-all-read'),
+    clearInboxRead: (): Promise<number> => ipcRenderer.invoke('clear-inbox-read'),
     getChecklists: (): Promise<Checklist[]> => ipcRenderer.invoke('get-checklists'),
     onChecklists: (callback: (checklists: Checklist[]) => void) => {
         const listener = (_e: unknown, checklists: Checklist[]) => callback(checklists)

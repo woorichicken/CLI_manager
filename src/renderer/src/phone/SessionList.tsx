@@ -1,8 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { Folder, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, Search, X } from 'lucide-react'
 import type { PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
 import { PhoneMemoPanel } from './PhoneMemoPanel'
-import { listedSessions, listLines, searchLines, treeLines } from './sessionListLines'
+import { listedSessions, listLines, NO_FOLDER_PART, searchLines, treeLines } from './sessionListLines'
 import { SessionRow } from './SessionRow'
 import { SessionRowMenu } from './SessionRowMenu'
 import { PhoneEndSheet } from './PhoneEndSheet'
@@ -43,6 +43,27 @@ function keepLayout(layout: ListLayout): void {
         // not kept: the next visit starts at List
     }
 }
+/**
+ * Which session folders are folded shut in List (b61af757) — this phone's own choice, as the Mac keeps its
+ * own (`sidebar-no-folder-expanded` and the folders' isExpanded). A list of folder ids, `none` for «No folder».
+ * Storage can throw (a private window) or hold anything: then nothing is folded.
+ */
+const FOLDED_KEY = 'phone-session-folders-collapsed'
+function readFolded(): Set<string> {
+    try {
+        const saved: unknown = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]')
+        return new Set(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [])
+    } catch {
+        return new Set()
+    }
+}
+function keepFolded(folded: ReadonlySet<string>): void {
+    try {
+        localStorage.setItem(FOLDED_KEY, JSON.stringify([...folded]))
+    } catch {
+        // not kept: the next visit starts unfolded
+    }
+}
 /** how far a Tree row moves right per level */
 const TREE_INDENT_PX = 14
 
@@ -74,6 +95,15 @@ export function SessionList({
     const closeEnd = useCallback(() => setEndSession(null), [])
     const closeMenu = useCallback(() => setMenuId(null), [])
     const [layout, setLayout] = useState<ListLayout>(readLayout)
+    const [folded, setFolded] = useState<ReadonlySet<string>>(readFolded)
+    const toggleFolded = useCallback((part: string) => {
+        setFolded((before) => {
+            const next = new Set(before)
+            if (!next.delete(part)) next.add(part)
+            keepFolded(next)
+            return next
+        })
+    }, [])
     // the Mac's «Show Session Tree» off: no tree comes, and the list is List whatever was picked
     const treeShown = layout === 'tree' && !!data?.tree
     const waiting = data?.sessions.filter((s) => s.state === 'waiting').length ?? 0
@@ -81,7 +111,7 @@ export function SessionList({
     const [searching, setSearching] = useState(false)
     const [query, setQuery] = useState('')
     const found = data && searching ? searchLines(data, query) : null
-    const lines = found ?? (data ? (treeShown ? treeLines(data) : null) ?? listLines(data) : [])
+    const lines = found ?? (data ? (treeShown ? treeLines(data) : null) ?? listLines(data, folded) : [])
     const list = useRef<HTMLElement>(null)
     // before paint: the drawer opens where it was left, not at the top and then jumping
     const hasRows = lines.length > 0
@@ -173,6 +203,26 @@ export function SessionList({
             {!data && <div className="phone-empty">Loading sessions…</div>}
             {data && data.sessions.length === 0 && <div className="phone-empty">No sessions on the Mac.</div>}
             {lines.map((line) => {
+                if (line.kind === 'folder' && line.collapsible) {
+                    const part = line.folderId ?? NO_FOLDER_PART
+                    return (
+                        <button
+                            key={line.key}
+                            type="button"
+                            className="phone-list-folder phone-list-folder-toggle"
+                            data-testid="phone-list-folder"
+                            data-folder-id={line.folderId ?? ''}
+                            data-state={line.collapsed ? 'collapsed' : 'expanded'}
+                            data-count={line.count}
+                            aria-expanded={!line.collapsed}
+                            onClick={() => toggleFolded(part)}
+                        >
+                            {line.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                            {line.folderId && <Folder size={12} />}
+                            <span>{line.title}</span>
+                        </button>
+                    )
+                }
                 if (line.kind === 'folder') {
                     return (
                         <div key={line.key} className="phone-list-folder" data-testid="phone-list-folder" data-folder-id={line.folderId ?? ''}>

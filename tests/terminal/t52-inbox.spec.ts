@@ -241,6 +241,10 @@ test.describe('T52 inbox', () => {
         // The check is not a click on the row: the popover stays, the session does not change.
         await expect(popover(page)).toBeVisible()
         expect(await visibleSession(page)).toBe(A)
+        // a read request leaves the list for the folded «Read (n)» line (fb-1125 5b1198ba, T174): open it to see it read
+        await expect(reviewRow).toHaveCount(0)
+        await expect(popover(page).getByTestId('inbox-read-toggle')).toHaveText('Read (1)')
+        await popover(page).getByTestId('inbox-read-toggle').click()
         await expect(reviewRow).toHaveAttribute('data-read', 'true')
         await expect(reviewRow.getByTestId('inbox-mark-read')).toHaveCount(0)
         await expect(sidebarBell(page)).toHaveAttribute('data-unread', '2')

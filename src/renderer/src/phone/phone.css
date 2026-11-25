@@ -213,6 +213,24 @@ body.phone-body #root {
     letter-spacing: 0.06em;
     color: var(--text-tertiary);
 }
+.phone-list-folder-toggle {
+    /* b61af757: a heading a finger folds — the whole line is the target */
+    width: 100%;
+    min-height: 44px;
+    padding-bottom: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 10px;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.phone-list-folder-toggle::after {
+    /* the count is not in the text: the heading's own words stay what they were */
+    content: '(' attr(data-count) ')';
+    margin-left: 2px;
+}
 .phone-list-divider {
     margin: 4px 12px;
     border-top: 1px solid var(--border-color);

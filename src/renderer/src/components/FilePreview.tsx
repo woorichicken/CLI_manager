@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { X, FileText, Loader2, AlertCircle, ExternalLink, Globe, Image, Columns2 } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { BROWSER_PAGE_EXTENSIONS, IMAGE_EXTENSIONS, fileExtension } from '../../../shared/fileKinds'
 import { Markdown } from './ChatView/markdown/Markdown'
-import { HtmlDocView } from './HtmlDoc/HtmlDocView'
+import { HtmlDocView, type DocLeaveGuard } from './HtmlDoc/HtmlDocView'
 import './ChatView/chat.css'
 
 /** Files drawn as their words with `renderMarkdown` (the phone file panel's list, PhoneFilePanel MARKDOWN_NAME). */
@@ -112,6 +112,12 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
     // a line asked for is a place in the source: the drawn words have no line numbers
     const [source, setSource] = useState(!drawable || line !== undefined)
     useEffect(() => setSource(!drawable || line !== undefined), [filePath, line, drawable])
+    // typed and not copied in the page: whatever closes this window asks first (ec4c1682)
+    const leaveGuard: DocLeaveGuard = useRef(null)
+    const guardedClose = useCallback(() => {
+        if (leaveGuard.current) leaveGuard.current(onClose)
+        else onClose()
+    }, [onClose])
     const openInBrowser = useCallback(() => {
         if (onOpenInBrowser) onOpenInBrowser()
         else void window.api.openChatPath(filePath)
@@ -183,7 +189,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape' || e.key === ' ') {
                 e.preventDefault()
-                onClose()
+                guardedClose()
             } else if (e.key === 'Enter' && !e.metaKey && webPage) {
                 e.preventDefault()
                 openInBrowser()
@@ -203,7 +209,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
             clearTimeout(timer)
             window.removeEventListener('keydown', handleKeyDown)
         }
-    }, [isOpen, onClose, onOpenInEditor, webPage, openInBrowser])
+    }, [isOpen, guardedClose, onOpenInEditor, webPage, openInBrowser])
 
     if (!isOpen) return null
 
@@ -213,7 +219,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
     return (
         <div
             className="fixed inset-0 z-[60] flex items-center justify-center p-8"
-            onClick={onClose}
+            onClick={guardedClose}
         >
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
@@ -253,7 +259,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                                     type="button"
                                     aria-pressed={source}
                                     data-testid="file-preview-source"
-                                    onClick={() => setSource(true)}
+                                    onClick={() => (leaveGuard.current && !source ? leaveGuard.current(() => setSource(true), 'switch') : setSource(true))}
                                     className={`px-2 py-0.5 transition-colors ${source ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'}`}
                                 >
                                     Source
@@ -265,7 +271,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                                 type="button"
                                 data-testid="file-preview-side-by-side"
                                 disabled={Boolean(sideBySideBlocked)}
-                                onClick={() => onSideBySide(source)}
+                                onClick={() => (leaveGuard.current ? leaveGuard.current(() => onSideBySide(source)) : onSideBySide(source))}
                                 className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400 disabled:cursor-not-allowed"
                                 title={sideBySideBlocked || 'Side by side — open it as a pane next to this session'}
                             >
@@ -293,7 +299,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                             </button>
                         )}
                         <button
-                            onClick={onClose}
+                            onClick={guardedClose}
                             className="p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
                             title="Close (Esc or Space)"
                         >
@@ -305,7 +311,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                 {/* Content */}
                 {webPage ? (
                     <div className="flex-1 min-h-0" data-testid="file-preview-page">
-                        <HtmlDocView path={filePath} line={line} source={source} onNavigate={onNavigate} />
+                        <HtmlDocView path={filePath} line={line} source={source} onNavigate={onNavigate} leaveGuard={leaveGuard} />
                     </div>
                 ) : (
                 <div className="flex-1 overflow-auto">

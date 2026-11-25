@@ -3783,6 +3783,7 @@ app.whenReady().then(async () => {
     ipcMain.handle('mark-inbox-all-read', (): void => {
         inbox.markAllRead()
     })
+    ipcMain.handle('clear-inbox-read', (): number => inbox.clearRead())
     // Header checklists (ChecklistStore): the panel edits here, the Control API edits the same
     // store, and every change is broadcast on CHECKLISTS_CHANNEL.
     ipcMain.handle('get-checklists', () => checklists.list())

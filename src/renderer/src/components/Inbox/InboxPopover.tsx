@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, CheckCheck, ExternalLink } from 'lucide-react'
+import { Check, CheckCheck, ChevronDown, ChevronRight, ExternalLink, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { InboxRequest, Workspace } from '../../../../shared/types'
 import { isLinkAllowed } from '../../utils/terminalLinks'
@@ -21,6 +21,8 @@ interface InboxPopoverProps {
     /** The row's check: the only way one request turns read (report b165acc4). */
     onMarkRead: (request: InboxRequest) => void
     onMarkAllRead: () => void
+    /** «Clear read»: removes every read request, leaves the unread ones. */
+    onClearRead: () => void
     onClose: () => void
 }
 
@@ -57,6 +59,7 @@ export function InboxPopover({
     onOpenLink,
     onMarkRead,
     onMarkAllRead,
+    onClearRead,
     onClose
 }: InboxPopoverProps) {
     const ref = useRef<HTMLDivElement>(null)
@@ -73,7 +76,11 @@ export function InboxPopover({
                 ?.focus()
         })
     }
-    const unread = requests.filter((r) => !r.readAt).length
+    // fb-1125 5b1198ba: what is still to do first; what was read waits folded under one line (not remembered)
+    const unreadRequests = requests.filter((r) => !r.readAt)
+    const readRequests = requests.filter((r) => r.readAt)
+    const unread = unreadRequests.length
+    const [readOpen, setReadOpen] = useState(false)
     const now = Date.now()
 
     useEffect(() => {
@@ -98,6 +105,66 @@ export function InboxPopover({
     const top = anchor.bottom + 4
     const maxHeight = Math.max(160, window.innerHeight - top - VIEWPORT_MARGIN)
 
+    const renderRequest = (request: InboxRequest) => {
+        const meta = INBOX_KIND_META[request.kind] ?? INBOX_KIND_META.other
+        const Icon = meta.icon
+        const where = locate(workspaces, request.sessionId)
+        const linkAllowed = request.url ? isLinkAllowed(request.url, linkSchemes ?? []) : false
+        return (
+            <li key={request.id}>
+                <div
+                    role="button"
+                    tabIndex={0}
+                    data-inbox-request={request.id}
+                    data-read={request.readAt ? 'true' : 'false'}
+                    onClick={() => onOpenRequest(request)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') onOpenRequest(request)
+                    }}
+                    className={clsx(
+                        'group flex gap-2 px-3 py-2 cursor-pointer hover:bg-white/5 focus:outline-none focus-visible:bg-white/5',
+                        request.readAt && 'opacity-60'
+                    )}
+                    title={`${meta.label} — ${request.text}\n${new Date(request.at).toLocaleString()}`}
+                >
+                    <Icon size={14} className={clsx('mt-0.5 shrink-0', meta.color)} />
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                            {!request.readAt && <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />}
+                            <span className="truncate text-xs font-medium text-gray-200">{where.session}</span>
+                            {where.workspace && (
+                                <span className="truncate min-w-0 flex-1 text-[10px] text-gray-500">{where.workspace}</span>
+                            )}
+                            <span className="ml-auto shrink-0 text-[10px] text-gray-500">{formatInboxAge(request.at, now)}</span>
+                            <InboxReplyToggle
+                                open={replyingId === request.id}
+                                disabledReason={where.replyBlocked}
+                                onToggle={() => setReplyingId((id) => (id === request.id ? null : request.id))}
+                            />
+                            {!request.readAt && <MarkReadButton onMark={() => onMarkRead(request)} />}
+                        </div>
+                        <p
+                            data-inbox-text
+                            className={clsx(
+                                'mt-0.5 text-xs line-clamp-2 group-hover:line-clamp-none group-focus-visible:line-clamp-none break-words',
+                                request.readAt ? 'text-gray-400' : 'text-gray-200'
+                            )}
+                        >
+                            {request.text}
+                        </p>
+                        {request.url && (
+                            <LinkButton url={request.url} allowed={linkAllowed} onOpen={() => onOpenLink(request)} />
+                        )}
+                    </div>
+                </div>
+                {/* Beside the row, not in it: the row's click and Enter open the session */}
+                {replyingId === request.id && !where.replyBlocked && (
+                    <InboxReplyBox sessionId={request.sessionId} onClose={() => closeReply(request.id)} />
+                )}
+            </li>
+        )
+    }
+
     return createPortal(
         <div
             ref={ref}
@@ -119,75 +186,45 @@ export function InboxPopover({
                     Mark all read
                 </button>
             </div>
-            {requests.length === 0 ? (
-                <p className="px-3 py-4 text-xs text-gray-500">
-                    No requests. When a session needs you — a sign-in, a review, a question — it shows up here.
-                </p>
-            ) : (
-                <ul className="overflow-y-auto py-1">
-                    {requests.map((request) => {
-                        const meta = INBOX_KIND_META[request.kind] ?? INBOX_KIND_META.other
-                        const Icon = meta.icon
-                        const where = locate(workspaces, request.sessionId)
-                        const linkAllowed = request.url ? isLinkAllowed(request.url, linkSchemes ?? []) : false
-                        return (
-                            <li key={request.id}>
-                                <div
-                                    role="button"
-                                    tabIndex={0}
-                                    data-inbox-request={request.id}
-                                    data-read={request.readAt ? 'true' : 'false'}
-                                    onClick={() => onOpenRequest(request)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') onOpenRequest(request)
-                                    }}
-                                    className={clsx(
-                                        'group flex gap-2 px-3 py-2 cursor-pointer hover:bg-white/5 focus:outline-none focus-visible:bg-white/5',
-                                        request.readAt && 'opacity-60'
-                                    )}
-                                    title={`${meta.label} — ${request.text}\n${new Date(request.at).toLocaleString()}`}
-                                >
-                                    <Icon size={14} className={clsx('mt-0.5 shrink-0', meta.color)} />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            {!request.readAt && <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />}
-                                            <span className="truncate text-xs font-medium text-gray-200">{where.session}</span>
-                                            {where.workspace && (
-                                                <span className="truncate min-w-0 flex-1 text-[10px] text-gray-500">{where.workspace}</span>
-                                            )}
-                                            <span className="ml-auto shrink-0 text-[10px] text-gray-500">{formatInboxAge(request.at, now)}</span>
-                                            <InboxReplyToggle
-                                                open={replyingId === request.id}
-                                                disabledReason={where.replyBlocked}
-                                                onToggle={() => setReplyingId((id) => (id === request.id ? null : request.id))}
-                                            />
-                                            {!request.readAt && <MarkReadButton onMark={() => onMarkRead(request)} />}
-                                        </div>
-                                        <p
-                                            data-inbox-text
-                                            className={clsx(
-                                                'mt-0.5 text-xs line-clamp-2 group-hover:line-clamp-none group-focus-visible:line-clamp-none break-words',
-                                                request.readAt ? 'text-gray-400' : 'text-gray-200'
-                                            )}
-                                        >
-                                            {request.text}
-                                        </p>
-                                        {request.url && (
-                                            <LinkButton url={request.url} allowed={linkAllowed} onOpen={() => onOpenLink(request)} />
-                                        )}
-                                    </div>
-                                </div>
-                                {/* Beside the row, not in it: the row's click and Enter open the session */}
-                                {replyingId === request.id && !where.replyBlocked && (
-                                    <InboxReplyBox sessionId={request.sessionId} onClose={() => closeReply(request.id)} />
-                                )}
-                            </li>
-                        )
-                    })}
-                </ul>
-            )}
+            <div className="overflow-y-auto py-1" data-testid="inbox-body">
+                {unread > 0 && <ul>{unreadRequests.map(renderRequest)}</ul>}
+                {unread === 0 && readRequests.length > 0 && <ReadFold open={readOpen} count={readRequests.length} onToggle={() => setReadOpen((o) => !o)} onClear={onClearRead} />}
+                {unread === 0 && (
+                    <p className="px-3 py-4 text-xs text-gray-500">
+                        {requests.length === 0 ? 'No requests.' : 'No unread requests.'} When a session needs you — a sign-in, a review, a question — it shows up here.
+                    </p>
+                )}
+                {unread > 0 && readRequests.length > 0 && <ReadFold open={readOpen} count={readRequests.length} onToggle={() => setReadOpen((o) => !o)} onClear={onClearRead} />}
+                {readOpen && readRequests.length > 0 && <ul data-testid="inbox-read-list">{readRequests.map(renderRequest)}</ul>}
+            </div>
         </div>,
         document.body
+    )
+}
+
+/** «Read (n)»: the folded line under what is still to do, with the one-shot clear beside it. */
+function ReadFold({ open, count, onToggle, onClear }: { open: boolean; count: number; onToggle: () => void; onClear: () => void }) {
+    return (
+        <div className="flex items-center justify-between px-3 py-1 border-t border-white/5" data-testid="inbox-read-fold" data-state={open ? 'open' : 'closed'}>
+            <button
+                data-testid="inbox-read-toggle"
+                aria-expanded={open}
+                onClick={onToggle}
+                className="flex items-center gap-1 px-1 py-0.5 -ml-1 rounded text-[11px] text-gray-400 hover:bg-white/10 hover:text-gray-200"
+            >
+                {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                Read ({count})
+            </button>
+            <button
+                data-testid="inbox-clear-read"
+                onClick={onClear}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                title="Remove every read request — unread ones stay"
+            >
+                <Trash2 size={11} />
+                Clear read
+            </button>
+        </div>
     )
 }
 

@@ -1,6 +1,7 @@
+import { useRef } from 'react'
 import { ChevronRight, Globe, X } from 'lucide-react'
 import type { DocPane } from '../../utils/docPanes'
-import { HtmlDocView } from './HtmlDocView'
+import { HtmlDocView, type DocLeaveGuard } from './HtmlDocView'
 
 interface DocSplitPaneProps {
     paneId: string
@@ -9,6 +10,8 @@ interface DocSplitPaneProps {
     /** the split's header shape (wide rows when every pane is wide), so this header lines up with the sessions' */
     wide: boolean
     className?: string
+    /** from the owner, so a close that is not this pane's own × can ask the page first (useDocPanes.guardLeave) */
+    leaveGuard?: DocLeaveGuard
     onActivate: () => void
     onSetSource: (source: boolean) => void
     onNavigate: (path: string) => void
@@ -19,7 +22,10 @@ interface DocSplitPaneProps {
  * A document in split view (backlog 「앱 안 브라우저」 B): the same header place as a session's pane — the path, then
  * Preview/Source · Browser · close — and the page in the sandboxed frame below (decision 0013).
  */
-export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onActivate, onSetSource, onNavigate, onClose }: DocSplitPaneProps) {
+export function DocSplitPane({ paneId, pane, isActive, wide, className = '', leaveGuard: ownedGuard, onActivate, onSetSource, onNavigate, onClose }: DocSplitPaneProps) {
+    // typed and not copied in the page: closing this pane asks first (ec4c1682)
+    const ownGuard: DocLeaveGuard = useRef(null)
+    const leaveGuard = ownedGuard ?? ownGuard
     const parts = pane.path.split('/').filter(Boolean)
     const name = parts.pop() ?? pane.path
     const folders = parts.slice(-2)
@@ -30,7 +36,9 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
             data-testid={testId}
             onClick={(event) => {
                 event.stopPropagation()
-                onSetSource(source)
+                // Preview → Source drops the drawn page (and the words typed in it): ask first
+                if (source && !pane.source && leaveGuard.current) leaveGuard.current(() => onSetSource(source), 'switch')
+                else onSetSource(source)
             }}
             className={`px-2 py-0.5 transition-colors ${pane.source === source ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'}`}
         >
@@ -84,7 +92,8 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
                     data-testid="doc-pane-close"
                     onClick={(event) => {
                         event.stopPropagation()
-                        onClose()
+                        if (leaveGuard.current) leaveGuard.current(onClose)
+                        else onClose()
                     }}
                     className="p-1 shrink-0 hover:bg-red-500/20 rounded transition-colors text-gray-400 hover:text-red-400"
                     title="Remove from split"
@@ -93,7 +102,7 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
                 </button>
             </div>
             <div className="flex-1 min-h-0">
-                <HtmlDocView path={pane.path} line={pane.line} source={pane.source} onNavigate={onNavigate} onFrameFocus={onActivate} />
+                <HtmlDocView path={pane.path} line={pane.line} source={pane.source} onNavigate={onNavigate} onFrameFocus={onActivate} leaveGuard={leaveGuard} />
             </div>
         </div>
     )
