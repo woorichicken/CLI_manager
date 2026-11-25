@@ -10,6 +10,8 @@ interface DocSplitPaneProps {
     /** the split's header shape (wide rows when every pane is wide), so this header lines up with the sessions' */
     wide: boolean
     className?: string
+    /** from the owner, so a close that is not this pane's own × can ask the page first (useDocPanes.guardLeave) */
+    leaveGuard?: DocLeaveGuard
     onActivate: () => void
     onSetSource: (source: boolean) => void
     onNavigate: (path: string) => void
@@ -20,9 +22,10 @@ interface DocSplitPaneProps {
  * A document in split view (backlog 「앱 안 브라우저」 B): the same header place as a session's pane — the path, then
  * Preview/Source · Browser · close — and the page in the sandboxed frame below (decision 0013).
  */
-export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onActivate, onSetSource, onNavigate, onClose }: DocSplitPaneProps) {
+export function DocSplitPane({ paneId, pane, isActive, wide, className = '', leaveGuard: ownedGuard, onActivate, onSetSource, onNavigate, onClose }: DocSplitPaneProps) {
     // typed and not copied in the page: closing this pane asks first (ec4c1682)
-    const leaveGuard: DocLeaveGuard = useRef(null)
+    const ownGuard: DocLeaveGuard = useRef(null)
+    const leaveGuard = ownedGuard ?? ownGuard
     const parts = pane.path.split('/').filter(Boolean)
     const name = parts.pop() ?? pane.path
     const folders = parts.slice(-2)
@@ -33,7 +36,9 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', onA
             data-testid={testId}
             onClick={(event) => {
                 event.stopPropagation()
-                onSetSource(source)
+                // Preview → Source drops the drawn page (and the words typed in it): ask first
+                if (source && !pane.source && leaveGuard.current) leaveGuard.current(() => onSetSource(source), 'switch')
+                else onSetSource(source)
             }}
             className={`px-2 py-0.5 transition-colors ${pane.source === source ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'}`}
         >

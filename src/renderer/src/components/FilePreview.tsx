@@ -259,7 +259,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
                                     type="button"
                                     aria-pressed={source}
                                     data-testid="file-preview-source"
-                                    onClick={() => setSource(true)}
+                                    onClick={() => (leaveGuard.current && !source ? leaveGuard.current(() => setSource(true), 'switch') : setSource(true))}
                                     className={`px-2 py-0.5 transition-colors ${source ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'}`}
                                 >
                                     Source

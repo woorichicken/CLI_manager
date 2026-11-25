@@ -53,8 +53,8 @@ to serve the page from.
 - A kit's comments do not reach a session from the Mac frame (the phone's send sheet is not here). Kept comments last as long as
   the frame. So closing asks first (ec4c1682): the bridge tells the window only that the person typed in a field and has not copied
   (`dirty`, from real key or paste events and cleared by a copy or `clipboard.writeText` — never the words), and closing the
-  window or a pane, a link to another page, and Side by side ask «Keep open / Close anyway» in the app. Source view, the phone
-  frame (0011) and a window closed by other means (a session ending) do not ask.
+  window or a pane, a link to another page, Side by side, Preview → Source, and a sidebar click or a session link that would replace a document pane ask «Keep open / Close anyway» in the app. Source view, the phone
+  frame (0011) and a pane that goes because a session ended do not ask.
 - The Source view of a page over 500 KB says it is too large; Browser or an editor reads it.
 - A page can make the preview show another page of its own folder (or below it) without a click — even in `~/Downloads`, where
   its token serves nothing beside it. It is a page the person could open; the new page gets its own token and frame.

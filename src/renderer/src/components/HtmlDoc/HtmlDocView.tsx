@@ -17,7 +17,8 @@ import { DOC_PREVIEW_MESSAGE, DOC_PREVIEW_SANDBOX, docPreviewSibling } from '../
  * Source: the text preview's reader, so its 500 KB limit applies there — drawing has the phone's 64 MB.
  */
 /** What an owner calls to close or replace the page: `action` runs now, or after «Close anyway» when writing would be lost. */
-export type DocLeaveGuard = MutableRefObject<((action: () => void) => void) | null>
+export type DocLeaveVerb = 'close' | 'switch'
+export type DocLeaveGuard = MutableRefObject<((action: () => void, verb?: DocLeaveVerb) => void) | null>
 
 interface HtmlDocViewProps {
     path: string
@@ -42,13 +43,13 @@ function HtmlFrame({ path, onNavigate, onFrameFocus, leaveGuard }: Pick<HtmlDocV
     handlers.current = { onNavigate, onFrameFocus, path }
     // typed and not copied, as the bridge last said; and what waits for «Close anyway»
     const dirty = useRef(false)
-    const [pending, setPending] = useState<(() => void) | null>(null)
-    const pendingRef = useRef<(() => void) | null>(null)
+    const [pending, setPending] = useState<{ action: () => void; verb: DocLeaveVerb } | null>(null)
+    const pendingRef = useRef<typeof pending>(null)
     pendingRef.current = pending
-    const guard = useCallback((action: () => void): void => {
+    const guard = useCallback((action: () => void, verb: DocLeaveVerb = 'close'): void => {
         // asked again while the question is up (Escape, a click outside): that is «Keep open»
         if (pendingRef.current) return setPending(null)
-        if (dirty.current) setPending(() => action)
+        if (dirty.current) setPending({ action, verb })
         else action()
     }, [])
     useEffect(() => {
@@ -85,7 +86,7 @@ function HtmlFrame({ path, onNavigate, onFrameFocus, leaveGuard }: Pick<HtmlDocV
             const sibling = docPreviewSibling(handlers.current.path, data.open)
             if (sibling && handlers.current.onNavigate) {
                 const go = handlers.current.onNavigate
-                guard(() => go(sibling))
+                guard(() => go(sibling), 'switch')
             }
         }
         // focus moving into the frame blurs this window; the frame is then the active element
@@ -156,13 +157,13 @@ function HtmlFrame({ path, onNavigate, onFrameFocus, leaveGuard }: Pick<HtmlDocV
                         type="button"
                         data-testid="html-doc-leave-anyway"
                         onClick={() => {
-                            const action = pending
+                            const { action } = pending
                             setPending(null)
                             action()
                         }}
                         className="px-2.5 py-1 rounded text-red-300 hover:bg-red-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
                     >
-                        Close anyway
+                        {pending.verb === 'switch' ? 'Switch anyway' : 'Close anyway'}
                     </button>
                 </div>
             )}

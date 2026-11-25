@@ -163,7 +163,7 @@ document.getElementById('copy2').onclick = function () { try { navigator.clipboa
         { type: 'assistant', uuid: '00000000-0000-4000-8000-000000000002', timestamp: ts(2), message: { role: 'assistant', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: 'The review is `review.html` and a restored one is `prefilled.html`.' }] } }
     ].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
     result = await launchAppWithWorkspaces(
-        [{ id: 'w-t175', name: 'T175 project', path: project, sessions: [{ id: CLAUDE, name: 'T175 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --continue --mode-row none` }] }],
+        [{ id: 'w-t175', name: 'T175 project', path: project, sessions: [{ id: CLAUDE, name: 'T175 Claude', cliSessionId: CLAUDE_ID, cliToolName: 'claude', cliCommand: `node ${MOCK} --transcript ${transcript} --continue --mode-row none` }, { id: 't175-other', name: 'T175 Other' }] }],
         { env: { CLAUDE_CONFIG_DIR: claudeDir, ARTIFACT_DOCK_SOCKET: path.join(dir, 'no-dock.sock') } }
     )
     const { app, page } = result
@@ -342,5 +342,73 @@ test('T175 split pane: closing a pane with uncopied words asks inside the pane',
     await expect(docPanes.first()).toHaveAttribute('data-path', /details\.html$/)
     // and «Close anyway» on a close ends the pane
     await docPanes.first().getByTestId('doc-pane-close').click()
+    await expect(docPanes).toHaveCount(0)
+})
+
+test('T175 Preview → Source drops the drawn page: asks first, in the window and in a pane (fb-1125 round 2)', async () => {
+    test.setTimeout(180_000)
+    const { page } = await launch()
+    const band = confirmBand(preview(page))
+
+    // the window
+    const frame = await openPage(page, 'review.html')
+    await typeNote(frame, 'before the source')
+    await page.getByTestId('file-preview-source').click()
+    await expect(band).toBeVisible()
+    await expect(band.getByTestId('html-doc-leave-anyway')).toHaveText('Switch anyway')
+    await expect(band.getByTestId('html-doc-leave-keep')).toBeFocused()
+    await band.getByTestId('html-doc-leave-keep').click()
+    await expect(page.getByTestId('file-preview-rendered')).toHaveAttribute('aria-pressed', 'true')
+    await expect(frame.locator('#note')).toHaveValue('before the source')
+    await page.getByTestId('file-preview-source').click()
+    await band.getByTestId('html-doc-leave-anyway').click()
+    await expect(preview(page).getByTestId('html-doc-source')).toBeVisible()
+    // back to Preview: a fresh page, nothing typed — × closes at once
+    await page.getByTestId('file-preview-rendered').click()
+    await expect(preview(page).getByTestId('html-doc-frame')).toBeVisible()
+    await closeX(page).click()
+    await expect(preview(page)).toHaveCount(0)
+
+    // a clean page switches at once
+    await openPage(page, 'review.html')
+    await page.getByTestId('file-preview-source').click()
+    await expect(preview(page).getByTestId('html-doc-source')).toBeVisible()
+    await closeX(page).click()
+
+    // a pane
+    await openPage(page, 'review.html')
+    await page.getByTestId('file-preview-side-by-side').click()
+    const pane = page.locator('[data-doc-pane]').first()
+    const paneFrame = await frameOf(pane)
+    await typeNote(paneFrame, 'pane before source')
+    await pane.getByTestId('doc-pane-source').click()
+    await expect(confirmBand(pane)).toBeVisible()
+    await confirmBand(pane).getByTestId('html-doc-leave-keep').click()
+    await expect(pane.getByTestId('html-doc-frame')).toBeVisible()
+    await pane.getByTestId('doc-pane-source').click()
+    await confirmBand(pane).getByTestId('html-doc-leave-anyway').click()
+    await expect(pane.getByTestId('html-doc-source')).toBeVisible()
+})
+
+test('T175 a sidebar click that would replace the active document pane asks first (fb-1125 round 2)', async () => {
+    test.setTimeout(180_000)
+    const { page } = await launch()
+    const docPanes = page.locator('[data-doc-pane]')
+    await openPage(page, 'review.html')
+    await page.getByTestId('file-preview-side-by-side').click()
+    await expect(docPanes).toHaveCount(1)
+    const frame = await frameOf(docPanes.first())
+    // a click inside the page makes its pane the active one; typing there
+    await typeNote(frame, 'replaced soon')
+    await page.getByText('T175 Other', { exact: true }).first().click()
+    await expect(confirmBand(docPanes.first())).toBeVisible()
+    await shot(page, 'after-replace-1280')
+    await confirmBand(docPanes.first()).getByTestId('html-doc-leave-keep').click()
+    await expect(docPanes).toHaveCount(1)
+    await expect(frame.locator('#note')).toHaveValue('replaced soon')
+    // copy first: the same click now replaces the pane at once
+    await frame.locator('#copy').click()
+    await frame.waitForTimeout(250)
+    await page.getByText('T175 Other', { exact: true }).first().click()
     await expect(docPanes).toHaveCount(0)
 })
