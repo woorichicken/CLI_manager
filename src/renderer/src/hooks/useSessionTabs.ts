@@ -3,16 +3,21 @@ import {
     EMPTY_SESSION_TABS,
     SessionTabsState,
     closeSessionTab,
+    keepSessionTab,
     moveSessionTab,
-    openSessionTab,
     pruneSessionTabs,
+    showSessionTabs,
+    withTabIds,
 } from '../../../shared/sessionTabs'
+import { SESSION_INPUT_EVENT } from '../utils/sessionInputSignal'
 
 interface UseSessionTabsConfig {
     /** The main window only: grid and fullscreen windows render App too and must not write the tabs. */
     active: boolean
     /** Settings › Sidebar 「Show Session Tabs」. Off: the row is hidden and nothing new is recorded. */
     enabled: boolean
+    /** Settings › Sidebar 「Open Sessions as Preview Tabs」: a new tab is a preview the next session replaces. */
+    preview: boolean
     /** Sessions are loaded — before that every tab would look like a deleted session. */
     ready: boolean
     /** The session on screen: the active tab, or the focused split pane. */
@@ -26,24 +31,31 @@ interface UseSessionTabsConfig {
 
 export interface SessionTabsApi {
     ids: string[]
+    /** Preview tabs among `ids` — shown in italics; the next session on screen takes their place. */
+    previewIds: string[]
     /** Loaded from main — until then the row is empty and nothing is saved. */
     loaded: boolean
     /** Closes a tab (the session keeps running). Returns where to go if it was on screen. */
     closeTab: (id: string) => string | null
     /** Closes several tabs at once (the tab menu's Close Others / to the Right / All). Sessions keep running. */
     closeTabs: (ids: string[]) => void
+    /** Moves a tab (a drag) — which also keeps it. */
     moveTab: (id: string, toIndex: number) => void
+    /** Keeps a preview tab: right-click › Keep Open, a rename, or typing in its session. */
+    keepTab: (id: string) => void
     /** The tab on screen when the app last saved, once — App shows it after a restart. */
     takeRestoreId: () => string | null
 }
 
 /**
  * The tab row at the top of the main area. Every session that comes on screen
- * (sidebar click, link, ⌘T, a split pane) gets a tab next to the one the person
- * was on; the order and the tab on screen are saved in main and come back after
- * a restart. Rules live in `shared/sessionTabs.ts`.
+ * (sidebar click, ⌘[ ⌘], a link, ⌘T, a split pane) gets a tab. With preview tabs on
+ * (default) that tab is a preview: the next session shown takes its place, so walking
+ * through sessions leaves one tab, not one per session; typing in it, dragging it,
+ * renaming it or Keep Open keeps it. The order, the tab on screen and the preview marks
+ * are saved in main and come back after a restart. Rules live in `shared/sessionTabs.ts`.
  */
-export function useSessionTabs({ active, enabled, ready, viewedSessionId, onScreenIds, sessionExists, sessionsKey }: UseSessionTabsConfig): SessionTabsApi {
+export function useSessionTabs({ active, enabled, preview, ready, viewedSessionId, onScreenIds, sessionExists, sessionsKey }: UseSessionTabsConfig): SessionTabsApi {
     const [state, setState] = useState<SessionTabsState>(EMPTY_SESSION_TABS)
     const [loaded, setLoaded] = useState(false)
     const restoreIdRef = useRef<string | null>(null)
@@ -65,30 +77,19 @@ export function useSessionTabs({ active, enabled, ready, viewedSessionId, onScre
         return () => { cancelled = true }
     }, [active])
 
-    // A session on screen gets a tab, right after the one the person was on (split panes: one after another).
+    // A session on screen gets a tab — a preview that takes the place of the preview that left (split panes: each).
     const onScreenKey = onScreenIds.join(',')
     useEffect(() => {
         if (!active || !loaded || !enabled) return
-        setState((prev) => {
-            let ids = prev.ids
-            let after = prev.activeId
-            for (const id of onScreenKey ? onScreenKey.split(',') : []) {
-                ids = openSessionTab(ids, id, after)
-                after = id
-            }
-            const activeId = viewedSessionId ?? prev.activeId
-            if (ids === prev.ids && prev.activeId === activeId) return prev
-            return { ids, activeId }
-        })
-    }, [active, loaded, enabled, viewedSessionId, onScreenKey])
+        setState((prev) => showSessionTabs(prev, onScreenKey ? onScreenKey.split(',') : [], viewedSessionId, preview))
+    }, [active, loaded, enabled, preview, viewedSessionId, onScreenKey])
 
     // Closed or deleted sessions leave the row.
     useEffect(() => {
         if (!active || !loaded || !ready) return
         setState((prev) => {
             const ids = pruneSessionTabs(prev.ids, (id) => sessionExistsRef.current(id))
-            if (ids === prev.ids) return prev
-            return { ids, activeId: prev.activeId && ids.includes(prev.activeId) ? prev.activeId : null }
+            return ids === prev.ids ? prev : withTabIds(prev, ids)
         })
     }, [active, loaded, ready, sessionsKey])
 
@@ -105,7 +106,7 @@ export function useSessionTabs({ active, enabled, ready, viewedSessionId, onScre
         const current = stateRef.current
         const { ids, neighbor } = closeSessionTab(current.ids, id)
         const activeId = current.activeId === id ? neighbor : current.activeId
-        const next = { ids, activeId }
+        const next = withTabIds(current, ids, activeId)
         stateRef.current = next
         setState(next)
         return neighbor
@@ -116,17 +117,34 @@ export function useSessionTabs({ active, enabled, ready, viewedSessionId, onScre
         const current = stateRef.current
         const ids = current.ids.filter((id) => !gone.has(id))
         if (ids.length === current.ids.length) return
-        const next = { ids, activeId: current.activeId && !gone.has(current.activeId) ? current.activeId : null }
+        const next = withTabIds(current, ids)
         stateRef.current = next
         setState(next)
     }, [])
 
     const moveTab = useCallback((id: string, toIndex: number) => {
         setState((prev) => {
-            const ids = moveSessionTab(prev.ids, id, toIndex)
-            return ids === prev.ids ? prev : { ...prev, ids }
+            // a dragged tab is one the person wants where they put it: it stays
+            const kept = keepSessionTab(prev, id)
+            const ids = moveSessionTab(kept.ids, id, toIndex)
+            return ids === kept.ids ? kept : { ...kept, ids }
         })
     }, [])
+
+    const keepTab = useCallback((id: string) => {
+        setState((prev) => keepSessionTab(prev, id))
+    }, [])
+
+    // Typing in a session (its terminal or its Chat) keeps its preview tab.
+    useEffect(() => {
+        if (!active) return
+        const onInput = (event: Event): void => {
+            const id = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
+            if (id && stateRef.current.previewIds.includes(id)) keepTab(id)
+        }
+        window.addEventListener(SESSION_INPUT_EVENT, onInput)
+        return () => window.removeEventListener(SESSION_INPUT_EVENT, onInput)
+    }, [active, keepTab])
 
     const takeRestoreId = useCallback((): string | null => {
         if (restoreTakenRef.current) return null
@@ -134,5 +152,5 @@ export function useSessionTabs({ active, enabled, ready, viewedSessionId, onScre
         return restoreIdRef.current
     }, [])
 
-    return { ids: enabled ? state.ids : [], loaded, closeTab, closeTabs, moveTab, takeRestoreId }
+    return { ids: enabled ? state.ids : [], previewIds: enabled ? state.previewIds : [], loaded, closeTab, closeTabs, moveTab, keepTab, takeRestoreId }
 }

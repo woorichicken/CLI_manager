@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { noteSessionInput } from '../utils/sessionInputSignal'
 import { createPortal } from 'react-dom'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon, ITerminalDimensions } from '@xterm/addon-fit'
@@ -676,6 +677,8 @@ export function TerminalView({
             term.onData((data) => {
                 window.api.writeTerminal(id, data)
             })
+            // A keystroke (not a terminal's own reply, which also comes through onData) keeps a preview tab.
+            term.onKey(() => noteSessionInput(id))
 
 
             // Handle scroll events (스크롤 중에는 ResizeObserver 무시)

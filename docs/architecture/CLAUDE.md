@@ -423,7 +423,7 @@ User Action (Renderer)
 - `get-session-relations` → 보이는 관계(`dismissed` 제외) · `session-relations` (main → renderer): 바뀔 때마다 전체 목록
 - `add-session-relation(from, to)` / `remove-session-relation(a, b)`: 손으로 추가·빼기(빼기는 `dismissed` 표시)
 - `get-recent-sessions` → 최근 본 세션 id(최신이 앞, 최대 20 — `RECENT_SESSIONS_MAX`) · `push-recent-session(id)`: 렌더러가 보는 세션(분할이면 포커스된 칸)이 바뀔 때 보고. 저장 키 `recentSessions`(config.json). 닫힘·시작 때 정리, 없는 세션은 탭이 숨김
-- `get-session-tabs` → `{ ids, activeId }`(메인 칸 맨 위 탭 줄, 왼쪽부터) · `set-session-tabs(state)`: 렌더러가 순서를 갖고 통째로 저장. 저장 키 `sessionTabs`(config.json, `SessionTabs.ts` · 규칙은 `shared/sessionTabs.ts`). 세션이 닫히면 그 탭을 지우고(보던 탭이면 `activeId` 도), 시작 때 없는 세션을 정리. 메인 창만 읽고 쓴다(그리드 창은 같은 App 을 그리지만 건드리지 않음)
+- `get-session-tabs` → `{ ids, activeId, previewIds }`(메인 칸 맨 위 탭 줄, 왼쪽부터 · `previewIds` = 그중 임시 탭, 없으면 모두 고정) · `set-session-tabs(state)`: 렌더러가 순서를 갖고 통째로 저장. 저장 키 `sessionTabs`(config.json, `SessionTabs.ts` · 규칙은 `shared/sessionTabs.ts`). 세션이 닫히면 그 탭을 지우고(보던 탭이면 `activeId` 도, 남는 탭의 임시 표시는 그대로 — `withTabIds`), 시작 때 없는 세션을 정리. 메인 창만 읽고 쓴다(그리드 창은 같은 App 을 그리지만 건드리지 않음)
 - `sidebar-session-order(ids)`(renderer → main, `send`): 사이드바가 세션을 그리는 순서(`sessionsInSidebarOrder`)의 id. 순서가 바뀔 때만, 주 창만 보낸다. main 은 메모리에만 두고 폰 세션 목록의 첫 단계로 쓴다
 - `peek-sessions(ids)` → `SessionPeek[]`: 상태·질문 대기·마지막 줄. 읽기만 한다 — API 읽기와 달리 AI 표시를 붙이지 않는다
 

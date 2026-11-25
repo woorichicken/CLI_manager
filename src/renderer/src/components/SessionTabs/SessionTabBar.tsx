@@ -9,6 +9,8 @@ export interface SessionTabEntry {
     name: string
     /** The workspace name, shown in the tooltip — tabs from different projects can share a name. */
     workspaceName: string
+    /** A preview tab: shown in italics, the next session on screen takes its place (Keep Open, a drag or typing keeps it). */
+    preview?: boolean
 }
 
 interface SessionTabBarProps {
@@ -216,9 +218,12 @@ function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onC
             data-session-tab={tab.id}
             data-active={active ? 'true' : undefined}
             data-visible={visible ? 'true' : undefined}
+            data-preview={tab.preview ? 'true' : undefined}
             role="tab"
             aria-selected={active}
-            title={`${tab.name} — ${tab.workspaceName}`}
+            title={tab.preview
+                ? `${tab.name} — ${tab.workspaceName}\nPreview tab: the next session you open takes its place. Type in it, drag it or right-click › Keep Open to keep it.`
+                : `${tab.name} — ${tab.workspaceName}`}
             // while renaming, a drag in the field selects its letters instead of moving the tab
             draggable={!renaming}
             onDragStart={onDragStart}
@@ -250,7 +255,7 @@ function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onC
             )}
             {renaming
                 ? <TabNameInput name={tab.name} onFinish={onFinishRename} />
-                : <span className="truncate flex-1 min-w-0" data-session-tab-name>{tab.name}</span>}
+                : <span className={`truncate flex-1 min-w-0 ${tab.preview ? 'italic' : ''}`} data-session-tab-name>{tab.name}</span>}
             <button
                 type="button"
                 data-session-tab-close={tab.id}

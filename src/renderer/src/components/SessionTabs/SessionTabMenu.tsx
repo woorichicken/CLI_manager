@@ -1,6 +1,6 @@
 import React, { useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Columns2, Pencil, SquareX, Trash2, X } from 'lucide-react'
+import { Columns2, Pencil, Pin, SquareX, Trash2, X } from 'lucide-react'
 import { useCloseOnOutside } from '../Sidebar/ContextMenus'
 import { MENU_Z_INDEX } from '../../constants/styles'
 import { tabsToClose, type TabCloseScope } from '../../../../shared/sessionTabs'
@@ -15,6 +15,10 @@ export interface SessionTabMenuActions {
     onOpenSideBySide: (id: string) => void
     /** Ends the session, as ⌘W does for the one on screen (asks first while a process runs). */
     onEndSession: (id: string) => void
+    /** A preview tab (the next session shown replaces it). Absent: no Keep Open item. */
+    isPreview?: (id: string) => boolean
+    /** Keeps a preview tab in the row. */
+    onKeepOpen?: (id: string) => void
 }
 
 interface SessionTabMenuProps {
@@ -70,6 +74,20 @@ export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onRen
                     <button className={ITEM} data-tab-menu-item="rename" title={hint('Rename the session', 'renameSession', false)} onClick={run(() => onRenameTab(tabId))}>
                         <Pencil size={12} className="text-gray-400 shrink-0" />
                         <span className="truncate">Rename…</span>
+                    </button>
+                    <div className="border-t border-white/10 my-0.5" />
+                </>
+            )}
+            {actions.isPreview?.(tabId) && actions.onKeepOpen && (
+                <>
+                    <button
+                        className={ITEM}
+                        data-tab-menu-item="keep-open"
+                        title="Keep this tab — the next session you open gets a tab of its own"
+                        onClick={run(() => actions.onKeepOpen?.(tabId))}
+                    >
+                        <Pin size={12} className="text-gray-400 shrink-0" />
+                        <span className="truncate">Keep Open</span>
                     </button>
                     <div className="border-t border-white/10 my-0.5" />
                 </>

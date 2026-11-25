@@ -295,6 +295,7 @@ function App() {
     // Only the main window keeps tabs: grid/fullscreen windows render this App too.
     const isMainAppWindow = useMemo(() => new URLSearchParams(window.location.search).get('mode') !== 'fullscreen', [])
     const sessionTabsEnabled = settings.showSessionTabs ?? true
+    const previewTabsEnabled = settings.previewSessionTabs ?? true
     const sessionOwnerById = useMemo(() => {
         const owners = new Map<string, { workspace: Workspace; session: TerminalSession }>()
         for (const workspace of workspaces) for (const session of workspace.sessions) owners.set(session.id, { workspace, session })
@@ -304,6 +305,7 @@ function App() {
     const sessionTabs = useSessionTabs({
         active: isMainAppWindow,
         enabled: sessionTabsEnabled,
+        preview: previewTabsEnabled,
         ready: sessionsRestored,
         viewedSessionId,
         onScreenIds: splitLayout ? sessionPaneIds(splitLayout.sessionIds) : viewedSessionId ? [viewedSessionId] : [],
@@ -762,7 +764,9 @@ function App() {
         onEndSession: (id) => {
             const owner = sessionOwnerById.get(id)
             if (owner) void handleRemoveSession(owner.workspace.id, id, false, 'tab')
-        }
+        },
+        isPreview: (id) => sessionTabs.previewIds.includes(id),
+        onKeepOpen: sessionTabs.keepTab,
     }
 
     const handleStepTab = (direction: 1 | -1): void => {
@@ -782,8 +786,8 @@ function App() {
 
     const sessionTabEntries: SessionTabEntry[] = useMemo(() => sessionTabs.ids.flatMap((id) => {
         const owner = sessionOwnerById.get(id)
-        return owner ? [{ id, name: owner.session.name, workspaceName: owner.workspace.name }] : []
-    }), [sessionTabs.ids, sessionOwnerById])
+        return owner ? [{ id, name: owner.session.name, workspaceName: owner.workspace.name, preview: sessionTabs.previewIds.includes(id) }] : []
+    }), [sessionTabs.ids, sessionTabs.previewIds, sessionOwnerById])
 
     const handleResumePrepared = (sessionId: string): void => {
         showSessions([sessionId])
@@ -1959,7 +1963,8 @@ function App() {
                         onMove={sessionTabs.moveTab}
                         menu={tabMenu}
                         compact={Boolean(splitLayout)}
-                        onRename={renameSessionById}
+                        // a renamed tab is one the person means to keep
+                        onRename={(id, name) => { sessionTabs.keepTab(id); return renameSessionById(id, name) }}
                     />
                 )}
                 {/* With no tab yet the row's height stays reserved. Hidden terminals take their pty size from this

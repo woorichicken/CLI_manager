@@ -418,8 +418,10 @@ test('T175 Close Other Tabs that would end the split and a typed document pane: 
     const { page } = await launch()
     const docPanes = page.locator('[data-doc-pane]')
     const tabs = (): Promise<string[]> => page.locator('[data-session-tab]').evaluateAll((els) => els.map((el) => el.getAttribute('data-session-tab') ?? ''))
-    // two session tabs, then the page beside the session on screen
+    // two session tabs, then the page beside the session on screen (the first one kept — new tabs are previews)
     await page.getByText('T175 Other', { exact: true }).first().click()
+    await page.locator('[data-session-tab="t175-other"]').click({ button: 'right' })
+    await page.locator('[data-tab-menu-item="keep-open"]').click()
     await page.getByText('T175 Claude', { exact: true }).first().click()
     await expect.poll(async () => (await tabs()).length).toBe(2)
     const before = await tabs()

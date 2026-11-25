@@ -15,19 +15,95 @@ export interface SessionTabsState {
     ids: string[]
     /** The tab on screen when the app last saved — shown again after a restart. */
     activeId: string | null
+    /**
+     * Preview tabs (a subset of `ids`): opened but not kept. A preview tab lives only while its session
+     * is on screen — the next session shown takes its place. Typing in it, dragging it, renaming it or
+     * right-click › Keep Open keeps it. Absent in values saved before preview tabs: every tab is kept,
+     * so tabs people already had stay put.
+     */
+    previewIds: string[]
 }
 
-export const EMPTY_SESSION_TABS: SessionTabsState = { ids: [], activeId: null }
+export const EMPTY_SESSION_TABS: SessionTabsState = { ids: [], activeId: null, previewIds: [] }
+
+function stringIds(raw: unknown): string[] {
+    return Array.isArray(raw) ? [...new Set(raw.filter((id): id is string => typeof id === 'string' && id.length > 0))] : []
+}
 
 /** Reads a stored value: anything that is not the expected shape becomes no tabs. Duplicates keep their first place. */
 export function normalizeSessionTabs(raw: unknown): SessionTabsState {
     if (!raw || typeof raw !== 'object') return EMPTY_SESSION_TABS
-    const value = raw as { ids?: unknown; activeId?: unknown }
-    const ids = Array.isArray(value.ids)
-        ? [...new Set(value.ids.filter((id): id is string => typeof id === 'string' && id.length > 0))]
-        : []
+    const value = raw as { ids?: unknown; activeId?: unknown; previewIds?: unknown }
+    const ids = stringIds(value.ids)
     const activeId = typeof value.activeId === 'string' && ids.includes(value.activeId) ? value.activeId : null
-    return { ids, activeId }
+    const previewIds = stringIds(value.previewIds).filter((id) => ids.includes(id))
+    return { ids, activeId, previewIds }
+}
+
+/**
+ * The same tabs with `ids` replaced: preview marks of tabs that left go too, and the tab on screen
+ * stays only if it is still a tab. Returns `state` itself when nothing changed.
+ */
+export function withTabIds(state: SessionTabsState, ids: string[], activeId: string | null = state.activeId): SessionTabsState {
+    const nextActive = activeId && ids.includes(activeId) ? activeId : null
+    const previewIds = state.previewIds.filter((id) => ids.includes(id))
+    const same = ids === state.ids && nextActive === state.activeId && previewIds.length === state.previewIds.length
+    return same ? state : { ids, activeId: nextActive, previewIds }
+}
+
+/**
+ * The sessions on screen changed (`onScreen`: the one session, or the split panes left to right).
+ *
+ * Kept tabs stay where they are. A session without a tab gets one: with `preview` on it is a preview
+ * tab and takes the place of a preview tab that just left the screen (the way VS Code reuses its
+ * preview tab), else it goes right after the tab the person was on. Preview tabs no longer on screen
+ * close. Nothing on screen (start-up, before the restored tab shows) closes nothing.
+ * With `preview` off every new tab is kept and existing preview tabs are kept too.
+ */
+export function showSessionTabs(state: SessionTabsState, onScreen: string[], viewedId: string | null, preview: boolean): SessionTabsState {
+    if (!preview) {
+        let ids = state.ids
+        let after = state.activeId
+        for (const id of onScreen) {
+            ids = openSessionTab(ids, id, after)
+            after = id
+        }
+        const activeId = viewedId ?? state.activeId
+        if (ids === state.ids && activeId === state.activeId && state.previewIds.length === 0) return state
+        return { ids, activeId, previewIds: [] }
+    }
+    if (onScreen.length === 0) return state
+    const shown = new Set(onScreen)
+    // preview tabs that just left the screen, left to right — their places are reused first
+    const leaving = state.previewIds.filter((id) => !shown.has(id))
+    const freeSlots = state.ids.filter((id) => leaving.includes(id))
+    let ids = state.ids
+    let after = state.activeId
+    const previewIds = state.previewIds.filter((id) => shown.has(id))
+    for (const id of onScreen) {
+        if (!ids.includes(id)) {
+            const slot = freeSlots.shift()
+            ids = slot ? ids.map((tab) => (tab === slot ? id : tab)) : openSessionTab(ids, id, after)
+            previewIds.push(id)
+        }
+        after = id
+    }
+    const gone = new Set(leaving)
+    const kept = ids.filter((id) => !gone.has(id))
+    if (kept.length !== ids.length) ids = kept
+    // left to right, like the tabs — a stable order so an unchanged screen compares equal
+    const marked = new Set(previewIds)
+    const previewInOrder = ids.filter((id) => marked.has(id))
+    const activeId = viewedId ?? (state.activeId && ids.includes(state.activeId) ? state.activeId : null)
+    const same = ids === state.ids && activeId === state.activeId
+        && previewInOrder.length === state.previewIds.length && previewInOrder.every((id, i) => id === state.previewIds[i])
+    return same ? state : { ids, activeId, previewIds: previewInOrder }
+}
+
+/** Keeps a preview tab (it stays when another session takes the screen). Returns `state` when it was not a preview. */
+export function keepSessionTab(state: SessionTabsState, id: string): SessionTabsState {
+    if (!state.previewIds.includes(id)) return state
+    return { ...state, previewIds: state.previewIds.filter((tab) => tab !== id) }
 }
 
 /**

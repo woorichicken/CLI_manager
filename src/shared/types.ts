@@ -243,6 +243,12 @@ export interface UserSettings {
      */
     showSessionTabs?: boolean
     /**
+     * New tabs open as preview tabs (default: true): the next session shown takes a preview tab's place,
+     * so walking through sessions (sidebar, ⌘[ ⌘], links) leaves one tab instead of one each. Typing in it,
+     * dragging it, renaming it or right-click › Keep Open keeps it. Off: every session shown keeps a tab.
+     */
+    previewSessionTabs?: boolean
+    /**
      * Status dots on sidebar session rows, read from each screen in main
      * (default: false). Off stops the reader entirely — no timer, no IPC.
      * Independent of Settings > Agents > Session Monitoring (the renderer heuristic) and of agent hooks.

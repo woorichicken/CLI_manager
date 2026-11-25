@@ -1,11 +1,14 @@
 import { test, expect } from '@playwright/test'
 import {
     closeSessionTab,
+    keepSessionTab,
     moveSessionTab,
     normalizeSessionTabs,
     openSessionTab,
     pruneSessionTabs,
+    showSessionTabs,
     stepSessionTab,
+    withTabIds,
     tabsToClose,
     SESSION_TABS_KEY,
 } from '../../src/shared/sessionTabs'
@@ -78,11 +81,74 @@ test.describe('T149 session tabs unit', () => {
     })
 
     test('stored values of the wrong shape become no tabs; the active tab must be one of them', () => {
-        expect(normalizeSessionTabs(undefined)).toEqual({ ids: [], activeId: null })
-        expect(normalizeSessionTabs('x')).toEqual({ ids: [], activeId: null })
-        expect(normalizeSessionTabs({ ids: ['a', 3, '', 'b', 'a'], activeId: 'b' })).toEqual({ ids: ['a', 'b'], activeId: 'b' })
-        expect(normalizeSessionTabs({ ids: ['a'], activeId: 'gone' })).toEqual({ ids: ['a'], activeId: null })
-        expect(normalizeSessionTabs({ ids: 'a', activeId: 'a' })).toEqual({ ids: [], activeId: null })
+        expect(normalizeSessionTabs(undefined)).toEqual({ ids: [], activeId: null, previewIds: [] })
+        expect(normalizeSessionTabs('x')).toEqual({ ids: [], activeId: null, previewIds: [] })
+        expect(normalizeSessionTabs({ ids: ['a', 3, '', 'b', 'a'], activeId: 'b' })).toEqual({ ids: ['a', 'b'], activeId: 'b', previewIds: [] })
+        expect(normalizeSessionTabs({ ids: ['a'], activeId: 'gone' })).toEqual({ ids: ['a'], activeId: null, previewIds: [] })
+        expect(normalizeSessionTabs({ ids: 'a', activeId: 'a' })).toEqual({ ids: [], activeId: null, previewIds: [] })
+        // preview marks only for tabs that exist; junk dropped
+        expect(normalizeSessionTabs({ ids: ['a', 'b'], activeId: 'b', previewIds: ['b', 'gone', 7, 'b'] }))
+            .toEqual({ ids: ['a', 'b'], activeId: 'b', previewIds: ['b'] })
+    })
+
+    test('a value saved before preview tabs reads as all kept: existing tabs stay when another session shows', () => {
+        const old = normalizeSessionTabs({ ids: ['a', 'b', 'c'], activeId: 'b' })
+        expect(old.previewIds).toEqual([])
+        const next = showSessionTabs(old, ['d'], 'd', true)
+        expect(next.ids).toEqual(['a', 'b', 'd', 'c'])
+        expect(next.previewIds).toEqual(['d'])
+    })
+
+    test('preview: walking through sessions leaves one tab, in the same place', () => {
+        let state = normalizeSessionTabs({ ids: ['k1', 'k2'], activeId: 'k1' })
+        state = showSessionTabs(state, ['a'], 'a', true)
+        expect(state).toEqual({ ids: ['k1', 'a', 'k2'], activeId: 'a', previewIds: ['a'] })
+        state = showSessionTabs(state, ['b'], 'b', true)
+        expect(state).toEqual({ ids: ['k1', 'b', 'k2'], activeId: 'b', previewIds: ['b'] })
+        state = showSessionTabs(state, ['c'], 'c', true)
+        expect(state).toEqual({ ids: ['k1', 'c', 'k2'], activeId: 'c', previewIds: ['c'] })
+        // back to a kept tab: the preview, no longer on screen, closes
+        state = showSessionTabs(state, ['k2'], 'k2', true)
+        expect(state).toEqual({ ids: ['k1', 'k2'], activeId: 'k2', previewIds: [] })
+        // showing the same thing again changes nothing (same object, no save)
+        expect(showSessionTabs(state, ['k2'], 'k2', true)).toBe(state)
+    })
+
+    test('preview: a kept tab stays when the next session shows; nothing on screen closes nothing', () => {
+        let state = showSessionTabs(normalizeSessionTabs(undefined), ['a'], 'a', true)
+        state = keepSessionTab(state, 'a')
+        expect(state.previewIds).toEqual([])
+        expect(keepSessionTab(state, 'a')).toBe(state)
+        state = showSessionTabs(state, ['b'], 'b', true)
+        expect(state).toEqual({ ids: ['a', 'b'], activeId: 'b', previewIds: ['b'] })
+        // start-up, before the restored tab is on screen: the preview tab must survive
+        expect(showSessionTabs(state, [], null, true)).toBe(state)
+    })
+
+    test('preview in split view: each new pane gets a preview; a pane replaced takes its slot; a pane that leaves closes it', () => {
+        let state = normalizeSessionTabs({ ids: ['k'], activeId: 'k' })
+        state = showSessionTabs(state, ['k', 'a', 'b'], 'k', true)
+        expect(state).toEqual({ ids: ['k', 'a', 'b'], activeId: 'k', previewIds: ['a', 'b'] })
+        // the focused pane 'a' becomes 'c'
+        state = showSessionTabs(state, ['k', 'c', 'b'], 'c', true)
+        expect(state).toEqual({ ids: ['k', 'c', 'b'], activeId: 'c', previewIds: ['c', 'b'] })
+        // pane 'b' leaves split view
+        state = showSessionTabs(state, ['k', 'c'], 'c', true)
+        expect(state).toEqual({ ids: ['k', 'c'], activeId: 'c', previewIds: ['c'] })
+    })
+
+    test('preview off: every session shown keeps a tab, and preview marks turn into kept tabs', () => {
+        let state = showSessionTabs(normalizeSessionTabs(undefined), ['a'], 'a', true)
+        state = showSessionTabs(state, ['b'], 'b', false)
+        expect(state).toEqual({ ids: ['a', 'b'], activeId: 'b', previewIds: [] })
+        state = showSessionTabs(state, ['c'], 'c', false)
+        expect(state.ids).toEqual(['a', 'b', 'c'])
+    })
+
+    test('withTabIds drops the preview marks and the active tab of tabs that left', () => {
+        const state = { ids: ['a', 'b', 'c'], activeId: 'b', previewIds: ['b'] }
+        expect(withTabIds(state, ['a', 'c'])).toEqual({ ids: ['a', 'c'], activeId: null, previewIds: [] })
+        expect(withTabIds(state, state.ids)).toBe(state)
     })
 
     test('prune keeps the same array when nothing went, so callers skip a write', () => {
@@ -94,14 +160,14 @@ test.describe('T149 session tabs unit', () => {
     test('main storage: save, forget a closed session, prune at startup', () => {
         const store = fakeStore()
         const tabs = new SessionTabs(store)
-        expect(tabs.get()).toEqual({ ids: [], activeId: null })
+        expect(tabs.get()).toEqual({ ids: [], activeId: null, previewIds: [] })
 
         tabs.set({ ids: ['a', 'b', 'c'], activeId: 'b', extra: 'dropped' })
-        expect(store.data[SESSION_TABS_KEY]).toEqual({ ids: ['a', 'b', 'c'], activeId: 'b' })
+        expect(store.data[SESSION_TABS_KEY]).toEqual({ ids: ['a', 'b', 'c'], activeId: 'b', previewIds: [] })
 
         // Closing the active session also clears the tab to restore.
         tabs.forget('b')
-        expect(tabs.get()).toEqual({ ids: ['a', 'c'], activeId: null })
+        expect(tabs.get()).toEqual({ ids: ['a', 'c'], activeId: null, previewIds: [] })
 
         const before = store.writes()
         tabs.forget('not-a-tab')
@@ -110,6 +176,13 @@ test.describe('T149 session tabs unit', () => {
 
         tabs.set({ ids: ['a', 'c'], activeId: 'c' })
         tabs.prune(new Set(['c']))
-        expect(tabs.get()).toEqual({ ids: ['c'], activeId: 'c' })
+        expect(tabs.get()).toEqual({ ids: ['c'], activeId: 'c', previewIds: [] })
+
+        // forget/prune keep the preview marks of tabs that stay (a plain { ids, activeId } write dropped them)
+        tabs.set({ ids: ['a', 'p', 'c'], activeId: 'p', previewIds: ['p'] })
+        tabs.forget('a')
+        expect(tabs.get()).toEqual({ ids: ['p', 'c'], activeId: 'p', previewIds: ['p'] })
+        tabs.prune(new Set(['c']))
+        expect(tabs.get()).toEqual({ ids: ['c'], activeId: null, previewIds: [] })
     })
 })
