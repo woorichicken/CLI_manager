@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, nativeImage, Tray, Menu, Notification, webContents, powerMonitor } from 'electron'
+import { applySessionLabels, parseSessionWorkRole } from '../shared/sessionLabels'
 import path, { join } from 'path'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -23,6 +24,7 @@ import { CLISessionTracker } from './CLISessionTracker'
 import { codexResumeFromArgv, CodexSessionLocator } from './CodexSessionLocator'
 import { AgentConversations, AgentConversationError } from './agentConversations'
 import { decideAgentCommand, templateOpensInChat } from '../shared/agentCommand'
+import { screenBackground } from './screenLines'
 import type { AgentConversationConnectInput } from '../shared/conversation'
 import { LoopManager } from './LoopManager'
 import { HookInstaller, hookIntegrationAllowed } from './HookInstaller'
@@ -35,6 +37,7 @@ import { ScrollbackStore } from './ScrollbackStore'
 import { TerminalEventLog } from './TerminalEventLog'
 import { buildFeedbackTerminalContext } from './feedbackTerminalContext'
 import { ClaudeSessionSync } from './ClaudeSessionSync'
+import { AgySessionSync, agyStartCommand } from './AgySessionSync'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
@@ -47,7 +50,7 @@ import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts
 import { CronStore } from './CronStore'
 import { CronService, CRON_MADE_IN_WINDOW } from './CronService'
 import { waitForWindowLoad } from './windowLoad'
-import { CRON_CHANNELS, CronInput, CronOpenTerminal } from '../shared/autocron'
+import { CRON_CHANNELS, CronInput, CronOpenTerminal, CronRunConversation } from '../shared/autocron'
 import { SessionScreenStatusPoller } from './SessionScreenStatus'
 import { ApiErrorTails } from './transcript/apiError'
 import { TranscriptReader } from './TranscriptReader'
@@ -236,6 +239,16 @@ const loadShellAliases = async (): Promise<void> => {
 }
 let shellAliasesReady: Promise<void> | undefined
 const ensureShellAliases = (): Promise<void> => shellAliasesReady ??= loadShellAliases()
+const CONVERSATION_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+/**
+ * The command that resumes an agent conversation on the person's own start command (an alias and its
+ * options kept, agentCommand.ts) — a restart's resume and Autocron's «Open session» on a closed run.
+ */
+const agentResumeCommand = async (agent: 'claude' | 'codex', id: string, savedCommand: string | undefined): Promise<string> => {
+    await ensureShellAliases()
+    const decision = decideAgentCommand(savedCommand, agent, (name) => cliSessionTracker.resolveAlias(name))
+    return `${decision.inputCommand} ${agent === 'codex' ? 'resume' : '--resume'} ${id}`
+}
 
 const terminalManager = new TerminalManager(cliSessionTracker)
 terminalManager.events.on('exited', (id: string) => { stopCodexCapture(id); pendingSessionRestores.delete(id) })
@@ -499,12 +512,81 @@ const cronStore = new CronStore(store, () => sendCronState())
 const MAIN_WINDOW_LOAD_TIMEOUT_MS = 60_000
 /** The load of a main window Autocron opened, while it is under way. */
 let mainWindowLoading: Promise<void> | null = null
+function ensureMainWindowForCron(): Promise<void> {
+    if (mainWindow && !mainWindow.isDestroyed()) return mainWindowLoading ?? Promise.resolve()
+    createWindow({ hidden: true })
+    const window = mainWindow as BrowserWindow | null
+    if (!window) return Promise.reject(new Error('the main window could not be created'))
+    const loading = waitForWindowLoad(window.webContents, MAIN_WINDOW_LOAD_TIMEOUT_MS)
+    mainWindowLoading = loading
+    void loading.catch(() => undefined).finally(() => {
+        if (mainWindowLoading === loading) mainWindowLoading = null
+    })
+    return loading
+}
+/**
+ * Autocron's «Open session» / «Resume» brings the main window forward. Not in headless tests: like every
+ * other show() here, a test window must stay off the person's screen — shown and focused, it took their
+ * keystrokes (a Space on the focused sidebar toggle flipped the view in a capture run, 2026-11-24).
+ */
+function bringMainWindowForward(): void {
+    if (isTestHeadless || !mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.show()
+    mainWindow.focus()
+}
 const cronService: CronService = new CronService({
     store: cronStore,
     openSession: async (input) => {
         const result = await controlApiService.openSession({ ...input, focus: false, client: 'autocron' })
         return { sessionId: result.session.id, terminalStarted: result.terminalStarted, promptSent: result.promptSent, note: result.note }
     },
+    background: {
+        hiddenSessionIds: () => controlApiService.hiddenSessionIds(),
+        state: (sessionId) => {
+            if (!terminalMirror.has(sessionId)) return { kind: 'gone' }
+            if (terminalMirror.hasExited(sessionId)) return { kind: 'idle', since: terminalMirror.lastOutputAt(sessionId) }
+            const screen = terminalMirror.screenStatus(sessionId)
+            if (screen.busy) return { kind: 'working' }
+            if (screen.question) return { kind: 'question', question: screen.question }
+            // a background shell or agent the screen counts is still work in progress
+            if (screenBackground(terminalMirror.screen(sessionId))) return { kind: 'working' }
+            return { kind: 'idle', since: terminalMirror.lastOutputAt(sessionId) }
+        },
+        reveal: (sessionId) => void controlApiService.revealSession(sessionId),
+        close: (sessionId) => {
+            const found = ((store.get('workspaces') as Workspace[] | undefined) ?? [])
+                .flatMap((w) => w.sessions ?? []).find((s) => s.id === sessionId)
+            const agent = found?.cliToolName
+            if (!found?.cliSessionId || (agent !== 'claude' && agent !== 'codex') || !CONVERSATION_ID.test(found.cliSessionId)) return null
+            const conversation: CronRunConversation = {
+                agent, id: found.cliSessionId, cwd: found.cwd, name: found.name,
+                ...(found.cliCommand ? { command: found.cliCommand } : {})
+            }
+            controlApiService.closeSession(sessionId)
+            return conversation
+        },
+        resume: async (conversation) => {
+            await ensureMainWindowForCron()
+            const result = await controlApiService.openSession({
+                path: conversation.cwd,
+                command: await agentResumeCommand(conversation.agent, conversation.id, conversation.command),
+                name: conversation.name,
+                focus: true,
+                client: 'autocron'
+            })
+            bringMainWindowForward()
+            return result.session.id
+        },
+        askPerson: (sessionId, text) => {
+            inbox.add({ sessionId, kind: 'question', text, client: 'autocron' })
+        }
+    },
+    ...(process.env.CLIMANGER_TEST_USERDATA && process.env.CLIMANAGER_TEST_CRON_TIMING
+        ? { timing: (() => {
+            const [tickMs, idleCloseMs] = process.env.CLIMANAGER_TEST_CRON_TIMING.split(',').map(Number)
+            return { tickMs: tickMs > 0 ? tickMs : undefined, idleCloseMs: idleCloseMs >= 0 ? idleCloseMs : undefined }
+        })() }
+        : {}),
     loops: () => loopManager.getState(),
     typeIntoLoop: (terminalId, text) =>
         controlApiService.typeIntoLoop(terminalId, text, loopManager.getState().sessions.find((s) => s.terminalId === terminalId)?.cliToolName),
@@ -525,18 +607,7 @@ const cronService: CronService = new CronService({
     // scheduled run must not pull a window the person closed in front of them (the dock icon
     // shows it, see 'activate'). Runs that start together share one load; a load that fails or
     // hangs rejects, so that run fails instead of holding the shared tick.
-    ensureMainWindow: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) return mainWindowLoading ?? Promise.resolve()
-        createWindow({ hidden: true })
-        const window = mainWindow as BrowserWindow | null
-        if (!window) return Promise.reject(new Error('the main window could not be created'))
-        const loading = waitForWindowLoad(window.webContents, MAIN_WINDOW_LOAD_TIMEOUT_MS)
-        mainWindowLoading = loading
-        void loading.catch(() => undefined).finally(() => {
-            if (mainWindowLoading === loading) mainWindowLoading = null
-        })
-        return loading
-    },
+    ensureMainWindow: () => ensureMainWindowForCron(),
     apiOn: () => getControlApiSettings().enabled,
     notify: (title, body) => {
         if (isTestHeadless || !Notification.isSupported()) return
@@ -549,10 +620,7 @@ const cronService: CronService = new CronService({
         }
         try {
             controlApiService.focusSession(sessionId, 'autocron', undefined, terminal)
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.show()
-                mainWindow.focus()
-            }
+            bringMainWindowForward()
             return true
         } catch {
             return false
@@ -600,6 +668,11 @@ const dictation = new DictationService({
 // what its screen says (working, a question menu). Watches only sessions a view is open on.
 const claudeConfigDir = (): string => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
 const codexHome = (): string => process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
+/** Antigravity CLI's data folder — ANTIGRAVITY_APP_DATA_DIR is agy's own override (as ovis reads it) */
+const agyHome = (): string => process.env.ANTIGRAVITY_APP_DATA_DIR || path.join(os.homedir(), '.gemini', 'antigravity-cli')
+/** The ledger a stored agy conversation reads from (TranscriptReader.locateAgy). */
+const agyConversationExists = (id: string): boolean =>
+    /^[0-9a-f-]{36}$/i.test(id) && existsSync(path.join(agyHome(), 'brain', id, '.system_generated', 'logs', 'transcript_full.jsonl'))
 const conversationService = new ConversationService({
     session: (id) => {
         const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
@@ -612,7 +685,7 @@ const conversationService = new ConversationService({
         }
         return null
     },
-    reader: new TranscriptReader({ claudeConfigDir, codexHome }),
+    reader: new TranscriptReader({ claudeConfigDir, codexHome, agyHome }),
     listCommands: createChatCommandLister({ home: os.homedir(), claudeConfigDir, codexHome }),
     home: os.homedir(),
     mirror: terminalMirror,
@@ -691,9 +764,14 @@ function persistDetectedSession(info: { terminalId: string; cliSessionId: string
         if (!session) continue
         session.cliSessionId = info.cliSessionId
         session.cliToolName = info.cliToolName
-        const agent = info.cliToolName === 'claude' ? 'claude' : 'codex'
-        const decision = decideAgentCommand(info.baseCommand, agent, (name) => cliSessionTracker.resolveAlias(name))
-        if (decision.recognized) session.cliCommand = decision.storedCommand
+        if (info.cliToolName === 'agy') {
+            // AgySessionSync hands over the command without its conversation flags (resumableCommand)
+            session.cliCommand = info.baseCommand
+        } else {
+            const agent = info.cliToolName === 'claude' ? 'claude' : 'codex'
+            const decision = decideAgentCommand(info.baseCommand, agent, (name) => cliSessionTracker.resolveAlias(name))
+            if (decision.recognized) session.cliCommand = decision.storedCommand
+        }
         store.set('workspaces', workspaces)
         broadcast('cli-session-detected', {
             workspaceId: ws.id, sessionId: info.terminalId,
@@ -1405,6 +1483,15 @@ function validateCliSessionIds(): void {
     let modified = false
     for (const ws of workspaces) {
         for (const session of ws.sessions) {
+            if (session.cliSessionId && session.cliToolName === 'agy') {
+                if (agyConversationExists(session.cliSessionId)) continue
+                console.log(`[validateCliSessionIds] CLEAR stale agy conversation ${session.cliSessionId} (no ledger)`)
+                delete session.cliSessionId
+                delete session.cliToolName
+                delete session.cliCommand
+                modified = true
+                continue
+            }
             if (session.cliSessionId) {
                 const agent = session.cliToolName === 'codex' ? 'codex' : 'claude'
                 if (agent === 'claude' && !claudeStorageKnown) continue
@@ -1449,7 +1536,7 @@ app.whenReady().then(async () => {
     void ensureShellAliases()
     validateCliSessionIds()
     for (const ws of (store.get('workspaces') as Workspace[])) {
-        for (const session of ws.sessions) if (session.cliSessionId && (session.cliToolName === 'codex' || session.cliToolName === 'claude')) pendingSessionRestores.add(session.id)
+        for (const session of ws.sessions) if (session.cliSessionId && (session.cliToolName === 'codex' || session.cliToolName === 'claude' || session.cliToolName === 'agy')) pendingSessionRestores.add(session.id)
     }
 
     // Histories of sessions deleted since the last run; then keep saving.
@@ -1581,10 +1668,15 @@ app.whenReady().then(async () => {
             return { success: false, error: e.message }
         }
     })
-    ipcMain.handle(CRON_CHANNELS.openSession, (_, { sessionId, terminal }: { sessionId: string; terminal?: CronOpenTerminal }) =>
-        cronResult(() => cronService.openSession(sessionId, terminal && typeof terminal === 'object'
-            ? { command: typeof terminal.command === 'string' ? terminal.command.slice(0, 200) : undefined }
-            : undefined)))
+    ipcMain.handle(CRON_CHANNELS.openSession, async (_, { sessionId, terminal }: { sessionId: string; terminal?: CronOpenTerminal }): Promise<IPCResult<boolean>> => {
+        try {
+            return { success: true, data: await cronService.openSession(sessionId, terminal && typeof terminal === 'object'
+                ? { command: typeof terminal.command === 'string' ? terminal.command.slice(0, 200) : undefined }
+                : undefined) }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
 
     // ============================================
     // Loop Dashboard IPC Handlers
@@ -1724,10 +1816,11 @@ app.whenReady().then(async () => {
     ipcMain.handle('get-session-resume-command', async (_event, terminalId: string): Promise<string | undefined> => {
         await ensureShellAliases()
         const session = ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => w.sessions).find((s) => s.id === terminalId)
-        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude')) { pendingSessionRestores.delete(terminalId); return undefined }
-        if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(session.cliSessionId)) { pendingSessionRestores.delete(terminalId); return undefined }
-        const decision = decideAgentCommand(session.cliCommand, session.cliToolName, (name) => cliSessionTracker.resolveAlias(name))
-        return `${decision.inputCommand} ${session.cliToolName === 'codex' ? 'resume' : '--resume'} ${session.cliSessionId}`
+        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude' && session.cliToolName !== 'agy')) { pendingSessionRestores.delete(terminalId); return undefined }
+        if (!CONVERSATION_ID.test(session.cliSessionId)) { pendingSessionRestores.delete(terminalId); return undefined }
+        // agy: the command it was started with (AgySessionSync stored it without conversation flags)
+        if (session.cliToolName === 'agy') return `${agyStartCommand(session.cliCommand)} --conversation ${session.cliSessionId}`
+        return agentResumeCommand(session.cliToolName, session.cliSessionId, session.cliCommand)
     })
 
     ipcMain.handle('watch-codex-session', (_, sessionId: string, command: string): boolean => {
@@ -1773,8 +1866,25 @@ app.whenReady().then(async () => {
             })
         }
     })
-    forgetClaudeSession = (id) => claudeSessionSync.forget(id)
+    // The Antigravity CLI conversation each terminal shows (the lock its agy holds), the same way.
+    const agySessionSync = new AgySessionSync({
+        dataDir: agyHome,
+        ptyPids: () => terminalManager.listPtyPids(),
+        intervalMs: Number(process.env.CLIMANAGER_AGY_SYNC_MS) || undefined,
+        onConversation: (terminalId, cliSessionId, command) => {
+            const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
+            const session = workspaces.flatMap((w) => w.sessions ?? []).find((s) => s.id === terminalId)
+            if (!session || (session.cliToolName === 'agy' && session.cliSessionId === cliSessionId)) return
+            console.log(`[agy-session] ${terminalId} → ${cliSessionId} (was ${session.cliSessionId ?? 'none'})`)
+            persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'agy', baseCommand: command })
+        }
+    })
+    forgetClaudeSession = (id) => {
+        claudeSessionSync.forget(id)
+        agySessionSync.forget(id)
+    }
     claudeSessionSync.start()
+    agySessionSync.start()
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)
     ipcMain.handle('update-session-cli-info', (_, workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string): boolean => {
@@ -2171,6 +2281,17 @@ app.whenReady().then(async () => {
         if (!session.isPinned) delete session.isPinned
         store.set('workspaces', workspaces)
         return session.isPinned === true
+    })
+
+    // Role and tags beside the name (decision 0015). A label change: no AI mark, no relation.
+    ipcMain.handle('set-session-labels', (_, sessionId: string, change: { role?: unknown; tags?: unknown }) => {
+        const role = change.role === undefined ? undefined : parseSessionWorkRole(change.role)
+        if (role === 'invalid') return null
+        const workspaces = store.get('workspaces') as Workspace[]
+        const session = workspaces.flatMap(w => w.sessions).find(s => s.id === sessionId)
+        if (!session) return null
+        if (applySessionLabels(session, { role, tags: change.tags })) store.set('workspaces', workspaces)
+        return { role: session.role ?? null, tags: session.tags ?? [] }
     })
 
     ipcMain.handle('toggle-pin-workspace', (_, workspaceId: string) => {
@@ -3763,7 +3884,10 @@ app.whenReady().then(async () => {
     // Recently viewed sessions (sidebar All sessions order, the Related dialog's sort): the renderer reports each session the user switches to.
     ipcMain.handle('get-recent-sessions', () => recentSessions.list())
     ipcMain.handle('push-recent-session', (_e, sessionId: string): void => {
-        if (typeof sessionId === 'string' && sessionId) recentSessions.push(sessionId)
+        if (typeof sessionId !== 'string' || !sessionId) return
+        recentSessions.push(sessionId)
+        // a person looked at it (search, an inbox request, a session link): Autocron no longer hides or closes it
+        controlApiService.revealSession(sessionId)
     })
     // The tab row at the top of the main area: the renderer owns the order and saves the whole list.
     ipcMain.handle('get-session-tabs', () => sessionTabs.get())

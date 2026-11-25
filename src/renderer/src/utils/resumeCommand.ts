@@ -11,6 +11,8 @@ export function resumeCommandFor(
     resolveAlias?: AliasResolver
 ): string | undefined {
     if (!session.cliSessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.cliSessionId)) return undefined
+    // agy: main types its stored start command with `--conversation` (get-session-resume-command)
+    if (session.cliToolName === 'agy') return `agy --conversation ${session.cliSessionId}`
     if (session.cliToolName !== 'claude' && session.cliToolName !== 'codex') return undefined
     const command = decideAgentCommand(session.cliCommand, session.cliToolName, resolveAlias).inputCommand
     return session.cliToolName === 'codex'

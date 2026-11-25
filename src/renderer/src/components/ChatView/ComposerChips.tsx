@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Bot, ChevronDown, ExternalLink, Layers, ListChecks } from 'lucide-react'
-import type { ChatSendResult, ConversationAgent, ConversationMeta } from '../../../../shared/conversation'
+import type { ChatAgent, ChatSendResult, ConversationAgent, ConversationMeta } from '../../../../shared/conversation'
 import { formatTokens, modelLabel, todoProgress, type TodoItem } from './chatLib'
 import { TodoList } from './WorkBlock'
 
@@ -56,9 +56,12 @@ export function ModelChip({
     meta,
     working,
     onCommand,
-    onOpenTerminal
+    onOpenTerminal,
+    readOnly = false
 }: {
     agent: ConversationAgent | null
+    /** an agent the chat only reads (Antigravity): the recorded model, without a way to change it */
+    readOnly?: boolean
     meta: ConversationMeta | null
     working: boolean
     /** sends a `/model …` the way a typed message goes; a refusal is shown here, not dropped */
@@ -98,6 +101,17 @@ export function ModelChip({
         setRunning(false)
         if (outcome !== null) setRefused(outcome)
         else close()
+    }
+    if (readOnly) {
+        if (!model) return null
+        return (
+            <span className="chat-meta-chip" data-testid="chat-model-chip" data-readonly="true"
+                title={`${meta?.model ?? ''}${meta?.effort ? ` · reasoning ${meta.effort}` : ''} — change it in the terminal`}>
+                <Bot size={12} aria-hidden="true" />
+                <span className={model.named ? undefined : 'chat-meta-id'} data-testid="chat-model-name">{model.text}</span>
+                {meta?.effort && <span className="chat-meta-effort" data-testid="chat-model-effort">· {meta.effort}</span>}
+            </span>
+        )
     }
     if (!agent) return null
     return (
@@ -199,7 +213,7 @@ export function ModelChip({
 }
 
 /** The agent's mode (5c35cff8). Words only: the terminal's shift+tab changes it, the chat cannot. */
-export function ModeChip({ agent, meta }: { agent: ConversationAgent | null; meta: ConversationMeta | null }) {
+export function ModeChip({ agent, meta }: { agent: ChatAgent | null; meta: ConversationMeta | null }) {
     const mode = meta?.mode
     if (!agent || !mode) return null
     const title = agent === 'claude' ? `Mode: ${mode} — shift+tab in the terminal changes it` : `Mode: ${mode}`

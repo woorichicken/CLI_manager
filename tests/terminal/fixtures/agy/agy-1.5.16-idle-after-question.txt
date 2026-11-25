@@ -1,0 +1,36 @@
+────────────────────────────────────────────────────────────
+> Reply with exactly one word: hi
+
+  hi
+
+────────────────────────────────────────────────────────────
+> Use your shell tool to run exactly this command: rm notes.txt
+
+● Ran (rm notes.txt) (ctrl+o to expand)
+
+  The command rm notes.txt has been executed.
+
+────────────────────────────────────────────────────────────
+> Use your shell tool to run exactly: ls -la
+
+● Ran (ls -la) (ctrl+o to expand)
+
+
+    total 0
+    drwxr-xr-x  3 user  wheel   96 Nov 25 12:01 .
+    drwx------  8 user  wheel  256 Nov 25 11:59 ..
+    drwxr-xr-x  9 user  wheel  288 Nov 25 11:59 .git
+
+────────────────────────────────────────────────────────────
+> Before doing anything, use your ask-user question tool to ask me which color I like: red, green or blue. Do
+  nothing else.
+
+? Which color do you like?
+> green
+
+  You selected green.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                         Gemini 3.8 Flash · low

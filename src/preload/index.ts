@@ -26,6 +26,9 @@ const api = {
     reorderWorkspaces: (workspaceIds: string[]): Promise<boolean> => ipcRenderer.invoke('reorder-workspaces', workspaceIds),
     togglePinWorkspace: (workspaceId: string): Promise<boolean> => ipcRenderer.invoke('toggle-pin-workspace', workspaceId),
     togglePinSession: (workspaceId: string, sessionId: string): Promise<boolean> => ipcRenderer.invoke('toggle-pin-session', workspaceId, sessionId),
+    /** Sets a session's role and/or tags (decision 0015). Omitted keys stay; `role: null` clears. Null when refused. */
+    setSessionLabels: (sessionId: string, change: { role?: string | null; tags?: string[] }): Promise<{ role: string | null; tags: string[] } | null> =>
+        ipcRenderer.invoke('set-session-labels', sessionId, change),
     getFolders: (): Promise<any[]> => ipcRenderer.invoke('get-folders'),
     createFolder: (name: string): Promise<any> => ipcRenderer.invoke('create-folder', name),
     renameFolder: (folderId: string, newName: string): Promise<boolean> => ipcRenderer.invoke('rename-folder', folderId, newName),

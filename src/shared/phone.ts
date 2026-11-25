@@ -77,7 +77,8 @@ export interface PhoneSession {
     templateId?: string
     /**
      * A reply's thread (a fork opened with «Reply in thread», 1b965ad1). The Mac sidebar does not list
-     * it, so the phone's List and Tree skip it too; the phone's search still finds it.
+     * it, so the phone's List and Tree skip it too; the phone's search still finds it. Autocron's background
+     * sessions (TerminalSession.hidden) carry it too, for the same reason, until a person opens one.
      */
     thread?: true
 }

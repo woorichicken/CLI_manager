@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { SessionLabelsHost } from './components/Sidebar/SessionLabelsDialog'
+import { isSessionWorkRole, type SessionWorkRole } from '../../shared/sessionLabels'
 import { Sidebar } from './components/Sidebar/index'
 import { PhoneBadge } from './components/PhoneBadge'
 import { TerminalView, requestOpenTerminalPath, requestTerminalPage } from './components/TerminalView'
@@ -44,7 +46,7 @@ import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
-import { parentSessionsOf, relatedCounts, threadSessionIds, withoutThreadSessions } from './utils/relatedSessions'
+import { parentSessionsOf, relatedCounts, unlistedSessionIds, withoutThreadSessions } from './utils/relatedSessions'
 import { setSessionCatalog } from './utils/sessionMentions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 import { useSessionTabs } from './hooks/useSessionTabs'
@@ -1229,6 +1231,23 @@ function App() {
         }))
     }
 
+    const labelSessions = useMemo(() => workspaces.flatMap(w => w.sessions), [workspaces])
+    // Role and tags beside the name (decision 0015). The store answers with what it kept (normalized).
+    const handleSetSessionLabels = async (sessionId: string, change: { role?: SessionWorkRole | null; tags?: string[] }): Promise<boolean> => {
+        const saved = await window.api.setSessionLabels(sessionId, change)
+        if (!saved) return false
+        const role = isSessionWorkRole(saved.role) ? saved.role : undefined
+        setWorkspaces(prev => prev.map(w => !w.sessions.some(s => s.id === sessionId) ? w : {
+            ...w,
+            sessions: w.sessions.map(s => {
+                if (s.id !== sessionId) return s
+                const { role: _role, tags: _tags, ...rest } = s
+                return { ...rest, ...(role ? { role } : {}), ...(saved.tags.length ? { tags: saved.tags } : {}) }
+            })
+        }))
+        return true
+    }
+
     // Folder handlers
     const handleCreateFolder = async (name: string) => {
         const newFolder = await window.api.createFolder(name)
@@ -1378,9 +1397,9 @@ function App() {
         window.api.reportSidebarSessionOrder(sidebarSessionIdsKey ? sidebarSessionIdsKey.split('\n') : [])
     }, [sidebarSessionIdsKey, sessionsRestored])
 
-    // ⌘[ ] and ⌘⇧[ ] walk the sessions the sidebar lists: reply threads are not among them (1b965ad1),
-    // except one on screen (the active session or a split pane), which keeps its place.
-    const sidebarThreadIds = useMemo(() => threadSessionIds(sessionRelations), [sessionRelations])
+    // ⌘[ ] and ⌘⇧[ ] walk the sessions the sidebar lists: reply threads (1b965ad1) and Autocron's background
+    // sessions are not among them, except one on screen (the active session or a split pane), which keeps its place.
+    const sidebarThreadIds = useMemo(() => unlistedSessionIds(sessionRelations, workspaces), [sessionRelations, workspaces])
     const onScreenKey = [activeSession?.id ?? '', ...(splitLayout?.sessionIds ?? [])].join('\n')
     const navigationWorkspaces = useMemo(
         () => withoutThreadSessions(workspacesInSidebarOrder, sidebarThreadIds, onScreenKey.split('\n')),
@@ -1729,6 +1748,8 @@ function App() {
                 <BusyOverlay title="Restoring sessions…" />
             )}
 
+            {/* Mounted here, not in the sidebar: a tab's menu opens it while the sidebar is closed. */}
+            <SessionLabelsHost sessions={labelSessions} onSave={handleSetSessionLabels} />
             {isSidebarOpen && (
                 <Sidebar
                     workspaces={sortedWorkspaces}
@@ -1752,6 +1773,7 @@ function App() {
                     onReorderWorkspaces={handleReorderWorkspaces}
                     onTogglePin={handleTogglePin}
                     onToggleSessionPin={handleToggleSessionPin}
+                    onSetSessionLabels={handleSetSessionLabels}
                     folders={folders}
                     onCreateFolder={handleCreateFolder}
                     onRenameFolder={handleRenameFolder}

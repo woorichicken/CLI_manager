@@ -15,7 +15,7 @@ import { DEFAULT_QUICK_REPLIES, keepQuickReplyColors } from '../../shared/conver
 // The sidebar's own ordering functions (pure, types only): the phone's list is the Mac's All
 // sessions List exactly because it is computed by the same code, not a copy of it.
 import { groupBySessionFolder, orderForAllSessions, sessionsInSidebarOrder, type SessionEntry } from '../../renderer/src/utils/sessionNavigation'
-import { sessionForestFor, threadSessionIds } from '../../renderer/src/utils/relatedSessions'
+import { sessionForestFor, unlistedSessionIds } from '../../renderer/src/utils/relatedSessions'
 import { workspacesInLoadOrder } from '../workspaceLoadOrder'
 import { PhoneDevices } from './PhoneDevices'
 import { dockHostFiles, dockLocation, PhoneDock } from './phoneDock'
@@ -139,7 +139,8 @@ export function setupPhone(deps: PhoneSetupDeps): PhoneSetup {
         // Reply threads are sent flagged, not as rows (1b965ad1 — as the Mac sidebar): the phone's
         // search finds them, its List and Tree skip them, and the tree is built without them.
         const relations = deps.sessionRelations?.() ?? []
-        const threads = threadSessionIds(relations)
+        // Autocron's background sessions (TerminalSession.hidden) are sent the same way, until a person opens one.
+        const threads = unlistedSessionIds(relations, all)
         const entries = orderForAllSessions(drawn, deps.recentSessions())
         const grouped = groupBySessionFolder(entries, sessionFolders)
         const ordered = [...grouped.folders.flatMap((group) => group.rows), ...grouped.unfiled]

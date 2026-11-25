@@ -26,6 +26,7 @@ declare global {
             reorderWorkspaces: (workspaceIds: string[]) => Promise<boolean>
             togglePinWorkspace: (workspaceId: string) => Promise<boolean>
             togglePinSession: (workspaceId: string, sessionId: string) => Promise<boolean>
+            setSessionLabels: (sessionId: string, change: { role?: string | null; tags?: string[] }) => Promise<{ role: string | null; tags: string[] } | null>
             getFolders: () => Promise<WorkspaceFolder[]>
             createFolder: (name: string) => Promise<WorkspaceFolder>
             renameFolder: (folderId: string, newName: string) => Promise<boolean>

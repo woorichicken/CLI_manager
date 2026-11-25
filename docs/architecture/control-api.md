@@ -182,7 +182,7 @@ crontab lines and `/loop` sessions nobody can see together (request 2026-11-12, 
 `brand/artifacts/eli5-routine-hub-plan.html`: 「도는 곳 5군데, 보는 창 3개를 하나로」). Shown in the
 Loop window's **Autocron** tab. Code: `src/shared/cron.ts` (schedule math, missed-run decision — pure) ·
 `src/main/CronStore.ts` (jobs, runs, bookmark) · `src/main/CronService.ts` (tick, runner) ·
-renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t132` (no Electron), `t128`/`t130`/`t133`/`t148` (the app).
+renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t132`/`t166` (no Electron), `t128`/`t130`/`t133`/`t148`/`t167` (the app).
 
 | Piece | Contract |
 |---|---|
@@ -194,7 +194,8 @@ renderer `components/LoopDashboard/AutocronPanel.tsx`. Tests: `t127`/`t129`/`t13
 | Missed | Times that passed while the Mac was off, asleep or the app closed fold into **one** decision (the newest; `missedCount` = older ones folded in). Per job: `once` (default) — run one time if within `withinMinutes` (default 360, max 7 days), else a `missed` record "more than N min late" · `skip` — record and wait · `notify` — record and a system notification. A run due now covers the misses before it |
 | Bookmark | Per job, the end of the last tick (`autocronCheckedAt`). It moves **before** the run starts, so a crash never replays a run. Switching a job on, or changing its schedule, restarts it at now — no catch-up of the old schedule or of time it was off |
 | Window | A new job's form has **Save & run now** (saves, then runs once — the schedule and bookmark do not move; editing has Save only). The detail has `Details · Chat`: Chat shows a run's session in the same Chat view as the main window (no terminal — a terminal view attaches to one window). «Talk here» on a run picks it; the default is the newest run with a session. An attach job links to its loop in the Loops tab instead |
-| Runs | `started` (session opened and prompt sent / typed into the loop) · `failed` (`note` why; also a notification) · `missed`. `trigger`: `scheduled`, `caught-up`, `manual`. `sessionId` → «Open session» (focuses it in the main window; an attach run opens the Loop window). A run still starting when the next comes → that one fails ("previous run was still starting") |
+| Runs | `started` (session opened and prompt sent / typed into the loop) · `failed` (`note` why; also a notification) · `missed`. `trigger`: `scheduled`, `caught-up`, `manual`. `sessionId` → «Open session» (focuses it in the main window; an attach run opens the Loop window; a closed background session is resumed — see Background). `closedAt` · `conversation`: the background session was closed when done. A run still starting when the next comes → that one fails ("previous run was still starting") |
+| Background | A `new` run's session opens **hidden** (`TerminalSession.hidden`, 2026-11-24 request 「기본은 안 보이고, 루프 화면에서 열면 추가」): the sidebar's lists, ⌘[ ] and the phone list leave it out the way they leave out reply threads (`unlistedSessionIds`); search, the Loop window's Chat and the API still reach it. It joins the lists for good when a person opens it — «Open session», `focus_session`, or viewing it in the main window any other way (search, an inbox request, a session link — main's `push-recent-session`). Each tick (`sweepBackground`): idle **10 min** (`CRON_IDLE_CLOSE_MS` — no output, not working, no background shell/agent counted on screen, no question) → closed, its conversation (`agent`, `id`, start command, `cwd`, name) copied to the run (`closedAt`, `conversation`), and the run's button reads **Resume**: a new, listed session runs `<the session's own command> --resume <id>` (Codex `resume <id>`, the restart's `agentResumeCommand`) and the run names it. Only a Claude/Codex session with a conversation id is closed — anything else is shown instead (closing would lose its scrollback). A question on screen → one inbox request (`question`) per question, never closed. A failed start is shown at once; a hidden session no live run owns (job deleted, record cut at 500) is shown on the next tick. Why hiding is not headless (`types.ts` «claude -p»): the session is a real terminal the person can open at any time, and the run row links to it |
 | Kept | electron-store `autocrons` (max **100**), `autocronRuns` (newest **500**, all jobs), `autocronCheckedAt`. Deleting a job deletes its runs |
 | AI mark | Sessions opened by a job are marked `aiControl.client = "autocron"` |
 
@@ -329,6 +330,13 @@ helper), so the two are not the same array.
 
 `sessionFolder` — `{ id, name }` of the All-sessions folder the session sits in, or `null`.
 
+`role` — what the session is for: `lead` · `work` · `talk` · `watch`, or `null`. `tags` — free words
+beside the name (`[]` when none). Both are labels, set from the session menu or `POST …/labels`; the
+name stays the work summary (decision [0015](../decisions/0015-session-role-and-tags.md)). A role is
+read from its id or its label in any case; anything else is `400 bad_role` and nothing is saved. Tags
+are normalized: one line, no leading `#`, ≤32 characters, ≤8 per session, case duplicates dropped
+(first spelling kept) — a tag is never refused, one that normalizes to nothing is dropped.
+
 ## Workspace registration
 
 Opening a session in a folder that is not a workspace yet registers it. Without care those pile up
@@ -365,14 +373,15 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | GET | `/v1/workspaces` | `?query=` substring | workspaces with `kind`, session counts, `folder` (`{ id, name }` or `null`), `registeredBy` (`ai`\|`user`), `registeredByClient`, `ephemeral` |
 | DELETE | `/v1/workspaces/:id` | | unregisters a workspace the API registered (files untouched). `403 not_ai_registered`, `409 has_sessions`, `409 has_worktrees`, `404 workspace_not_found` |
 | GET | `/v1/templates` | | `{ id, name, command, description }[]` |
-| GET | `/v1/sessions` | `?scope=ai\|all` (default `ai`), `?query=` substring of session, workspace or folder | sessions marked as AI-driven, or all of them |
-| POST | `/v1/sessions` | `path` or `workspaceId`; `template` or `command`; `name`, `prompt`, `focus`; `folder`, `ephemeral` (new registrations only) | `{ session, workspace, createdWorkspace, createdFolder, terminalStarted, promptSent, note? }` |
+| GET | `/v1/sessions` | `?scope=ai\|all` (default `ai`), `?query=` substring of session, workspace or folder, `?role=` (`400 bad_role` when unknown), `?tag=` (case and `#` ignored) | sessions marked as AI-driven, or all of them |
+| POST | `/v1/sessions` | `path` or `workspaceId`; `template` or `command`; `name`, `prompt`, `focus`; `folder`, `ephemeral` (new registrations only); `role`, `tags` (checked before anything is made) | `{ session, workspace, createdWorkspace, createdFolder, terminalStarted, promptSent, note? }` |
 | GET | `/v1/sessions/:id` | | session |
 | GET | `/v1/sessions/:id/output` | `?mode=screen\|tail&lines=` | `{ session, mode, cols, rows, lines[] }` |
 | POST | `/v1/sessions/:id/input` | `text`, `submit` (default true), `keys[]`, `force` | session; `submitted: false` when the text is still in the agent's input box after Enter (see below) |
 | POST | `/v1/sessions/:id/wait` | `timeoutMs` (≤600000), `quietMs`, `lines` | output + `{ timedOut, waitedMs, sleptMs }` — time the machine slept is not counted against `timeoutMs` |
 | POST | `/v1/sessions/:id/focus` | | session (the app switches to it; the window is never raised) |
 | POST | `/v1/sessions/:id/rename` | `name` (trimmed, ≤80 chars) | session — renames it in the sidebar; does not set the AI mark |
+| POST | `/v1/sessions/:id/labels` | `role` (string, or `null` to clear), `tags` (array — replaces the list, `[]` clears); omitted keys stay, one is required | session. `400 bad_role`, `400 bad_request` (neither given, or `tags` not an array), `404 not_found`; a label change — no AI mark, no relation |
 | POST | `/v1/sessions/:id/session-folder` | `folder`: id or name, or `null` to take it out | session. `404 folder_not_found`, `409 ambiguous_folder`; a label change — no AI mark, no relation |
 | GET | `/v1/sessions/:id/relations` | | `{ sessionId, relations: [{ sessionId, name, workspaceName, kind: opened\|connected\|manual, direction: outgoing\|incoming, at }] }` — `outgoing` = this session is the `from` of the pair. Pairs the user removed are left out. Not a field of the session so the list (100+ sessions) stays small |
 | POST | `/v1/sessions/:id/fork` | `scope` (`whole` default \| `excerpt`), `message`, `quote`, `turnIndex` (default: the latest reply) | `201 { session, scope, messageSent, note? }` — see [Forking a conversation](#forking-a-conversation). `400` bad scope/turnIndex, `404 not_found`, `409 no_conversation`, `409 turn_changed`, `413 too_large` |
@@ -438,7 +447,7 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 `POST /mcp`, JSON-RPC 2.0, stateless, `application/json` responses; `GET` → 405. Protocol versions
 2024-11-05 … 2025-11-25 are echoed. Tools: `list_workspaces`, `list_templates`, `list_sessions`,
 `open_session` (with `folder`, `session_folder`, `ephemeral`), `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
-`focus_session`, `rename_session`, `release_session`, `close_session` (with `hand_to`), `list_session_folders`, `create_session_folder`, `rename_session_folder`, `delete_session_folder`, `move_session_to_folder` (`session_id`, `folder`: string or null), `list_session_relations`, `fork_session` (`session_id`, `scope`, `message`, `quote`, `turn_index`), `unregister_workspace`, `inbox_notify`
+`focus_session`, `rename_session`, `set_session_labels` (`session_id`, `role`: string or null, `tags`), `release_session`, `close_session` (with `hand_to`), `list_session_folders`, `create_session_folder`, `rename_session_folder`, `delete_session_folder`, `move_session_to_folder` (`session_id`, `folder`: string or null), `list_session_relations`, `fork_session` (`session_id`, `scope`, `message`, `quote`, `turn_index`), `unregister_workspace`, `inbox_notify`
 (`kind`, `text`, `url`, `session_id` — or the caller header), `inbox_list` (`unread_only`), `checklist_list` (`status`, `project`),
 `checklist_create` (`title`, `items`, `due`, `project`), `checklist_update` (`checklist`, `title`, `due`, `project` — null clears),
 `checklist_add_items` (`checklist`, `items`), `checklist_check` (`checklist`, `item` — number from 1 or id, `done` default true; answers
