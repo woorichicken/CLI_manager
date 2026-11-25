@@ -679,6 +679,8 @@ export function TerminalView({
             })
             // A keystroke (not a terminal's own reply, which also comes through onData) keeps a preview tab.
             term.onKey(() => noteSessionInput(id))
+            // Hangul and other IME input composes outside onKey (keyCode 229) — a finished composition counts too.
+            term.textarea?.addEventListener('compositionend', () => noteSessionInput(id))
 
 
             // Handle scroll events (스크롤 중에는 ResizeObserver 무시)

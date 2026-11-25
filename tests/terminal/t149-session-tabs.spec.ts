@@ -331,6 +331,17 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => tabOrder(page)).toEqual(['s-3', 's-b', 's-2'])
         expect(await previewTabs(page)).toEqual([])
 
+        // Renaming it keeps it too (double-click on the tab = rename).
+        await sidebarRow(page, 's-1').click()
+        await expect.poll(() => previewTabs(page)).toEqual(['s-1'])
+        await page.locator('[data-session-tab="s-1"]').dblclick()
+        await page.locator('[data-session-tab-rename]').fill('T149ONE renamed')
+        await page.keyboard.press('Enter')
+        await expect.poll(() => previewTabs(page)).toEqual([])
+        await expect(page.locator('[data-session-tab="s-1"] [data-session-tab-name]')).toHaveText('T149ONE renamed')
+        await page.locator('[data-session-tab-close="s-1"]').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-3', 's-b', 's-2'])
+
         // A preview on screen at quit comes back as a preview.
         await sidebarRow(page, 's-1').click()
         await expect.poll(() => previewTabs(page)).toEqual(['s-1'])
@@ -349,6 +360,23 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => tabOrder(page2), { timeout: 30_000 }).toEqual(tabsAtQuit)
         await expect.poll(() => visibleSession(page2), { timeout: 15_000 }).toBe('s-1')
         expect(await previewTabs(page2)).toEqual(['s-1'])
+    })
+
+    test('preview tabs: ⌘W on the only tab lands on the sidebar neighbour; × on it leaves the screen empty', async () => {
+        const page = await launchThree({})
+        await sidebarRow(page, 's-2').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-2'])
+        // no tab beside it: the row above in the sidebar (as with tabs off), which then takes the preview
+        await page.keyboard.press('Meta+w')
+        await expect(page.locator('[data-session-item="s-2"]')).toHaveCount(0, { timeout: 10_000 })
+        await expect.poll(() => visibleSession(page)).toBe('s-1')
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1'])
+        expect(await previewTabs(page)).toEqual(['s-1'])
+        // × closes the only tab: nothing on screen, the session keeps running
+        await page.locator('[data-session-tab-close="s-1"]').click()
+        await expect(page.getByTestId('session-tab-bar')).toHaveCount(0)
+        await expect.poll(() => visibleSession(page)).toBe('none')
+        await expect(sidebarRow(page, 's-1')).toBeVisible()
     })
 
     test('preview tabs: the setting switches them off (previews become kept tabs)', async () => {
