@@ -355,6 +355,7 @@ const api = {
         ipcRenderer.on('session-relations', listener)
         return () => ipcRenderer.removeListener('session-relations', listener)
     },
+    clearOpenInChat: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('clear-open-in-chat', sessionId),
     addSessionRelation: (from: string, to: string): Promise<boolean> => ipcRenderer.invoke('add-session-relation', from, to),
     removeSessionRelation: (a: string, b: string): Promise<boolean> => ipcRenderer.invoke('remove-session-relation', a, b),
     getSessionFolders: (): Promise<SessionFolder[]> => ipcRenderer.invoke('get-session-folders'),

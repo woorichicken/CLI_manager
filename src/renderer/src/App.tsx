@@ -18,7 +18,7 @@ import { SessionViewToggle } from './components/SessionViewToggle'
 import { SessionChatSlot } from './components/SessionChatSlot'
 import { ChatFilePreview } from './components/ChatFilePreview'
 import { isAgentSession, setAgentPending, useAgentPendingVersion } from './utils/agentSession'
-import { getSessionViewMode, setSessionPeek, setSessionViewMode } from './hooks/useSessionViewMode'
+import { applyOpenInChat, getSessionViewMode, setSessionPeek, setSessionViewMode } from './hooks/useSessionViewMode'
 import { sendChatCommand } from './components/ChatView/chatContext'
 import { HandoffNoticeToast } from './components/ChatView/HandoffNoticeToast'
 import { showHandoffNotice } from './components/ChatView/draftHandoff'
@@ -45,6 +45,7 @@ import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
 import { parentSessionsOf, relatedCounts, threadSessionIds, withoutThreadSessions } from './utils/relatedSessions'
+import { setSessionCatalog } from './utils/sessionMentions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 import { useSessionTabs } from './hooks/useSessionTabs'
 import { SessionTabBar, type SessionTabEntry } from './components/SessionTabs/SessionTabBar'
@@ -144,6 +145,13 @@ function App() {
     const [checklistsOpen, setChecklistsOpen] = useState(false)
     const sessionRelations = useSessionRelations()
     const relatedCountBySession = useMemo(() => relatedCounts(sessionRelations, workspaces), [sessionRelations, workspaces])
+    // the Chat composer's `@` menu names sessions: it reads this list from a module store, not through props
+    useEffect(() => setSessionCatalog({ workspaces, relations: sessionRelations }), [workspaces, sessionRelations])
+    // a session made from a template that opens in Chat starts on Chat (once)
+    useEffect(() => {
+        if (workspaces.length === 0) return
+        for (const id of applyOpenInChat(workspaces.flatMap(workspace => workspace.sessions ?? []))) void window.api.clearOpenInChat(id)
+    }, [workspaces])
 
     // The session the user is looking at: the focused split pane, else the active tab. One place reports it
     // for the recently viewed order (sidebar All sessions, Related sort); main skips a repeat of the id already in front.

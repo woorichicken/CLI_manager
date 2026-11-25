@@ -1,6 +1,6 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { AlertTriangle, ArrowUp, FileText, Loader2, Plus, Square, X } from 'lucide-react'
-import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport } from '../../../../shared/conversation'
+import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { AlertTriangle, ArrowUp, FileText, Loader2, Plus, Square, SquareTerminal, X } from 'lucide-react'
+import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, ChatTransport, SessionMention } from '../../../../shared/conversation'
 import { InputBusyNote } from './InputBusyNote'
 import { ComposerSuggestion } from './ComposerSuggestion'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH, quickReplyColorOf } from '../../../../shared/conversation'
@@ -9,6 +9,7 @@ import { QuickReplyRow } from './QuickReplyRow'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 import { DictationButton } from './DictationButton'
 import { useDictation } from './useDictation'
+import { sessionMentionText } from '../../utils/sessionMentions'
 
 export { appendDraft } from './draftStore'
 
@@ -54,12 +55,27 @@ interface Attachment {
 }
 let attachmentSequence = 0
 
+const RELATION_LABEL: Record<NonNullable<SessionMention['relation']>, string> = {
+    below: 'Below',
+    beside: 'Beside',
+    above: 'Above',
+    also: 'Related'
+}
+
 const SOURCE_LABEL: Record<ChatCommand['source'], string> = {
     builtin: 'built-in',
     skill: 'skill',
     command: 'command',
     project: 'project',
     prompt: 'prompt'
+}
+
+/** A `@` menu row for a session, not a command (a ChatCommand has no `workspace`). */
+function isSessionMention(choice: ChatCommand | string | SessionMention): choice is SessionMention {
+    return typeof choice !== 'string' && 'workspace' in choice
+}
+function isCommandChoice(choice: ChatCommand | string | SessionMention): choice is ChatCommand {
+    return typeof choice !== 'string' && !isSessionMention(choice)
 }
 
 export interface ComposerHandle {
@@ -141,6 +157,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const [attachments, setAttachments] = useState<Attachment[]>([])
     const [commands, setCommands] = useState<ChatCommand[] | null>(null)
     const [files, setFiles] = useState<string[]>([])
+    // the sessions found for one `@` query: kept with it, so rows for an older query are never offered for a newer one
+    const [sessionMentions, setSessionMentions] = useState<{ query: string; rows: SessionMention[] }>({ query: '', rows: [] })
     const [menuIndex, setMenuIndex] = useState(0)
     const [menuDismissed, setMenuDismissed] = useState(false)
     const [dragging, setDragging] = useState(false)
@@ -331,9 +349,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }
     }, [fileQuery, sessionId, transport])
 
+    // sessions to name come first in the `@` menu (89755e23); a transport that does not know them offers files only
+    useEffect(() => {
+        if (fileQuery === null || !transport.listSessionMentions) return
+        let live = true
+        void transport
+            .listSessionMentions(sessionId, fileQuery)
+            .then((found) => live && setSessionMentions({ query: fileQuery, rows: found }))
+            .catch(() => live && setSessionMentions({ query: fileQuery, rows: [] }))
+        return () => {
+            live = false
+        }
+    }, [fileQuery, sessionId, transport])
+
     const usage = useMemo(readUsage, [trigger?.kind])
     const commandChoices = trigger?.kind === 'slash' && commands ? rankCommands(commands, trigger, usage) : []
-    const choices: (ChatCommand | string)[] = trigger?.kind === 'slash' ? commandChoices : trigger?.kind === 'file' ? files : []
+    const shownSessions = trigger?.kind === 'file' && sessionMentions.query === trigger.query ? sessionMentions.rows : []
+    const choices: (ChatCommand | string | SessionMention)[] = trigger?.kind === 'slash' ? commandChoices : trigger?.kind === 'file' ? [...shownSessions, ...files] : []
     // Only the command reads light blue, wherever it stands (85259f8e · 1fcd9008 · e833d0b9). A textarea has one
     // colour, so its words go transparent and a copy underneath paints them.
     const pieces = useMemo(() => (commands && wantsCommands ? commandPieces(text, commands, codex) : []), [text, commands, wantsCommands, codex])
@@ -348,11 +380,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         if (menuOpen) document.getElementById(`chat-menu-${sessionId}-${selected}`)?.scrollIntoView({ block: 'nearest' })
     }, [menuOpen, selected, sessionId])
 
-    const choose = (choice: ChatCommand | string): void => {
+    const choose = (choice: ChatCommand | string | SessionMention): void => {
         if (!trigger) return
         const caretAt = Math.min(caret, text.length)
-        const inserted = typeof choice === 'string' ? `${fileMention(choice)} ` : `${choice.trigger ?? '/'}${choice.name} `
-        if (typeof choice !== 'string') bumpUsage(choice.name)
+        const inserted =
+            typeof choice === 'string' ? `${fileMention(choice)} ` : isSessionMention(choice) ? `${sessionMentionText(choice)} ` : `${choice.trigger ?? '/'}${choice.name} `
+        if (isCommandChoice(choice)) bumpUsage(choice.name)
         const next = `${text.slice(0, trigger.start)}${inserted}${text.slice(caretAt)}`
         setDraft(next, trigger.start + inserted.length)
     }
@@ -657,38 +690,59 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 </p>
             )}
             {menuOpen && trigger && (
-                <div className="chat-complete" role="listbox" aria-label={trigger.kind === 'slash' ? 'Commands' : 'Files'} data-testid="chat-complete">
+                <div className="chat-complete" role="listbox" aria-label={trigger.kind === 'slash' ? 'Commands' : 'Sessions and files'} data-testid="chat-complete">
                     {choices.map((choice, index) => {
-                        const isCommand = typeof choice !== 'string'
+                        const isSession = isSessionMention(choice)
+                        const isCommand = isCommandChoice(choice)
+                        const groupTitle = index === 0 && isSession ? 'Sessions' : index === shownSessions.length && typeof choice === 'string' && shownSessions.length > 0 ? 'Files' : null
                         return (
-                            <button
-                                key={isCommand ? `${choice.trigger ?? '/'}${choice.name}` : choice}
-                                id={`chat-menu-${sessionId}-${index}`}
-                                type="button"
-                                role="option"
-                                aria-selected={index === selected}
-                                className={`chat-complete-row${index === selected ? ' is-selected' : ''}`}
-                                data-testid="chat-complete-row"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onMouseEnter={() => setMenuIndex(index)}
-                                onClick={() => choose(choice)}
-                            >
-                                {isCommand ? (
-                                    <>
-                                        <span className="chat-complete-name">
-                                            {choice.trigger ?? '/'}
-                                            {choice.name}
-                                        </span>
-                                        <span className="chat-complete-description">{choice.description}</span>
-                                        <span className="chat-complete-source">{choice.terminal === 'always' ? 'terminal' : SOURCE_LABEL[choice.source]}</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <FileText size={12} aria-hidden="true" />
-                                        <span className="chat-complete-name">{choice}</span>
-                                    </>
+                            <Fragment key={isSessionMention(choice) ? `session:${choice.id}` : isCommandChoice(choice) ? `${choice.trigger ?? '/'}${choice.name}` : choice}>
+                                {groupTitle && (
+                                    <div className="chat-complete-group" data-testid="chat-complete-group">
+                                        {groupTitle}
+                                    </div>
                                 )}
-                            </button>
+                                <button
+                                    id={`chat-menu-${sessionId}-${index}`}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={index === selected}
+                                    className={`chat-complete-row${index === selected ? ' is-selected' : ''}`}
+                                    data-testid="chat-complete-row"
+                                    data-kind={isSession ? 'session' : isCommand ? 'command' : 'file'}
+                                    {...(isSessionMention(choice) ? { 'data-session-mention': choice.id } : {})}
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onMouseEnter={() => setMenuIndex(index)}
+                                    onClick={() => choose(choice)}
+                                >
+                                    {isSessionMention(choice) ? (
+                                        <>
+                                            <SquareTerminal size={12} aria-hidden="true" />
+                                            <span className="chat-complete-name chat-complete-session">{choice.name}</span>
+                                            <span className="chat-complete-description">{choice.workspace}</span>
+                                            {choice.relation && (
+                                                <span className="chat-complete-source" data-relation={choice.relation}>
+                                                    {RELATION_LABEL[choice.relation]}
+                                                </span>
+                                            )}
+                                        </>
+                                    ) : isCommandChoice(choice) ? (
+                                        <>
+                                            <span className="chat-complete-name">
+                                                {choice.trigger ?? '/'}
+                                                {choice.name}
+                                            </span>
+                                            <span className="chat-complete-description">{choice.description}</span>
+                                            <span className="chat-complete-source">{choice.terminal === 'always' ? 'terminal' : SOURCE_LABEL[choice.source]}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FileText size={12} aria-hidden="true" />
+                                            <span className="chat-complete-name">{choice}</span>
+                                        </>
+                                    )}
+                                </button>
+                            </Fragment>
                         )
                     })}
                 </div>

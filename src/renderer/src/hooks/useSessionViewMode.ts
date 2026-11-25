@@ -61,6 +61,24 @@ export function useSessionViewMode(sessionId: string | undefined): SessionViewMo
     return useSyncExternalStore(subscribe, () => (sessionId ? getSessionViewMode(sessionId) : 'terminal'))
 }
 
+/**
+ * Sessions created from a template that opens in Chat (`TerminalSession.openInChat`) are switched to Chat
+ * the first time they are seen, once (fbe10f54). Returns the ids switched now: the caller tells main, which
+ * deletes the flag from the stored session — so after that nothing can switch it again, not a restart and
+ * not an empty localStorage. `handled` only covers the moment before main's answer (the flag is still in
+ * the renderer's copy of the workspaces), so a Terminal choice made at once is not undone.
+ */
+const openInHandled = new Set<string>()
+
+export function applyOpenInChat(sessions: Array<{ id: string; openInChat?: boolean }>): string[] {
+    const fresh = sessions.filter((session) => session.openInChat && !openInHandled.has(session.id)).map((session) => session.id)
+    for (const id of fresh) {
+        openInHandled.add(id)
+        setSessionViewMode(id, 'chat')
+    }
+    return fresh
+}
+
 /*
  * "Peek": a command only the terminal can show (`/config`, a bare `/model`) was sent from the
  * chat, so the session switched to its terminal. The terminal then carries a "Back to Chat" bar

@@ -22,7 +22,7 @@ import { countSessionActivity } from './systemMonitorInfo'
 import { CLISessionTracker } from './CLISessionTracker'
 import { codexResumeFromArgv, CodexSessionLocator } from './CodexSessionLocator'
 import { AgentConversations, AgentConversationError } from './agentConversations'
-import { decideAgentCommand } from '../shared/agentCommand'
+import { decideAgentCommand, templateOpensInChat } from '../shared/agentCommand'
 import type { AgentConversationConnectInput } from '../shared/conversation'
 import { LoopManager } from './LoopManager'
 import { HookInstaller, hookIntegrationAllowed } from './HookInstaller'
@@ -459,6 +459,7 @@ const inbox = new InboxStore(store, (requests) => {
 const checklists = new ChecklistStore(store, (all) => broadcast(CHECKLISTS_CHANNEL, all))
 
 const controlApiService = new ControlApiService({
+    resolveAlias: (name) => cliSessionTracker.resolveAlias(name),
     store,
     terminals: terminalManager,
     mirror: terminalMirror,
@@ -1878,6 +1879,8 @@ app.whenReady().then(async () => {
             return null
         }
 
+        // aliases decide whether a template command is an agent (cld → claude) for the open-in-Chat flag below
+        await ensureShellAliases()
         // Only a template that exists is remembered — the Related dialog's "plain terminal" choice
         // has an id of its own that is not a template.
         const templates = (store.get('customTemplates') as TerminalTemplate[] | undefined) ?? []
@@ -1890,7 +1893,9 @@ app.whenReady().then(async () => {
             cwd: workspace.path,
             type,
             initialCommand,
-            ...(knownTemplateId ? { templateId: knownTemplateId } : {})
+            ...(knownTemplateId ? { templateId: knownTemplateId } : {}),
+            // a template that opens in Chat: the renderer switches this new session once (fbe10f54)
+            ...(templates.some(t => t.id === knownTemplateId && templateOpensInChat(t, (name) => cliSessionTracker.resolveAlias(name))) ? { openInChat: true } : {})
         }
 
         workspace.sessions.push(newSession)
@@ -1899,6 +1904,22 @@ app.whenReady().then(async () => {
         store.set('workspaces', workspaces)
 
         return { success: true, data: newSession }
+    })
+
+    // The renderer switched a session to Chat once (fbe10f54): the hint is spent, so a Terminal choice made later
+    // can never be undone by it — not even when the renderer's own storage is empty after a restart.
+    ipcMain.handle('clear-open-in-chat', async (_, sessionId: string): Promise<boolean> => {
+        const workspaces = store.get('workspaces') as Workspace[]
+        let cleared = false
+        for (const workspace of workspaces) {
+            const session = workspace.sessions.find(s => s.id === sessionId)
+            if (session?.openInChat) {
+                delete session.openInChat
+                cleared = true
+            }
+        }
+        if (cleared) store.set('workspaces', workspaces)
+        return cleared
     })
 
     // Create worktree as a separate workspace

@@ -1,5 +1,6 @@
 import type { AttachResult, ChatOpenMode, ChatTransport, ConversationSnapshot } from '../../../shared/conversation'
 import { MAX_ATTACH_BYTES } from '../../../shared/conversation'
+import { getSessionCatalog, sessionMentionsFor } from './sessionMentions'
 
 /**
  * The Chat view's transport inside the Electron app: main's ConversationService
@@ -101,6 +102,11 @@ export const electronChatTransport: ChatTransport = {
         if (!cwd) return []
         const result = await window.api.searchFiles(cwd, query)
         return result.success ? result.files.slice(0, SEARCH_RESULTS).map((file) => file.relativePath) : []
+    },
+    async listSessionMentions(sessionId, query) {
+        const { workspaces, relations } = getSessionCatalog()
+        const viewedIds = await window.api.getRecentSessions().catch(() => [] as string[])
+        return sessionMentionsFor({ relations, sessionId, workspaces, viewedIds, query })
     },
     openFile(sessionId, path, line, mode) {
         if (fileOpener) fileOpener(path, line, sessionId, mode)

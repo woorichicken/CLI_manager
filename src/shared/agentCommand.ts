@@ -153,6 +153,15 @@ export function commandAgent(command: string | undefined, resolveAlias?: AliasRe
     return executableAgent(executable.text) ?? commandAgent(resolveAlias?.(executable.text), resolveAlias, depth + 1)
 }
 
+/**
+ * Whether a template's new sessions should open on Chat (fbe10f54): it asks for Chat and its command starts
+ * Claude Code or Codex (a shell alias counts). A command that is not an agent has no Chat to open, and a
+ * later `claude` typed into it must not flip it, so such a template never flags its sessions.
+ */
+export function templateOpensInChat(template: { openIn?: string; command?: string }, resolveAlias?: AliasResolver): boolean {
+    return template.openIn === 'chat' && commandAgent(template.command, resolveAlias) !== null
+}
+
 /** Read-only policy used for storage, manual connect and the final restart input alike. */
 export function decideAgentCommand(command: string | undefined, agent: ConversationAgent, resolveAlias?: AliasResolver, depth = 0): AgentCommandDecision {
     const original = command || agent
