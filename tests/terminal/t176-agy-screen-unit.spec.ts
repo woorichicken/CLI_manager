@@ -6,7 +6,7 @@ import { TerminalMirror } from '../../src/main/TerminalMirror'
 import { screenShowsBusy } from '../../src/main/screenLines'
 
 /**
- * T166 — Antigravity CLI (agy) screens, without Electron.
+ * T176 — Antigravity CLI (agy) screens, without Electron.
  *
  * The screens in fixtures/agy are copies of a real agy 1.5.16 session (recorded 2026-11-25 at
  * 110×36 in a scratch folder, Gemini 3.8 Flash low; the account and the folder are masked). Before
@@ -31,7 +31,7 @@ async function mirrorShowing(rows: string[]): Promise<TerminalMirror> {
     return mirror
 }
 
-test.describe('T166 agy screens', () => {
+test.describe('T176 agy screens', () => {
     for (const name of ['working-generating', 'working-running']) {
         test(`${name}: busy, no question, the API does not see a waiting prompt`, async () => {
             const mirror = await mirrorShowing(fixture(name))

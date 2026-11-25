@@ -5,7 +5,7 @@ import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, waitForBufferText, writeToTerminal } from './helpers'
 
 /**
- * T168 — an Antigravity CLI (agy) session in the app: resumed on restart, its conversation in the
+ * T178 — an Antigravity CLI (agy) session in the app: resumed on restart, its conversation in the
  * Chat view, sent to and stopped from the Chat, and found when agy is started by hand.
  *
  * The agy here is scripts/mock-cli/agy-mock.cjs run as a program named `agy` on a PATH with no real
@@ -17,8 +17,8 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, waitForBuff
 const MOCK = path.join(REPO_ROOT, 'scripts/mock-cli/agy-mock.cjs')
 const RESUMED_ID = '00000000-0000-4000-8000-0000000016a1'
 const NEW_ID = '00000000-0000-4000-8000-0000000016b2'
-const SHOTS = process.env.T168_SHOTS
-const LABEL = process.env.T168_LABEL ?? 'after'
+const SHOTS = process.env.T178_SHOTS
+const LABEL = process.env.T178_LABEL ?? 'after'
 
 let result: LaunchResult | null = null
 let root: string | null = null
@@ -35,11 +35,11 @@ async function shot(page: Page, name: string): Promise<void> {
     if (!SHOTS) return
     fs.mkdirSync(SHOTS, { recursive: true })
     await page.waitForTimeout(300)
-    await page.screenshot({ path: path.join(SHOTS, `t168-${LABEL}-${name}.png`) })
+    await page.screenshot({ path: path.join(SHOTS, `t178-${LABEL}-${name}.png`) })
 }
 
 function sandbox() {
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 't168-'))
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 't178-'))
     const home = path.join(root, 'home')
     const bin = path.join(root, 'bin')
     const project = path.join(root, 'project')
@@ -69,18 +69,18 @@ function sessionsIn(userDataDir: string): Array<Record<string, unknown>> {
     return (config.workspaces as Array<{ sessions: Array<Record<string, unknown>> }>).flatMap((workspace) => workspace.sessions)
 }
 
-test('T168 agy: resumed, read and driven from the Chat, found when started by hand', async () => {
+test('T178 agy: resumed, read and driven from the Chat, found when started by hand', async () => {
     test.setTimeout(180_000)
     const box = sandbox()
     seedLedger(box.agyHome, RESUMED_ID)
     result = await launchAppWithWorkspaces(
         [{
             id: 'w-t168',
-            name: 'T168 project',
+            name: 'T178 project',
             path: box.project,
             sessions: [
-                { id: 't168-agy', name: 'T168 agy', cliSessionId: RESUMED_ID, cliToolName: 'agy', cliCommand: 'agy --model gemini-3.8-flash-low' },
-                { id: 't168-shell', name: 'T168 shell' }
+                { id: 't178-agy', name: 'T178 agy', cliSessionId: RESUMED_ID, cliToolName: 'agy', cliCommand: 'agy --model gemini-3.8-flash-low' },
+                { id: 't178-shell', name: 'T178 shell' }
             ]
         }],
         {
@@ -99,9 +99,9 @@ test('T168 agy: resumed, read and driven from the Chat, found when started by ha
     const { page, userDataDir } = result
 
     // --- restart: the stored conversation is resumed with its own command ----------------------
-    await page.getByText('T168 agy', { exact: true }).first().click()
-    await waitForBufferText(page, 't168-agy', `ARGS: --model gemini-3.8-flash-low --conversation ${RESUMED_ID}`, 30_000)
-    await waitForBufferText(page, 't168-agy', 'Antigravity CLI (mock)', 10_000)
+    await page.getByText('T178 agy', { exact: true }).first().click()
+    await waitForBufferText(page, 't178-agy', `ARGS: --model gemini-3.8-flash-low --conversation ${RESUMED_ID}`, 30_000)
+    await waitForBufferText(page, 't178-agy', 'Antigravity CLI (mock)', 10_000)
 
     // --- the Chat: the ledger as turns, the model read only -----------------------------------
     await expect(page.getByTestId('view-toggle')).toBeVisible()
@@ -127,7 +127,7 @@ test('T168 agy: resumed, read and driven from the Chat, found when started by ha
     await composer.press('Enter')
     await expect(view.getByTestId('chat-working')).toBeVisible({ timeout: 10_000 })
     await shot(page, 'working')
-    await waitForBufferText(page, 't168-agy', 'ANSWER[3]: hello from chat', 15_000)
+    await waitForBufferText(page, 't178-agy', 'ANSWER[3]: hello from chat', 15_000)
     await expect(view.locator('[data-testid="chat-answer"]', { hasText: 'ANSWER[3]: hello from chat' })).toBeVisible({ timeout: 10_000 })
     await expect(view.getByTestId('chat-working')).toHaveCount(0, { timeout: 10_000 })
 
@@ -136,12 +136,12 @@ test('T168 agy: resumed, read and driven from the Chat, found when started by ha
     await composer.press('Enter')
     await expect(view.getByTestId('chat-working')).toBeVisible({ timeout: 10_000 })
     await view.getByTestId('chat-stop').click()
-    await waitForBufferText(page, 't168-agy', 'Cancelled.', 10_000)
+    await waitForBufferText(page, 't178-agy', 'Cancelled.', 10_000)
 
     // --- agy's question: no card, the chat says to answer it in the terminal ------------------
     await composer.fill('ASK')
     await composer.press('Enter')
-    await waitForBufferText(page, 't168-agy', 'Question 1/1: Which color do you like?', 10_000)
+    await waitForBufferText(page, 't178-agy', 'Question 1/1: Which color do you like?', 10_000)
     await expect(view.getByTestId('chat-prompt-card')).toHaveCount(0)
     await composer.fill('blue please')
     await composer.press('Enter')
@@ -149,14 +149,14 @@ test('T168 agy: resumed, read and driven from the Chat, found when started by ha
     await shot(page, 'question')
 
     // --- started by hand in a plain shell: found once its first prompt makes the conversation ---
-    await page.getByText('T168 shell', { exact: true }).first().click()
-    await writeToTerminal(page, 't168-shell', 'agy\r')
-    await waitForBufferText(page, 't168-shell', 'Antigravity CLI (mock)', 20_000)
-    await writeToTerminal(page, 't168-shell', 'first words\r')
-    await waitForBufferText(page, 't168-shell', 'ANSWER[1]: first words', 15_000)
-    await expect.poll(() => sessionsIn(userDataDir).find((session) => session.id === 't168-shell'), { timeout: 15_000 })
+    await page.getByText('T178 shell', { exact: true }).first().click()
+    await writeToTerminal(page, 't178-shell', 'agy\r')
+    await waitForBufferText(page, 't178-shell', 'Antigravity CLI (mock)', 20_000)
+    await writeToTerminal(page, 't178-shell', 'first words\r')
+    await waitForBufferText(page, 't178-shell', 'ANSWER[1]: first words', 15_000)
+    await expect.poll(() => sessionsIn(userDataDir).find((session) => session.id === 't178-shell'), { timeout: 15_000 })
         .toMatchObject({ cliToolName: 'agy', cliSessionId: NEW_ID, cliCommand: 'agy' })
     await expect(page.getByTestId('view-toggle')).toBeVisible({ timeout: 10_000 })
     // the resumed one kept its id and command
-    expect(sessionsIn(userDataDir).find((session) => session.id === 't168-agy')).toMatchObject({ cliToolName: 'agy', cliSessionId: RESUMED_ID, cliCommand: 'agy --model gemini-3.8-flash-low' })
+    expect(sessionsIn(userDataDir).find((session) => session.id === 't178-agy')).toMatchObject({ cliToolName: 'agy', cliSessionId: RESUMED_ID, cliCommand: 'agy --model gemini-3.8-flash-low' })
 })

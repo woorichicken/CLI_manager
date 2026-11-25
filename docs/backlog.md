@@ -40,7 +40,7 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 디스크 여유가 10GB 아래인 기계에서 t150 을 돌릴 때.
 
 ### Antigravity CLI(`agy`) — 남은 것: 되감기 반영 · 질문 카드 · `/` 명령 · 사용량 · fork
-- Discovered: 2026-11-20 brand 총괄 세션(「climanager 에 백로그로 안티그래비티 파싱도 넣어줘」). 1차는 2026-11-25 `feat/agents-1125` 에서 했다 — 대화 찾기(presence lock)·재시작 resume·Chat 읽기/보내기/Stop·화면 상태·읽기만 모델 칩(T166–T169, CLAUDE.md `AgySessionSync.ts` 줄).
+- Discovered: 2026-11-20 brand 총괄 세션(「climanager 에 백로그로 안티그래비티 파싱도 넣어줘」). 1차는 2026-11-25 `feat/agents-1125` 에서 했다 — 대화 찾기(presence lock)·재시작 resume·Chat 읽기/보내기/Stop·화면 상태·읽기만 모델 칩(T176–T179, CLAUDE.md `AgySessionSync.ts` 줄).
 - Evidence: 본문은 `.db` blob 이 아니라 `brain/<id>/.system_generated/logs/transcript_full.jsonl`(JSONL)에 있다(이 Mac 590개 전부). ovis 는 `.db` 를 되감기 색인(살아 있는 step 번호)으로만 읽는다(server/agy.ts:30–110, bun:sqlite — Electron 39 의 `node:sqlite` `DatabaseSync` 로 열리는 것 확인, ExperimentalWarning 1줄). agy 대화상자는 `↑/↓ Navigate · enter Select · esc Skip`(질문)·`tab Amend`(권한)·`enter Confirm`(신뢰) 힌트로 읽히지만 카드 파서(`promptScreen.ts`)는 Claude·Codex 형식뿐 — ovis 도 agy 카드 없음(server/dialogs/agy.ts 빈 파일). `/` 명령은 ovis server/skills/agy.ts(`~/.gemini/config/skills`). 사용량은 ovis 가 키체인 `gemini/antigravity` OAuth 토큰으로 `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` 를 부른다(server/usage.ts:684) — 새 외부 통신·자격증명 읽기라 사람 결정.
 - Why deferred: 1차 범위는 「정상 사용」(사람 11-25). 되감기는 ledger 가 step_index 를 다시 쓸 때만 반영된다 — idle 되감기는 DB 가 먼저 바뀐다(ovis 주석).
 - Trigger: agy 에서 되감은 턴이 Chat 에 남는다는 제보 → `.db` 색인 이식 · agy 질문에 Chat 에서 답하고 싶다는 제보 → 화면 사본(`tests/terminal/fixtures/agy/agy-1.5.16-question.txt`·`-permission.txt`)으로 카드 · 사용량은 사람이 외부 호출을 허락하면.

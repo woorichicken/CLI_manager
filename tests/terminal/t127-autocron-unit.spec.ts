@@ -243,7 +243,7 @@ test.describe('T127 autocron', () => {
         openResult = { terminalStarted: true, promptSent: false }
         const failed = await service.runNow('Morning')
         expect(failed).toMatchObject({ status: 'failed', trigger: 'manual', sessionId: 's3' })
-        expect(service.openSession('s3')).toBe(true)
+        expect(await service.openSession('s3')).toBe(true)
     })
 
     test('scheduler: attach types into a running loop, or fails when it is not running', async () => {

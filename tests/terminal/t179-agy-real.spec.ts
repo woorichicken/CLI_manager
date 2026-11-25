@@ -4,17 +4,17 @@ import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, waitForBufferText, writeToTerminal } from './helpers'
 
 /**
- * T169 — the real Antigravity CLI in the app (opt-in: REAL_AGY=1 REAL_AGY_CWD=<a folder agy already
+ * T179 — the real Antigravity CLI in the app (opt-in: REAL_AGY=1 REAL_AGY_CWD=<a folder agy already
  * trusts>). It runs the signed-in `agy` of this Mac with the cheapest model and four short prompts:
  * found after its first prompt, read in the Chat, sent to from the Chat, stopped, resumed after a
- * restart. What T168's mock stands in for, checked against agy itself when agy changes version.
+ * restart. What T178's mock stands in for, checked against agy itself when agy changes version.
  * The app's own store is a temporary folder; HOME is the real one (agy needs its sign-in).
  */
 
 const REAL = process.env.REAL_AGY === '1'
 const CWD = process.env.REAL_AGY_CWD ?? ''
 const MODEL = process.env.REAL_AGY_MODEL ?? 'gemini-3.8-flash-low'
-const SHOTS = process.env.T169_SHOTS
+const SHOTS = process.env.T179_SHOTS
 
 const chat = (page: Page) => page.locator(`[data-testid="chat-view"][data-session-id]:visible`)
 
@@ -26,7 +26,7 @@ function sessionIn(userDataDir: string, id: string): Record<string, unknown> | u
 async function shot(page: Page, name: string): Promise<void> {
     if (!SHOTS) return
     fs.mkdirSync(SHOTS, { recursive: true })
-    await page.screenshot({ path: path.join(SHOTS, `t169-${name}.png`) })
+    await page.screenshot({ path: path.join(SHOTS, `t179-${name}.png`) })
 }
 
 test.skip(!REAL || !CWD, 'opt-in: REAL_AGY=1 REAL_AGY_CWD=<trusted folder>')
@@ -37,12 +37,12 @@ test.afterEach(async () => {
     result = null
 })
 
-test('T169 real agy: found, read, sent to, stopped, resumed', async () => {
+test('T179 real agy: found, read, sent to, stopped, resumed', async () => {
     test.setTimeout(300_000)
-    const workspace = { id: 'w-t169', name: 'T169 real agy', path: CWD }
-    result = await launchAppWithWorkspaces([{ ...workspace, sessions: [{ id: 't169', name: 'T169 agy', initialCommand: `agy --model ${MODEL}` }] }], { env: { CLIMANAGER_AGY_SYNC_MS: '500' } })
+    const workspace = { id: 'w-t169', name: 'T179 real agy', path: CWD }
+    result = await launchAppWithWorkspaces([{ ...workspace, sessions: [{ id: 't169', name: 'T179 agy', initialCommand: `agy --model ${MODEL}` }] }], { env: { CLIMANAGER_AGY_SYNC_MS: '500' } })
     let { page, userDataDir } = result
-    await page.getByText('T169 agy', { exact: true }).first().click()
+    await page.getByText('T179 agy', { exact: true }).first().click()
     await waitForBufferText(page, 't169', '? for shortcuts', 60_000)
 
     // the first prompt makes the conversation: its lock names it
@@ -77,9 +77,9 @@ test('T169 real agy: found, read, sent to, stopped, resumed', async () => {
 
     // a restart resumes the same conversation with the same command
     await closeApp(result)
-    result = await launchAppWithWorkspaces([{ ...workspace, sessions: [{ id: 't169', name: 'T169 agy', cliToolName: 'agy', cliSessionId: id, cliCommand: `agy --model ${MODEL}` }] }], { env: { CLIMANAGER_AGY_SYNC_MS: '500' } })
+    result = await launchAppWithWorkspaces([{ ...workspace, sessions: [{ id: 't169', name: 'T179 agy', cliToolName: 'agy', cliSessionId: id, cliCommand: `agy --model ${MODEL}` }] }], { env: { CLIMANAGER_AGY_SYNC_MS: '500' } })
     ;({ page, userDataDir } = result)
-    await page.getByText('T169 agy', { exact: true }).first().click()
+    await page.getByText('T179 agy', { exact: true }).first().click()
     await waitForBufferText(page, 't169', `--conversation ${id}`, 30_000)
     await waitForBufferText(page, 't169', '? for shortcuts', 60_000)
     await page.getByTestId('view-toggle-chat').click()

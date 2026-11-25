@@ -8,7 +8,7 @@ import { TranscriptReader } from '../../src/main/TranscriptReader'
 import { AgySessionSync, agyStartCommand, isInteractiveAgy, lockedConversation, resumableCommand, type AgyProcess } from '../../src/main/AgySessionSync'
 
 /**
- * T167 — Antigravity CLI (agy) conversations, without Electron: the step ledger as chat turns, the
+ * T177 — Antigravity CLI (agy) conversations, without Electron: the step ledger as chat turns, the
  * reader that finds and follows it, and the sync that names the conversation a terminal's agy shows.
  *
  * The ledger lines are synthetic, in the shape agy 1.5.16 writes (keys and types measured on real
@@ -34,7 +34,7 @@ function parse(text: string, tail = '') {
     return parser.snapshot(tail)
 }
 
-test.describe('T167 agy ledger → chat turns', () => {
+test.describe('T177 agy ledger → chat turns', () => {
     test('prompt and answer, the request wrapper removed', () => {
         const turns = parse(user(0, 'Reply with exactly one word: hi') + planner(1, 'hi'))
         expect(turns.map((turn) => [turn.role, turn.parts.map((part) => (part.kind === 'text' ? part.text : part.kind))])).toEqual([
@@ -111,10 +111,10 @@ test.describe('T167 agy ledger → chat turns', () => {
     })
 })
 
-test.describe('T167 TranscriptReader on agy', () => {
+test.describe('T177 TranscriptReader on agy', () => {
     let home: string
     test.beforeEach(() => {
-        home = mkdtempSync(join(tmpdir(), 't167-agy-'))
+        home = mkdtempSync(join(tmpdir(), 't177-agy-'))
     })
     test.afterEach(() => rmSync(home, { recursive: true, force: true }))
 
@@ -145,10 +145,10 @@ test.describe('T167 TranscriptReader on agy', () => {
     })
 })
 
-test.describe('T167 AgySessionSync', () => {
+test.describe('T177 AgySessionSync', () => {
     let home: string
     test.beforeEach(() => {
-        home = mkdtempSync(join(tmpdir(), 't167-sync-'))
+        home = mkdtempSync(join(tmpdir(), 't177-sync-'))
         mkdirSync(join(home, 'presence'))
     })
     test.afterEach(() => rmSync(home, { recursive: true, force: true }))
