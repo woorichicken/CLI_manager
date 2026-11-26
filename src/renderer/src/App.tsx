@@ -769,6 +769,8 @@ function App() {
         },
         isPreview: (id) => sessionTabs.previewIds.includes(id),
         onKeepOpen: sessionTabs.keepTab,
+        canMakePreview: (id) => previewTabsEnabled && sessionTabs.ids.includes(id) && !sessionTabs.previewIds.includes(id) && (splitLayout ? sessionPaneIds(splitLayout.sessionIds) : viewedSessionId ? [viewedSessionId] : []).includes(id),
+        onMakePreview: sessionTabs.makePreview,
     }
 
     const handleStepTab = (direction: 1 | -1): void => {

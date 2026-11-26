@@ -9,7 +9,7 @@ export interface SessionTabEntry {
     name: string
     /** The workspace name, shown in the tooltip — tabs from different projects can share a name. */
     workspaceName: string
-    /** A preview tab: shown in italics, the next session on screen takes its place (Keep Open, a drag or typing keeps it). */
+    /** A preview tab: shown in italics, the next session on screen takes its place (Keep Open, a rename or a drag keeps it). */
     preview?: boolean
 }
 
@@ -222,7 +222,7 @@ function SessionTab({ tab, active, visible, dropBefore, dropAfter, onSelect, onC
             role="tab"
             aria-selected={active}
             title={tab.preview
-                ? `${tab.name} — ${tab.workspaceName}\nPreview tab: the next session you open takes its place. Type in it, drag it or right-click › Keep Open to keep it.`
+                ? `${tab.name} — ${tab.workspaceName}\nPreview tab: the next session you open takes its place. Drag it, rename it or right-click › Keep Open to keep it.`
                 : `${tab.name} — ${tab.workspaceName}`}
             // while renaming, a drag in the field selects its letters instead of moving the tab
             draggable={!renaming}

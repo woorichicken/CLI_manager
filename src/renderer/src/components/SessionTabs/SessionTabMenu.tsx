@@ -1,6 +1,6 @@
 import React, { useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Columns2, Pencil, Pin, SquareX, Tag, Trash2, X } from 'lucide-react'
+import { Columns2, Pencil, Pin, PinOff, SquareX, Tag, Trash2, X } from 'lucide-react'
 import { useCloseOnOutside } from '../Sidebar/ContextMenus'
 import { requestEditSessionLabels } from '../Sidebar/SessionLabelsDialog'
 import { MENU_Z_INDEX } from '../../constants/styles'
@@ -20,6 +20,10 @@ export interface SessionTabMenuActions {
     isPreview?: (id: string) => boolean
     /** Keeps a preview tab in the row. */
     onKeepOpen?: (id: string) => void
+    /** A kept tab that can become a preview again: preview tabs are on and the tab is on screen. Absent: no Make Preview item. */
+    canMakePreview?: (id: string) => boolean
+    /** Makes a kept tab a preview (the next session shown takes its place). */
+    onMakePreview?: (id: string) => void
 }
 
 interface SessionTabMenuProps {
@@ -93,6 +97,20 @@ export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onRen
                     >
                         <Pin size={12} className="text-gray-400 shrink-0" />
                         <span className="truncate">Keep Open</span>
+                    </button>
+                    <div className="border-t border-white/10 my-0.5" />
+                </>
+            )}
+            {actions.canMakePreview?.(tabId) && actions.onMakePreview && (
+                <>
+                    <button
+                        className={ITEM}
+                        data-tab-menu-item="make-preview"
+                        title="Make this a preview tab again — the next session you open takes its place"
+                        onClick={run(() => actions.onMakePreview?.(tabId))}
+                    >
+                        <PinOff size={12} className="text-gray-400 shrink-0" />
+                        <span className="truncate">Make Preview</span>
                     </button>
                     <div className="border-t border-white/10 my-0.5" />
                 </>

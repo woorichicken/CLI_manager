@@ -5,6 +5,7 @@ import {
     moveSessionTab,
     normalizeSessionTabs,
     openSessionTab,
+    previewSessionTab,
     pruneSessionTabs,
     showSessionTabs,
     stepSessionTab,
@@ -123,6 +124,28 @@ test.describe('T149 session tabs unit', () => {
         expect(state).toEqual({ ids: ['a', 'b'], activeId: 'b', previewIds: ['b'] })
         // start-up, before the restored tab is on screen: the preview tab must survive
         expect(showSessionTabs(state, [], null, true)).toBe(state)
+    })
+
+    test('make preview: a kept tab on screen becomes a preview again, in place; anything else changes nothing', () => {
+        let state = normalizeSessionTabs({ ids: ['k1', 'k2', 'k3'], activeId: 'k2' })
+        // off screen / unknown / already a preview: the same object
+        expect(previewSessionTab(state, 'k1', ['k2'])).toBe(state)
+        expect(previewSessionTab(state, 'zz', ['zz'])).toBe(state)
+        state = previewSessionTab(state, 'k2', ['k2'])
+        expect(state).toEqual({ ids: ['k1', 'k2', 'k3'], activeId: 'k2', previewIds: ['k2'] })
+        expect(previewSessionTab(state, 'k2', ['k2'])).toBe(state)
+        // the next session shown takes its slot
+        state = showSessionTabs(state, ['n'], 'n', true)
+        expect(state).toEqual({ ids: ['k1', 'n', 'k3'], activeId: 'n', previewIds: ['n'] })
+    })
+
+    test('make preview in split view: the marked pane is replaced when it changes; the other preview pane stays', () => {
+        let state = showSessionTabs(normalizeSessionTabs({ ids: ['k'], activeId: 'k' }), ['k', 'a'], 'k', true)
+        expect(state.previewIds).toEqual(['a'])
+        state = previewSessionTab(state, 'k', ['k', 'a'])
+        expect(state.previewIds).toEqual(['k', 'a'])
+        state = showSessionTabs(state, ['c', 'a'], 'c', true)
+        expect(state).toEqual({ ids: ['c', 'a'], activeId: 'c', previewIds: ['c', 'a'] })
     })
 
     test('preview in split view: each new pane gets a preview; a pane replaced takes its slot; a pane that leaves closes it', () => {

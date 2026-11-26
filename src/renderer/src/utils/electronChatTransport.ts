@@ -1,5 +1,4 @@
 import type { AttachResult, ChatOpenMode, ChatTransport, ConversationSnapshot } from '../../../shared/conversation'
-import { noteSessionInput } from './sessionInputSignal'
 import { MAX_ATTACH_BYTES } from '../../../shared/conversation'
 import { getSessionCatalog, sessionMentionsFor } from './sessionMentions'
 
@@ -56,7 +55,6 @@ export const electronChatTransport: ChatTransport = {
         }
     },
     send: (sessionId, text, options) => {
-        noteSessionInput(sessionId)
         return window.api.sendChatMessage(sessionId, text, options)
     },
     cancelQueued: (sessionId) => window.api.cancelQueuedChat(sessionId),

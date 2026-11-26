@@ -17,8 +17,8 @@ export interface SessionTabsState {
     activeId: string | null
     /**
      * Preview tabs (a subset of `ids`): opened but not kept. A preview tab lives only while its session
-     * is on screen — the next session shown takes its place. Typing in it, dragging it, renaming it or
-     * right-click › Keep Open keeps it. Absent in values saved before preview tabs: every tab is kept,
+     * is on screen — the next session shown takes its place. Dragging it, renaming it or
+     * right-click › Keep Open keeps it; typing in its session does not (a keystroke is not a choice). Absent in values saved before preview tabs: every tab is kept,
      * so tabs people already had stay put.
      */
     previewIds: string[]
@@ -104,6 +104,17 @@ export function showSessionTabs(state: SessionTabsState, onScreen: string[], vie
 export function keepSessionTab(state: SessionTabsState, id: string): SessionTabsState {
     if (!state.previewIds.includes(id)) return state
     return { ...state, previewIds: state.previewIds.filter((tab) => tab !== id) }
+}
+
+/**
+ * Makes a kept tab a preview again (right-click › Make Preview). Only a tab on screen can be one — a
+ * preview lives while its session is shown, and a pane holds one session, so the next session shown
+ * takes its place by `showSessionTabs`. Returns `state` itself when `id` is not a kept tab or is off screen.
+ */
+export function previewSessionTab(state: SessionTabsState, id: string, onScreen: string[]): SessionTabsState {
+    if (!state.ids.includes(id) || state.previewIds.includes(id) || !onScreen.includes(id)) return state
+    const marked = new Set([...state.previewIds, id])
+    return { ...state, previewIds: state.ids.filter((tab) => marked.has(tab)) }
 }
 
 /**
