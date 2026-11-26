@@ -395,6 +395,7 @@ test.describe('T149 session tabs', () => {
         // the kept tab on screen has it; a preview tab does not
         await openMenu('s-2')
         await shot(page, 'make-preview-menu-1280')
+        await expect(page.locator(menuItem)).toHaveText('Unpin')
         await page.locator(menuItem).click()
         await expect.poll(() => previewTabs(page)).toEqual(['s-2'])
         await openMenu('s-2')
