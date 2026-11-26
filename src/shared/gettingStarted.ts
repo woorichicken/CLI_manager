@@ -1,5 +1,5 @@
 /**
- * First-run "Getting started" checklist and the two built-in agent templates (fb-1120b tutorial).
+ * First-run "Getting started" checklist and the built-in agent templates (fb-1120b tutorial).
  *
  * The checklist has three steps, each ticked by what actually happened in the app — never by a
  * click on the card: a project folder exists, an agent (Claude Code or Codex) is running in a
@@ -30,7 +30,10 @@ export interface GettingStartedState {
     alreadyDone: GettingStartedStep[]
 }
 
-export type AgentCli = 'claude' | 'codex'
+/** Programs with a built-in "+" menu row. The Getting started "agent" step still counts only Claude Code and Codex. */
+export type AgentCli = 'claude' | 'codex' | 'agy'
+
+export const AGENT_CLIS: readonly AgentCli[] = ['claude', 'codex', 'agy']
 
 /** 'unknown' until checked, or when the check itself failed — never drawn as missing. */
 export type AgentCliStatus = 'installed' | 'missing' | 'unknown'
@@ -38,7 +41,7 @@ export type AgentCliStatus = 'installed' | 'missing' | 'unknown'
 export type AgentCliStatuses = Record<AgentCli, AgentCliStatus>
 
 /**
- * The two rows the folder's "+" menu always offers above Plain Terminal. They are not stored in
+ * The rows the folder's "+" menu always offers above Plain Terminal. They are not stored in
  * `customTemplates`: they never appear in Settings › Templates, never shift the ⌘T number keys,
  * and a fresh install has them without seeding anything.
  */
@@ -58,14 +61,27 @@ export const BUILTIN_AGENT_TEMPLATES: readonly (TerminalTemplate & { agent: Agen
         description: 'Start Codex in this folder',
         command: 'codex',
         agent: 'codex'
+    },
+    {
+        id: 'builtin-antigravity',
+        name: 'Antigravity',
+        icon: 'agy',
+        description: 'Start the Antigravity CLI in this folder',
+        command: 'agy',
+        agent: 'agy'
     }
 ]
 
-/** The program a template command starts, when it is plainly `claude …` or `codex …`. */
+/** The program a template command starts, when it is plainly `claude …`, `codex …` or `agy …`. */
 export function agentOfCommand(command: string | undefined): AgentCli | null {
     const first = (command ?? '').trim().split(/\s+/)[0] ?? ''
     const name = first.split('/').pop() ?? ''
-    return name === 'claude' || name === 'codex' ? name : null
+    return (AGENT_CLIS as readonly string[]).includes(name) ? name as AgentCli : null
+}
+
+/** Every built-in program, as 'unknown' — the answer before (or instead of) a shell check. */
+export function unknownAgentCliStatuses(): AgentCliStatuses {
+    return { claude: 'unknown', codex: 'unknown', agy: 'unknown' }
 }
 
 /**

@@ -6,7 +6,7 @@ import { closeApp, launchAppWithWorkspaces, REPO_ROOT, termText, writeToTerminal
 
 /**
  * T159 Getting started (fb-1120b tutorial decision 3) — the first-run checklist and the folder
- * "+" menu's built-in Claude Code / Codex rows, in the real app:
+ * "+" menu's built-in Claude Code / Codex / Antigravity rows, in the real app:
  *  - the card appears only after the welcome screen's Continue (existing users never see it),
  *  - each tick comes from what happened: a folder added through the picker, `claude` running in
  *    the foreground of a session opened from the built-in row, a first message in its transcript,
@@ -93,7 +93,7 @@ test.describe('T159 Getting started', () => {
                     CODEX_HOME: path.join(sandbox.root, 'codex-home'),
                     PATH: `${sandbox.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
                     SHELL: '/bin/zsh',
-                    CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=missing'
+                    CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=missing,agy=installed'
                 }
             }
         )
@@ -139,11 +139,22 @@ test.describe('T159 Getting started', () => {
         // each row carries its program's logo, not a generic icon
         await expect(claudeRow.locator('svg[data-agent-logo="claude"]')).toBeVisible()
         await expect(codexRow.locator('svg[data-agent-logo="codex"]')).toBeVisible()
+        // Antigravity (installed): its own mark, the `agy` command, normal opacity
+        const agyRow = page.locator('[data-builtin-template="agy"]')
+        await expect(agyRow).toHaveAttribute('data-cli-status', 'installed')
+        await expect(agyRow).toHaveCSS('opacity', '1')
+        await expect(agyRow).toContainText('Antigravity')
+        await expect(agyRow).toContainText('agy')
+        const agyLogo = agyRow.locator('svg[data-agent-logo="agy"]')
+        await expect(agyLogo).toBeVisible()
+        expect((await agyLogo.locator('path').getAttribute('d'))?.startsWith('M21.751 22.607')).toBe(true)
+        const logoBox = await agyLogo.boundingBox()
+        expect(logoBox!.width).toBeGreaterThan(8)
         const order = await page.evaluate(() => {
             const name = (b: Element): string => b.querySelector('span.truncate')?.textContent?.trim() ?? ''
-            return Array.from(document.querySelectorAll('button')).map(name).filter((n) => /^(Claude Code|Codex|Plain Terminal)$/.test(n))
+            return Array.from(document.querySelectorAll('button')).map(name).filter((n) => /^(Claude Code|Codex|Antigravity|Plain Terminal)$/.test(n))
         })
-        expect(order).toEqual(['Claude Code', 'Codex', 'Plain Terminal'])
+        expect(order).toEqual(['Claude Code', 'Codex', 'Antigravity', 'Plain Terminal'])
         await shot(page, '2-plus-menu')
 
         // Step 2 — the Claude Code row starts `claude` (the stand-in) in a new session

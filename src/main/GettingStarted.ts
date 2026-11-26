@@ -1,5 +1,5 @@
 /**
- * Getting started checklist (main side) and the "is claude / codex installed" hint for the
+ * Getting started checklist (main side) and the "is claude / codex / agy installed" hint for the
  * built-in templates. The rules live in `shared/gettingStarted.ts`; this file reads the app's
  * real state and keeps the latched result in its own store key (`gettingStarted`) — not inside
  * `settings`, which the welcome screen and the Settings window write back whole from their copy.
@@ -15,7 +15,9 @@ import {
     type AgentCliStatus,
     type AgentCliStatuses,
     type GettingStartedState,
-    type GettingStartedStep
+    type GettingStartedStep,
+    AGENT_CLIS,
+    unknownAgentCliStatuses
 } from '../shared/gettingStarted'
 import type { Workspace } from '../shared/types'
 
@@ -120,14 +122,14 @@ function parseProbe(output: string, names: AgentCli[]): Partial<AgentCliStatuses
 }
 
 /**
- * Whether `claude` and `codex` can be started from a terminal in this app. A non-interactive
+ * Whether `claude`, `codex` and `agy` can be started from a terminal in this app. A non-interactive
  * login shell skips `.zshrc`, where PATH for these tools is often set, while the app's terminals
  * are interactive — so a "missing" from the login shell is asked again in an interactive one
  * before it counts. A check that times out or fails stays 'unknown' (drawn as normal, never dim).
  */
 export async function checkAgentClis(shell: string, run: ShellRunner = runShell): Promise<AgentCliStatuses> {
-    const names: AgentCli[] = ['claude', 'codex']
-    const statuses: AgentCliStatuses = { claude: 'unknown', codex: 'unknown' }
+    const names: AgentCli[] = [...AGENT_CLIS]
+    const statuses = unknownAgentCliStatuses()
     const script = names.map(PROBE).join('; ')
     try {
         Object.assign(statuses, parseProbe(await run(shell, ['-l', '-c', script], CLI_CHECK_TIMEOUT_MS), names))
@@ -148,13 +150,13 @@ export async function checkAgentClis(shell: string, run: ShellRunner = runShell)
     return statuses
 }
 
-/** `claude=missing,codex=installed` — the test-mode stand-in for the shell check. */
+/** `claude=missing,codex=installed,agy=installed` — the test-mode stand-in for the shell check. */
 export function parseAgentCliFake(value: string): AgentCliStatuses {
-    const statuses: AgentCliStatuses = { claude: 'unknown', codex: 'unknown' }
+    const statuses = unknownAgentCliStatuses()
     for (const pair of value.split(',')) {
         const [name, status] = pair.split('=').map((part) => part.trim())
-        if ((name === 'claude' || name === 'codex') && (status === 'installed' || status === 'missing' || status === 'unknown')) {
-            statuses[name] = status as AgentCliStatus
+        if ((AGENT_CLIS as readonly string[]).includes(name) && (status === 'installed' || status === 'missing' || status === 'unknown')) {
+            statuses[name as AgentCli] = status as AgentCliStatus
         }
     }
     return statuses
@@ -175,7 +177,7 @@ export class AgentCliChecker {
                     this.cached = { at: this.now(), value }
                     return value
                 })
-                .catch(() => ({ claude: 'unknown', codex: 'unknown' }) as AgentCliStatuses)
+                .catch(() => unknownAgentCliStatuses())
                 .finally(() => { this.pending = null })
         }
         return this.pending
