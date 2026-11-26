@@ -4,12 +4,12 @@ import {
     SessionTabsState,
     closeSessionTab,
     keepSessionTab,
+    previewSessionTab,
     moveSessionTab,
     pruneSessionTabs,
     showSessionTabs,
     withTabIds,
 } from '../../../shared/sessionTabs'
-import { SESSION_INPUT_EVENT } from '../utils/sessionInputSignal'
 
 interface UseSessionTabsConfig {
     /** The main window only: grid and fullscreen windows render App too and must not write the tabs. */
@@ -41,8 +41,10 @@ export interface SessionTabsApi {
     closeTabs: (ids: string[]) => void
     /** Moves a tab (a drag) — which also keeps it. */
     moveTab: (id: string, toIndex: number) => void
-    /** Keeps a preview tab: right-click › Keep Open, a rename, or typing in its session. */
+    /** Keeps a preview tab: right-click › Keep Open or a rename. Typing in its session does not. */
     keepTab: (id: string) => void
+    /** Makes a kept tab a preview again (right-click › Make Preview) — only one on screen. */
+    makePreview: (id: string) => void
     /** The tab on screen when the app last saved, once — App shows it after a restart. */
     takeRestoreId: () => string | null
 }
@@ -51,8 +53,8 @@ export interface SessionTabsApi {
  * The tab row at the top of the main area. Every session that comes on screen
  * (sidebar click, ⌘[ ⌘], a link, ⌘T, a split pane) gets a tab. With preview tabs on
  * (default) that tab is a preview: the next session shown takes its place, so walking
- * through sessions leaves one tab, not one per session; typing in it, dragging it,
- * renaming it or Keep Open keeps it. The order, the tab on screen and the preview marks
+ * through sessions leaves one tab, not one per session; dragging it,
+ * renaming it or Keep Open keeps it (typing does not); Make Preview undoes a keep. The order, the tab on screen and the preview marks
  * are saved in main and come back after a restart. Rules live in `shared/sessionTabs.ts`.
  */
 export function useSessionTabs({ active, enabled, preview, ready, viewedSessionId, onScreenIds, sessionExists, sessionsKey }: UseSessionTabsConfig): SessionTabsApi {
@@ -135,16 +137,11 @@ export function useSessionTabs({ active, enabled, preview, ready, viewedSessionI
         setState((prev) => keepSessionTab(prev, id))
     }, [])
 
-    // Typing in a session (its terminal or its Chat) keeps its preview tab.
-    useEffect(() => {
-        if (!active) return
-        const onInput = (event: Event): void => {
-            const id = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
-            if (id && stateRef.current.previewIds.includes(id)) keepTab(id)
-        }
-        window.addEventListener(SESSION_INPUT_EVENT, onInput)
-        return () => window.removeEventListener(SESSION_INPUT_EVENT, onInput)
-    }, [active, keepTab])
+    const onScreenRef = useRef(onScreenIds)
+    onScreenRef.current = onScreenIds
+    const makePreview = useCallback((id: string) => {
+        setState((prev) => previewSessionTab(prev, id, onScreenRef.current))
+    }, [])
 
     const takeRestoreId = useCallback((): string | null => {
         if (restoreTakenRef.current) return null
@@ -152,5 +149,5 @@ export function useSessionTabs({ active, enabled, preview, ready, viewedSessionI
         return restoreIdRef.current
     }, [])
 
-    return { ids: enabled ? state.ids : [], previewIds: enabled ? state.previewIds : [], loaded, closeTab, closeTabs, moveTab, keepTab, takeRestoreId }
+    return { ids: enabled ? state.ids : [], previewIds: enabled ? state.previewIds : [], loaded, closeTab, closeTabs, moveTab, keepTab, makePreview, takeRestoreId }
 }

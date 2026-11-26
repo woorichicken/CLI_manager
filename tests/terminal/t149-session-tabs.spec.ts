@@ -13,8 +13,8 @@ import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './he
  * the one on screen come back after a restart.
  *
  * Preview tabs (Settings › Sidebar 「Open Sessions as Preview Tabs」, default on): a new tab is an
- * italic preview the next session shown takes the place of; typing in it, dragging it or Keep Open keeps
- * it. The older tests below switch previews off — that is the every-session-keeps-a-tab row they describe.
+ * italic preview the next session shown takes the place of; dragging it, renaming it or Keep Open keeps it (typing does not; Make Preview undoes a keep).
+ * The older tests below switch previews off — that is the every-session-keeps-a-tab row they describe.
  *
  * The signal is what the person sees: which terminal is visible, the tab row's DOM, the sidebar rows,
  * and config.json for what survives a restart.
@@ -267,7 +267,7 @@ test.describe('T149 session tabs', () => {
     })
 
     // talk-session-tabs-1125: opening a session no longer leaves a tab behind for good
-    test('preview tabs (default): walking through sessions leaves one italic tab; Keep Open, typing and a drag keep it; previews survive a restart', async () => {
+    test('preview tabs (default): walking through sessions leaves one italic tab; Keep Open, a rename and a drag keep it, typing does not; previews survive a restart', async () => {
         const page = await launchThree({})
         const italic = (id: string): Promise<boolean> => page.evaluate((tab) =>
             getComputedStyle(document.querySelector(`[data-session-tab="${tab}"] [data-session-tab-name]`)!).fontStyle === 'italic', id)
@@ -316,11 +316,19 @@ test.describe('T149 session tabs', () => {
         await page.locator('[data-session-tab="s-3"]').click()
         await expect.poll(() => tabOrder(page)).toEqual(['s-3'])
 
-        // Typing in the session keeps its tab.
+        // Typing in the session (keys, Esc, Enter) does NOT keep its tab — only Keep Open, a drag or a rename does.
         await sidebarRow(page, 's-2').click()
         await expect.poll(() => previewTabs(page)).toEqual(['s-2'])
         await page.locator('[data-session-id="s-2"] .xterm').click()
         await page.keyboard.type('x')
+        await page.keyboard.press('Escape')
+        await page.keyboard.press('Enter')
+        await page.waitForTimeout(800)
+        await shot(page, 'typed-1280')
+        expect(await previewTabs(page)).toEqual(['s-2'])
+        expect(await italic('s-2')).toBe(true)
+        await page.locator('[data-session-tab="s-2"]').click({ button: 'right' })
+        await page.locator('[data-tab-menu-item="keep-open"]').click()
         await expect.poll(() => previewTabs(page)).toEqual([])
         expect(await tabOrder(page)).toEqual(['s-3', 's-2'])
 
@@ -360,6 +368,53 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => tabOrder(page2), { timeout: 30_000 }).toEqual(tabsAtQuit)
         await expect.poll(() => visibleSession(page2), { timeout: 15_000 }).toBe('s-1')
         expect(await previewTabs(page2)).toEqual(['s-1'])
+    })
+
+    test('preview tabs: right-click › Make Preview turns a kept tab on screen back into a preview', async () => {
+        const page = await launchThree({})
+        const menuItem = '[data-tab-menu-item="make-preview"]'
+        const openMenu = async (id: string): Promise<void> => {
+            await page.locator(`[data-session-tab="${id}"]`).click({ button: 'right' })
+            await expect(page.locator(`[data-session-tab-menu="${id}"]`)).toBeVisible()
+        }
+        // keep s-1 (on screen), keep s-2 (on screen) → two kept tabs, s-2 on screen
+        for (const id of ['s-1', 's-2']) {
+            await sidebarRow(page, id).click()
+            await expect.poll(() => visibleSession(page)).toBe(id)
+            await page.locator(`[data-session-tab="${id}"]`).click({ button: 'right' })
+            await page.locator('[data-tab-menu-item="keep-open"]').click()
+        }
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1', 's-2'])
+        expect(await previewTabs(page)).toEqual([])
+
+        // a kept tab that is NOT on screen has no Make Preview item
+        await openMenu('s-1')
+        await expect(page.locator(menuItem)).toHaveCount(0)
+        await page.keyboard.press('Escape')
+
+        // the kept tab on screen has it; a preview tab does not
+        await openMenu('s-2')
+        await shot(page, 'make-preview-menu-1280')
+        await page.locator(menuItem).click()
+        await expect.poll(() => previewTabs(page)).toEqual(['s-2'])
+        await openMenu('s-2')
+        await expect(page.locator(menuItem)).toHaveCount(0)
+        await page.keyboard.press('Escape')
+
+        // it is a preview again: the next session shown takes its place
+        await sidebarRow(page, 's-3').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1', 's-3'])
+        expect(await previewTabs(page)).toEqual(['s-3'])
+        await expect.poll(() => readConfig(ctx!.userDataDir).sessionTabs?.previewIds).toEqual(['s-3'])
+    })
+
+    test('preview tabs off: a kept tab has no Make Preview item', async () => {
+        const page = await launchThree()
+        await sidebarRow(page, 's-1').click()
+        await expect.poll(() => tabOrder(page)).toEqual(['s-1'])
+        await page.locator('[data-session-tab="s-1"]').click({ button: 'right' })
+        await expect(page.locator('[data-session-tab-menu="s-1"]')).toBeVisible()
+        await expect(page.locator('[data-tab-menu-item="make-preview"]')).toHaveCount(0)
     })
 
     test('preview tabs: ⌘W on the only tab lands on the sidebar neighbour; × on it leaves the screen empty', async () => {
