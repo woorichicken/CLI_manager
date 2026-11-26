@@ -13,8 +13,8 @@ import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './he
  * the one on screen come back after a restart.
  *
  * Preview tabs (Settings › Sidebar 「Open Sessions as Preview Tabs」, default on): a new tab is an
- * italic preview the next session shown takes the place of; typing in it, dragging it or Keep Open keeps
- * it. The older tests below switch previews off — that is the every-session-keeps-a-tab row they describe.
+ * italic preview the next session shown takes the place of; dragging it, renaming it or Keep Open keeps it (typing does not; Make Preview undoes a keep).
+ * The older tests below switch previews off — that is the every-session-keeps-a-tab row they describe.
  *
  * The signal is what the person sees: which terminal is visible, the tab row's DOM, the sidebar rows,
  * and config.json for what survives a restart.
