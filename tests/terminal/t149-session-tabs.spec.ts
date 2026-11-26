@@ -13,7 +13,7 @@ import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './he
  * the one on screen come back after a restart.
  *
  * Preview tabs (Settings › Sidebar 「Open Sessions as Preview Tabs」, default on): a new tab is an
- * italic preview the next session shown takes the place of; dragging it, renaming it or Keep Open keeps it (typing does not; Make Preview undoes a keep).
+ * italic preview the next session shown takes the place of; dragging it, renaming it or Keep Open keeps it (typing does not; Unpin undoes a keep).
  * The older tests below switch previews off — that is the every-session-keeps-a-tab row they describe.
  *
  * The signal is what the person sees: which terminal is visible, the tab row's DOM, the sidebar rows,
@@ -370,7 +370,7 @@ test.describe('T149 session tabs', () => {
         expect(await previewTabs(page2)).toEqual(['s-1'])
     })
 
-    test('preview tabs: right-click › Make Preview turns a kept tab on screen back into a preview', async () => {
+    test('preview tabs: right-click › Unpin turns a kept tab on screen back into a preview', async () => {
         const page = await launchThree({})
         const menuItem = '[data-tab-menu-item="make-preview"]'
         const openMenu = async (id: string): Promise<void> => {
@@ -387,7 +387,7 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => tabOrder(page)).toEqual(['s-1', 's-2'])
         expect(await previewTabs(page)).toEqual([])
 
-        // a kept tab that is NOT on screen has no Make Preview item
+        // a kept tab that is NOT on screen has no Unpin item
         await openMenu('s-1')
         await expect(page.locator(menuItem)).toHaveCount(0)
         await page.keyboard.press('Escape')
@@ -408,7 +408,7 @@ test.describe('T149 session tabs', () => {
         await expect.poll(() => readConfig(ctx!.userDataDir).sessionTabs?.previewIds).toEqual(['s-3'])
     })
 
-    test('preview tabs off: a kept tab has no Make Preview item', async () => {
+    test('preview tabs off: a kept tab has no Unpin item', async () => {
         const page = await launchThree()
         await sidebarRow(page, 's-1').click()
         await expect.poll(() => tabOrder(page)).toEqual(['s-1'])

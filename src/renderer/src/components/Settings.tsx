@@ -754,7 +754,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                     <p className="text-xs text-gray-500 mt-1">
                                                         A session you open gets an <em>italic</em> tab that the next one replaces, so walking through
                                                         sessions leaves one tab. Typing in it does not keep it — drag it, rename it or right-click › Keep Open;
-                                                        right-click › Make Preview turns a kept tab back.
+                                                        right-click › Unpin turns a kept tab back.
                                                         Off: every session you open keeps a tab.
                                                     </p>
                                                 </div>
