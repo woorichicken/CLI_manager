@@ -20,7 +20,7 @@ export interface SessionTabMenuActions {
     isPreview?: (id: string) => boolean
     /** Keeps a preview tab in the row. */
     onKeepOpen?: (id: string) => void
-    /** A kept tab that can become a preview again: preview tabs are on and the tab is on screen. Absent: no Make Preview item. */
+    /** A kept tab that can become a preview again: preview tabs are on and the tab is on screen. Absent: no Unpin item. */
     canMakePreview?: (id: string) => boolean
     /** Makes a kept tab a preview (the next session shown takes its place). */
     onMakePreview?: (id: string) => void
@@ -110,7 +110,7 @@ export function SessionTabMenu({ x, y, tabId, tabIds, actions, onCloseTab, onRen
                         onClick={run(() => actions.onMakePreview?.(tabId))}
                     >
                         <PinOff size={12} className="text-gray-400 shrink-0" />
-                        <span className="truncate">Make Preview</span>
+                        <span className="truncate">Unpin</span>
                     </button>
                     <div className="border-t border-white/10 my-0.5" />
                 </>
