@@ -158,6 +158,7 @@ before calling it done.
 | A session sync (`ClaudeSessionSync`, `CodexSessionLocator`, `AgySessionSync`) | How a hand-started session gets its conversation id |
 | `src/renderer/src/utils/agentSession.ts` · `resumeCommand.ts` | Whether the UI treats the session as an agent, and what it types to resume |
 | `src/renderer/src/components/ChatView/` | Display name, read-only chips, hidden actions |
+| `src/shared/gettingStarted.ts` `BUILTIN_AGENT_TEMPLATES` · `Sidebar/AgentLogo.tsx` | The folder "+" menu row, its install check and logo (take marks from simple-icons, else a permissively licensed set such as lobe-icons, and name the source in the file) |
 
 Tests: a unit spec with masked real-screen fixtures, an app spec on a mock, and an opt-in spec on
 the real tool. The mock is drawn from what we expected to see; only the real tool caught the
