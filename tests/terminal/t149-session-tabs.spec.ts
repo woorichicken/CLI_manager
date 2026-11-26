@@ -324,6 +324,7 @@ test.describe('T149 session tabs', () => {
         await page.keyboard.press('Escape')
         await page.keyboard.press('Enter')
         await page.waitForTimeout(800)
+        await shot(page, 'typed-1280')
         expect(await previewTabs(page)).toEqual(['s-2'])
         expect(await italic('s-2')).toBe(true)
         await page.locator('[data-session-tab="s-2"]').click({ button: 'right' })
