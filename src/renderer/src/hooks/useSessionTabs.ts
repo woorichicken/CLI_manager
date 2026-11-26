@@ -43,7 +43,7 @@ export interface SessionTabsApi {
     moveTab: (id: string, toIndex: number) => void
     /** Keeps a preview tab: right-click › Keep Open or a rename. Typing in its session does not. */
     keepTab: (id: string) => void
-    /** Makes a kept tab a preview again (right-click › Make Preview) — only one on screen. */
+    /** Makes a kept tab a preview again (right-click › Unpin) — only one on screen. */
     makePreview: (id: string) => void
     /** The tab on screen when the app last saved, once — App shows it after a restart. */
     takeRestoreId: () => string | null
@@ -54,7 +54,7 @@ export interface SessionTabsApi {
  * (sidebar click, ⌘[ ⌘], a link, ⌘T, a split pane) gets a tab. With preview tabs on
  * (default) that tab is a preview: the next session shown takes its place, so walking
  * through sessions leaves one tab, not one per session; dragging it,
- * renaming it or Keep Open keeps it (typing does not); Make Preview undoes a keep. The order, the tab on screen and the preview marks
+ * renaming it or Keep Open keeps it (typing does not); Unpin undoes a keep. The order, the tab on screen and the preview marks
  * are saved in main and come back after a restart. Rules live in `shared/sessionTabs.ts`.
  */
 export function useSessionTabs({ active, enabled, preview, ready, viewedSessionId, onScreenIds, sessionExists, sessionsKey }: UseSessionTabsConfig): SessionTabsApi {

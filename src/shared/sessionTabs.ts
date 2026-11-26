@@ -107,7 +107,7 @@ export function keepSessionTab(state: SessionTabsState, id: string): SessionTabs
 }
 
 /**
- * Makes a kept tab a preview again (right-click › Make Preview). Only a tab on screen can be one — a
+ * Makes a kept tab a preview again (right-click › Unpin). Only a tab on screen can be one — a
  * preview lives while its session is shown, and a pane holds one session, so the next session shown
  * takes its place by `showSessionTabs`. Returns `state` itself when `id` is not a kept tab or is off screen.
  */
