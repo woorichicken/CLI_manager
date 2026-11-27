@@ -131,7 +131,8 @@ function valueAt(data: Record<string, unknown> | undefined, path: string): unkno
     let current: unknown = data
     for (const part of path.split('/').filter(Boolean)) {
         if (Array.isArray(current)) {
-            if (!/^\d+$/.test(part)) return undefined
+            // "0", "12" — not "00" or "01", which the renderer does not read as an index
+            if (!/^(0|[1-9]\d*)$/.test(part)) return undefined
             current = current[Number(part)]
         } else if (isPlainObject(current)) {
             if (!Object.prototype.hasOwnProperty.call(current, part)) return undefined

@@ -203,6 +203,8 @@ test.describe('T193 agent UI', () => {
         const listText = [{ id: 'root', component: 'Text', text: { '@path': '/rows/0/title' } }]
         expect(refusal(listText, { rows: [{ title: { toString: 'oops' } }] })).toMatch(/data at \/rows\/0\/title/)
         expect(checkAgentUi({ components: listText, data: { rows: [{ title: 'ok' }] } }).ok).toBe(true)
+        const leadingZero = [{ id: 'root', component: 'Text', text: { '@path': '/rows/00/title' } }]
+        expect(checkAgentUi({ components: leadingZero, data: { rows: [{ title: { toString: 'oops' } }] } }).ok).toBe(true)
         expect(checkAgentUi({ components: [{ id: 'root', component: 'Text', text: { '@path': '/toString' } }], data: {} }).ok).toBe(true)
         // Absent is fine (the field starts empty); numbers show as text; a button's context may bind anything.
         expect(checkAgentUi({ components: box, data: { on: false, pick: ['a'] } }).ok).toBe(true)
