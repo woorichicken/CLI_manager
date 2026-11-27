@@ -11,7 +11,10 @@ import { closeApp, launchAppWithWorkspaces, REPO_ROOT, termText, writeToTerminal
  *  - each tick comes from what happened: a folder added through the picker, `claude` running in
  *    the foreground of a session opened from the built-in row, a first message in its transcript,
  *  - the card moves from the empty main pane to the sidebar foot once a session is open, and
- *    disappears when all three are done,
+ *    disappears when all four are done (the fourth, «Connect an AI agent», has buttons that act:
+ *    turn the Control API on, copy the skill install command, open the API docs),
+ *  - a card stored before the fourth step existed never comes back for someone who finished or
+ *    closed it; «Show Again» gives them all four,
  *  - a program not found draws its row dim with «Not installed» (main's check is replaced by
  *    CLIMANAGER_AGENT_CLI_FAKE in tests), and it stays clickable.
  *
@@ -30,6 +33,8 @@ interface Sandbox {
     claudeDir: string
     bin: string
     project: string
+    /** an isolated ~/.climanager, so the Control API may start */
+    climanagerHome: string
 }
 
 function makeSandbox(): Sandbox {
@@ -38,7 +43,8 @@ function makeSandbox(): Sandbox {
     const claudeDir = path.join(root, 'claude-config')
     const bin = path.join(root, 'bin')
     const project = path.join(root, 'my-project')
-    for (const dir of [home, claudeDir, bin, project]) fs.mkdirSync(dir, { recursive: true })
+    const climanagerHome = path.join(root, 'climanager-home')
+    for (const dir of [home, claudeDir, bin, project, climanagerHome]) fs.mkdirSync(dir, { recursive: true })
     // a .zshrc keeps zsh from asking its new-user questions, and puts the stand-in first: macOS
     // path_helper moves /usr/local/bin and /opt/homebrew/bin ahead of the PATH it was given, where a
     // real `claude` may be installed
@@ -55,7 +61,7 @@ function makeSandbox(): Sandbox {
         `require(${JSON.stringify(CHAT_MOCK)})`
     ].join('\n'))
     fs.chmodSync(fake, 0o755)
-    return { root, home, claudeDir, bin, project }
+    return { root, home, claudeDir, bin, project, climanagerHome }
 }
 
 async function shot(page: LaunchResult['page'], name: string): Promise<void> {
@@ -85,7 +91,8 @@ test.describe('T159 Getting started', () => {
         ctx = await launchAppWithWorkspaces(
             [{ id: 'home', name: 'Home', path: sandbox.home, isHome: true, sessions: [] }],
             {
-                settings: { hasCompletedOnboarding: false },
+                // port 0: a free port, so a CLI Manager already running on the default one cannot get in the way
+                settings: { hasCompletedOnboarding: false, controlApi: { enabled: false, port: 0, aiFolderName: 'AI Work' } },
                 noTerminals: true,
                 env: {
                     HOME: sandbox.home,
@@ -93,6 +100,7 @@ test.describe('T159 Getting started', () => {
                     CODEX_HOME: path.join(sandbox.root, 'codex-home'),
                     PATH: `${sandbox.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
                     SHELL: '/bin/zsh',
+                    CLIMANAGER_HOME: sandbox.climanagerHome,
                     CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=missing,agy=installed'
                 }
             }
@@ -109,7 +117,7 @@ test.describe('T159 Getting started', () => {
         await accept.click()
 
         await expect(card).toBeVisible()
-        await expect(card.locator('[data-getting-started-count]')).toHaveText('0/3')
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('0/4')
         await expect(card.locator('[data-getting-started-step="folder"]')).toHaveAttribute('data-done', 'false')
         await expect.poll(() => (readConfig(userDataDir).gettingStarted as { dismissed?: boolean } | undefined)?.dismissed).toBe(false)
         // the card replaces the frozen-terminal tip on the empty pane (review 2026-11-23)
@@ -122,7 +130,7 @@ test.describe('T159 Getting started', () => {
         }, sandbox.project)
         await card.locator('[data-getting-started-add-folder]').click()
         await expect(page.getByText('my-project').first()).toBeVisible()
-        await expect(card.locator('[data-getting-started-count]')).toHaveText('1/3', { timeout: 10_000 })
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('1/4', { timeout: 10_000 })
         await expect(card.locator('[data-getting-started-step="folder"]')).toHaveAttribute('data-done', 'true')
 
         // The folder's + menu: Claude Code (installed) and Codex (missing → dim, still a button), above Plain Terminal
@@ -161,7 +169,7 @@ test.describe('T159 Getting started', () => {
         await claudeRow.click()
         await expect(compact).toBeVisible({ timeout: 30_000 })
         await expect(card).toHaveCount(0)
-        await expect(compact.locator('[data-getting-started-count]')).toHaveText('2/3', { timeout: 30_000 })
+        await expect(compact.locator('[data-getting-started-count]')).toHaveText('2/4', { timeout: 30_000 })
         await expect(compact.locator('[data-getting-started-next]')).toHaveAttribute('data-getting-started-next', 'chat')
         // adding a folder also makes its plain "Main" session; the agent is the one opened from the row
         const agentSession = (): { id: string; templateId?: string } | undefined => {
@@ -178,10 +186,27 @@ test.describe('T159 Getting started', () => {
         await writeToTerminal(page, sessionId, 'hello from t159')
         await page.waitForTimeout(300)
         await writeToTerminal(page, sessionId, '\r')
-        await expect(compact).toHaveCount(0, { timeout: 30_000 })
+        // three of four: the card stays, asking for the AI step, with its buttons right in the small card
+        await expect(compact.locator('[data-getting-started-count]')).toHaveText('3/4', { timeout: 30_000 })
+        await expect(compact.locator('[data-getting-started-next]')).toHaveAttribute('data-getting-started-next', 'ai')
+        await expect(compact.locator('[data-getting-started-turn-on-api]')).toBeVisible()
+        await expect(compact.locator('[data-getting-started-copy-install]')).toBeVisible()
+        await expect(compact.locator('[data-getting-started-api-docs]')).toBeVisible()
+        await shot(page, '4-compact-ai')
+
+        // Step 4 — API on (the button) and the skill folder (a file in the temporary HOME) together tick it
+        await compact.locator('[data-getting-started-turn-on-api]').click()
+        await expect(compact.locator('[data-getting-started-ai-on]')).toBeVisible({ timeout: 15_000 })
+        await expect(compact.locator('[data-getting-started-count]')).toHaveText('3/4') // the skill is still missing
+        await expect(compact.locator('[data-getting-started-ai-status]')).toContainText('not found')
+        const skillDir = path.join(sandbox.home, '.agents', 'skills', 'climanager-session')
+        fs.mkdirSync(skillDir, { recursive: true })
+        fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: climanager-session\n---\n')
+        await expect(compact).toHaveCount(0, { timeout: 15_000 })
         await expect(card).toHaveCount(0)
-        await expect.poll(() => readConfig(userDataDir).gettingStarted).toMatchObject({ dismissed: false, done: { folder: true, agent: true, chat: true } })
-        await shot(page, '4-done')
+        await expect.poll(() => readConfig(userDataDir).gettingStarted).toMatchObject({ dismissed: false, withAiStep: true, done: { folder: true, agent: true, chat: true, ai: true } })
+        expect(JSON.stringify(readConfig(userDataDir).gettingStarted)).not.toContain('apiOn')
+        await shot(page, '5-done')
         expect(ctx.pageErrors).toEqual([])
     })
 
@@ -212,7 +237,7 @@ test.describe('T159 Getting started', () => {
         await page.getByRole('button', { name: /Accept and Continue/ }).click()
         const card = page.locator('[data-getting-started="full"]')
         await expect(card).toBeVisible({ timeout: 15_000 })
-        await expect(card.locator('[data-getting-started-count]')).toHaveText('1/3', { timeout: 10_000 })
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('1/4', { timeout: 10_000 })
 
         await card.locator('[data-getting-started-dismiss]').click()
         await expect(page.locator('[data-getting-started]')).toHaveCount(0)
@@ -221,18 +246,51 @@ test.describe('T159 Getting started', () => {
         await expect(page.locator('[data-getting-started]')).toHaveCount(0)
     })
 
-    test('a replay after all three were done says so, marks each step «Already done», and ✕ closes it', async () => {
+    test('a card finished before the AI step existed stays gone; «Show Again» adds the fourth step', async () => {
         test.setTimeout(120_000)
         sandbox = makeSandbox()
         ctx = await launchAppWithWorkspaces(
             [{ id: 'p', name: 'proj', path: sandbox.project, sessions: [] }],
             {
-                env: { HOME: sandbox.home, CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=installed' },
-                config: { gettingStarted: { startedAt: 1, dismissed: false, done: { folder: true, agent: true, chat: true } } }
+                env: { HOME: sandbox.home, CLIMANAGER_HOME: sandbox.climanagerHome, CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=installed' },
+                // the stored shape of a card from before the fourth step: three steps done, no `withAiStep`
+                config: { gettingStarted: { startedAt: 1, dismissed: false, done: { folder: true, agent: true, chat: true }, alreadyDone: [] } }
             }
         )
         const { page, userDataDir } = ctx
-        // finished before: no card on start
+        // finished before: no card on start, and no card after the timer has run a few times
+        await page.waitForTimeout(4500)
+        await expect(page.locator('[data-getting-started]')).toHaveCount(0)
+
+        await page.locator('button[title^="Settings"]').first().click()
+        await page.getByRole('button', { name: 'Show Again' }).click()
+        await page.getByRole('button', { name: /Accept and Continue/ }).click()
+        const card = page.locator('[data-getting-started="full"]')
+        await expect(card).toBeVisible({ timeout: 15_000 })
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('3/4')
+        await expect(card.locator('[data-getting-started-already]')).toHaveCount(3)
+        await expect(card.locator('[data-getting-started-all-done]')).toHaveCount(0)
+        await expect(card.locator('[data-getting-started-step="ai"]')).toHaveAttribute('data-done', 'false')
+        await expect(card.locator('[data-getting-started-ai-warning]')).toContainText('127.0.0.1')
+        await shot(page, '6-replay-legacy')
+
+        await card.locator('[data-getting-started-dismiss]').click()
+        await expect(page.locator('[data-getting-started]')).toHaveCount(0)
+        await expect.poll(() => readConfig(userDataDir).gettingStarted).toMatchObject({ dismissed: true, withAiStep: true, alreadyDone: ['folder', 'agent', 'chat'] })
+        expect(ctx.pageErrors).toEqual([])
+    })
+
+    test('a replay after all four were done says so, marks each step «Already done», and ✕ closes it', async () => {
+        test.setTimeout(120_000)
+        sandbox = makeSandbox()
+        ctx = await launchAppWithWorkspaces(
+            [{ id: 'p', name: 'proj', path: sandbox.project, sessions: [] }],
+            {
+                env: { HOME: sandbox.home, CLIMANAGER_HOME: sandbox.climanagerHome, CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=installed' },
+                config: { gettingStarted: { startedAt: 1, dismissed: false, done: { folder: true, agent: true, chat: true, ai: true }, alreadyDone: [], withAiStep: true } }
+            }
+        )
+        const { page, userDataDir } = ctx
         await page.waitForTimeout(1500)
         await expect(page.locator('[data-getting-started]')).toHaveCount(0)
 
@@ -241,18 +299,127 @@ test.describe('T159 Getting started', () => {
         await page.getByRole('button', { name: /Accept and Continue/ }).click()
         const card = page.locator('[data-getting-started="full"]')
         await expect(card).toBeVisible({ timeout: 15_000 })
-        await expect(card.locator('[data-getting-started-count]')).toHaveText('3/3')
-        await expect(card.locator('[data-getting-started-all-done]')).toContainText('already done all three steps')
-        await expect(card.locator('[data-getting-started-already]')).toHaveCount(3)
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('4/4')
+        await expect(card.locator('[data-getting-started-all-done]')).toContainText('already done all four steps')
+        await expect(card.locator('[data-getting-started-already]')).toHaveCount(4)
         await expect(page.getByText('If the terminal seems frozen')).toHaveCount(0)
         // still there after a check round
         await page.waitForTimeout(3500)
         await expect(card).toBeVisible()
-        await shot(page, '5-replay-all-done')
+        await shot(page, '7-replay-all-done')
 
         await card.locator('[data-getting-started-dismiss]').click()
         await expect(page.locator('[data-getting-started]')).toHaveCount(0)
-        await expect.poll(() => readConfig(userDataDir).gettingStarted).toMatchObject({ dismissed: true, alreadyDone: ['folder', 'agent', 'chat'] })
+        await expect.poll(() => readConfig(userDataDir).gettingStarted).toMatchObject({ dismissed: true, alreadyDone: ['folder', 'agent', 'chat', 'ai'] })
+        expect(ctx.pageErrors).toEqual([])
+    })
+
+    test('«Show Again» when the API is already on and the skill is installed shows an all-done card (4/4)', async () => {
+        test.setTimeout(120_000)
+        sandbox = makeSandbox()
+        // the person who connected an agent before this step existed: skill folder present, API on
+        fs.mkdirSync(path.join(sandbox.home, '.claude', 'skills', 'climanager-session'), { recursive: true })
+        fs.writeFileSync(path.join(sandbox.home, '.claude', 'skills', 'climanager-session', 'SKILL.md'), '---\nname: climanager-session\n---\n')
+        ctx = await launchAppWithWorkspaces(
+            [{ id: 'p', name: 'proj', path: sandbox.project, sessions: [] }],
+            {
+                settings: { controlApi: { enabled: true, port: 0, aiFolderName: 'AI Work' } },
+                env: { HOME: sandbox.home, CLIMANAGER_HOME: sandbox.climanagerHome, CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=installed' },
+                config: { gettingStarted: { startedAt: 1, dismissed: false, done: { folder: true, agent: true, chat: true }, alreadyDone: [] } }
+            }
+        )
+        const { page } = ctx
+        await page.waitForTimeout(1500)
+        await expect(page.locator('[data-getting-started]')).toHaveCount(0)
+        await page.locator('button[title^="Settings"]').first().click()
+        await page.getByRole('button', { name: 'Show Again' }).click()
+        await page.getByRole('button', { name: /Accept and Continue/ }).click()
+        const card = page.locator('[data-getting-started="full"]')
+        await expect(card).toBeVisible({ timeout: 15_000 })
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('4/4')
+        await expect(card.locator('[data-getting-started-all-done]')).toContainText('already done all four steps')
+        await expect(card.locator('[data-getting-started-already]')).toHaveCount(4)
+        await page.waitForTimeout(3500)
+        await expect(card).toBeVisible()
+        expect(ctx.pageErrors).toEqual([])
+    })
+
+    test('the AI step\'s buttons act: API on (real /v1/health), install command copied, docs opened; a finished step needs both', async () => {
+        test.setTimeout(120_000)
+        sandbox = makeSandbox()
+        ctx = await launchAppWithWorkspaces(
+            [{ id: 'p', name: 'proj', path: sandbox.project, sessions: [] }],
+            {
+                settings: { controlApi: { enabled: false, port: 0, aiFolderName: 'AI Work' } },
+                env: { HOME: sandbox.home, CLIMANAGER_HOME: sandbox.climanagerHome, CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=installed' },
+                // the first three steps done in a four-step card: only the AI step is left
+                config: { gettingStarted: { startedAt: 1, dismissed: false, done: { folder: true, agent: true, chat: true }, alreadyDone: [], withAiStep: true } }
+            }
+        )
+        const { page, app, userDataDir } = ctx
+        const card = page.locator('[data-getting-started="full"]')
+        await expect(card).toBeVisible({ timeout: 15_000 })
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('3/4')
+        const discoveryPath = path.join(sandbox.climanagerHome, 'control-api.json')
+        // off until the person presses the button: no server, no discovery file, the warning says what it opens
+        await expect(card.locator('[data-getting-started-ai-warning]')).toContainText('this Mac only')
+        expect(fs.existsSync(discoveryPath)).toBe(false)
+        await shot(page, '8-ai-step-full')
+
+        // docs → the default browser (main's shell.openExternal, stubbed)
+        await app.evaluate(({ shell }) => {
+            const urls: string[] = []
+            ;(globalThis as unknown as { __opened: string[] }).__opened = urls
+            shell.openExternal = async (url: string) => { urls.push(url) }
+        })
+        await card.locator('[data-getting-started-api-docs]').click()
+        await expect.poll(() => app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened))
+            .toEqual(['https://climanager.solhun.com/docs/ai-control-api'])
+
+        // copy → the system clipboard (the machine's: put back what was there)
+        const savedClipboard = await app.evaluate(({ clipboard }) => clipboard.readText())
+        try {
+            await card.locator('[data-getting-started-copy-install]').click()
+            await expect(card.locator('[data-getting-started-copy-install]')).toContainText('Copied')
+            expect(await app.evaluate(({ clipboard }) => clipboard.readText()))
+                .toBe('npx skills add woorichicken/climanager-session@climanager-session -g')
+        } finally {
+            await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), savedClipboard)
+        }
+
+        // Turn on → the same saved key as Settings › Agents, and a server that really answers
+        await card.locator('[data-getting-started-turn-on-api]').click()
+        await expect(card.locator('[data-getting-started-ai-on]')).toBeVisible({ timeout: 15_000 })
+        await expect.poll(() => fs.existsSync(discoveryPath), { timeout: 15_000 }).toBe(true)
+        const discovery = JSON.parse(fs.readFileSync(discoveryPath, 'utf-8')) as { url: string; token: string }
+        const health = await fetch(discovery.url + '/v1/health', { headers: { Authorization: `Bearer ${discovery.token}` } })
+        expect(health.status).toBe(200)
+        expect((readConfig(userDataDir).settings as { controlApi: { enabled: boolean; port: number } }).controlApi).toMatchObject({ enabled: true, port: 0 })
+        // Settings › Agents agrees with the card's switch, and saving something unrelated there keeps the API on
+        // (this window and the Settings window each save a whole copy of the settings)
+        await page.locator('button[title^="Settings"]').first().click()
+        await page.getByTestId('settings-category-agents').click()
+        const agentsToggle = page.getByText('Enable AI Control API').locator('xpath=ancestor::div[contains(@class,"justify-between")][1]').locator('button')
+        await expect(agentsToggle).toHaveClass(/bg-emerald-600/)
+        await page.getByTestId('settings-category-sidebar').click()
+        await page.getByTestId('settings-show-playground').click()
+        await page.getByRole('button', { name: 'Save', exact: true }).click()
+        await expect(page.getByText('PLAYGROUND', { exact: true })).toHaveCount(0, { timeout: 15_000 })
+        expect((readConfig(userDataDir).settings as { controlApi: { enabled: boolean } }).controlApi.enabled).toBe(true)
+        expect((await fetch(discovery.url + '/v1/health', { headers: { Authorization: `Bearer ${discovery.token}` } })).status).toBe(200)
+        // the API alone does not tick the step: the skill folder is still missing
+        await page.waitForTimeout(3500)
+        await expect(card.locator('[data-getting-started-count]')).toHaveText('3/4')
+        expect((readConfig(userDataDir).gettingStarted as { done: Record<string, boolean> }).done.ai).toBeUndefined()
+
+        // the skill, as a symlink (installs often link into ~/.claude/skills), completes it
+        const target = path.join(sandbox.root, 'skill-source')
+        fs.mkdirSync(target, { recursive: true })
+        fs.writeFileSync(path.join(target, 'SKILL.md'), '---\nname: climanager-session\n---\n')
+        fs.mkdirSync(path.join(sandbox.home, '.claude', 'skills'), { recursive: true })
+        fs.symlinkSync(target, path.join(sandbox.home, '.claude', 'skills', 'climanager-session'))
+        await expect(page.locator('[data-getting-started]')).toHaveCount(0, { timeout: 15_000 })
+        await expect.poll(() => readConfig(userDataDir).gettingStarted).toMatchObject({ done: { ai: true } })
         expect(ctx.pageErrors).toEqual([])
     })
 })

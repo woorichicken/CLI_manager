@@ -29,4 +29,7 @@ whose version has shipped, then deletes them in a commit that says what was done
 
 ## Open
 
-None right now. The last row (session role and tags — teach the skill) was done after v1.38.0 shipped; see the commit that removed it.
+| Waits for | Do | Not before |
+| --- | --- | --- |
+| This PR (Getting started 4th step «Connect an AI agent», onboarding-1127) merged **and released**; the installed app shows the step: `gettingStarted` in `config.json` has `withAiStep` after «Show Again», or the card shows 0/4 | **Skill (original)**: `git push origin main` for the two local `climanager-session` commits (`references/onboarding.md` + feature-map row, `release.md` row) — check `git log --oneline origin/main..HEAD` is only those. **Public edition**: in a clone of `woorichicken/climanager-session`, `git am ~/Downloads/_batches/onboarding-1127/public-onboarding.patch`, replace «next release» in the feature map with the shipped version, run `verify-release.mjs`, merge to public `main` (procedure: skill `references/release.md`; never `sync-release`) | The skill's onboarding tells people to press the card's **Turn on AI Control API** button; an app without the card has only Settings › Agents. The public repo must not describe a card its users cannot find |
+

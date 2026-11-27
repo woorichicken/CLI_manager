@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### Getting started 카드가 좁은 창에서 찌그러진다 — 사이드바가 열린 채 메인 칸이 약 110px 일 때
+- Discovered: 2026-11-27 온보딩 4번째 칸 작업(onboarding-1127)의 390 폭 캡처.
+- Evidence: 창 폭 390 + 사이드바 열림(256px)이면 메인 칸이 약 110px 라 풀 카드(`w-[360px] max-w-[calc(100%-32px)]`)의 글이 한 글자 폭으로 접힌다 — 4번째 칸을 넣기 **전 판에서도 같다**(`~/Downloads/_batches/onboarding-1127/review/shots/a-fresh-full-390-before.png`). 데스크톱 앱이라 실사용 폭이 아닐 수 있다.
+- 제안: 메인 칸이 카드 최소폭(약 240px)보다 좁으면 풀 카드 대신 사이드바 아래 compact 로 보내거나 사이드바를 접는 안내.
+- Why deferred: 이번 범위(4번째 칸)가 아니고, 이 폭이 실제로 쓰이는지 사람이 정해야 한다.
+- Trigger: 좁은 창 제보가 오거나 앱 최소 창 폭을 정할 때.
+- Owner: 없음
+
 ### 사용량이 두 출처로 갈려 보인다 — 앱 값과 agent-swap 값을 한 목록으로 (플러그인 작업 뒤)
 - Discovered: 2026-11-27 CLI 팀장 대화 세션(`~/Downloads/_batches/talk-resource-usage-1126/notes.md` 「11-26 실측」).
 - Evidence: 폰 `src/renderer/src/phone/PhoneUsagePanel.tsx` 가 「Claude Code」·「Codex」(앱 `UsageTracker`)와 「agent-swap accounts」·「Codex (agent-swap)」(`src/main/phone/phoneUsage.ts` 의 `aswap list --json`)를 칸을 나눠 따로 그린다. 데스크톱 `src/renderer/src/components/UsageIndicator.tsx` 는 앱 값만 읽는다. 앱의 Claude 값은 statusLine 브리지가 마지막으로 받은 페이로드 하나(계정 표시 없음, 쉬는 세션은 갱신 안 함)라, statusLine 을 래핑하지 않은 Mac 에서는 비어 있다(11-26 이 Mac: statusLine = omc-hud). 같은 날 aswap 은 work 7d 98% · codex·muse `timed out`.

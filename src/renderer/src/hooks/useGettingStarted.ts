@@ -44,5 +44,10 @@ export function useGettingStarted(enabled: boolean, nudge: unknown) {
         try { setState(await window.api.gettingStartedDismiss()) } catch { /* hidden already */ }
     }, [])
 
-    return { state: visible ? state : null, begin, dismiss }
+    /** Looks again now (after a button changed something the card shows), without waiting for the timer. */
+    const refresh = useCallback(async () => {
+        try { setState(await window.api.gettingStartedCheck()) } catch { /* the next timer tick tries again */ }
+    }, [])
+
+    return { state: visible ? state : null, begin, dismiss, refresh }
 }
