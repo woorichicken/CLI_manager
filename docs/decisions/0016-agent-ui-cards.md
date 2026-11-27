@@ -28,9 +28,11 @@ terminal where an agent runs.
 
 ## Decision
 
-- **Entry**: `POST /v1/ui` and MCP `show_ui` — `{ text, components, data?, kind? }`, from the session the
-  card is for (`X-Caller-Session`). A card names another session than the caller → `403 not_your_session`:
-  a card cannot type into a session that did not ask. Code: `ControlApiService.showUi`.
+- **Entry**: `POST /v1/ui` and MCP `show_ui` — `{ text, components, data?, kind? }`, only from the session
+  the card is for: `X-Caller-Session` is required and is the target (`400 session_required` without it);
+  a `sessionId` other than the caller → `403 not_your_session`. The header is asserted by the caller like
+  everywhere in this API — the bearer token is the access check, and a token holder can already type into
+  any session (0006); this rule keeps a card's answer in the session that asked. Code: `ControlApiService.showUi`.
 - **What is drawn — an allowlist in main** (`src/main/agentUi.ts`), not the library's schema:
   - Components: `Card`, `Column`, `Row`, `Text`, `Divider`, `Button`, `TextField`, `CheckBox`,
     `ChoicePicker` — each with only its listed properties. No `Image`, `Icon`, `Video`, `AudioPlayer`
@@ -42,12 +44,16 @@ terminal where an agent runs.
     templates.
   - One tree under `root`: every id unique and used in one place, nothing unreachable — so no cycle and no
     shared subtree that renders exponentially.
+  - A bound slot gets data its part can show: text slots a string, number or boolean; a CheckBox `true`/`false`;
+    a ChoicePicker a list of strings (or nothing yet). An object where text goes made the library throw inside
+    Lit, where React's error boundary does not see it (Codex review, 11-27).
   - Caps: 40 components, depth 8, 12 children, 12 options, 8 context keys, 500 characters a string,
     16 KB of JSON for the whole card. The card lives in config.json beside up to 200 inbox requests.
   - Refusals are `400 bad_ui` with the first problem in words an agent can act on.
 - **Where it is drawn (v1)**: under its request in the inbox — `InboxRequest.ui`. The inbox already binds a
   request to its session, counts it on the bell and the Dock, drops it when the session closes, and has the
-  guarded answer path (Reply). A repeat of the same unread text replaces the card, unanswered.
+  guarded answer path (Reply). A repeat of the same unread text replaces the card, unanswered, with a new
+  `rev` (set by the inbox); the open popover redraws it.
 - **The renderer is one part that does not know the inbox**: `components/AgentUi/AgentUiCard.tsx` takes a
   card and an `onAction`; `AgentUiSurface.tsx` (lazy chunk) turns it into the three v1.0 messages for
   `@a2ui/react`. Colours come from `color-scheme: dark` and `--a2ui-*` variables. A second place (a pane
@@ -61,6 +67,9 @@ terminal where an agent runs.
   a question on the agent's screen or text in its input box refuses it (the card says why and stays open),
   a working agent gets it when its turn ends, no AI mark. One press at a time; once it is sent or queued
   the card locks (`ui.answered`). Answering does not read the request (b165acc4).
+- **A press names the card it was drawn from** (`rev`). A press on a replaced card is refused (`replaced`) —
+  otherwise a person who saw PR 324 would answer for the PR 999 the agent swapped in. An answer that was
+  being sent while the card was replaced locks only the old card (Codex review, 11-27).
 
 ## What it does not do
 

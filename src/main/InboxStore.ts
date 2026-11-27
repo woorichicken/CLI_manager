@@ -100,7 +100,12 @@ export class InboxStore {
             (r) => !r.readAt && r.sessionId === input.sessionId && r.kind === input.kind && r.text === input.text
         )
         if (repeat) {
-            const updated: InboxRequest = { ...repeat, at: now, ...(input.url ? { url: input.url } : {}), ...(input.ui ? { ui: input.ui } : {}) }
+            const updated: InboxRequest = {
+                ...repeat,
+                at: now,
+                ...(input.url ? { url: input.url } : {}),
+                ...(input.ui ? { ui: { ...input.ui, rev: randomUUID() } } : {})
+            }
             this.save([updated, ...all.filter((r) => r.id !== repeat.id)])
             return { request: updated, created: false }
         }
@@ -114,7 +119,7 @@ export class InboxStore {
             at: now,
             createdAt: now,
             client: input.client,
-            ...(input.ui ? { ui: input.ui } : {})
+            ...(input.ui ? { ui: { ...input.ui, rev: randomUUID() } } : {})
         }
         this.save(trimToCap([request, ...all]))
         return { request, created: true }
@@ -133,12 +138,13 @@ export class InboxStore {
 
     /**
      * A card's button answer reached the session (decision 0016): the card locks. Answering does not
-     * read the request — only the check or Mark all read does (b165acc4). Null: no such request, or no card.
+     * read the request — only the check or Mark all read does (b165acc4). Null: no such request, no card,
+     * or the card was replaced since the press (`rev`) — the answer belongs to the old card, not the new one.
      */
-    setUiAnswer(id: string, answered: NonNullable<AgentUi['answered']>): InboxRequest | null {
+    setUiAnswer(id: string, rev: string | undefined, answered: NonNullable<AgentUi['answered']>): InboxRequest | null {
         const all = this.all()
         const target = all.find((r) => r.id === id)
-        if (!target?.ui) return null
+        if (!target?.ui || target.ui.rev !== rev) return null
         const updated: InboxRequest = { ...target, ui: { ...target.ui, answered } }
         this.save(all.map((r) => (r.id === id ? updated : r)))
         return updated

@@ -106,30 +106,63 @@ function checkString(value: unknown, where: string): string {
     return value as string
 }
 
+/** What a bound slot shows: the data at its path must be that shape (or absent), or the renderer throws. */
+type BindingShape = 'text' | 'boolean' | 'list' | 'any'
+interface Binding {
+    path: string
+    shape: BindingShape
+    where: string
+}
+
 /** `{ "@path": "/a/b" }` — the only binding allowed. Anything else with an `@` key (e.g. `@call`) is refused. */
-function checkPath(value: Record<string, unknown>, where: string): void {
+function checkPath(value: Record<string, unknown>, where: string, bindings: Binding[], shape: BindingShape): void {
     const keys = Object.keys(value)
     if (keys.length !== 1 || keys[0] !== '@path') fail(`${where}: only { "@path": "/…" } bindings are allowed (no @call or functions)`)
     const path = value['@path']
     if (typeof path !== 'string' || !DATA_PATH_PATTERN.test(path)) fail(`${where}: @path must be an absolute path like "/form/note"`)
+    bindings.push({ path: path as string, shape, where })
 }
 
-function checkProp(kind: PropKind, value: unknown, where: string, refs: string[]): void {
+/** The value at `/a/b` in the card's data, or undefined. */
+function valueAt(data: Record<string, unknown> | undefined, path: string): unknown {
+    let current: unknown = data
+    for (const part of path.split('/').filter(Boolean)) {
+        if (!isPlainObject(current)) return undefined
+        current = current[part]
+    }
+    return current
+}
+
+function checkBindingShape(binding: Binding, value: unknown): void {
+    if (value === undefined || binding.shape === 'any') return
+    const ok =
+        binding.shape === 'text'
+            ? typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+            : binding.shape === 'boolean'
+                ? typeof value === 'boolean'
+                : Array.isArray(value) && value.every((item) => typeof item === 'string')
+    if (!ok) {
+        const want = binding.shape === 'text' ? 'a string or number' : binding.shape === 'boolean' ? 'true or false' : 'a list of strings'
+        fail(`${binding.where}: data at ${binding.path} must be ${want}`)
+    }
+}
+
+function checkProp(kind: PropKind, value: unknown, where: string, refs: string[], bindings: Binding[]): void {
     if (typeof kind === 'object') {
         if (typeof value !== 'string' || !kind.enum.includes(value)) fail(`${where} must be one of ${kind.enum.join(', ')}`)
         return
     }
     switch (kind) {
         case 'dynamicString':
-            if (isPlainObject(value)) checkPath(value, where)
+            if (isPlainObject(value)) checkPath(value, where, bindings, 'text')
             else checkString(value, where)
             return
         case 'dynamicBoolean':
-            if (isPlainObject(value)) checkPath(value, where)
+            if (isPlainObject(value)) checkPath(value, where, bindings, 'boolean')
             else if (typeof value !== 'boolean') fail(`${where} must be true, false or { "@path": "/…" }`)
             return
         case 'dynamicStringList':
-            if (isPlainObject(value)) checkPath(value, where)
+            if (isPlainObject(value)) checkPath(value, where, bindings, 'list')
             else if (!Array.isArray(value) || value.length > AGENT_UI_MAX_OPTIONS) fail(`${where} must be a list of strings or { "@path": "/…" }`)
             else (value as unknown[]).forEach((item, i) => checkString(item, `${where}[${i}]`))
             return
@@ -160,18 +193,18 @@ function checkProp(kind: PropKind, value: unknown, where: string, refs: string[]
                 const o = option as Record<string, unknown>
                 const extra = Object.keys(o).filter((k) => k !== 'label' && k !== 'value')
                 if (extra.length) fail(`${where}[${i}] has unknown property "${extra[0]}"`)
-                checkProp('dynamicString', o.label, `${where}[${i}].label`, refs)
+                checkProp('dynamicString', o.label, `${where}[${i}].label`, refs, bindings)
                 checkString(o.value, `${where}[${i}].value`)
             }
             return
         case 'action':
-            checkAction(value, where)
+            checkAction(value, where, bindings)
             return
     }
 }
 
 /** `{ event: { name, context? } }` only. `functionCall` (openUrl and friends) and `userMessage` are refused. */
-function checkAction(value: unknown, where: string): void {
+function checkAction(value: unknown, where: string, bindings: Binding[]): void {
     if (!isPlainObject(value) || Object.keys(value).length !== 1 || !isPlainObject(value.event)) {
         fail(`${where} must be { "event": { "name": "…", "context": { … } } } — functionCall is not allowed`)
     }
@@ -188,7 +221,7 @@ function checkAction(value: unknown, where: string): void {
     for (const [key, item] of entries) {
         if (!CONTEXT_KEY_PATTERN.test(key)) fail(`${where}.event.context key "${key}" must be 1–32 letters, digits or _`)
         const at = `${where}.event.context.${key}`
-        if (isPlainObject(item)) checkPath(item, at)
+        if (isPlainObject(item)) checkPath(item, at, bindings, 'any')
         else if (typeof item === 'string') checkString(item, at)
         else if (item !== null && typeof item !== 'boolean' && !(typeof item === 'number' && Number.isFinite(item))) {
             fail(`${at} must be a string, number, boolean, null or { "@path": "/…" }`)
@@ -237,6 +270,7 @@ export function checkAgentUi(input: { components?: unknown; data?: unknown }): A
         if (bytes > AGENT_UI_MAX_BYTES) fail(`the card is limited to ${AGENT_UI_MAX_BYTES} bytes of JSON (got ${bytes})`)
 
         const byId = new Map<string, AgentUiComponent>()
+        const bindings: Binding[] = []
         const childrenOf = new Map<string, string[]>()
         for (const [index, raw] of list.entries()) {
             const where = `components[${index}]`
@@ -256,7 +290,7 @@ export function checkAgentUi(input: { components?: unknown; data?: unknown }): A
                 if (key === 'id' || key === 'component') continue
                 const kind = rule.required[key] ?? rule.optional[key]
                 if (!kind) fail(`${where} (${name}) has unknown property "${key}"`)
-                checkProp(kind, value, `${where}.${key}`, refs)
+                checkProp(kind, value, `${where}.${key}`, refs, bindings)
                 copy[key] = value
             }
             for (const key of Object.keys(rule.required)) {
@@ -289,6 +323,8 @@ export function checkAgentUi(input: { components?: unknown; data?: unknown }): A
         }
 
         if (data !== undefined && data !== null) checkData(data, 1, 'data')
+        // A bound slot gets what its part can show — an object where text goes makes the renderer throw.
+        for (const binding of bindings) checkBindingShape(binding, valueAt(isPlainObject(data) ? data : undefined, binding.path))
         const ui: AgentUi = { components: [...byId.values()] }
         if (isPlainObject(data) && Object.keys(data).length > 0) ui.data = data as Record<string, unknown>
         return { ok: true, ui }

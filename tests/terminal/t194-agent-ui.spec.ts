@@ -149,6 +149,12 @@ test('T194: an agent card in the inbox — drawn, a button types one line into t
     expect(foreign.status).toBe(403)
     expect(foreign.json.error.code).toBe('not_your_session')
     expect((await api('POST', '/v1/ui', approvalCard(3))).json.error.code).toBe('session_required')
+    // Only from the session itself: naming a session without being it is refused too.
+    expect((await api('POST', '/v1/ui', { ...approvalCard(4), sessionId: CLAUDE })).json.error.code).toBe('session_required')
+    // Data a bound part cannot show (an object where text goes) is refused before it reaches the renderer.
+    const badData = await api('POST', '/v1/ui', { ...approvalCard(5), data: { title: { toString: 'oops' }, body: '', note: '' } }, CLAUDE)
+    expect(badData.status).toBe(400)
+    expect(badData.json.error.message).toMatch(/data at \/title/)
 
     const sent = await api('POST', '/v1/ui', approvalCard(324), CLAUDE)
     expect(sent.status).toBe(201)
@@ -206,7 +212,8 @@ test('T194: an agent card in the inbox — drawn, a button types one line into t
     await shot(page, 't194-answered-1280')
 
     // Locked: another press sends nothing; the request is still unread; no AI mark.
-    const again = await page.evaluate((id) => window.api.answerInboxUi(id, 'no', {}), sent.json.request.id)
+    const firstRev = sent.json.request.ui.rev as string
+    const again = await page.evaluate(({ id, rev }) => window.api.answerInboxUi(id, rev, 'no', {}), { id: sent.json.request.id, rev: firstRev })
     expect(again).toMatchObject({ status: 'rejected', reason: 'answered' })
     // One answer reached the agent (the terminal also echoes the typed line, so count the agent's ANSWER lines).
     expect((await terminalLines(page, CLAUDE)).match(/ANSWER\[\d+\]: \[CLI Manager card\]/g)?.length).toBe(1)
@@ -217,9 +224,20 @@ test('T194: an agent card in the inbox — drawn, a button types one line into t
     const stored = listed.json.requests.find((r: { id: string }) => r.id === sent.json.request.id)
     expect(stored.ui.answered).toMatchObject({ action: 'approve', status: expect.stringMatching(/^(sent|queued)$/) })
     // The renderer cannot name something that is not a button.
-    const repeat = await api('POST', '/v1/ui', approvalCard(324), CLAUDE)
+    // The agent replaces the card with different content while the popover is open.
+    const changed = approvalCard(999)
+    changed.text = 'Merge PR #324?'
+    const repeat = await api('POST', '/v1/ui', changed, CLAUDE)
     expect(repeat.status).toBe(200)
-    expect(await page.evaluate((id) => window.api.answerInboxUi(id, 'note', {}), sent.json.request.id)).toMatchObject({ status: 'rejected', reason: 'not_a_button' })
+    expect(repeat.json.request.ui.rev).not.toBe(firstRev)
+    // A press still aimed at the old card (drawn before the repeat) is refused — it would answer for PR 999.
+    expect(await page.evaluate(({ id, rev }) => window.api.answerInboxUi(id, rev, 'ok', { note: 'x' }), { id: sent.json.request.id, rev: firstRev })).toMatchObject({ status: 'rejected', reason: 'replaced' })
+    // With the popover still open, the repeat's card starts fresh: unlocked, the note empty again.
+    await expect(card).not.toHaveAttribute('data-state', 'answered', { timeout: 10_000 })
+    await expect(card.getByRole('textbox')).toHaveValue('')
+    await expect(card).toContainText('PR #999 — merge?')
+    await expect(card.getByRole('button', { name: 'Approve' })).toBeEnabled()
+    expect(await page.evaluate(({ id, rev }) => window.api.answerInboxUi(id, rev, 'note', {}), { id: sent.json.request.id, rev: repeat.json.request.ui.rev })).toMatchObject({ status: 'rejected', reason: 'not_a_button' })
 
     // --- 390 wide: the card fits the popover -------------------------------
     await page.keyboard.press('Escape')
@@ -235,6 +253,6 @@ test('T194: an agent card in the inbox — drawn, a button types one line into t
     // The repeat replaced the card unanswered: Hold sends the other event.
     await narrowCard.getByRole('button', { name: 'Hold' }).click()
     await expect(narrowCard).toHaveAttribute('data-state', 'answered', { timeout: 10_000 })
-    await expect.poll(() => terminalLines(page, CLAUDE), { timeout: 10_000 }).toMatch(/ANSWER\[\d+\]: \[CLI Manager card\] hold \{"pr":324\}/)
+    await expect.poll(() => terminalLines(page, CLAUDE), { timeout: 10_000 }).toMatch(/ANSWER\[\d+\]: \[CLI Manager card\] hold \{"pr":999\}/)
     await shot(page, 't194-answered-390')
 })

@@ -162,10 +162,13 @@ export function InboxPopover({
                 {request.ui && (
                     <div className="px-3 pb-2 pl-8" data-testid="inbox-ui">
                         <AgentUiCard
+                            // A repeat of the same request carries a new card (new rev): start it fresh —
+                            // the old surface and the "answered" state belong to the card it replaced.
+                            key={`${request.id}:${request.ui.rev ?? ''}`}
                             surfaceId={request.id}
                             ui={request.ui}
                             disabledReason={request.ui.answered ? null : where.replyBlocked}
-                            onAction={(componentId, context) => window.api.answerInboxUi(request.id, componentId, context)}
+                            onAction={(componentId, context) => window.api.answerInboxUi(request.id, request.ui?.rev, componentId, context)}
                         />
                     </div>
                 )}

@@ -269,7 +269,7 @@ declare global {
             markInboxAllRead: () => Promise<void>
             /** Drops every read request (the inbox's «Clear read»); resolves to how many went. */
             clearInboxRead: () => Promise<number>
-            answerInboxUi: (requestId: string, componentId: string, context: Record<string, unknown>) => Promise<AgentUiActionResult>
+            answerInboxUi: (requestId: string, rev: string | undefined, componentId: string, context: Record<string, unknown>) => Promise<AgentUiActionResult>
             getChecklists: () => Promise<Checklist[]>
             onChecklists: (callback: (checklists: Checklist[]) => void) => () => void
             createChecklist: (title: string, workspaceId?: string) => Promise<string | null>

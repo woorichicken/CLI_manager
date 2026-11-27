@@ -349,7 +349,7 @@ export interface ShowUiInput {
     /** The data model the components bind to with { "@path": "/…" }. */
     data?: unknown
     kind?: unknown
-    /** The session the card is for — its answers are typed there. Falls back to `caller`; must match it when both are given. */
+    /** Optional; when given it must equal `caller` — the card is for the session that sends it. */
     sessionId?: string
     client: string
     caller?: string
@@ -1283,20 +1283,23 @@ export class ControlApiService {
         if (!check.ok) throw new ControlApiError(400, 'bad_request', check.message)
         const ui = checkAgentUi({ components: input.components, data: input.data })
         if (!ui.ok) throw new ControlApiError(400, 'bad_ui', ui.message)
-        const named = input.sessionId?.trim()
-        if (named && input.caller && named !== input.caller) {
-            throw new ControlApiError(
-                403,
-                'not_your_session',
-                'A card goes to the session that sends it — its answers are typed there. Leave sessionId out, or call from that session.'
-            )
-        }
-        const sessionId = named || input.caller
+        // Only from a session, for itself: X-Caller-Session is required and is the target. (The header is
+        // asserted by the caller like everywhere in this API — the bearer token is the access check; this
+        // keeps a card's answer in the session that asked.)
+        const sessionId = input.caller
         if (!sessionId) {
             throw new ControlApiError(
                 400,
                 'session_required',
-                'Say which session the card is for: send X-Caller-Session (the CLIMANAGER_SESSION_ID of the terminal you run in), or pass sessionId.'
+                'Send the card from the session it is for, with X-Caller-Session (the CLIMANAGER_SESSION_ID of the terminal you run in).'
+            )
+        }
+        const named = input.sessionId?.trim()
+        if (named && named !== sessionId) {
+            throw new ControlApiError(
+                403,
+                'not_your_session',
+                'A card goes to the session that sends it — its answers are typed there. Leave sessionId out.'
             )
         }
         this.requireSession(sessionId)

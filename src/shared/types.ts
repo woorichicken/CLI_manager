@@ -1225,6 +1225,12 @@ export type AgentUiComponent = { id: string; component: AgentUiComponentName } &
 
 /** What an agent sent to draw (decision 0016). `root` is the component drawn first. */
 export interface AgentUi {
+    /**
+     * Which version of the card this is — set by the inbox each time a card is stored (a repeat replaces
+     * it). A press names the rev it was drawn from; a press on a replaced card is refused, so the person
+     * never answers what they did not see.
+     */
+    rev?: string
     components: AgentUiComponent[]
     /** The A2UI data model the components bind to with `{ "@path": "/…" }`. */
     data?: Record<string, unknown>

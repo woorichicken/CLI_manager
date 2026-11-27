@@ -164,7 +164,9 @@ press types one line into the sending session: `[CLI Manager card] <event name> 
 | Button | `{ "action": { "event": { "name": "approve", "context": { "pr": 324, "note": { "@path": "/note" } } } } }` — name 1–64 of `A-Z a-z 0-9 _ . : -`, at most 8 context keys |
 | Caps | 40 components · depth 8 · 12 children · 12 options · 500 characters a string · 16 KB of JSON |
 | Answer | Built by main from the stored card; only `@path` values come from the person's input (1000 characters each, line ≤ 2000). Sent like Chat: a question on screen or text in the input box refuses it (shown on the card, which stays open), a working agent gets it when its turn ends, no AI mark. Sent or queued → the card locks (`ui.answered`); the request stays unread |
-| Who | The card is for the session that sends it. A session without an agent gets a drawn but inert card |
+| Who | The card is for the session that sends it (`X-Caller-Session` required). A session without an agent gets a drawn but inert card |
+| Data | A bound slot's data must be what the part shows: text ← string/number/boolean · CheckBox ← boolean · ChoicePicker ← list of strings (or absent) |
+| Replace | The same unread text again replaces the card with a new `rev` (in the request's `ui`); a press on the old card is refused |
 
 Example:
 
@@ -428,7 +430,7 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/sessions/:id/release` | | hands it to the user; clears the AI mark |
 | DELETE | `/v1/sessions/:id` | `?handTo=<session id>` | kills the pty and removes the session — any session, including the user's. `{ ok, handedOver }`: with `handTo`, the closing session's shown Related pairs are first copied to that session (same kind, direction and time; skipped: the pair with `handTo` itself and any partner `handTo` already has a record with, removed ones included). `handTo` equal to the id → `400`, unknown → `404`, and nothing is closed in either case |
 | POST | `/v1/inbox` | `kind`, `text`, `url`; `sessionId` or the `X-Caller-Session` header | `{ request, created }` — see [Inbox](#inbox). `400 session_required`, `404 not_found` |
-| POST | `/v1/ui` | `text`, `components`, `data?`, `kind?` (default `question`); from the session it is for (`X-Caller-Session`, or `sessionId` equal to it) | `201 { request, created: true }` (`200` with `created: false` when the same unread text repeats — the card is replaced, unanswered). `400 bad_ui` (first problem in words), `400 session_required`, `403 not_your_session`, `404 not_found` — see [Agent cards](#agent-cards) |
+| POST | `/v1/ui` | `text`, `components`, `data?`, `kind?` (default `question`); only from the session it is for — `X-Caller-Session` required (`sessionId`, if given, must equal it) | `201 { request, created: true }` (`200` with `created: false` when the same unread text repeats — the card is replaced, unanswered). `400 bad_ui` (first problem in words), `400 session_required`, `403 not_your_session`, `404 not_found` — see [Agent cards](#agent-cards) |
 | GET | `/v1/inbox` | `?unread=1` | `{ unreadCount, requests[] }`, newest first. A request carries `id`, `sessionId`, `sessionName`, `workspaceName`, `kind`, `text`, `url?`, `client`, `read`, `at`, `createdAt`, `readAt` (ISO) |
 | POST | `/v1/inbox/:id/read` | | the request, marked read. `404 not_found` |
 | GET | `/v1/checklists` | `?status=open\|done\|all` (default `open`) · `?project=` | `{ checklists[] }` in header order — see [Checklists](#checklists). A checklist carries `id`, `title`, `workspaceId`, `workspaceName`, `due`, `overdue`, `done`, `total`, `complete`, `items[]` (`id`, `n`, `text`, `done`, `doneAt`), `client`, `createdBy`, `createdByName`, `createdAt`, `updatedAt` (ISO; absent values are `null`) |

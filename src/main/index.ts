@@ -3915,9 +3915,11 @@ app.whenReady().then(async () => {
     // Chat view's way, so a question on screen or a draft in the input box refuses it and a working
     // agent gets it when its turn ends. One press at a time; an answered card stays locked.
     const answeringCards = new Set<string>()
-    ipcMain.handle('inbox-ui-action', async (_e, requestId: unknown, componentId: unknown, context: unknown): Promise<AgentUiActionResult> => {
+    ipcMain.handle('inbox-ui-action', async (_e, requestId: unknown, rev: unknown, componentId: unknown, context: unknown): Promise<AgentUiActionResult> => {
         const request = typeof requestId === 'string' ? inbox.get(requestId) : null
         if (!request?.ui) return { status: 'rejected', reason: 'gone', message: 'This card is gone.' }
+        // The agent sent a new card since this one was drawn: the press is for something no longer there.
+        if (request.ui.rev !== rev) return { status: 'rejected', reason: 'replaced', message: 'The agent replaced this card — look at the new one.' }
         if (request.ui.answered) return { status: 'rejected', reason: 'answered', message: 'This card was already answered.' }
         if (answeringCards.has(request.id)) return { status: 'rejected', reason: 'busy', message: 'Still sending the last answer.' }
         const built = agentUiActionLine(request.ui, componentId, context)
@@ -3926,7 +3928,8 @@ app.whenReady().then(async () => {
         try {
             const sent = await conversationService.send(request.sessionId, built.line)
             if (sent.status === 'rejected') return { status: 'rejected', reason: sent.reason, message: sent.message }
-            inbox.setUiAnswer(request.id, { at: Date.now(), action: built.action, status: sent.status })
+            // Locks only the card that was pressed: a replacement that arrived while sending stays open.
+            inbox.setUiAnswer(request.id, request.ui.rev, { at: Date.now(), action: built.action, status: sent.status })
             return { status: sent.status, line: built.line }
         } finally {
             answeringCards.delete(request.id)

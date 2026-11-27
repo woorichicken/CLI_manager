@@ -387,8 +387,8 @@ const api = {
     markInboxAllRead: (): Promise<void> => ipcRenderer.invoke('mark-inbox-all-read'),
     clearInboxRead: (): Promise<number> => ipcRenderer.invoke('clear-inbox-read'),
     /** A button on an agent's card (decision 0016): main types the answer line into the card's session. */
-    answerInboxUi: (requestId: string, componentId: string, context: Record<string, unknown>): Promise<AgentUiActionResult> =>
-        ipcRenderer.invoke('inbox-ui-action', requestId, componentId, context),
+    answerInboxUi: (requestId: string, rev: string | undefined, componentId: string, context: Record<string, unknown>): Promise<AgentUiActionResult> =>
+        ipcRenderer.invoke('inbox-ui-action', requestId, rev, componentId, context),
     getChecklists: (): Promise<Checklist[]> => ipcRenderer.invoke('get-checklists'),
     onChecklists: (callback: (checklists: Checklist[]) => void) => {
         const listener = (_e: unknown, checklists: Checklist[]) => callback(checklists)

@@ -161,23 +161,47 @@ test.describe('T193 agent UI', () => {
         expect(agentUiActionLine(picker, 'b', { which: ['a', 3, 'b'] })).toMatchObject({ line: `${AGENT_UI_ANSWER_PREFIX} pick {"which":["a","b"]}` })
     })
 
-    test('the inbox keeps the card, a repeat replaces it unanswered, an answer locks it without reading the request', () => {
+    test('the inbox keeps the card with a rev; a repeat replaces it (new rev, unanswered); an answer locks only the card it was for', () => {
         const data: Record<string, unknown> = {}
         const inbox = new InboxStore({ get: (k) => data[k], set: (k, v) => void (data[k] = v) })
         const ui = accepted(approvalCard(), { note: '' })
         const { request } = inbox.add({ sessionId: 's1', kind: 'question', text: 'Merge?', client: 't', ui })
-        expect(inbox.get(request.id)?.ui?.components).toHaveLength(9)
+        const first = inbox.get(request.id)!.ui!
+        expect(first.components).toHaveLength(9)
+        expect(first.rev).toMatch(/^[0-9a-f-]{36}$/)
 
-        const locked = inbox.setUiAnswer(request.id, { at: 5, action: 'approve', status: 'sent' })
+        const locked = inbox.setUiAnswer(request.id, first.rev, { at: 5, action: 'approve', status: 'sent' })
         expect(locked?.ui?.answered).toEqual({ at: 5, action: 'approve', status: 'sent' })
         expect(locked?.readAt).toBeUndefined()
 
         const again = inbox.add({ sessionId: 's1', kind: 'question', text: 'Merge?', client: 't', ui })
         expect(again.created).toBe(false)
         expect(again.request.ui?.answered).toBeUndefined()
+        expect(again.request.ui?.rev).not.toBe(first.rev)
+        // An answer to the replaced card (it was being sent while the repeat came) does not lock the new one.
+        expect(inbox.setUiAnswer(request.id, first.rev, { at: 6, action: 'approve', status: 'sent' })).toBeNull()
+        expect(inbox.get(request.id)?.ui?.answered).toBeUndefined()
 
         const plain = inbox.add({ sessionId: 's1', kind: 'login', text: 'Sign in', client: 't' })
-        expect(inbox.setUiAnswer(plain.request.id, { at: 1, action: 'x', status: 'sent' })).toBeNull()
-        expect(inbox.setUiAnswer('missing', { at: 1, action: 'x', status: 'sent' })).toBeNull()
+        expect(inbox.setUiAnswer(plain.request.id, undefined, { at: 1, action: 'x', status: 'sent' })).toBeNull()
+        expect(inbox.setUiAnswer('missing', first.rev, { at: 1, action: 'x', status: 'sent' })).toBeNull()
+    })
+
+    test('a bound slot must get data its part can show — no object where text goes', () => {
+        // Codex review: { toString: "oops" } at a Text path passed the allowlist and made the renderer throw.
+        expect(refusal(approvalCard(), { title: { toString: 'oops' }, note: '' })).toMatch(/data at \/title must be a string or number/)
+        expect(refusal(approvalCard(), { note: ['a'] })).toMatch(/data at \/note must be a string or number/)
+        const box = [
+            { id: 'root', component: 'Column', children: ['c', 'p'] },
+            { id: 'c', component: 'CheckBox', label: 'x', value: { '@path': '/on' } },
+            { id: 'p', component: 'ChoicePicker', options: [{ label: 'A', value: 'a' }], value: { '@path': '/pick' } }
+        ]
+        expect(refusal(box, { on: 'yes' })).toMatch(/must be true or false/)
+        expect(refusal(box, { on: true, pick: 'a' })).toMatch(/must be a list of strings/)
+        expect(refusal(box, { on: true, pick: [1] })).toMatch(/must be a list of strings/)
+        // Absent is fine (the field starts empty); numbers show as text; a button's context may bind anything.
+        expect(checkAgentUi({ components: box, data: { on: false, pick: ['a'] } }).ok).toBe(true)
+        expect(checkAgentUi({ components: box }).ok).toBe(true)
+        expect(checkAgentUi({ components: approvalCard(), data: { title: 324, note: '' } }).ok).toBe(true)
     })
 })

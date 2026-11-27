@@ -270,7 +270,7 @@ const TOOLS: ToolDefinition[] = [
     {
         name: 'show_ui',
         description:
-            "Show the user a small card — choices to pick from, an approval with an optional note — drawn by CLI Manager from A2UI v1.0 basic-catalog components, under a request in its inbox. When the user presses a button, one line is typed into your session: [CLI Manager card] <event name> <context JSON> (fields bound with {\"@path\": \"/x\"} carry what the user typed or picked). Components: Card, Column, Row, Text, Divider, Button, TextField, CheckBox, ChoicePicker; each has an id, one has id \"root\", and each id is used in one place. Button: {\"id\":\"ok\",\"component\":\"Button\",\"child\":\"okLabel\",\"variant\":\"primary\",\"action\":{\"event\":{\"name\":\"approve\",\"context\":{\"pr\":324,\"note\":{\"@path\":\"/note\"}}}}}. No images, links or functions (functionCall, @call); at most 40 components and 16 KB. The card is for the session that sends it (X-Caller-Session); repeating the same unread text replaces the card.",
+            "Show the user a small card — choices to pick from, an approval with an optional note — drawn by CLI Manager from A2UI v1.0 basic-catalog components, under a request in its inbox. When the user presses a button, one line is typed into your session: [CLI Manager card] <event name> <context JSON> (fields bound with {\"@path\": \"/x\"} carry what the user typed or picked). Components: Card, Column, Row, Text, Divider, Button, TextField, CheckBox, ChoicePicker; each has an id, one has id \"root\", and each id is used in one place. Button: {\"id\":\"ok\",\"component\":\"Button\",\"child\":\"okLabel\",\"variant\":\"primary\",\"action\":{\"event\":{\"name\":\"approve\",\"context\":{\"pr\":324,\"note\":{\"@path\":\"/note\"}}}}}. No images, links or functions (functionCall, @call); at most 40 components and 16 KB. The card is for the session that sends it — your MCP config must send X-Caller-Session; repeating the same unread text replaces the card.",
         inputSchema: {
             type: 'object',
             properties: {
@@ -282,7 +282,7 @@ const TOOLS: ToolDefinition[] = [
                 },
                 data: { type: 'object', description: 'Initial data model for {"@path": "/…"} bindings, e.g. {"note": ""}.' },
                 kind: { type: 'string', enum: ['login', 'review', 'question', 'other'], description: 'Default "question".' },
-                session_id: { type: 'string', description: 'Your own session. Omit when your MCP config sends X-Caller-Session.' }
+                session_id: { type: 'string', description: 'Optional; must be your own session (the X-Caller-Session your MCP config sends).' }
             },
             required: ['text', 'components']
         }
