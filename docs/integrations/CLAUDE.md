@@ -23,6 +23,7 @@ invariants live in the root [`CLAUDE.md`](../../CLAUDE.md).
 | Claude Code | 6 lifecycle hooks | `statusLine` stdin payload | `~/.claude/settings.json` |
 | Codex | `notify` → `agent-turn-complete` only | `~/.codex/sessions/**/rollout-*.jsonl` | `~/.codex/config.toml` |
 | Antigravity (`agy`) | screen only (spinner + footer) | not integrated | none — read only |
+| OpenCode (`opencode`) | screen only (progress bar + `esc interrupt`) | not integrated | none — read only |
 | Gemini CLI | not integrated | not integrated | — |
 
 ### Claude Code (verified 2026-08-15)
@@ -74,6 +75,36 @@ invariants live in the root [`CLAUDE.md`](../../CLAUDE.md).
   text, it blocked every Chat send on the real tool while the mock passed.
 - `agy --conversation <id>` clears its own resume command from the scrollback.
 - Re-verify with `REAL_AGY=1 REAL_AGY_CWD=<trusted folder>` (T179) whenever agy updates.
+
+### OpenCode `opencode` (verified 2026-11-27, v1.18.15)
+
+- No hooks are installed: herdr learns the session from plugins it adds to the person's OpenCode config,
+  which decision 0002 rules out. Status comes from the screen: working = the row under the composer
+  starting with a progress bar (`⬝■■■■■■⬝`) and ending `esc interrupt` (`esc again to interrupt` after
+  one Esc; a retried request puts its reason in between). Not «esc **to** interrupt». Question panel:
+  `↑↓ select  enter submit  esc dismiss`; permission: `△ Permission required` (herdr
+  `manifests/opencode.toml`, Apache-2.0 — the permission screen was not recorded here).
+- Stop takes **two** Esc: the first only changes the row to `esc again to interrupt`. The step ends with
+  `error.name` `MessageAbortedError` — not a failure in the chat.
+- The composer is rows behind `┃` closed by `╹▀▀▀…`; its last row is the agent · model row. An empty one
+  shows `Ask anything... "…"` in the muted colour the model row draws `·` in. A toast is boxed in `┃` too,
+  but never closed by `╹▀`.
+- Store: one SQLite file for every session of every project — `OPENCODE_DB` (relative to the data folder)
+  or `<XDG_DATA_HOME or ~/.local/share>/opencode/opencode.db`, also on macOS. 1.x tables `session` ·
+  `message` · `part` (2.x moves to `session_v2`, not read: the chat keeps the terminal). Rows are rewritten
+  in place while a step streams: read the session whole when `count`/`max(time_updated)` move. Read with
+  Node's built-in `node:sqlite` (`DatabaseSync`, read-only); largest session here (3,103 parts, 4.1MB) 100ms.
+- No file per session (lsof: only the store, its WAL and SHM). The session is named by `--session <id>` on
+  the command line, else by the terminal title OpenCode sets, `OC | <session title>` (cut to 40), within the
+  process's folder (`session.directory`, a realpath). The title appears with the first answer; the home
+  screen and an unnamed session are titled `OpenCode`.
+- `text` parts with `synthetic: true` are OpenCode's own (an @file's read, «Continue if you have next steps»
+  after a compaction); a compaction is a user message with a `compaction` part and an assistant step with
+  `summary: true`.
+- Recording without touching the person's store: `XDG_DATA_HOME`/`XDG_STATE_HOME` → a temp folder, with
+  `auth.json` copied in (0600, removed after). `-m <model>` is ignored when the model is not in `opencode
+  models`; the free models hit a usage limit (`Free usage exceeded … retrying`) — try another free one.
+- Re-verify with `REAL_OPENCODE=1 [REAL_OPENCODE_MODEL=opencode/<free model>]` (T196) whenever OpenCode updates.
 
 ### Claude Code as a driven TUI — AI Control API (verified 2026-09-22, v2.1.278)
 
@@ -155,7 +186,7 @@ before calling it done.
 | `src/main/ConversationService.ts` | `agentOf` / `drivenAgentOf`: which features apply |
 | `src/main/screenLines.ts` · `TerminalMirror.ts` | Working, question and input-box rules — check them against a recorded real screen |
 | `src/main/index.ts` | Saving the detected id, keeping it on start, `get-session-resume-command` |
-| A session sync (`ClaudeSessionSync`, `CodexSessionLocator`, `AgySessionSync`) | How a hand-started session gets its conversation id |
+| A session sync (`ClaudeSessionSync`, `CodexSessionLocator`, `AgySessionSync`, `OpencodeSessionSync`) | How a hand-started session gets its conversation id |
 | `src/renderer/src/utils/agentSession.ts` · `resumeCommand.ts` | Whether the UI treats the session as an agent, and what it types to resume |
 | `src/renderer/src/components/ChatView/` | Display name, read-only chips, hidden actions |
 | `src/shared/gettingStarted.ts` `BUILTIN_AGENT_TEMPLATES` · `Sidebar/AgentLogo.tsx` | The folder "+" menu row, its install check and logo (take marks from simple-icons, else a permissively licensed set such as lobe-icons, and name the source in the file) |

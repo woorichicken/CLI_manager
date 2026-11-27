@@ -96,7 +96,7 @@ const RAIL_MAX = 40
 /** The rail needs this much room left of the column (ovis: 32px margin). */
 const RAIL_MARGIN_PX = 32
 
-const NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', agy: 'Antigravity' }
+const NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', agy: 'Antigravity', opencode: 'OpenCode' }
 
 /**
  * Where each session's chat was scrolled, and how many turns it showed (ovis chatScrollMemory):
@@ -728,7 +728,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                         <UserRound size={12} aria-hidden="true" /> {onlyMine ? 'Only mine' : 'Mine'}
                                     </button>
                                     <span className="chat-status-spacer" />
-                                    <ModelChip agent={agent === 'agy' ? null : agent} readOnly={agent === 'agy'} meta={snapshot?.meta ?? null} working={working} onCommand={sendText} onOpenTerminal={() => onOpenTerminal()} />
+                                    <ModelChip agent={agent === 'agy' || agent === 'opencode' ? null : agent} readOnly={agent === 'agy' || agent === 'opencode'} meta={snapshot?.meta ?? null} working={working} onCommand={sendText} onOpenTerminal={() => onOpenTerminal()} />
                                     <ContextChip meta={snapshot?.meta ?? null} canCompact={!working && !prompt} onCompact={() => void sendText('/compact')} />
                                 </>
                             }
@@ -868,7 +868,7 @@ function Turns({ snapshot, answerNumbers = null, foldWork, onFork, onShowEarlier
                     waiting={snapshot.prompt !== null}
                     agent={agent}
                     foldWork={foldWork}
-                    onFork={agent === 'agy' ? undefined : onFork}
+                    onFork={agent === 'agy' || agent === 'opencode' ? undefined : onFork}
                     threads={threadsForTurn(threadGroups, turn.ts, hidden + index)}
                     onOpenThread={onOpenThread}
                     sessionId={snapshot.sessionId}

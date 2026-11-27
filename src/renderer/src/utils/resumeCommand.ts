@@ -10,6 +10,8 @@ export function resumeCommandFor(
     session: Pick<TerminalSession, 'cliSessionId' | 'cliToolName' | 'cliCommand'>,
     resolveAlias?: AliasResolver
 ): string | undefined {
+    // OpenCode: main types its stored start command with `--session` (get-session-resume-command)
+    if (session.cliToolName === 'opencode') return session.cliSessionId && /^ses_[A-Za-z0-9]{1,64}$/.test(session.cliSessionId) ? `opencode --session ${session.cliSessionId}` : undefined
     if (!session.cliSessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.cliSessionId)) return undefined
     // agy: main types its stored start command with `--conversation` (get-session-resume-command)
     if (session.cliToolName === 'agy') return `agy --conversation ${session.cliSessionId}`

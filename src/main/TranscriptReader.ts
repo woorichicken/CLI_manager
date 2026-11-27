@@ -9,6 +9,8 @@ import { createClaudeTranscriptParser } from './transcript/claudeTranscript'
 import { createCodexTranscriptParser } from './transcript/codexTranscript'
 import { AGY_OUTPUT_REF, createAgyTranscriptParser, agyResultText } from './transcript/agyTranscript'
 import type { TranscriptParser } from './transcript/records'
+import { opencodeMeta, opencodeTurns } from './transcript/opencodeTranscript'
+import { hasSession as opencodeHasSession, image as opencodeImage, readSession as readOpencodeSession, toolOutput as opencodeToolOutput } from './transcript/opencodeStore'
 import { claudeForks, followClaudeBranch, newClaudeBranch, type ClaudeBranch } from './transcript/claudeBranch'
 
 /**
@@ -57,6 +59,8 @@ export interface TranscriptReaderDeps {
     codexHome: () => string
     /** Antigravity CLI's data folder (`~/.gemini/antigravity-cli`); without it no agy conversation is found */
     agyHome?: () => string
+    /** OpenCode's store (`~/.local/share/opencode/opencode.db`); without it no OpenCode session is found */
+    opencodeStore?: () => string | null
     /** Tests shrink it; the app uses MAX_FIRST_READ_BYTES. */
     firstReadBytes?: number
     /** Tests shrink it so a record straddles chunks; the app uses FIND_CHUNK_BYTES. */
@@ -121,8 +125,17 @@ export function claudeProjectSlug(cwd: string): string {
 
 const UUID_LIKE = /^[0-9A-Za-z-]{8,64}$/
 
+/** An OpenCode session as last read: its rows are rewritten in place, so it is read whole when its signature moves. */
+interface OpencodeState {
+    id: string
+    signature: string
+    turns: ConversationTurn[]
+    meta: ConversationMeta | null
+}
+
 export class TranscriptReader {
     private readonly states = new Map<string, ReadState>()
+    private readonly opencodeStates = new Map<string, OpencodeState>()
     /** id → files, so a scan of every project folder happens once per conversation */
     private readonly located = new Map<string, string[]>()
     /** lines before a Codex cut, by file identity and cut: the bytes before a cut never change */
@@ -132,6 +145,10 @@ export class TranscriptReader {
 
     /** The transcript files of a conversation, in order; [] when none is on disk. */
     locate(agent: ChatAgent, id: string, cwd?: string): string[] {
+        if (agent === 'opencode') {
+            const store = this.deps.opencodeStore?.() ?? null
+            return store !== null && opencodeHasSession(store, id) ? [store] : []
+        }
         if (!UUID_LIKE.test(id)) return []
         const key = `${agent}:${id}`
         const cached = this.located.get(key)
@@ -148,6 +165,7 @@ export class TranscriptReader {
      * for this `key` (a terminal session id). Null when no file is found.
      */
     read(key: string, agent: ChatAgent, id: string, cwd?: string): TranscriptRead | null {
+        if (agent === 'opencode') return this.readOpencode(key, id)
         let state = this.states.get(key)
         let restarted = false
         if (!state || state.agent !== agent || state.id !== id) {
@@ -200,12 +218,32 @@ export class TranscriptReader {
         return { turns: state.turns, truncated: state.truncated, changed, meta: state.meta }
     }
 
+    /** An OpenCode session from its store: unchanged rows answer from memory (a signature query, ~2ms). */
+    private readOpencode(key: string, id: string): TranscriptRead | null {
+        const known = this.opencodeStates.get(key)
+        const read = readOpencodeSession(this.deps.opencodeStore?.() ?? null, id, known?.id === id ? known.signature : undefined)
+        if (read.kind === 'unchanged' && known) return { turns: known.turns, truncated: false, changed: false, meta: known.meta }
+        if (read.kind !== 'session') {
+            this.opencodeStates.delete(key)
+            // too large to read on the main thread: the chat keeps the terminal, as for a missing one
+            return null
+        }
+        const state: OpencodeState = { id, signature: read.signature, turns: opencodeTurns(read.messages, read.end), meta: opencodeMeta(read.messages, read.end) }
+        this.opencodeStates.set(key, state)
+        return { turns: state.turns, truncated: false, changed: true, meta: state.meta }
+    }
+
     /**
      * A picture the transcript holds inline, by the ref the parser gave it (`<entry uuid>:<block>`
      * for a prompt's picture, `<entry uuid>:<block>:<part>` for one a tool returned), as a data: URL.
      * Claude only: the Codex reader names no pictures it can read back. Null when not found.
      */
     async image(key: string, ref: string): Promise<string | null> {
+        const opencode = this.opencodeStates.get(key)
+        if (opencode) {
+            const found = opencodeImage(this.deps.opencodeStore?.() ?? null, opencode.id, ref)
+            return found ? `data:${found.mediaType};base64,${found.data}` : null
+        }
         const state = this.states.get(key)
         const match = CLAUDE_IMAGE_REF.exec(ref)
         if (!state || state.agent !== 'claude' || !match) return null
@@ -228,6 +266,12 @@ export class TranscriptReader {
      * `call_id`). Null when not found.
      */
     async toolOutput(key: string, ref: string): Promise<string | null> {
+        const opencode = this.opencodeStates.get(key)
+        if (opencode) {
+            const text = opencodeToolOutput(this.deps.opencodeStore?.() ?? null, opencode.id, ref)
+            if (text === null) return null
+            return text.length > MAX_TOOL_OUTPUT_CHARS ? `${text.slice(0, MAX_TOOL_OUTPUT_CHARS)}\n… (${text.length.toLocaleString()} characters in all)` : text
+        }
         const state = this.states.get(key)
         if (!state || !/^[\w.:-]{1,200}$/.test(ref)) return null
         const files = state.files.map((cursor) => cursor.path)
@@ -320,6 +364,7 @@ export class TranscriptReader {
 
     forget(key: string): void {
         this.states.delete(key)
+        this.opencodeStates.delete(key)
     }
 
     private freshState(agent: ChatAgent, id: string, segments: Segment[]): ReadState {

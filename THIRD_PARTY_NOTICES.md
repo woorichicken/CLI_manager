@@ -22,6 +22,8 @@ under the menu → **licenses**).
   The key bar's hold-to-repeat (`keyBar.ts`) is adapted from ovis `src/lib/keyRepeat.ts`, and the
   terminal's «Wrap to screen» rows — palette, cell styles and row runs (`src/renderer/src/phone/terminalFold.ts`)
   — from `src/lib/terminalFold.ts`. The in-app alert (`droplets.ts`) follows `src/lib/droplet.ts`'s rules, rewritten.
+- The OpenCode reader (`src/main/transcript/opencodeTranscript.ts`, `opencodeStore.ts`) is adapted from
+  ovis `server/opencode.ts` and `server/skill-invocations/opencode.ts` at commit `175d24c`.
 - License: MIT
 
 ```

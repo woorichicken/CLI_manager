@@ -1,0 +1,245 @@
+{
+ "session": [
+  {
+   "id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "project_id": "global",
+   "parent_id": null,
+   "slug": "shiny-panda",
+   "directory": "/private/tmp/oc-sandbox/project",
+   "title": "Counting folder entries with ls -1",
+   "version": "1.18.15",
+   "revert": null,
+   "model": "{\"id\":\"big-pickle\",\"providerID\":\"opencode\"}",
+   "time_created": 1795787431245,
+   "time_updated": 1795787473344
+  }
+ ],
+ "message": [
+  {
+   "id": "msg_21d459d57001kK3VP6zxYmQVM7",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787431256,
+   "time_updated": 1795787445823,
+   "data": "{\"role\":\"user\",\"time\":{\"created\":1795787431256},\"agent\":\"build\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"big-pickle\"},\"summary\":{\"diffs\":[]}}"
+  },
+  {
+   "id": "msg_21d459d61001obtnUaS9mISCyc",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787431265,
+   "time_updated": 1795787441593,
+   "data": "{\"parentID\":\"msg_21d459d57001kK3VP6zxYmQVM7\",\"role\":\"assistant\",\"mode\":\"build\",\"agent\":\"build\",\"path\":{\"cwd\":\"/private/tmp/oc-sandbox/project\",\"root\":\"/\"},\"cost\":0,\"tokens\":{\"total\":113764,\"input\":113666,\"output\":33,\"reasoning\":65,\"cache\":{\"write\":0,\"read\":0}},\"modelID\":\"big-pickle\",\"providerID\":\"opencode\",\"time\":{\"created\":1795787431265,\"completed\":1795787441593},\"finish\":\"tool-calls\"}"
+  },
+  {
+   "id": "msg_21d45c5bb001Lnd4SeP7I4Vv1C",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787441595,
+   "time_updated": 1795787445817,
+   "data": "{\"parentID\":\"msg_21d459d57001kK3VP6zxYmQVM7\",\"role\":\"assistant\",\"mode\":\"build\",\"agent\":\"build\",\"path\":{\"cwd\":\"/private/tmp/oc-sandbox/project\",\"root\":\"/\"},\"cost\":0,\"tokens\":{\"total\":113833,\"input\":117,\"output\":22,\"reasoning\":30,\"cache\":{\"write\":0,\"read\":113664}},\"modelID\":\"big-pickle\",\"providerID\":\"opencode\",\"time\":{\"created\":1795787441595,\"completed\":1795787445816},\"finish\":\"stop\"}"
+  },
+  {
+   "id": "msg_21d45f83f001fAlKKYem7uAMY5",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787454527,
+   "time_updated": 1795787465107,
+   "data": "{\"role\":\"user\",\"time\":{\"created\":1795787454527},\"agent\":\"build\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"big-pickle\"},\"summary\":{\"diffs\":[]}}"
+  },
+  {
+   "id": "msg_21d45f846001Boku8l3y8jQIs6",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787454534,
+   "time_updated": 1795787459751,
+   "data": "{\"parentID\":\"msg_21d45f83f001fAlKKYem7uAMY5\",\"role\":\"assistant\",\"mode\":\"build\",\"agent\":\"build\",\"path\":{\"cwd\":\"/private/tmp/oc-sandbox/project\",\"root\":\"/\"},\"cost\":0,\"tokens\":{\"total\":113961,\"input\":198,\"output\":61,\"reasoning\":38,\"cache\":{\"write\":0,\"read\":113664}},\"modelID\":\"big-pickle\",\"providerID\":\"opencode\",\"time\":{\"created\":1795787454534,\"completed\":1795787459751},\"finish\":\"tool-calls\"}"
+  },
+  {
+   "id": "msg_21d460ca8001NRur6XG1j5IvyJ",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787459752,
+   "time_updated": 1795787465103,
+   "data": "{\"parentID\":\"msg_21d45f83f001fAlKKYem7uAMY5\",\"role\":\"assistant\",\"mode\":\"build\",\"agent\":\"build\",\"path\":{\"cwd\":\"/private/tmp/oc-sandbox/project\",\"root\":\"/\"},\"cost\":0,\"tokens\":{\"total\":114065,\"input\":336,\"output\":13,\"reasoning\":52,\"cache\":{\"write\":0,\"read\":113664}},\"modelID\":\"big-pickle\",\"providerID\":\"opencode\",\"time\":{\"created\":1795787459752,\"completed\":1795787465103},\"finish\":\"stop\"}"
+  },
+  {
+   "id": "msg_21d464166001ldBjCusdp8wPy5",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787473254,
+   "time_updated": 1795787473348,
+   "data": "{\"role\":\"user\",\"time\":{\"created\":1795787473254},\"agent\":\"build\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"big-pickle\"},\"summary\":{\"diffs\":[]}}"
+  },
+  {
+   "id": "msg_21d464171001mgbPU51s6jFiqc",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787473265,
+   "time_updated": 1795787479280,
+   "data": "{\"parentID\":\"msg_21d464166001ldBjCusdp8wPy5\",\"role\":\"assistant\",\"mode\":\"build\",\"agent\":\"build\",\"path\":{\"cwd\":\"/private/tmp/oc-sandbox/project\",\"root\":\"/\"},\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}},\"modelID\":\"big-pickle\",\"providerID\":\"opencode\",\"time\":{\"created\":1795787473265,\"completed\":1795787479279},\"error\":{\"name\":\"MessageAbortedError\",\"data\":{\"message\":\"Aborted\"}}}"
+  }
+ ],
+ "part": [
+  {
+   "id": "prt_21d459d580014msR2dSui7aVSt",
+   "message_id": "msg_21d459d57001kK3VP6zxYmQVM7",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787431259,
+   "time_updated": 1795787431260,
+   "data": "{\"type\":\"text\",\"text\":\"Run the shell command `ls -1` in this folder and tell me in one short sentence how many entries there are.\"}"
+  },
+  {
+   "id": "prt_21d45c452001IUGRqLuaocQ6qt",
+   "message_id": "msg_21d459d61001obtnUaS9mISCyc",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787441234,
+   "time_updated": 1795787441239,
+   "data": "{\"type\":\"step-start\"}"
+  },
+  {
+   "id": "prt_21d45c45c001b2o6tKYtVPNzV0",
+   "message_id": "msg_21d459d61001obtnUaS9mISCyc",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787441244,
+   "time_updated": 1795787441488,
+   "data": "{\"type\":\"reasoning\",\"text\":\"The user wants me to run `ls -1` in this folder and tell them how many entries there are in one short sentence. Let me check the current working directory first.\\n\\nThe environment says working directory: /private/tmp/oc-sandbox/project\\n\\nLet me run `ls -1` there.\",\"time\":{\"start\":1795787441244,\"end\":1795787441488}}"
+  },
+  {
+   "id": "prt_21d45c551001FPeNZCY2FC028S",
+   "message_id": "msg_21d459d61001obtnUaS9mISCyc",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787441489,
+   "time_updated": 1795787441590,
+   "data": "{\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"chatcmpl-tool-8c74831d00093531\",\"state\":{\"status\":\"completed\",\"input\":{\"command\":\"ls -1\",\"workdir\":\"/private/tmp/oc-sandbox/project\"},\"output\":\"notes.txt\\nREADME.md\\n\",\"metadata\":{\"output\":\"notes.txt\\nREADME.md\\n\",\"exit\":0,\"truncated\":false},\"title\":\"ls -1\",\"time\":{\"start\":1795787441587,\"end\":1795787441589}}}"
+  },
+  {
+   "id": "prt_21d45c5b7001M1LDueqmAEQFf5",
+   "message_id": "msg_21d459d61001obtnUaS9mISCyc",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787441591,
+   "time_updated": 1795787441591,
+   "data": "{\"reason\":\"tool-calls\",\"type\":\"step-finish\",\"tokens\":{\"total\":113764,\"input\":113666,\"output\":33,\"reasoning\":65,\"cache\":{\"write\":0,\"read\":0}},\"cost\":0}"
+  },
+  {
+   "id": "prt_21d45d557001eAjdfkCM6yZXaR",
+   "message_id": "msg_21d45c5bb001Lnd4SeP7I4Vv1C",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787445591,
+   "time_updated": 1795787445592,
+   "data": "{\"type\":\"step-start\"}"
+  },
+  {
+   "id": "prt_21d45d558001BpT2FwOLSmUozH",
+   "message_id": "msg_21d45c5bb001Lnd4SeP7I4Vv1C",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787445592,
+   "time_updated": 1795787445719,
+   "data": "{\"type\":\"reasoning\",\"text\":\"There are 2 entries: notes.txt and README.md. One short sentence in Korean (per user's global instructions, final responses should be Korean).\",\"time\":{\"start\":1795787445592,\"end\":1795787445719}}"
+  },
+  {
+   "id": "prt_21d45d5d8001dTMs9vYLprW6yE",
+   "message_id": "msg_21d45c5bb001Lnd4SeP7I4Vv1C",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787445720,
+   "time_updated": 1795787445808,
+   "data": "{\"type\":\"text\",\"text\":\"이 폴더에는 2개 항목(notes.txt, README.md)이 있습니다.\",\"time\":{\"start\":1795787445720,\"end\":1795787445808}}"
+  },
+  {
+   "id": "prt_21d45d632001kR7KLAtOXMZOLY",
+   "message_id": "msg_21d45c5bb001Lnd4SeP7I4Vv1C",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787445810,
+   "time_updated": 1795787445812,
+   "data": "{\"reason\":\"stop\",\"type\":\"step-finish\",\"tokens\":{\"total\":113833,\"input\":117,\"output\":22,\"reasoning\":30,\"cache\":{\"write\":0,\"read\":113664}},\"cost\":0}"
+  },
+  {
+   "id": "prt_21d45f8400016Ehmp21l2h4MoD",
+   "message_id": "msg_21d45f83f001fAlKKYem7uAMY5",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787454530,
+   "time_updated": 1795787454530,
+   "data": "{\"type\":\"text\",\"text\":\"Use the question tool to ask me which colour I prefer: red or blue. Do nothing else.\"}"
+  },
+  {
+   "id": "prt_21d460983001H1GqadSk5jVTFL",
+   "message_id": "msg_21d45f846001Boku8l3y8jQIs6",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787458947,
+   "time_updated": 1795787458948,
+   "data": "{\"type\":\"step-start\"}"
+  },
+  {
+   "id": "prt_21d460984001Vds9udgOsE3sWr",
+   "message_id": "msg_21d45f846001Boku8l3y8jQIs6",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787458948,
+   "time_updated": 1795787459118,
+   "data": "{\"type\":\"reasoning\",\"text\":\"The user wants me to use the question tool to ask which color they prefer: red or blue. Do nothing else. I'll call the question tool with a single question, two options.\",\"time\":{\"start\":1795787458948,\"end\":1795787459117}}"
+  },
+  {
+   "id": "prt_21d460a2e001BJ6rkwqprmGdL8",
+   "message_id": "msg_21d45f846001Boku8l3y8jQIs6",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787459118,
+   "time_updated": 1795787459748,
+   "data": "{\"type\":\"tool\",\"tool\":\"question\",\"callID\":\"chatcmpl-tool-b61aacf6093c2109\",\"state\":{\"status\":\"completed\",\"input\":{\"questions\":[{\"question\":\"Which colour do you prefer?\",\"header\":\"Colour\",\"options\":[{\"label\":\"Red\",\"description\":\"Choose red\"},{\"label\":\"Blue\",\"description\":\"Choose blue\"}]}]},\"output\":\"User has answered your questions: \\\"Which colour do you prefer?\\\"=\\\"Red\\\". You can now continue with the user's answers in mind.\",\"metadata\":{\"answers\":[[\"Red\"]],\"truncated\":false},\"title\":\"Asked 1 question\",\"time\":{\"start\":1795787459339,\"end\":1795787459748}}}"
+  },
+  {
+   "id": "prt_21d460ca5001XTsWGcN7wZn1qo",
+   "message_id": "msg_21d45f846001Boku8l3y8jQIs6",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787459749,
+   "time_updated": 1795787459750,
+   "data": "{\"reason\":\"tool-calls\",\"type\":\"step-finish\",\"tokens\":{\"total\":113961,\"input\":198,\"output\":61,\"reasoning\":38,\"cache\":{\"write\":0,\"read\":113664}},\"cost\":0}"
+  },
+  {
+   "id": "prt_21d461fa90014h7SvEmp8Z9sDj",
+   "message_id": "msg_21d460ca8001NRur6XG1j5IvyJ",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787464617,
+   "time_updated": 1795787464619,
+   "data": "{\"type\":\"step-start\"}"
+  },
+  {
+   "id": "prt_21d461fac00179e44a2wexYsEf",
+   "message_id": "msg_21d460ca8001NRur6XG1j5IvyJ",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787464620,
+   "time_updated": 1795787464985,
+   "data": "{\"type\":\"reasoning\",\"text\":\"The user said \\\"Do nothing else.\\\" So I should just report the answer briefly. Per global instructions final response in Korean. But \\\"do nothing else\\\" — the tool call was done, and now I need to give a final response. Keep it minimal.\",\"time\":{\"start\":1795787464620,\"end\":1795787464985}}"
+  },
+  {
+   "id": "prt_21d46211a001hKG3dwOtnmUnJ0",
+   "message_id": "msg_21d460ca8001NRur6XG1j5IvyJ",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787464986,
+   "time_updated": 1795787465100,
+   "data": "{\"type\":\"text\",\"text\":\"빨간색을 선택하셨습니다.\",\"time\":{\"start\":1795787464986,\"end\":1795787465100}}"
+  },
+  {
+   "id": "prt_21d46218d001Oa9tcED25R9ktE",
+   "message_id": "msg_21d460ca8001NRur6XG1j5IvyJ",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787465101,
+   "time_updated": 1795787465101,
+   "data": "{\"reason\":\"stop\",\"type\":\"step-finish\",\"tokens\":{\"total\":114065,\"input\":336,\"output\":13,\"reasoning\":52,\"cache\":{\"write\":0,\"read\":113664}},\"cost\":0}"
+  },
+  {
+   "id": "prt_21d464167001OziLQXTl4nUxX1",
+   "message_id": "msg_21d464166001ldBjCusdp8wPy5",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787473258,
+   "time_updated": 1795787473261,
+   "data": "{\"type\":\"text\",\"text\":\"Write a numbered list from 1 to 60, one short line each, about colours.\"}"
+  },
+  {
+   "id": "prt_21d4658c2001y4R3fqu66fYIEq",
+   "message_id": "msg_21d464171001mgbPU51s6jFiqc",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787479235,
+   "time_updated": 1795787479241,
+   "data": "{\"type\":\"step-start\"}"
+  },
+  {
+   "id": "prt_21d4658ca001mS2Mfy5mRRVvV8",
+   "message_id": "msg_21d464171001mgbPU51s6jFiqc",
+   "session_id": "ses_de2ba62b2ffeWjO9LBV13XqX3l",
+   "time_created": 1795787479242,
+   "time_updated": 1795787479279,
+   "data": "{\"type\":\"reasoning\",\"text\":\"The user wants a numbered list from \",\"time\":{\"start\":1795787479242,\"end\":1795787479279}}"
+  }
+ ]
+}

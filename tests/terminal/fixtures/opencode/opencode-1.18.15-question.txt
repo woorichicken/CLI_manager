@@ -1,0 +1,36 @@
+                                                                                                              
+  ┃                                                                                                           
+  ┃  $ ls -1                                                                                                  
+  ┃                                                                                                           
+  ┃  notes.txt                                                                                                
+  ┃  README.md                                                                                                
+  ┃                                                                                                           
+                                                                                                              
+     + Thought: 127ms                                                                                         
+                                                                                                              
+     이 폴더에는 2개 항목(notes.txt, README.md)이 있습니다.                                                   
+                                                                                                              
+     ▣  Build · Big Pickle · 14.6s                                                                            
+                                                                                                              
+  ┃                                                                                                           
+  ┃  Use the question tool to ask me which colour I prefer: red or blue. Do nothing else.                     
+  ┃                                                                                                           
+                                                                                                              
+     + Thought: 169ms                                                                                         
+                                                                                                              
+     → Asked 1 question                                                                                       
+                                                                                                              
+     ▣  Build · Big Pickle                                                                                    
+                                                                                                              
+  ┃                                                                                                           
+  ┃  Which colour do you prefer?                                                                              
+  ┃                                                                                                           
+  ┃  1. Red                                                                                                   
+  ┃     Choose red                                                                                            
+  ┃  2. Blue                                                                                                  
+  ┃     Choose blue                                                                                           
+  ┃  3. Type your own answer                                                                                  
+  ┃                                                                                                           
+  ┃  ↑↓ select  enter submit  esc dismiss                                                                     
+  ┃                                                                                                           
+                                                                                                              

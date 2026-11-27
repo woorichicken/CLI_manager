@@ -35,10 +35,23 @@ const ESC_TO_INTERRUPT = /esc to interrupt/i
  */
 const CODEX_ASK_HINT = /tab to add notes|enter to submit (?:answer|all)/i
 const CLAUDE_SPINNER_ROW = /^\s*[·✢✳✶✻✽*]\s+[^\s()…][^()…]*…\s*\((?:\d|running\b)/
+/**
+ * OpenCode's row under its input box while a turn runs: its progress bar (`⬝■■■■■■⬝`), then `esc interrupt` —
+ * `esc again to interrupt` after one Esc — and, while a request is retried, the reason between the two
+ * (`⬝⬝⬝⬝ Free usage exceeded … [retrying in 10h 58m attempt #1]   esc interrupt`). Idle, the row is its
+ * folder and key hints (opencode 1.18.15, recorded 2026-11-27; herdr manifests/opencode.toml, Apache-2.0).
+ * No «to» in `esc interrupt`, so ESC_TO_INTERRUPT misses it; the bar keeps a quoted `esc interrupt` out.
+ */
+const OPENCODE_BUSY_ROW = /^\s*[■⬝]{4,}\s.*\besc (?:again to )?interrupt\b/
 
 /** A screen row that says the agent is working on a turn (see above). */
 export function isBusyRow(row: string): boolean {
-    return (ESC_TO_INTERRUPT.test(row) && !CODEX_ASK_HINT.test(row)) || CLAUDE_SPINNER_ROW.test(row)
+    return (ESC_TO_INTERRUPT.test(row) && !CODEX_ASK_HINT.test(row)) || CLAUDE_SPINNER_ROW.test(row) || OPENCODE_BUSY_ROW.test(row)
+}
+
+/** The row is OpenCode's busy row after one Esc: a second Esc interrupts. */
+export function opencodeAwaitsSecondEsc(rows: readonly string[]): boolean {
+    return rows.some((row) => OPENCODE_BUSY_ROW.test(row) && /\besc again to interrupt\b/.test(row))
 }
 
 /**

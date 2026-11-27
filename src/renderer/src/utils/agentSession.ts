@@ -30,12 +30,12 @@ export function useAgentPendingVersion(): number {
 }
 
 /**
- * A session the Chat view can draw: one running Claude Code, Codex or Antigravity CLI (agy), whose
+ * A session the Chat view can draw: one running Claude Code, Codex, Antigravity CLI (agy) or OpenCode, whose
  * conversation id the app knows (`cliToolName` is set when the CLI starts —
  * template, typed command or Codex rollout — and cleared when it exits), or a
  * Codex that waits for its first message.
  */
 export function isAgentSession(session: (Pick<TerminalSession, 'cliToolName'> & { id?: string }) | null | undefined): boolean {
-    if (session?.cliToolName === 'claude' || session?.cliToolName === 'codex' || session?.cliToolName === 'agy') return true
+    if (session?.cliToolName === 'claude' || session?.cliToolName === 'codex' || session?.cliToolName === 'agy' || session?.cliToolName === 'opencode') return true
     return session?.id !== undefined && awaitingFirstMessage.has(session.id)
 }

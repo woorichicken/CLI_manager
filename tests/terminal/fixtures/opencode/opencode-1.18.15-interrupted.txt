@@ -1,0 +1,36 @@
+     ▣  Build · Big Pickle · 14.6s                                                                            
+                                                                                                              
+  ┃                                                                                                           
+  ┃  Use the question tool to ask me which colour I prefer: red or blue. Do nothing else.                     
+  ┃                                                                                                           
+                                                                                                              
+     + Thought: 169ms                                                                                         
+                                                                                                              
+  ┃                                                                                                           
+  ┃  # Questions                                                                                              
+  ┃                                                                                                           
+  ┃  Which colour do you prefer?                                                                              
+  ┃  Red                                                                                                      
+  ┃                                                                                                           
+                                                                                                              
+     + Thought: 365ms                                                                                         
+                                                                                                              
+     빨간색을 선택하셨습니다.                                                                                 
+                                                                                                              
+     ▣  Build · Big Pickle · 10.6s                                                                            
+                                                                                                              
+  ┃                                                                                                           
+  ┃  Write a numbered list from 1 to 60, one short line each, about colours.                                  
+  ┃                                                                                                           
+                                                                                                              
+     + Thought: 37ms                                                                                          
+                                                                                                              
+     ▣  Build · Big Pickle · interrupted                                                                      
+                                                                                                              
+  ┃                                                                                                           
+  ┃                                                                                                           
+  ┃                                                                                                           
+  ┃  Build · Big Pickle OpenCode                                                                              
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  
+   /private/tmp/oc-sandbox/project                                           114.1K (57%)  ctrl+p commands  
+                                                                                                              

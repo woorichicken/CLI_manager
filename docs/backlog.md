@@ -19,6 +19,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### OpenCode — 남은 것: 질문·권한 카드 · fork · `@skill` · 2.x 저장소 · 기본 밖 저장소
+- Discovered: 2026-11-27 `feat/opencode-1127` 1차(세션 찾기·재시작 resume·Chat 읽기/보내기/Stop·화면 상태 — T193–T196). 조사 브리프 `~/Downloads/_batches/agents-port-1127/port-opencode.md`.
+- Evidence: 질문 패널(`↑↓ select  enter submit  esc dismiss`, 실제 화면 `tests/terminal/fixtures/opencode/opencode-1.18.15-question.*`)은 카드 없이 터미널에서 답한다 — 카드 파서(`promptScreen.ts`)는 Claude·Codex 형식뿐. 권한 화면(`△ Permission required`)은 herdr 규칙만 있고 녹화 못 함(기본 권한이 bash 를 허락). `opencode --session <id> --fork` 가 1.18.15 에 있어 Reply in thread 가 가능. `@skill` 보내기는 ovis `opencode-skill-attach.ts`(Tab 으로 자동완성 받기, 픽스처 필요). 2.x(`session_v2` · 백그라운드 서비스 `service.json`)는 ovis 가 읽지만 이 Mac 은 1.18.15. 리더는 앱 환경의 기본 저장소만 읽는다 — 프로세스가 `OPENCODE_DB` 로 다른 저장소를 쓰면 동기화는 찾아도(lsof) Chat 은 「not found」.
+- Why deferred: 1차 범위는 agy 와 같은 「정상 사용」(사람 11-27 「opencode 까지」).
+- Trigger: opencode 질문을 Chat 에서 답하고 싶다는 제보 → 녹화한 화면으로 카드 · 권한 화면이 보이면 그때 녹화 · opencode 2.x 로 올리면 `session_v2` 읽기(ovis 2.x 시험 fixme 를 풀면서) · `OPENCODE_DB` 를 쓰는 사람이 나오면 세션에 저장소 경로를 같이 저장.
+- Owner: 없음
+
 ### Grok CLI(`grok`, xAI Grok Build) 붙이기 — 설치·실제 화면 녹화가 먼저
 - Discovered: 2026-11-27 `/opensource` 조사(사람: 「opencode 까지 하고 나머지는 백로그로」). 브리프 `~/Downloads/_batches/agents-port-1127/port-grok.md`(ovis 175d24c MIT · herdr e8d7d97 Apache-2.0).
 - Evidence: 설치 `curl -fsSL https://x.ai/cli/install.sh | bash` → `~/.grok/bin`, 데이터 `$GROK_HOME` 또는 `~/.grok`(이 Mac 에 없음). 대화 `<home>/sessions/<cwd 그룹>/<id>/updates.jsonl` — ACP `session/update` 줄(`user_message_chunk`·`agent_message_chunk`·`tool_call`/`tool_call_update`(toolCallId 로 합침)·`turn_completed`·`rewind_marker`). 재시작 `grok --resume <id>`, fork 없음. 멈추기는 Esc 가 아니라 Ctrl+C(권한 패널에서 Esc 는 포커스만 옮김), 작업 중 Enter 는 대기열. **세션 묶기가 가장 어렵다** — grok 은 옛 세션의 `events.jsonl` 도 계속 열어 두어 `lsof` 만으로는 못 고르고, ovis 는 herdr 훅(`~/.grok/hooks/herdr.json`, `SessionStart` 만 — 따로 소유한 파일이라 0002 와 충돌 없음)에서 id 를 받는데 TUI 안 `/resume` 은 훅이 안 불린다. 화면 규칙 herdr `grok.toml` 13개(작업 중 `⠋… [stop]`·`esc:cancel`, 질문 `┃ N (○)`). 옮길 원본 시험: `grok.test.ts` 48건 중 순수 파싱 약 15 + 픽스처 4개.
