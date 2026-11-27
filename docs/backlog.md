@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### 사용량이 두 출처로 갈려 보인다 — 앱 값과 agent-swap 값을 한 목록으로 (플러그인 작업 뒤)
+- Discovered: 2026-11-27 CLI 팀장 대화 세션(`~/Downloads/_batches/talk-resource-usage-1126/notes.md` 「11-26 실측」).
+- Evidence: 폰 `src/renderer/src/phone/PhoneUsagePanel.tsx` 가 「Claude Code」·「Codex」(앱 `UsageTracker`)와 「agent-swap accounts」·「Codex (agent-swap)」(`src/main/phone/phoneUsage.ts` 의 `aswap list --json`)를 칸을 나눠 따로 그린다. 데스크톱 `src/renderer/src/components/UsageIndicator.tsx` 는 앱 값만 읽는다. 앱의 Claude 값은 statusLine 브리지가 마지막으로 받은 페이로드 하나(계정 표시 없음, 쉬는 세션은 갱신 안 함)라, statusLine 을 래핑하지 않은 Mac 에서는 비어 있다(11-26 이 Mac: statusLine = omc-hud). 같은 날 aswap 은 work 7d 98% · codex·muse `timed out`.
+- 제안(대화에서 낸 것): 숫자 출처를 하나로 — agent-swap 이 있으면 그것, 없으면 앱 값을 같은 모양으로. 계정마다 한 줄(「work 98% · 리셋 · n분 전」), 데스크톱·폰이 같은 데이터를 쓴다. 앱 값만 따로 있는 칸은 없앤다.
+- Why deferred: 사람 결정 11-27 — 「플러그인으로 해결해 보고 싶다, 플러그인 작업 이후로」.
+- Trigger: 플러그인 작업이 끝나 사용량을 플러그인이 낼 수 있게 되면 — 이 제안을 그 설계에 맞춰 다시 본다. codex·muse 시간 초과는 agent-swap 쪽 몫(agent-swap 팀장).
+- Owner: 없음
+
 ### agy 동기화의 `lsof` 에 시간 제한이 없다 — 한 번 걸리면 agy 대화 찾기가 멈춘다
 - Discovered: 2026-11-25 v1.38.0 릴리즈 전 독립 리뷰(harsh-critic, v1.37.0..35e7914 전체 diff — `~/Downloads/_batches/rel-1380/review-harsh-critic.md`).
 - Evidence: `src/main/AgySessionSync.ts:201` `readOpenFiles` 의 `execFile('lsof', …)` 에 `timeout` 이 없다. 응답이 안 오면 `running` 래치가 true 로 남아 다음 틱이 모두 건너뛴다. `ClaudeSessionSync` 도 같은 꼴(기존 설계)이라 실제로 걸린 사례는 아직 없음 — lsof 가 멈추는 건 대개 네트워크 마운트.
