@@ -199,6 +199,11 @@ test.describe('T193 agent UI', () => {
         expect(refusal(box, { on: 'yes' })).toMatch(/must be true or false/)
         expect(refusal(box, { on: true, pick: 'a' })).toMatch(/must be a list of strings/)
         expect(refusal(box, { on: true, pick: [1] })).toMatch(/must be a list of strings/)
+        // Through a list index, as the renderer reads it (Codex recheck); an inherited key is not data.
+        const listText = [{ id: 'root', component: 'Text', text: { '@path': '/rows/0/title' } }]
+        expect(refusal(listText, { rows: [{ title: { toString: 'oops' } }] })).toMatch(/data at \/rows\/0\/title/)
+        expect(checkAgentUi({ components: listText, data: { rows: [{ title: 'ok' }] } }).ok).toBe(true)
+        expect(checkAgentUi({ components: [{ id: 'root', component: 'Text', text: { '@path': '/toString' } }], data: {} }).ok).toBe(true)
         // Absent is fine (the field starts empty); numbers show as text; a button's context may bind anything.
         expect(checkAgentUi({ components: box, data: { on: false, pick: ['a'] } }).ok).toBe(true)
         expect(checkAgentUi({ components: box }).ok).toBe(true)

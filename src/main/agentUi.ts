@@ -123,12 +123,22 @@ function checkPath(value: Record<string, unknown>, where: string, bindings: Bind
     bindings.push({ path: path as string, shape, where })
 }
 
-/** The value at `/a/b` in the card's data, or undefined. */
+/**
+ * The value at `/a/0/b` in the card's data, or undefined — read the way the renderer reads it: list
+ * indexes too, and only the data's own keys (an inherited `toString` is not data).
+ */
 function valueAt(data: Record<string, unknown> | undefined, path: string): unknown {
     let current: unknown = data
     for (const part of path.split('/').filter(Boolean)) {
-        if (!isPlainObject(current)) return undefined
-        current = current[part]
+        if (Array.isArray(current)) {
+            if (!/^\d+$/.test(part)) return undefined
+            current = current[Number(part)]
+        } else if (isPlainObject(current)) {
+            if (!Object.prototype.hasOwnProperty.call(current, part)) return undefined
+            current = current[part]
+        } else {
+            return undefined
+        }
     }
     return current
 }
