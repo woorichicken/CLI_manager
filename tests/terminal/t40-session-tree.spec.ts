@@ -2,7 +2,7 @@ import { test, expect, Page, ElectronApplication, _electron as electron } from '
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, REPO_ROOT } from './helpers'
+import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, REPO_ROOT, toggleSidebarView } from './helpers'
 import type { SessionRelation } from '../../src/shared/types'
 
 /**
@@ -162,7 +162,7 @@ test.describe('T40 session tree', () => {
         await activateSession(page, LEAD_B_NAME)
         await activateSession(page, 'AI: tr1022 lead C')
         await activateSession(page, 'AI: tr1022 worker')
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect.poll(() => sidebarOrder(page, [LEAD_B, LEAD_C, WORKER])).toEqual([WORKER, LEAD_C, LEAD_B])
 
         // The order is on disk, so a restart brings it back.

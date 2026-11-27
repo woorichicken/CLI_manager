@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test'
 import fs from 'fs'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult, toggleSidebarView, chooseSidebarView } from './helpers'
 
 /**
  * T72 — two reports of fb-1031.
@@ -64,8 +64,8 @@ test.describe('T72 folder copy and shortcut hints (fb-1031)', () => {
 
         try {
             await page.locator(`[data-session-item="${LOOSE}"]`).first().click()
-            await page.getByTestId('sidebar-view-toggle').click()
-            await page.getByTestId('all-sessions-layout-list').click()
+            await toggleSidebarView(page)
+            await chooseSidebarView(page, 'list')
             const header = page.getByTestId('session-folder-header-sf-t72')
             await expect(header).toBeVisible()
             // The order the folder shows its rows in is the order to copy.
@@ -119,8 +119,8 @@ test.describe('T72 folder copy and shortcut hints (fb-1031)', () => {
 
         try {
             await page.locator(`[data-session-item="${A1}"]`).first().click()
-            await page.getByTestId('sidebar-view-toggle').click()
-            await page.getByTestId('all-sessions-layout-list').click()
+            await toggleSidebarView(page)
+            await chooseSidebarView(page, 'list')
             const row = page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${A1}"]`)
             await row.click({ button: 'right' })
             await expect(sessionMenu).toBeVisible()

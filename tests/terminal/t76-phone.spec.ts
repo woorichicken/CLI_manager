@@ -3,7 +3,7 @@ import fs from 'fs'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, termText, waitForBufferText, writeToTerminal } from './helpers'
+import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, termText, waitForBufferText, writeToTerminal, toggleSidebarView } from './helpers'
 
 /**
  * T76 — the phone connection end to end: the app (Electron) and a phone (Chromium at
@@ -236,7 +236,7 @@ test('T76 phone: off by default, access, pairing, list, Chat, card, Terminal + k
     // Settings (still open from pairing) covers the sidebar: closed for this, opened again after
     await page.locator('h2:has-text("Settings") + button').click()
     await expect(page.getByTestId('phone-settings')).toHaveCount(0)
-    await page.getByTestId('sidebar-view-toggle').click()
+    await toggleSidebarView(page)
     await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
     const firstOrder = await macOrder()
     expect(firstOrder).toEqual(expect.arrayContaining([CLAUDE, CLAUDE2, SHELL]))
@@ -258,7 +258,7 @@ test('T76 phone: off by default, access, pairing, list, Chat, card, Terminal + k
         const moved = await macOrder()
         await expect.poll(phoneOrder, { timeout: 10_000 }).toEqual(moved)
     }
-    await page.getByTestId('sidebar-view-toggle').click()
+    await toggleSidebarView(page)
     await page.locator('[title^="Settings"]').first().click()
     await page.getByTestId('settings-category-phone').click()
     await expect(page.getByTestId('phone-settings')).toBeVisible()

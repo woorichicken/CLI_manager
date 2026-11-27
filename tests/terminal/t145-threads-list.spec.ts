@@ -2,10 +2,10 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText } from './helpers'
+import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText, toggleSidebarView } from './helpers'
 
 /**
- * T145 — All sessions › Threads (the 💬 icon beside List / Tree; backlog spec 2026-11-16).
+ * T145 — All sessions › Threads (the 💬 icon beside View ▾ — it was beside List / Tree; backlog spec 2026-11-16).
  *
  * Two chat-mock parents and three anchored forks are seeded in config.json (the fork itself is T117's
  * subject): one child asks a question (waiting), one works for a long turn (working), one is idle
@@ -164,11 +164,12 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     expect(await listChanges()).toBe(0)
     await page.evaluate((id) => window.api.renameSession('w-t145-backend', id, 'API lead'), PARENT_B)
 
-    await page.getByTestId('sidebar-view-toggle').click()
+    await toggleSidebarView(page)
     await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
     await shot(page, 't145-1-all-sessions')
     const toolbar = page.getByTestId('all-sessions-toolbar')
-    const toggleX = async (): Promise<number> => (await page.getByTestId('sidebar-view-toggle').boundingBox())!.x
+    // View ▾ stays put when the Threads icon and its badge come in (view-filter-1127: it replaced the header toggle)
+    const toggleX = async (): Promise<number> => (await page.getByTestId('sidebar-view-menu').boundingBox())!.x
     const xBefore = await toggleX()
 
     const icon = page.getByTestId('all-sessions-threads')
@@ -186,7 +187,7 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
 
     await icon.click()
     await expect(icon).toHaveAttribute('aria-pressed', 'true')
-    await expect(toolbar.getByTestId('all-sessions-layout-list')).toHaveAttribute('data-dimmed', 'true')
+    await expect(toolbar.getByTestId('sidebar-view-menu')).toHaveAttribute('data-dimmed', 'true')
     await expect(rows(page)).toHaveCount(3)
     // only anchored forks — not the master-opened worker or the hand pair
     expect((await rowOrder(page)).sort()).toEqual([CHILD_IDLE, CHILD_WAIT, CHILD_WORK].sort())
@@ -282,8 +283,8 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     await expect(icon).toHaveAttribute('aria-pressed', 'false')
     await expect(rows(page)).toHaveCount(0)
     await expect(page.locator(`[data-session-item="${PARENT_A}"]`).first()).toBeVisible()
-    await expect(toolbar.getByTestId('all-sessions-layout-list')).toHaveAttribute('aria-pressed', 'true')
-    await expect(toolbar.getByTestId('all-sessions-layout-list')).not.toHaveAttribute('data-dimmed', 'true')
+    await expect(toolbar.getByTestId('sidebar-view-menu')).toHaveAttribute('data-view', 'list')
+    await expect(toolbar.getByTestId('sidebar-view-menu')).not.toHaveAttribute('data-dimmed', 'true')
 
     // on again, then restart: the list is still open
     await icon.click()
@@ -312,7 +313,7 @@ test('T145: with no threads the list says how to make one, and nothing else is l
         config: { sessionRelations: [{ from: 't145-a', to: 't145-b', kind: 'opened', at: Date.now() }] }
     })
     const { page } = result
-    await page.getByTestId('sidebar-view-toggle').click()
+    await toggleSidebarView(page)
     const icon = page.getByTestId('all-sessions-threads')
     await expect(icon).toBeVisible()
     await expect(icon.getByTestId('all-sessions-threads-badge')).toHaveCount(0)

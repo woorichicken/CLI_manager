@@ -2,7 +2,7 @@ import { test, expect, Page, ElectronApplication, _electron as electron } from '
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, REPO_ROOT } from './helpers'
+import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, REPO_ROOT, toggleSidebarView, chooseSidebarView } from './helpers'
 
 /**
  * T71 — Header checklists (standup note 「기획 - 리스트」, 2nd plan): titled lists with a
@@ -296,8 +296,8 @@ test.describe('T71 header checklists', () => {
         await page.keyboard.press('Meta+J')
 
         // --- Split view: the chip is still in the (shorter) header ------------------
-        await page.getByTestId('sidebar-view-toggle').click()
-        await page.getByTestId('all-sessions-layout-list').click()
+        await toggleSidebarView(page)
+        await chooseSidebarView(page, 'list')
         for (const id of [LEAD, WORKER]) {
             await page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${id}"]`).hover()
             await page.locator(`[data-session-select="${id}"]`).click()
@@ -310,7 +310,7 @@ test.describe('T71 header checklists', () => {
         await expect(chip(page)).toHaveAttribute('data-progress', '2/5')
         if (shots) await page.screenshot({ path: path.join(shots, 'header-split-1280.png'), clip: { x: 0, y: 0, width: 1280, height: 110 } })
         await page.getByTestId('session-selection-clear').click()
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await activateSession(page, 'T71 worker')
 
         // --- Closing sessions leaves checklists alone --------------------------------

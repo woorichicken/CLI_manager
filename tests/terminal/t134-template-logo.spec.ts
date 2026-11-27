@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import zlib from 'zlib'
-import { launchAppWithWorkspaces, closeApp, REPO_ROOT, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, REPO_ROOT, LaunchResult, toggleSidebarView } from './helpers'
 import type { TerminalSession, TerminalTemplate, Workspace } from '../../src/shared/types'
 
 /**
@@ -160,7 +160,7 @@ test.describe('T134 template logo', () => {
         expect(Math.round(box!.width)).toBe(14)
 
         // --- All sessions view draws the same rows ------------------------------
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const list = page.getByTestId('sidebar-all-sessions')
         await expect(list.locator(`[data-session-item="${newId}"] img[data-template-logo]`)).toBeVisible()
         await expect(list.locator(`[data-session-item="${OLD_SESSION.id}"] img[data-template-logo]`)).toHaveCount(0)

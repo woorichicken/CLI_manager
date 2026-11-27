@@ -2,7 +2,7 @@ import { test, expect, Page, ElectronApplication, _electron as electron } from '
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, REPO_ROOT } from './helpers'
+import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, REPO_ROOT, toggleSidebarView } from './helpers'
 
 /**
  * T52 — Inbox: a session asks for the user's hands through the Control API.
@@ -387,11 +387,11 @@ test.describe('T52 inbox', () => {
         expect(notCut(workspaces), JSON.stringify(workspaces)).toBe(true)
         await expect(sidebarBell(page)).toBeVisible()
         // The longer "All sessions" title too.
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect.poll(async () => (await title()).text).toBe('All sessions')
         const allSessions = await title()
         expect(notCut(allSessions), JSON.stringify(allSessions)).toBe(true)
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect.poll(async () => (await title()).text).toBe('Workspaces')
 
         // New Folder through the menu: the prompt opens and the folder is saved.

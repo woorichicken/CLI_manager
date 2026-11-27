@@ -2,7 +2,7 @@ import { test, expect, type CDPSession, type ElectronApplication, type Page } fr
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { closeApp, launchAppWithWorkspaces, type LaunchResult, resizeMainWindow } from './helpers'
+import { closeApp, launchAppWithWorkspaces, type LaunchResult, resizeMainWindow, toggleSidebarView, chooseSidebarView } from './helpers'
 import type { SessionRelation } from '../../src/shared/types'
 
 /**
@@ -145,8 +145,7 @@ test('T153 phone list: Tree is the Mac sidebar\'s tree, kept on this phone, gone
     test.setTimeout(180_000)
     const { app, page, base } = await launch()
     // the Mac's Tree: what the phone must match
-    await page.getByTestId('sidebar-view-toggle').click()
-    await page.getByTestId('all-sessions-layout-tree').click()
+    await chooseSidebarView(page, 'tree')
     const macIds = (group: string) => page.locator(`[data-testid="${group}"] [data-session-item]`).evaluateAll((rows) => rows.map((r) => r.getAttribute('data-session-item')))
     await expect.poll(() => macIds('session-tree-rows')).toEqual([CHIEF, LEAD_A, WORKER, HELPER, LEAD_B, TALK, LOOSE, HAND])
     const macDepths = await page.locator('[data-testid="session-tree-rows"] [data-session-item]').evaluateAll((rows) => rows.map((r) => Number(r.getAttribute('data-tree-depth') ?? 0)))
@@ -186,7 +185,8 @@ test('T153 phone list: Tree is the Mac sidebar\'s tree, kept on this phone, gone
     await page.getByTestId('settings-category-sidebar').click()
     await page.getByTestId('settings-show-session-tree').click()
     await page.getByRole('button', { name: 'Save', exact: true }).click()
-    await expect(page.getByTestId('all-sessions-layout-tree')).toHaveCount(0, { timeout: 15_000 })
+    // Tree off in Settings: All sessions falls back to List (View ▾ then has no Tree option — T192)
+    await expect(page.getByTestId('sidebar-view-menu')).toHaveAttribute('data-view', 'list', { timeout: 15_000 })
     await tap(cdp, phone, '[data-testid="phone-menu-button"]')
     await expect(phone.getByTestId('phone-list-layout')).toHaveCount(0, { timeout: 10_000 })
     await expect(phone.locator('.phone-list-order')).toHaveText('Mac order')

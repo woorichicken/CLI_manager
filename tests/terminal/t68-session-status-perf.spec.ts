@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, writeToTerminal, saveMetrics, LaunchResult, REPO_ROOT, SeedWorkspace } from './helpers'
+import { launchAppWithWorkspaces, closeApp, writeToTerminal, saveMetrics, LaunchResult, REPO_ROOT, SeedWorkspace, toggleSidebarView } from './helpers'
 
 /**
  * T68 — what the sidebar status costs, in the app (fb-1029b · d499aed0). Opt-in:
@@ -157,7 +157,7 @@ const RENDER_HOOK = `(() => {
 async function startLoad(page: Page): Promise<void> {
     await page.locator(`[data-session-item="${HOME}"]`).first().click()
     // All sessions: every row is on screen, the way the user's sidebar is.
-    await page.getByTestId('sidebar-view-toggle').click()
+    await toggleSidebarView(page)
     await expect.poll(() => page.evaluate((id) => (window as unknown as { __termDebug: { text: (id: string) => string } }).__termDebug.text(id), asking[1]), { timeout: 30_000 }).toContain('❯')
     for (const id of working) await writeToTerminal(page, id, 'go\r')
     for (const id of asking) await writeToTerminal(page, id, 'ASK\r')

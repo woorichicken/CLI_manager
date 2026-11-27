@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, ElectronApplication, Locator, Page
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult, REPO_ROOT, SeedWorkspace } from './helpers'
+import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult, REPO_ROOT, SeedWorkspace, toggleSidebarView, chooseSidebarView } from './helpers'
 import type { SessionRelation } from '../../src/shared/types'
 
 /**
@@ -89,8 +89,8 @@ test.describe('T65 sidebar tree (fb-1028)', () => {
     })
 
     async function openTree(page: Page): Promise<void> {
-        await page.getByTestId('sidebar-view-toggle').click()
-        await page.getByTestId('all-sessions-layout-tree').click()
+        await toggleSidebarView(page)
+        await chooseSidebarView(page, 'tree')
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible()
     }
 
@@ -267,7 +267,7 @@ test.describe('T65 sidebar tree (fb-1028)', () => {
         })
         const { page, app } = ctx
         await resizeMainWindow(app, 1280, 800)
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const divider = page.getByTestId('session-list-pinned-divider')
         await expect(row(page, 's-a1')).toBeVisible()
         await expect(divider).toHaveCount(0)
@@ -297,7 +297,7 @@ test.describe('T65 sidebar tree (fb-1028)', () => {
         await pin('s-a1')
         await pin('s-a2')
         await expect(divider).toHaveCount(1)
-        await page.getByTestId('all-sessions-layout-tree').click()
+        await chooseSidebarView(page, 'tree')
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible()
         await expect(divider).toHaveCount(0)
     })
@@ -364,7 +364,7 @@ test.describe('T65 sidebar tree (fb-1028)', () => {
         }
 
         // The report's screen first: the session folder menu in All sessions, then a press elsewhere.
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect(page.getByTestId('session-folder-header-sf-t65')).toBeVisible()
         await allView[0].open()
         await expect(menus).toHaveCount(1)
@@ -372,10 +372,10 @@ test.describe('T65 sidebar tree (fb-1028)', () => {
         await shot(page, app, 'folder-menu-after-outside-press')
         await expect.poll(anyMenu, { message: 'session folder menu, closed by a press outside' }).toBe(0)
         await check(allView)
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect(page.getByTestId('folder-header-wf-t65')).toBeVisible()
         await check(folderView)
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
 
         // The menus still work: a menu item runs and closes it.
         await row(page, 's-a2').click({ button: 'right' })
@@ -432,7 +432,7 @@ test.describe('T65 sidebar tree (fb-1028)', () => {
         await shot(page, app, 'tree-long-names')
 
         // The List with a pinned long name: the line sits inside the list.
-        await page.getByTestId('all-sessions-layout-list').click()
+        await chooseSidebarView(page, 'list')
         await row(page, WORKER).click({ button: 'right' })
         await page.locator(`[data-session-pin-toggle="${WORKER}"]`).click()
         await page.mouse.move(900, 500)

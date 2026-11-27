@@ -2,7 +2,7 @@ import { test, expect, Page, Locator } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult, SeedWorkspace } from './helpers'
+import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult, SeedWorkspace, toggleSidebarView, chooseSidebarView } from './helpers'
 
 /**
  * T58 — session folders in the sidebar's All sessions view (report 078ee766).
@@ -63,7 +63,7 @@ test.describe('T58 session folders', () => {
     test('a folder made from the All view menu takes a dragged session, gives it back, and folds', async () => {
         ctx = await launchAppWithWorkspaces(seed(dir()), { settings: { showHomeWorkspace: false, showSessionCount: true } })
         const { page, userDataDir } = ctx
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const list = page.getByTestId('sidebar-all-sessions')
         await expect(list.locator('[data-session-item="s-b1"]')).toBeVisible()
         await expect(page.getByTestId('session-folder-none')).toHaveCount(0)
@@ -94,10 +94,10 @@ test.describe('T58 session folders', () => {
         await expect.poll(() => storedSession(userDataDir, 's-b1')?.sessionFolderId).toBe(folderId)
         // It is still that workspace's session: the row keeps its workspace label, the tree keeps the row.
         await expect(body.locator('[data-session-item="s-b1"] [data-testid="session-workspace-label"]')).toHaveText('T58WSTWO')
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect(page.locator('[data-session-item="s-b1"]')).toBeVisible()
         await expect(page.locator(`[data-session-folder-body="${folderId}"]`)).toHaveCount(0)
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
 
         // Dropped on "No folder", it comes back out.
         await dragRowOver(page, 's-b1', page.getByTestId('session-folder-none'))
@@ -139,15 +139,15 @@ test.describe('T58 session folders', () => {
         await expect(page.getByTestId('sidebar-more-menu').getByTestId('sidebar-collapse-session-folders')).toHaveCount(0)
         await page.keyboard.press('Escape')
         // at the default width the title is whole (or, on macOS, hidden for the traffic lights — 91fce7bf r2, T163)
-        // and the view toggle stands where the folder view has it
+        // and View ▾ stands where the folder view has it (it replaced the header toggle — view-filter-1127)
         const title = page.locator('.glass-panel > div').first().locator('span').first()
         expect(await title.evaluate((el) => getComputedStyle(el).visibility === 'hidden' || el.scrollWidth <= el.clientWidth), 'All sessions title not cut').toBe(true)
-        const toggle = page.getByTestId('sidebar-view-toggle')
+        const toggle = page.getByTestId('sidebar-view-menu')
         const allX = (await toggle.boundingBox())!.x
-        await toggle.click()
+        await toggleSidebarView(page)
         await expect(page.getByTestId('sidebar-add-workspace')).toBeVisible()
-        expect((await toggle.boundingBox())!.x, 'the toggle does not move').toBe(allX)
-        await toggle.click()
+        expect((await toggle.boundingBox())!.x, 'View ▾ does not move').toBe(allX)
+        await toggleSidebarView(page)
     })
 
     test('right-click New Session… on a folder starts a session filed in it; on No folder, unfiled (fb-1117 b9038a0e)', async () => {
@@ -179,8 +179,8 @@ test.describe('T58 session folders', () => {
         }
 
         await page.locator('[data-session-item="s-a2"]').first().click()
-        await page.getByTestId('sidebar-view-toggle').click()
-        await page.getByTestId('all-sessions-layout-list').click()
+        await toggleSidebarView(page)
+        await chooseSidebarView(page, 'list')
         const header = page.getByTestId('session-folder-header-sf-t58n')
         await expect(header).toBeVisible()
 
@@ -236,7 +236,7 @@ test.describe('T58 session folders', () => {
             config: { sessionFolders: [{ id: 'sf-old', name: 'T58 Old', isExpanded: true, createdAt: 1 }] }
         })
         const { page, userDataDir } = ctx
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const body = page.locator('[data-session-folder-body="sf-old"]')
         await expect(body.locator('[data-session-item="s-a1"]')).toBeVisible()
         // s-a2 names a folder that does not exist: it is listed with the sessions in no folder.
