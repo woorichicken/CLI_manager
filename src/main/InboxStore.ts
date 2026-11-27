@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { INBOX_KINDS, InboxKind, InboxRequest } from '../shared/types'
+import { AgentUi, INBOX_KINDS, InboxKind, InboxRequest } from '../shared/types'
 import type { RelationStore } from './SessionRelations'
 
 export const INBOX_KEY = 'inbox'
@@ -89,9 +89,10 @@ export class InboxStore {
      * A session asked for something. The same unread line from the same session
      * (same kind, same text) is not added twice — an agent waiting in a loop may
      * repeat itself — it moves to the top with the new time and the newest link.
+     * A repeat that carries a card (decision 0016) takes the new card, unanswered.
      */
     add(
-        input: { sessionId: string; kind: InboxKind; text: string; url?: string; client: string },
+        input: { sessionId: string; kind: InboxKind; text: string; url?: string; client: string; ui?: AgentUi },
         now = Date.now()
     ): { request: InboxRequest; created: boolean } {
         const all = this.all()
@@ -99,7 +100,7 @@ export class InboxStore {
             (r) => !r.readAt && r.sessionId === input.sessionId && r.kind === input.kind && r.text === input.text
         )
         if (repeat) {
-            const updated: InboxRequest = { ...repeat, at: now, ...(input.url ? { url: input.url } : {}) }
+            const updated: InboxRequest = { ...repeat, at: now, ...(input.url ? { url: input.url } : {}), ...(input.ui ? { ui: input.ui } : {}) }
             this.save([updated, ...all.filter((r) => r.id !== repeat.id)])
             return { request: updated, created: false }
         }
@@ -112,7 +113,8 @@ export class InboxStore {
             ...(input.url ? { url: input.url } : {}),
             at: now,
             createdAt: now,
-            client: input.client
+            client: input.client,
+            ...(input.ui ? { ui: input.ui } : {})
         }
         this.save(trimToCap([request, ...all]))
         return { request, created: true }
@@ -127,6 +129,23 @@ export class InboxStore {
         const updated = { ...target, readAt: now }
         this.save(all.map((r) => (r.id === id ? updated : r)))
         return updated
+    }
+
+    /**
+     * A card's button answer reached the session (decision 0016): the card locks. Answering does not
+     * read the request — only the check or Mark all read does (b165acc4). Null: no such request, or no card.
+     */
+    setUiAnswer(id: string, answered: NonNullable<AgentUi['answered']>): InboxRequest | null {
+        const all = this.all()
+        const target = all.find((r) => r.id === id)
+        if (!target?.ui) return null
+        const updated: InboxRequest = { ...target, ui: { ...target.ui, answered } }
+        this.save(all.map((r) => (r.id === id ? updated : r)))
+        return updated
+    }
+
+    get(id: string): InboxRequest | null {
+        return this.all().find((r) => r.id === id) ?? null
     }
 
     markAllRead(now = Date.now()): number {

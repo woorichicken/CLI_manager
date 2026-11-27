@@ -39,7 +39,9 @@ When you coordinate work across sessions, keep the plan in a checklist the user 
 
 When the user explicitly asks to split the conversation — to move one topic into a new session and keep going here ("split this off", "fork this into a new session", "세션 나눠줘") — call fork_session on the session the conversation is in (your own: $CLIMANAGER_SESSION_ID), not open_session with the context retyped. scope "whole" (the default) gives the new session the agent's own fork of the whole conversation (Claude --fork-session, Codex fork); "excerpt" starts a fresh agent whose first message is the last few turns, copied. Put what the new session should work on in message. The new session opens in the background under this one in Related; tell the user its name. Do not split on your own initiative.
 
-When you need the user's hands — sign in to something in a browser, review a page or a diff, answer a question you cannot decide — call inbox_notify. The request shows in CLI Manager's inbox with your session, and it is marked read when the user opens your session. Keep the text to one line saying what to do; put the page in url.
+When you need the user's hands — sign in to something in a browser, review a page or a diff, answer a question you cannot decide — call inbox_notify. The request shows in CLI Manager's inbox with your session and stays unread until the user checks it off there — opening your session does not read it. Once it is resolved some other way, REST POST /v1/inbox/:id/read marks it read. Keep the text to one line saying what to do; put the page in url.
+
+When the user should pick from choices or approve something — "merge PR #324?", "which of these three?", approve with a note — call show_ui instead of asking in prose: you send a small card as A2UI v1.0 components and CLI Manager draws it under your request in the inbox. When the user presses a button, one line arrives in your session as input: [CLI Manager card] <event name> <context JSON>. Read it as the user's answer. The card goes to the session that sends it.
 
 Rules: the first time you read, type into, wait on or focus a session it is marked as AI-driven and highlighted in green, so the user can see where you are working. They may type into it or disconnect it at any time — re-read the screen before acting. If a call reports "disconnected", the user took the session back: stop working in it unless they ask you to continue. Closing a session kills whatever runs in it; never close one you did not open unless the user asked. If a screen shows a question (awaitingInput: true) — a permission prompt, or Claude Code asking whether to trust a new folder — read the options and answer with send_input keys (e.g. ["down","enter"], ["1"]); text is refused until the question is gone. Trusting a folder or approving an action is the user's call: only accept when the user's request clearly covers it.`
 
@@ -250,7 +252,7 @@ const TOOLS: ToolDefinition[] = [
     {
         name: 'inbox_notify',
         description:
-            "Ask the user for something only they can do — sign in (login), look at a result (review), answer a question (question), or anything else (other). It appears in CLI Manager's inbox with a count and a Dock badge; clicking it opens your session, and opening your session marks it read. Repeating the same unread request does not add a second one. The session is session_id, or the one in your X-Caller-Session header.",
+            "Ask the user for something only they can do — sign in (login), look at a result (review), answer a question (question), or anything else (other). It appears in CLI Manager's inbox with a count and a Dock badge; clicking it opens your session. It stays unread until the user checks it off in the inbox — opening your session does not read it. Repeating the same unread request does not add a second one. The session is session_id, or the one in your X-Caller-Session header.",
         inputSchema: {
             type: 'object',
             properties: {
@@ -263,6 +265,26 @@ const TOOLS: ToolDefinition[] = [
                 }
             },
             required: ['text']
+        }
+    },
+    {
+        name: 'show_ui',
+        description:
+            "Show the user a small card — choices to pick from, an approval with an optional note — drawn by CLI Manager from A2UI v1.0 basic-catalog components, under a request in its inbox. When the user presses a button, one line is typed into your session: [CLI Manager card] <event name> <context JSON> (fields bound with {\"@path\": \"/x\"} carry what the user typed or picked). Components: Card, Column, Row, Text, Divider, Button, TextField, CheckBox, ChoicePicker; each has an id, one has id \"root\", and each id is used in one place. Button: {\"id\":\"ok\",\"component\":\"Button\",\"child\":\"okLabel\",\"variant\":\"primary\",\"action\":{\"event\":{\"name\":\"approve\",\"context\":{\"pr\":324,\"note\":{\"@path\":\"/note\"}}}}}. No images, links or functions (functionCall, @call); at most 40 components and 16 KB. The card is for the session that sends it (X-Caller-Session); repeating the same unread text replaces the card.",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                text: { type: 'string', description: 'One line for the inbox row: what the card asks (cut at 200 characters).' },
+                components: {
+                    type: 'array',
+                    items: { type: 'object' },
+                    description: 'A2UI v1.0 components, flat, referring to each other by id (child / children).'
+                },
+                data: { type: 'object', description: 'Initial data model for {"@path": "/…"} bindings, e.g. {"note": ""}.' },
+                kind: { type: 'string', enum: ['login', 'review', 'question', 'other'], description: 'Default "question".' },
+                session_id: { type: 'string', description: 'Your own session. Omit when your MCP config sends X-Caller-Session.' }
+            },
+            required: ['text', 'components']
         }
     },
     {
@@ -627,6 +649,20 @@ async function callTool(
                     kind: args.kind,
                     text: str(args, 'text', true),
                     url: args.url,
+                    sessionId: str(args, 'session_id'),
+                    client,
+                    caller
+                }),
+                null,
+                1
+            )
+        case 'show_ui':
+            return JSON.stringify(
+                service.showUi({
+                    kind: args.kind,
+                    text: str(args, 'text', true),
+                    components: args.components,
+                    data: args.data,
                     sessionId: str(args, 'session_id'),
                     client,
                     caller

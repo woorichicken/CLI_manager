@@ -7,6 +7,7 @@ import { isLinkAllowed } from '../../utils/terminalLinks'
 import { formatInboxAge, INBOX_KIND_META, shortLink } from './inboxFormat'
 import { InboxReplyBox, InboxReplyToggle } from './InboxReply'
 import { isAgentSession, useAgentPendingVersion } from '../../utils/agentSession'
+import { AgentUiCard } from '../AgentUi/AgentUiCard'
 
 const POPOVER_WIDTH = 360
 const VIEWPORT_MARGIN = 8
@@ -158,6 +159,16 @@ export function InboxPopover({
                     </div>
                 </div>
                 {/* Beside the row, not in it: the row's click and Enter open the session */}
+                {request.ui && (
+                    <div className="px-3 pb-2 pl-8" data-testid="inbox-ui">
+                        <AgentUiCard
+                            surfaceId={request.id}
+                            ui={request.ui}
+                            disabledReason={request.ui.answered ? null : where.replyBlocked}
+                            onAction={(componentId, context) => window.api.answerInboxUi(request.id, componentId, context)}
+                        />
+                    </div>
+                )}
                 {replyingId === request.id && !where.replyBlocked && (
                     <InboxReplyBox sessionId={request.sessionId} onClose={() => closeReply(request.id)} />
                 )}

@@ -37,6 +37,8 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@a2ui/react": "0.16.1",
+    "@a2ui/web_core": "0.16.1",
     "@electron/rebuild": "^4.0.1",
     "@playwright/test": "^1.60.0",
     "@solhun/feedback-kit-core": "^0.14.1",
@@ -59,7 +61,8 @@
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
     "web-push": "3.6.7",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "zod": "^3.25.76"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",

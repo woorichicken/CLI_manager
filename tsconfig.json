@@ -22,6 +22,9 @@
             ],
             "@tanstack/highlight/*": [
                 "node_modules/@tanstack/highlight/dist/*"
+            ],
+            "@a2ui/web_core/catalogs/basic/v1": [
+                "node_modules/@a2ui/web_core/src/catalogs/basic/v1/index.d.ts"
             ]
         }
     },

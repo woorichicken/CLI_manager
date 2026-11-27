@@ -46,6 +46,8 @@ import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { SessionTabs } from './SessionTabs'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
+import { agentUiActionLine } from './agentUi'
+import type { AgentUiActionResult } from '../shared/types'
 import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText } from './ChecklistStore'
 import { CronStore } from './CronStore'
 import { CronService, CRON_MADE_IN_WINDOW } from './CronService'
@@ -3908,6 +3910,28 @@ app.whenReady().then(async () => {
         inbox.markAllRead()
     })
     ipcMain.handle('clear-inbox-read', (): number => inbox.clearRead())
+    // A button on an agent's card (decision 0016). Main writes the line from the stored card — the
+    // renderer only names the button and what the user typed into bound fields — and sends it the
+    // Chat view's way, so a question on screen or a draft in the input box refuses it and a working
+    // agent gets it when its turn ends. One press at a time; an answered card stays locked.
+    const answeringCards = new Set<string>()
+    ipcMain.handle('inbox-ui-action', async (_e, requestId: unknown, componentId: unknown, context: unknown): Promise<AgentUiActionResult> => {
+        const request = typeof requestId === 'string' ? inbox.get(requestId) : null
+        if (!request?.ui) return { status: 'rejected', reason: 'gone', message: 'This card is gone.' }
+        if (request.ui.answered) return { status: 'rejected', reason: 'answered', message: 'This card was already answered.' }
+        if (answeringCards.has(request.id)) return { status: 'rejected', reason: 'busy', message: 'Still sending the last answer.' }
+        const built = agentUiActionLine(request.ui, componentId, context)
+        if (!built.ok) return { status: 'rejected', reason: built.reason, message: built.message }
+        answeringCards.add(request.id)
+        try {
+            const sent = await conversationService.send(request.sessionId, built.line)
+            if (sent.status === 'rejected') return { status: 'rejected', reason: sent.reason, message: sent.message }
+            inbox.setUiAnswer(request.id, { at: Date.now(), action: built.action, status: sent.status })
+            return { status: sent.status, line: built.line }
+        } finally {
+            answeringCards.delete(request.id)
+        }
+    })
     // Header checklists (ChecklistStore): the panel edits here, the Control API edits the same
     // store, and every change is broadcast on CHECKLISTS_CHANNEL.
     ipcMain.handle('get-checklists', () => checklists.list())
