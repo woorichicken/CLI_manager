@@ -2,7 +2,7 @@ import { test, expect, type ElectronApplication, type Locator, type Page } from 
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { closeApp, launchAppWithWorkspaces, LaunchResult, resizeMainWindow } from './helpers'
+import { closeApp, launchAppWithWorkspaces, LaunchResult, resizeMainWindow, toggleSidebarView, chooseSidebarView } from './helpers'
 import { listedSessions, listLines, searchLines, treeLines } from '../../src/renderer/src/phone/sessionListLines'
 import type { PhoneSessionsResponse } from '../../src/shared/phone'
 
@@ -13,7 +13,7 @@ import type { PhoneSessionsResponse } from '../../src/shared/phone'
  *    spot is kept free — inside the sidebar header row on the left, and in the main header when the
  *    sidebar is closed. The lights sit vertically centred in the header row (normal and split view).
  *    At the default sidebar width the title has no room next to the lights: it is hidden (not cut),
- *    and the view toggle's tooltip names the view; a wider sidebar shows it whole. macOS only.
+ *    and the toolbar's View ▾ names the view (view-filter-1127); a wider sidebar shows it whole. macOS only.
  *    The lights are native and never in a capture: the check reads where main put them
  *    (getWindowButtonPosition) and the captures draw them as an overlay (`-lights-overlay`).
  *  - cbc0ee48: «No folder» in the All sessions view folds like a session folder (chevron, count),
@@ -169,9 +169,9 @@ test('T163 91fce7bf r2: only the traffic-light spot is free — panels at 8px, t
     // Captures first (the old build is the "before"): 256 in both views, 340, collapsed.
     const header = { x: 0, y: 0, width: 1280, height: 120 }
     await shot(page, app, '91fce7bf', '1280-sidebar256', header)
-    await page.getByTestId('sidebar-view-toggle').click()
+    await toggleSidebarView(page)
     await shot(page, app, '91fce7bf', '1280-sidebar256-all', header)
-    await page.getByTestId('sidebar-view-toggle').click()
+    await toggleSidebarView(page)
     await setSidebarWidth(page, 340)
     await shot(page, app, '91fce7bf', '1280-sidebar340', header)
     await setSidebarWidth(page, 256)
@@ -196,7 +196,7 @@ test('T163 91fce7bf r2: only the traffic-light spot is free — panels at 8px, t
     expect(Math.abs(lightsCentre - (row.y + row.height / 2)), `lights centre ${lightsCentre} vs header ${row.y}+${row.height}`).toBeLessThanOrEqual(2)
 
     // 256: nothing in the header starts under the lights; the title is hidden, not cut, and the
-    // view toggle names the view it is on.
+    // toolbar's View ▾ names the view it is on (it replaced the header's view toggle — view-filter-1127).
     const firstButtonLeft = (): Promise<number> => sidebarHeader(page).evaluate((el) => {
         const buttons = Array.from(el.querySelectorAll('button')).filter((b) => (b as HTMLElement).offsetWidth > 0)
         return Math.min(...buttons.map((b) => b.getBoundingClientRect().left))
@@ -206,9 +206,9 @@ test('T163 91fce7bf r2: only the traffic-light spot is free — panels at 8px, t
         await expect.poll(async () => (await titleState(page)).text).toBe(view)
         const state = await titleState(page)
         expect(state.hidden, `${view} title hidden at 256: ${JSON.stringify(state)}`).toBe(true)
-        await expect(page.getByTestId('sidebar-view-toggle')).toHaveAttribute('title', new RegExp(`^${view}\\b`))
+        await expect(page.getByTestId('sidebar-view-menu')).toHaveText(view === 'Workspaces' ? 'Folders' : 'List')
         expect(await firstButtonLeft()).toBeGreaterThanOrEqual(lightsRight + LIGHTS_GAP)
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
     }
 
     // Wider: the title is back, whole, right of the lights — in both views (the All view with its
@@ -220,7 +220,7 @@ test('T163 91fce7bf r2: only the traffic-light spot is free — panels at 8px, t
         const state = await titleState(page)
         expect(state.cut, `${view} title whole at 340: ${JSON.stringify(state)}`).toBe(false)
         expect(state.left).toBeGreaterThanOrEqual(lightsRight + LIGHTS_GAP)
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
     }
     await setSidebarWidth(page, 256)
     await expect.poll(async () => (await titleState(page)).hidden).toBe(true)
@@ -249,8 +249,8 @@ test('T163 91fce7bf r2: only the traffic-light spot is free — panels at 8px, t
     await expect(sidebarHeader(page)).toBeVisible()
 
     // Split view: the header row is shorter and the lights move up with it — centred again.
-    await page.getByTestId('sidebar-view-toggle').click()
-    await page.getByTestId('all-sessions-layout-list').click()
+    await toggleSidebarView(page)
+    await chooseSidebarView(page, 'list')
     for (const id of [SESSIONS[1], SESSIONS[2]]) {
         await page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${id}"]`).hover()
         await page.locator(`[data-session-select="${id}"]`).click()
@@ -267,8 +267,8 @@ test('T163 91fce7bf r2: only the traffic-light spot is free — panels at 8px, t
 
 test('T163 cbc0ee48: «No folder» folds like a folder, is remembered, joins collapse-all, and takes a drop while folded', async () => {
     const { page, userDataDir } = await launch()
-    await page.getByTestId('sidebar-view-toggle').click()
-    await page.getByTestId('all-sessions-layout-list').click()
+    await toggleSidebarView(page)
+    await chooseSidebarView(page, 'list')
     const list = page.getByTestId('sidebar-all-sessions')
     const none = page.getByTestId('session-folder-none')
     const unfiledRow = (id: string) => list.locator(`[data-session-folder-none-body] [data-session-item="${id}"]`)
@@ -414,8 +414,8 @@ test('T163 1b965ad1: reply threads stay out of the sidebar lists and ⌘[ ] — 
     await expect.poll(() => visibleTerminals(page)).toEqual([P])
 
     // All sessions, List: not in the session folder, not under «No folder».
-    await page.getByTestId('sidebar-view-toggle').click()
-    await page.getByTestId('all-sessions-layout-list').click()
+    await toggleSidebarView(page)
+    await chooseSidebarView(page, 'list')
     const all = page.getByTestId('sidebar-all-sessions')
     await expect(all.locator(`[data-session-item="${X}"]`)).toBeVisible()
     await shot(page, null, '1b965ad1', 'all-list', { x: 0, y: 0, width: 420, height: 400 })
@@ -425,7 +425,7 @@ test('T163 1b965ad1: reply threads stay out of the sidebar lists and ⌘[ ] — 
     await expect(page.locator('[data-session-folder-count="none"]')).toHaveText('(3)')
 
     // Tree: the plain fork under its parent, no thread.
-    await page.getByTestId('all-sessions-layout-tree').click()
+    await chooseSidebarView(page, 'tree')
     await expect(all.locator(`[data-session-item="${F}"]`)).toBeVisible()
     await expect(all.locator(`[data-session-item="${T1}"]`)).toHaveCount(0)
     await expect(all.locator(`[data-session-item="${T2}"]`)).toHaveCount(0)
@@ -435,7 +435,7 @@ test('T163 1b965ad1: reply threads stay out of the sidebar lists and ⌘[ ] — 
     await expect(page.locator(`[data-testid="sidebar-thread-row"][data-child-id="${T1}"]`)).toBeVisible()
     await expect(page.locator(`[data-testid="sidebar-thread-row"][data-child-id="${T2}"]`)).toBeVisible()
     await page.getByTestId('all-sessions-threads').click()
-    await page.getByTestId('all-sessions-layout-list').click()
+    await chooseSidebarView(page, 'list')
 
     // Search finds a thread; opened from there it keeps its row while it is on screen.
     await page.getByTestId('sidebar-search-toggle').click()

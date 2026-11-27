@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { REPO_ROOT, LaunchResult, closeApp, launchAppWithWorkspaces, openLoopWindow } from './helpers'
+import { REPO_ROOT, LaunchResult, closeApp, launchAppWithWorkspaces, openLoopWindow, toggleSidebarView } from './helpers'
 
 /**
  * T167 — Autocron's background sessions in the app (2026-11-24):
@@ -86,7 +86,7 @@ test.describe('T167 autocron background sessions', () => {
         expect(made.status).toBe(201)
         expect(made.json.run).toMatchObject({ status: 'started' })
         const sessionId = made.json.run.sessionId as string
-        await ctx.page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(ctx.page)
         return { api, agent, sessionId, ctx }
     }
 

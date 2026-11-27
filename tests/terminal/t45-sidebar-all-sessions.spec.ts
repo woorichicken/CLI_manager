@@ -2,7 +2,7 @@ import { test, expect, Page, _electron as electron } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, activateSession, REPO_ROOT, LaunchResult, SeedWorkspace } from './helpers'
+import { launchAppWithWorkspaces, closeApp, activateSession, REPO_ROOT, LaunchResult, SeedWorkspace, toggleSidebarView } from './helpers'
 
 /**
  * T45 — sidebar "All sessions" view.
@@ -63,14 +63,14 @@ test.describe('T45 sidebar all sessions', () => {
     test('the toggle lists every session flat, labelled with its workspace, and rows behave like tree rows', async () => {
         ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(false))
         const { page } = ctx
-        const toggle = page.getByTestId('sidebar-view-toggle')
+        const toggle = page.getByTestId('sidebar-view-menu')
 
         // Folder view: the closed folder hides T45A1/T45A2.
-        await expect(toggle).toHaveAttribute('data-state', 'folders')
+        await expect(toggle).toHaveAttribute('data-view', 'folders')
         await expect(page.locator('[data-session-item="s-a1"]')).toHaveCount(0)
 
-        await toggle.click()
-        await expect(toggle).toHaveAttribute('data-state', 'all')
+        await toggleSidebarView(page)
+        await expect(toggle).toHaveAttribute('data-view', 'list')
         const list = page.getByTestId('sidebar-all-sessions')
         await expect(list).toBeVisible()
         // Closed folder, worktree and loose workspace: all four are there.
@@ -97,8 +97,8 @@ test.describe('T45 sidebar all sessions', () => {
         await page.keyboard.press('Escape')
 
         // Back to the folder view: the closed folder hides its sessions again.
-        await toggle.click()
-        await expect(toggle).toHaveAttribute('data-state', 'folders')
+        await toggleSidebarView(page)
+        await expect(toggle).toHaveAttribute('data-view', 'folders')
         await expect(list).toHaveCount(0)
         await expect(page.locator('[data-session-item="s-a1"]')).toHaveCount(0)
     })
@@ -106,7 +106,7 @@ test.describe('T45 sidebar all sessions', () => {
     test('the header menu follows the view: workspace folders in the tree, session folders in All sessions', async () => {
         ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(true))
         const { page } = ctx
-        const toggle = page.getByTestId('sidebar-view-toggle')
+        const toggle = page.getByTestId('sidebar-view-menu')
         const more = page.getByTestId('sidebar-more')
 
         const toggleX = async (): Promise<number> => (await toggle.boundingBox())!.x
@@ -117,7 +117,7 @@ test.describe('T45 sidebar all sessions', () => {
 
         // All view: the menu holds the All view's own folders (078ee766) — no workspace items, and
         // no Collapse All while there is no session folder to fold (afbc3546).
-        await toggle.click()
+        await toggleSidebarView(page)
         await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
         await more.click()
         await expect(page.getByTestId('sidebar-new-session-folder')).toHaveText('New Session Folder')
@@ -140,12 +140,11 @@ test.describe('T45 sidebar all sessions', () => {
         // The view-independent buttons stay.
         await expect(page.getByTestId('sidebar-search-toggle')).toBeVisible()
         await expect(page.getByTestId('sidebar-add-workspace')).toHaveCount(0)
-        // The toggle does not move, so a second press under the same pointer switches back
-        // (a shifted row put the search button there).
+        // View ▾ does not move between the views (it replaced the header toggle — view-filter-1127).
         expect(await toggleX()).toBe(folderViewX)
 
         // Back to folders: the menu returns and still works.
-        await toggle.click()
+        await toggleSidebarView(page)
         await expect(more).toBeVisible()
         expect(await toggleX()).toBe(folderViewX)
         await expect(page.getByTestId('sidebar-add-workspace')).toBeVisible()
@@ -165,7 +164,7 @@ test.describe('T45 sidebar all sessions', () => {
         await activateSession(page, 'T45B1')
         await activateSession(page, 'T45W1')
 
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         // Most recent first (W1, B1, A1); A2 was never viewed and follows.
         await expect.poll(() => listOrder(page)).toEqual(['s-w1', 's-b1', 's-a1', 's-a2'])
     })
@@ -175,7 +174,7 @@ test.describe('T45 sidebar all sessions', () => {
         const { page } = ctx
         await activateSession(page, 'T45A1')
         await activateSession(page, 'T45B1')
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const list = page.getByTestId('sidebar-all-sessions')
         await expect.poll(async () => (await listOrder(page)).slice(0, 2)).toEqual(['s-b1', 's-a1'])
 
@@ -200,7 +199,7 @@ test.describe('T45 sidebar all sessions', () => {
         await activateSession(page, 'T45A1')
         await activateSession(page, 'T45B1')
         await activateSession(page, 'T45W1')
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const shown = ['s-w1', 's-b1', 's-a1', 's-a2']
         await expect.poll(() => listOrder(page)).toEqual(shown)
         await expect.poll(() => visibleTerminal(page)).toBe('s-w1')
@@ -220,7 +219,7 @@ test.describe('T45 sidebar all sessions', () => {
         expect(await listOrder(page)).toEqual(shown)
 
         // Back in the folder view the step is the workspace's own order again (T26).
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect(page.getByTestId('sidebar-all-sessions')).toHaveCount(0)
         await page.keyboard.press('Meta+BracketRight')
         await expect.poll(() => visibleTerminal(page)).toBe('s-a2')
@@ -234,7 +233,7 @@ test.describe('T45 sidebar all sessions', () => {
         await activateSession(page, 'T45A1')
         await activateSession(page, 'T45B1')
         await activateSession(page, 'T45W1')
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const list = page.getByTestId('sidebar-all-sessions')
         await expect.poll(() => listOrder(page)).toEqual(['s-w1', 's-b1', 's-a1', 's-a2'])
 
@@ -270,7 +269,7 @@ test.describe('T45 sidebar all sessions', () => {
         await activateSession(page, 'T45A1')
         await activateSession(page, 'T45B1')
         await activateSession(page, 'T45A2')
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const list = page.getByTestId('sidebar-all-sessions')
         await expect.poll(() => listOrder(page).then(ids => ids[0])).toBe('s-a2')
 
@@ -285,7 +284,7 @@ test.describe('T45 sidebar all sessions', () => {
 
     test('the choice survives an app restart', async () => {
         ctx = await launchAppWithWorkspaces(seedWorkspaces(parentDir()), options(false))
-        await ctx.page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(ctx.page)
         await expect(ctx.page.getByTestId('sidebar-all-sessions')).toBeVisible()
 
         // closeApp deletes userData; the relaunch needs it.
@@ -305,7 +304,7 @@ test.describe('T45 sidebar all sessions', () => {
         })
         const page = await relaunched.firstWindow()
         await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible({ timeout: 30_000 })
-        await expect(page.getByTestId('sidebar-view-toggle')).toHaveAttribute('data-state', 'all')
+        await expect(page.getByTestId('sidebar-view-menu')).toHaveAttribute('data-view', 'list')
         await expect.poll(() => listOrder(page).then(ids => ids.length)).toBe(ALL_IDS.length)
     })
 })

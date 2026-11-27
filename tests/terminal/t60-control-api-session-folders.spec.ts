@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, LaunchResult, toggleSidebarView } from './helpers'
 
 /**
  * T60 — Session folders through the Control API (REST and MCP).
@@ -71,7 +71,7 @@ test.describe('T60 Control API session folders', () => {
         }
         const stored = (): Array<{ id: string; name: string }> => JSON.parse(fs.readFileSync(path.join(userDataDir, 'config.json'), 'utf-8')).sessionFolders ?? []
 
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect(page.locator('[data-session-item="s-a"]')).toBeVisible()
         await expect(page.getByTestId('session-folder-header-sf-old')).toBeVisible()
 

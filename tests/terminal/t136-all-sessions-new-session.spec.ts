@@ -2,17 +2,17 @@ import { test, expect, Page } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, termText } from './helpers'
+import { launchAppWithWorkspaces, closeApp, activateSession, resizeMainWindow, LaunchResult, termText, toggleSidebarView } from './helpers'
 import type { SessionRelation, Workspace } from '../../src/shared/types'
 
 /**
  * T136 — "New session" in the sidebar's All sessions view (report c63a93c0).
  *
- * All sessions has a toolbar row (List · Tree on the left, New session on the
- * right) that opens the same small dialog the Related dialog uses: project,
- * template, name. The new session is shown, listed in All sessions, runs the
- * template and is related to nothing. The folder view has no such button; the
- * header keeps its buttons (title not cut, view toggle in place).
+ * The sidebar has a toolbar row (View ▾ on the left, New session on the right)
+ * that opens the same small dialog the Related dialog uses: project, template,
+ * name. The new session is shown, listed in All sessions, runs the template and
+ * is related to nothing. Since View ▾ (view-filter-1127) the folder view has the
+ * same row and button; the header keeps its buttons (title not cut, View ▾ in place).
  *
  * Judged in the DOM, config.json and the terminal buffer.
  */
@@ -69,14 +69,15 @@ test.describe('T136 All sessions New session (c63a93c0)', () => {
         const shots = shotsDir()
 
         await activateSession(page, NAMES[SECOND])
-        const toggle = page.getByTestId('sidebar-view-toggle')
-        const toggleXInFolders = (await toggle.boundingBox())!.x
-        await toggle.click()
+        // The view is picked in the toolbar's View ▾ (view-filter-1127): the chip stays put across the switch.
+        const chip = page.getByTestId('sidebar-view-menu')
+        const chipXInFolders = (await chip.boundingBox())!.x
+        await toggleSidebarView(page)
         await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
         if (shots) await page.screenshot({ path: path.join(shots, `all-sessions-1280-${label()}.png`) })
 
-        // The header is untouched: same view toggle place, title not cut at the default width.
-        expect((await toggle.boundingBox())!.x).toBe(toggleXInFolders)
+        // The header is untouched: View ▾ in the same place, title not cut at the default width.
+        expect((await chip.boundingBox())!.x).toBe(chipXInFolders)
         const titleCut = await page.evaluate(() => {
             const title = Array.from(document.querySelectorAll('span')).find(el => el.textContent === 'All sessions')
             // hidden on macOS at the default width for the traffic lights (91fce7bf r2, T163) — hidden is not cut
@@ -120,7 +121,7 @@ test.describe('T136 All sessions New session (c63a93c0)', () => {
         // On screen, running the template, and in the All sessions list (still the All view).
         await expect(page.locator(`[data-related-button="${createdId}"]`)).toBeVisible()
         await expect.poll(() => termText(page, createdId), { timeout: 15_000 }).toContain('T136-TEMPLATE-RAN')
-        await expect(page.getByTestId('sidebar-view-toggle')).toHaveAttribute('data-state', 'all')
+        await expect(page.getByTestId('sidebar-view-menu')).toHaveAttribute('data-view', 'list')
         await expect(page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${createdId}"]`)).toBeVisible()
         if (shots) await page.screenshot({ path: path.join(shots, `all-sessions-created-1280-${label()}.png`) })
 
@@ -129,10 +130,14 @@ test.describe('T136 All sessions New session (c63a93c0)', () => {
         const relations = configOnDisk(ctx!.userDataDir).sessionRelations ?? []
         expect(relations.filter(r => r.from === createdId || r.to === createdId)).toEqual([])
 
-        // The folder view has no such button.
-        await page.getByTestId('sidebar-view-toggle').click()
+        // The folder view has the same toolbar and button since View ▾ (view-filter-1127); it opens the same dialog.
+        await toggleSidebarView(page)
         await expect(page.getByTestId('sidebar-all-sessions')).toHaveCount(0)
-        await expect(newButton(page)).toHaveCount(0)
+        await expect(newButton(page)).toBeVisible()
+        await newButton(page).click()
+        await expect(form(page)).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(form(page)).toHaveCount(0)
     })
 
     test('T136 narrow window keeps the dialog on screen', async () => {
@@ -141,7 +146,7 @@ test.describe('T136 All sessions New session (c63a93c0)', () => {
         const shots = shotsDir()
         await resizeMainWindow(ctx.app, 390, 800)
         await activateSession(page, NAMES[FIRST])
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
         if (shots) await page.screenshot({ path: path.join(shots, `all-sessions-390-${label()}.png`) })
         await expect(newButton(page)).toBeVisible()
@@ -161,7 +166,7 @@ test.describe('T136 All sessions New session (c63a93c0)', () => {
         ctx = await launch()
         const { page, app } = ctx
         await activateSession(page, NAMES[FIRST])
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const sessionCount = () => configOnDisk(ctx!.userDataDir).workspaces.reduce((n, w) => n + w.sessions.length, 0)
         const countBefore = sessionCount()
         // main refuses: the app's add-session returns { success: false } as it does when spawning fails.

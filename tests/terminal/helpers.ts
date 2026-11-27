@@ -260,6 +260,33 @@ export async function closeApp(result: LaunchResult, timeoutMs = CLOSE_APP_TIMEO
     }
 }
 
+/** A view the sidebar toolbar's View ▾ offers (view-filter-1127): the workspace folders, or All sessions as a list or a tree. */
+export type SidebarView = 'folders' | 'list' | 'tree'
+
+/** Pick a sidebar view from View ▾ and wait until the toolbar names it. */
+export async function chooseSidebarView(page: Page, view: SidebarView): Promise<void> {
+    const chip = page.getByTestId('sidebar-view-menu')
+    if (await chip.getAttribute('data-view') === view) return
+    await chip.click()
+    await page.getByTestId('sidebar-view-menu-list').locator(`[data-view-option="${view}"]`).click()
+    await page.locator(`[data-testid="sidebar-view-menu"][data-view="${view}"]`).waitFor()
+}
+
+/**
+ * What the old header toggle did: folders ↔ All sessions, All sessions in the layout saved last
+ * (List unless Tree was picked and Settings shows the tree). Tests written for the toggle use this.
+ */
+export async function toggleSidebarView(page: Page): Promise<void> {
+    const chip = page.getByTestId('sidebar-view-menu')
+    if (await chip.getAttribute('data-view') !== 'folders') return chooseSidebarView(page, 'folders')
+    await chip.click()
+    const menu = page.getByTestId('sidebar-view-menu-list')
+    const savedTree = await page.evaluate(() => localStorage.getItem('sidebar-all-sessions-layout') === 'tree')
+    const view: SidebarView = savedTree && await menu.locator('[data-view-option="tree"]').count() > 0 ? 'tree' : 'list'
+    await menu.locator(`[data-view-option="${view}"]`).click()
+    await page.locator(`[data-testid="sidebar-view-menu"][data-view="${view}"]`).waitFor()
+}
+
 /** Click a session in the sidebar to make it the active (visible) terminal. */
 export async function activateSession(page: Page, name: string): Promise<void> {
     await page.getByText(name, { exact: true }).first().click()

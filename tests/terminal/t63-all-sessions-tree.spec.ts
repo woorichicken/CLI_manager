@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult, toggleSidebarView, chooseSidebarView } from './helpers'
 import type { SessionRelation } from '../../src/shared/types'
 
 /**
@@ -90,9 +90,9 @@ test.describe('T63 All sessions tree', () => {
         ctx = await launch()
         const { page } = ctx
         await resizeMainWindow(ctx.app, 1280, 800)
-        await page.getByTestId('sidebar-view-toggle').click()
-        await expect(page.getByTestId('all-sessions-layout-list')).toHaveAttribute('aria-pressed', 'true')
-        await page.getByTestId('all-sessions-layout-tree').click()
+        await toggleSidebarView(page)
+        await expect(page.getByTestId('sidebar-view-menu')).toHaveAttribute('data-view', 'list')
+        await chooseSidebarView(page, 'tree')
 
         // Roots in sidebar order, each level oldest relation first; a child sits right under its parent.
         await expect.poll(() => treeIds(page, 'session-tree-rows')).toEqual([CHIEF, LEAD_A, WORKER, HELPER, LEAD_B, TALK, LOOSE, HAND])
@@ -126,8 +126,8 @@ test.describe('T63 All sessions tree', () => {
         ctx = await launch({ controlApi: true })
         const { page, userDataDir } = ctx
         await resizeMainWindow(ctx.app, 1280, 800)
-        await page.getByTestId('sidebar-view-toggle').click()
-        await page.getByTestId('all-sessions-layout-tree').click()
+        await toggleSidebarView(page)
+        await chooseSidebarView(page, 'tree')
         const original = [CHIEF, LEAD_A, WORKER, HELPER, LEAD_B, TALK, LOOSE, HAND]
         await expect.poll(() => treeIds(page, 'session-tree-rows')).toEqual(original)
 
@@ -186,8 +186,8 @@ test.describe('T63 All sessions tree', () => {
     test('Settings turns the tree off (list only, no switch) and back on', async () => {
         ctx = await launch()
         const { page } = ctx
-        await page.getByTestId('sidebar-view-toggle').click()
-        await page.getByTestId('all-sessions-layout-tree').click()
+        await toggleSidebarView(page)
+        await chooseSidebarView(page, 'tree')
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible()
 
         await page.locator('button[title^="Settings"]').click()
@@ -196,7 +196,8 @@ test.describe('T63 All sessions tree', () => {
         await page.getByTestId('settings-show-session-tree').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(page.getByTestId('sidebar-session-tree')).toHaveCount(0, { timeout: 15_000 })
-        await expect(page.getByTestId('all-sessions-layout-tree')).toHaveCount(0)
+        // View ▾ falls back to List and offers no Tree (T192)
+        await expect(page.getByTestId('sidebar-view-menu')).toHaveAttribute('data-view', 'list')
         await expect(page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${HELPER}"]`)).toHaveCount(1)
 
         // Back on: the switch returns with the layout chosen before.
@@ -205,7 +206,7 @@ test.describe('T63 All sessions tree', () => {
         await page.getByTestId('settings-show-session-tree').click()
         await page.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(page.getByTestId('sidebar-session-tree')).toBeVisible({ timeout: 15_000 })
-        await expect(page.getByTestId('all-sessions-layout-tree')).toHaveAttribute('aria-pressed', 'true')
+        await expect(page.getByTestId('sidebar-view-menu')).toHaveAttribute('data-view', 'tree')
     })
 
     // Batch sessions share a long prefix and differ at the end ("…CLI-Manager api" / "…CLI-Manager ui"):
@@ -235,8 +236,8 @@ test.describe('T63 All sessions tree', () => {
         })
         const { page } = ctx
         await resizeMainWindow(ctx.app, 1280, 800)
-        await page.getByTestId('sidebar-view-toggle').click()
-        await page.getByTestId('all-sessions-layout-tree').click()
+        await toggleSidebarView(page)
+        await chooseSidebarView(page, 'tree')
         await expect.poll(() => treeDepths(page)).toEqual([0, 1, 2, 3])
 
         // The three share "AI: d1027 " and differ at the end (…CLI-Manager / …Manager api / …Manager ui):

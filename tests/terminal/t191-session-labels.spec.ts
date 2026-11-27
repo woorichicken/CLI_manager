@@ -2,7 +2,7 @@ import { test, expect, Page, _electron as electron } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT } from './helpers'
+import { launchAppWithWorkspaces, closeApp, LaunchResult, REPO_ROOT, toggleSidebarView } from './helpers'
 
 /**
  * T191 — a session's role and tags (decision 0015), in the app.
@@ -68,7 +68,7 @@ test.describe('T191 session role and tags', () => {
                 ] } } : {})
             }
         )
-        await ctx.page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(ctx.page)
         await expect(ctx.page.locator('[data-session-item="s-a"]')).toBeVisible()
         return { page: ctx.page, userDataDir: ctx.userDataDir, home, folder }
     }

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, resizeMainWindow, LaunchResult, toggleSidebarView, chooseSidebarView } from './helpers'
 
 /**
  * T36 — night-1022 feedback batch (reports 2d0c0695, dfba0c2e, e8760b87).
@@ -110,8 +110,8 @@ test.describe('T36 feedback batch 1022', () => {
         expect(config.settings.showSourceControl).toBe(false)
 
         // Two sessions side by side: the pane headers have no Git button either, their other buttons stay.
-        await page.getByTestId('sidebar-view-toggle').click()
-        await page.getByTestId('all-sessions-layout-list').click()
+        await toggleSidebarView(page)
+        await chooseSidebarView(page, 'list')
         for (const id of ['s-sc1', 's-sc2']) {
             await page.locator(`[data-session-item="${id}"]`).first().hover()
             await page.locator(`[data-session-select="${id}"]`).click()

@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test'
-import { launchAppWithWorkspaces, closeApp, LaunchResult } from './helpers'
+import { launchAppWithWorkspaces, closeApp, LaunchResult, toggleSidebarView, chooseSidebarView } from './helpers'
 import type { SessionRelation } from '../../src/shared/types'
 
 /**
@@ -52,8 +52,8 @@ test.describe('T69 All sessions select', () => {
 
         try {
             await page.locator(`[data-session-item="${S[0]}"]`).first().click()
-            await page.getByTestId('sidebar-view-toggle').click()
-            await page.getByTestId('all-sessions-layout-list').click()
+            await toggleSidebarView(page)
+            await chooseSidebarView(page, 'list')
 
             // Hidden until hovered; nothing picked yet, no bar.
             await expect(box(page, S[1])).toBeHidden()
@@ -115,7 +115,7 @@ test.describe('T69 All sessions select', () => {
             await expect(box(page, S[1])).toBeHidden()
 
             // Tree: the same boxes and bar.
-            await page.getByTestId('all-sessions-layout-tree').click()
+            await chooseSidebarView(page, 'tree')
             await expect(page.getByTestId('sidebar-session-tree')).toBeVisible()
             await tick(page, S[2])
             await tick(page, S[0])

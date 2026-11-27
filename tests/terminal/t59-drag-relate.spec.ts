@@ -2,7 +2,7 @@ import { test, expect, Page, Locator } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { launchAppWithWorkspaces, closeApp, activateSession, LaunchResult, SeedWorkspace } from './helpers'
+import { launchAppWithWorkspaces, closeApp, activateSession, LaunchResult, SeedWorkspace, toggleSidebarView } from './helpers'
 
 /**
  * T59 — drag a sidebar session row onto another to relate them (report 269168e4).
@@ -52,7 +52,7 @@ test.describe('T59 drag to relate', () => {
     test('in All sessions a row dropped on another relates them; a pair removed with × comes back when dragged in', async () => {
         ctx = await launchAppWithWorkspaces(seed(), { settings: { showHomeWorkspace: false } })
         const { page, userDataDir } = ctx
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const list = page.getByTestId('sidebar-all-sessions')
         const target = list.locator('[data-session-item="s-a1"]')
         await expect(target).toBeVisible()
@@ -130,7 +130,7 @@ test.describe('T59 drag to relate', () => {
         const sessions = Array.from({ length: 45 }, (_, i) => ({ id: `s-${String(i).padStart(2, '0')}`, name: `T59ROW${String(i).padStart(2, '0')}` }))
         ctx = await launchAppWithWorkspaces([{ id: 'ws-many', name: 'T59MANY', path: folder, sessions }], { settings: { showHomeWorkspace: false } })
         const { page } = ctx
-        await page.getByTestId('sidebar-view-toggle').click()
+        await toggleSidebarView(page)
         const list = page.getByTestId('sidebar-all-sessions')
         await expect(list.locator('[data-session-item="s-00"]')).toBeVisible()
         const scrollTop = (): Promise<number> => list.evaluate(el => el.scrollTop)

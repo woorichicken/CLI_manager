@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Plus, PanelLeftClose, GripVertical, Folder, ChevronDown, ChevronRight, Search, List, FolderTree, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { Plus, PanelLeftClose, GripVertical, Folder, ChevronDown, ChevronRight, Search, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import { Reorder, useDragControls } from 'framer-motion'
 import { Workspace, WorkspaceFolder, SessionFolder, SessionRelation, TerminalSession, SessionStatus, HooksSettings, SplitTerminalLayout, AgentStatusSource } from '../../../../shared/types'
 import type { SessionFolderActions } from '../../hooks/useSessionFolders'
@@ -26,6 +26,7 @@ import { useShortcutHint } from '../../utils/shortcutHints'
 import { SessionSelectionBar, useSessionSelection } from './SessionSelectionBar'
 import { ConnectConversationDialog } from './ConnectConversationDialog'
 import { AllSessionsToolbar, type AllSessionsLayout } from './AllSessionsToolbar'
+import type { SidebarView } from './SidebarViewMenu'
 import { SidebarThreads } from './SidebarThreads'
 import { useThreadsView } from './useThreadsView'
 import { NewSessionDialog } from '../NewSessionDialog'
@@ -845,9 +846,7 @@ export function Sidebar({
     const [newSessionFolderId, setNewSessionFolderId] = useState<string | null>(null)
     const closeNewSession = useCallback(() => setNewSessionOpen(false), [])
     const newSessionFolderName = newSessionFolderId ? sessionFolders.find(f => f.id === newSessionFolderId)?.name : undefined
-    const newSessionWorkspaces = viewMode === 'all'
-        ? sidebarWorkspaceOrder(workspaces, folders, showWorktrees, showPlayground)
-        : []
+    const newSessionWorkspaces = sidebarWorkspaceOrder(workspaces, folders, showWorktrees, showPlayground)
     // One sessionTreeFor per root: kept between the renders status updates cause. No recently viewed
     // order here: the tree stays put while the user clicks through it (d44191ed) — pinned roots
     // first, then sidebar order.
@@ -877,8 +876,7 @@ export function Sidebar({
         }
     }, [isAllSessionsView, clearSessionSelection])
 
-    const toggleViewMode = () => {
-        const next: SidebarViewMode = isAllSessionsView ? 'folders' : 'all'
+    const saveViewMode = (next: SidebarViewMode) => {
         setViewMode(next)
         try {
             localStorage.setItem(VIEW_MODE_STORAGE_KEY, next)
@@ -892,9 +890,17 @@ export function Sidebar({
     useEffect(() => {
         if (threadsView.threadsOpen && renamingSessionId && !threadsView.threads.some((thread) => thread.childId === renamingSessionId)) setRenamingSessionId(null)
     }, [threadsView.threadsOpen, threadsView.threads, renamingSessionId])
-    const chooseAllSessionsLayout = (next: AllSessionsLayout) => {
-        // Picking a layout while Threads is on goes back to the session list in that layout.
+    // View ▾ (view-filter-1127): Folders is the view mode; List and Tree are All sessions in that layout.
+    // The keys stay the ones the header toggle and the List / Tree buttons wrote, so saved choices open as before.
+    const currentView: SidebarView = isAllSessionsView ? allSessionsLayout : 'folders'
+    const chooseView = (next: SidebarView) => {
+        if (next === 'folders') {
+            saveViewMode('folders')
+            return
+        }
+        // Picking List or Tree while Threads is on goes back to the session list in that layout.
         threadsView.setThreadsOpen(false)
+        saveViewMode('all')
         setSavedLayout(next)
         try {
             localStorage.setItem(ALL_SESSIONS_LAYOUT_STORAGE_KEY, next)
@@ -1113,7 +1119,7 @@ export function Sidebar({
             {/* Drawn here, outside the All sessions list, so the list's pointer tracking does not
                 count the dialog as "pointer in the list" (see AllSessionsToolbar). A session made
                 here is related to nothing: there is no session it was started from. */}
-            {newSessionOpen && isAllSessionsView && (
+            {newSessionOpen && (
                 <NewSessionDialog
                     source="all-sessions"
                     overlay="window"
@@ -1222,8 +1228,8 @@ export function Sidebar({
                         </button>
                         {/* The menu follows the view: workspace folders in the folder tree, session folders
                             in All sessions (afbc3546 · 078ee766). With no way to add session folders the All
-                            view drops it, as 1.19 did. It sits left of the view toggle: the buttons are
-                            right-aligned, so dropping it shifts only what is left of it. */}
+                            view drops it, as 1.19 did. The view itself is picked in the toolbar's View ▾ since
+                            view-filter-1127; the place the header toggle had is left empty (person 11-27). */}
                         {!isAllSessionsView ? (
                             <SidebarMoreMenu
                                 anyExpanded={anyExpanded}
@@ -1241,12 +1247,10 @@ export function Sidebar({
                             />
                         )}
                         {/* Adding a project folder belongs to the folder view; All sessions keeps it in
-                            the … menu (report d9783659). Left of the view toggle for the same reason as
-                            the … menu: the toggle stays put when this drops out. */}
+                            the … menu (report d9783659). */}
                         {/* All sessions: folding every session folder is one press on the header (report
                             09aa3d01 — it was inside the … menu). It takes the slot the folder view gives
-                            «+», so the header keeps the folder view's button count at the default width
-                            and the view toggle does not move. */}
+                            «+», so both views keep the same button count and Close Sidebar stays put. */}
                         {isAllSessionsView && sessionFolderActions && sessionFolders.length > 0 && (
                             <button
                                 data-testid="sidebar-collapse-session-folders"
@@ -1271,18 +1275,6 @@ export function Sidebar({
                             </button>
                         )}
                         <button
-                            data-testid="sidebar-view-toggle"
-                            data-state={viewMode}
-                            onClick={toggleViewMode}
-                            className={`p-1 hover:bg-white/10 rounded transition-colors ${isAllSessionsView ? 'bg-white/10' : ''}`}
-                            // Names the view first: on macOS the header title gives way to the traffic lights (91fce7bf r2)
-                            title={isAllSessionsView ? 'All sessions — back to folders' : 'Workspaces — show all sessions'}
-                        >
-                            {isAllSessionsView
-                                ? <FolderTree size={14} className="text-blue-400" />
-                                : <List size={14} className="text-gray-400" />}
-                        </button>
-                        <button
                             onClick={onClose}
                             className="p-1 hover:bg-white/10 rounded transition-colors"
                             title={hint('Close Sidebar', 'toggleSidebar')}
@@ -1299,6 +1291,36 @@ export function Sidebar({
                         onSubmit={openTopSearchResult}
                         onClose={closeSearch}
                     />
+                )}
+
+                {/* One toolbar for both views, above the scrolling list: View ▾ is the only way to change the
+                    view, so it must not scroll away, and staying one element keeps its focus across a switch. */}
+                {!isSearching && (
+                    <div className="px-2 pt-2 shrink-0">
+                        <AllSessionsToolbar
+                            view={currentView}
+                            showTree={showSessionTree}
+                            onChooseView={chooseView}
+                            canCreate={newSessionWorkspaces.length > 0}
+                            onNewSession={() => { setNewSessionFolderId(null); setNewSessionOpen(true) }}
+                            newSessionOpen={newSessionOpen}
+                            threads={isAllSessionsView ? {
+                                open: threadsView.threadsOpen,
+                                onToggle: () => threadsView.setThreadsOpen(!threadsView.threadsOpen),
+                                waiting: threadsView.waitingThreads
+                            } : undefined}
+                            // Only once some session has a role or a tag: until then the button would only
+                            // squeeze "New session" in a narrow sidebar.
+                            labelFilter={isAllSessionsView && (labelFilter.active || anyLabels) && (
+                                <SessionLabelFilterButton
+                                    filter={labelFilter.filter}
+                                    active={labelFilter.active}
+                                    onChange={labelFilter.setFilter}
+                                    knownTags={knownTags}
+                                />
+                            )}
+                        />
+                    </div>
                 )}
 
                 {isSearching ? (
@@ -1356,7 +1378,7 @@ export function Sidebar({
                     <div
                         data-testid="sidebar-all-sessions"
                         ref={allSessionsListRef}
-                        className="flex-1 overflow-y-auto p-2"
+                        className="flex-1 overflow-y-auto px-2 pb-2"
                         onKeyDown={(e) => {
                             // Only reaches here from a focused check box or button in the list;
                             // Esc typed in a terminal never bubbles through the sidebar. Esc in a
@@ -1373,27 +1395,6 @@ export function Sidebar({
                             refreshRecentIds()
                         }}
                     >
-                        <AllSessionsToolbar
-                            showLayoutSwitch={showSessionTree && allSessionEntries.length > 0}
-                            layout={allSessionsLayout}
-                            onChooseLayout={chooseAllSessionsLayout}
-                            canCreate={newSessionWorkspaces.length > 0}
-                            onNewSession={() => { setNewSessionFolderId(null); setNewSessionOpen(true) }}
-                            newSessionOpen={newSessionOpen}
-                            threadsOpen={threadsView.threadsOpen}
-                            onToggleThreads={() => threadsView.setThreadsOpen(!threadsView.threadsOpen)}
-                            waitingThreads={threadsView.waitingThreads}
-                            // Only once some session has a role or a tag: until then the button would only
-                            // squeeze "New session" in a narrow sidebar.
-                            labelFilter={(labelFilter.active || anyLabels) && (
-                                <SessionLabelFilterButton
-                                    filter={labelFilter.filter}
-                                    active={labelFilter.active}
-                                    onChange={labelFilter.setFilter}
-                                    knownTags={knownTags}
-                                />
-                            )}
-                        />
                         {threadsView.threadsOpen ? (
                             <SidebarThreads
                                 threads={threadsView.threads}
@@ -1447,7 +1448,7 @@ export function Sidebar({
                     )}
                     </>
                 ) : (
-                <div ref={sessionListScrollRef} data-testid="sidebar-workspace-list" className="flex-1 overflow-y-auto p-2 space-y-0.5">
+                <div ref={sessionListScrollRef} data-testid="sidebar-workspace-list" className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
                     {/* Home workspace first */}
                     {homeWorkspace && (
                         <WorkspaceItem
