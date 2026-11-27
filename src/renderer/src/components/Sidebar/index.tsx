@@ -890,6 +890,16 @@ export function Sidebar({
     useEffect(() => {
         if (threadsView.threadsOpen && renamingSessionId && !threadsView.threads.some((thread) => thread.childId === renamingSessionId)) setRenamingSessionId(null)
     }, [threadsView.threadsOpen, threadsView.threads, renamingSessionId])
+    // Only reaches here from a focused check box or button in the All sessions list or its toolbar;
+    // Esc typed in a terminal never bubbles through the sidebar. Esc in a rename box cancels the
+    // rename and must leave the pick alone.
+    const clearSelectionOnEscape = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+        const target = e.target as HTMLElement
+        const typing = target instanceof HTMLTextAreaElement
+            || (target instanceof HTMLInputElement && target.type !== 'checkbox')
+        if (e.key === 'Escape' && !typing && selectedSessionIds.length > 0) clearSessionSelection()
+    }
+
     // View ▾ (view-filter-1127): Folders is the view mode; List and Tree are All sessions in that layout.
     // The keys stay the ones the header toggle and the List / Tree buttons wrote, so saved choices open as before.
     const currentView: SidebarView = isAllSessionsView ? allSessionsLayout : 'folders'
@@ -1296,7 +1306,8 @@ export function Sidebar({
                 {/* One toolbar for both views, above the scrolling list: View ▾ is the only way to change the
                     view, so it must not scroll away, and staying one element keeps its focus across a switch. */}
                 {!isSearching && (
-                    <div className="px-2 pt-2 shrink-0">
+                    // Esc on a toolbar button drops the pick too, as it did when the toolbar sat inside the list.
+                    <div className="px-2 pt-2 shrink-0" onKeyDown={isAllSessionsView ? clearSelectionOnEscape : undefined}>
                         <AllSessionsToolbar
                             view={currentView}
                             showTree={showSessionTree}
@@ -1379,15 +1390,7 @@ export function Sidebar({
                         data-testid="sidebar-all-sessions"
                         ref={allSessionsListRef}
                         className="flex-1 overflow-y-auto px-2 pb-2"
-                        onKeyDown={(e) => {
-                            // Only reaches here from a focused check box or button in the list;
-                            // Esc typed in a terminal never bubbles through the sidebar. Esc in a
-                            // rename box cancels the rename and must leave the pick alone.
-                            const target = e.target as HTMLElement
-                            const typing = target instanceof HTMLTextAreaElement
-                                || (target instanceof HTMLInputElement && target.type !== 'checkbox')
-                            if (e.key === 'Escape' && !typing && selectedSessionIds.length > 0) clearSessionSelection()
-                        }}
+                        onKeyDown={clearSelectionOnEscape}
                         onMouseEnter={() => { pointerInSessionListRef.current = true }}
                         onMouseLeave={() => {
                             pointerInSessionListRef.current = false

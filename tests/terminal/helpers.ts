@@ -263,10 +263,12 @@ export async function closeApp(result: LaunchResult, timeoutMs = CLOSE_APP_TIMEO
 /** A view the sidebar toolbar's View ▾ offers (view-filter-1127): the workspace folders, or All sessions as a list or a tree. */
 export type SidebarView = 'folders' | 'list' | 'tree'
 
-/** Pick a sidebar view from View ▾ and wait until the toolbar names it. */
+/**
+ * Pick a sidebar view from View ▾ and wait until the toolbar names it. Always through the menu, even when
+ * that view is on screen: picking List or Tree again closes Threads, as the user's click would.
+ */
 export async function chooseSidebarView(page: Page, view: SidebarView): Promise<void> {
     const chip = page.getByTestId('sidebar-view-menu')
-    if (await chip.getAttribute('data-view') === view) return
     await chip.click()
     await page.getByTestId('sidebar-view-menu-list').locator(`[data-view-option="${view}"]`).click()
     await page.locator(`[data-testid="sidebar-view-menu"][data-view="${view}"]`).waitFor()

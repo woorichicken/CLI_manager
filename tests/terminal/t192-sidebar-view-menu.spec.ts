@@ -194,6 +194,46 @@ test.describe('T192 sidebar View menu', () => {
         await expect(again.getByTestId('sidebar-view-menu')).toHaveAttribute('data-view', 'tree')
     })
 
+    test('menus do not stack, Esc on a toolbar button drops the pick, picking List again closes Threads (codex review)', async () => {
+        const { page } = await launch()
+        await page.getByTestId('sidebar-view-menu').click()
+        await page.getByTestId('sidebar-view-menu-list').locator('[data-view-option="list"]').click()
+        await expect(page.getByTestId('sidebar-all-sessions')).toBeVisible()
+        const viewMenu = page.getByTestId('sidebar-view-menu-list')
+        const filterMenu = page.getByTestId('all-sessions-label-filter-menu')
+
+        // View ▾ open, then the role/tag filter's button: only the filter menu stays — and the other way round.
+        await page.getByTestId('sidebar-view-menu').click()
+        await expect(viewMenu).toBeVisible()
+        await page.getByTestId('all-sessions-label-filter').click()
+        await expect(filterMenu).toBeVisible()
+        await expect(viewMenu).toHaveCount(0)
+        await page.getByTestId('sidebar-view-menu').click()
+        await expect(viewMenu).toBeVisible()
+        await expect(filterMenu).toHaveCount(0)
+        await page.keyboard.press('Escape')
+        await expect(viewMenu).toHaveCount(0)
+
+        // Two rows picked, focus on the Threads button, Esc: the pick is dropped (as when the toolbar sat in the list).
+        for (const id of [IDS.work, IDS.talk]) {
+            await page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${id}"]`).hover()
+            await page.locator(`[data-session-select="${id}"]`).click()
+        }
+        await expect(page.getByTestId('session-selection-bar')).toBeVisible()
+        await page.getByTestId('all-sessions-threads').focus()
+        await page.keyboard.press('Escape')
+        await expect(page.getByTestId('session-selection-bar')).toHaveCount(0)
+
+        // Threads on; picking List again (the view already named) goes back to the session list.
+        await page.getByTestId('all-sessions-threads').click()
+        await expect(page.getByTestId('all-sessions-threads')).toHaveAttribute('aria-pressed', 'true')
+        await expect(page.getByTestId('sidebar-view-menu')).toHaveAttribute('data-dimmed', 'true')
+        await page.getByTestId('sidebar-view-menu').click()
+        await viewMenu.locator('[data-view-option="list"]').click()
+        await expect(page.getByTestId('all-sessions-threads')).toHaveAttribute('aria-pressed', 'false')
+        await expect(page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${IDS.lead}"]`)).toBeVisible()
+    })
+
     test('values the old toggle saved open as before; with the tree off there is no Tree option', async () => {
         // The old app wrote these keys; the new one must read them unchanged.
         const first = await launch({ showSessionTree: false })

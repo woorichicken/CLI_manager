@@ -3,8 +3,6 @@ import type React from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { MENU_Z_INDEX } from '../../constants/styles'
-import { useCloseOnOutside } from './ContextMenus'
-import { SUBMENU_ATTRIBUTE } from './SessionLabelMenuItems'
 
 /** What the sidebar shows: the workspace folders, or every session as a list or a tree. */
 export type SidebarView = 'folders' | 'list' | 'tree'
@@ -54,8 +52,6 @@ export function SidebarViewMenu({ view, showTree, dimmed, onChoose }: SidebarVie
                 data-testid="sidebar-view-menu"
                 data-view={view}
                 data-dimmed={dimmed ? 'true' : undefined}
-                // Counted as part of its menu, so pressing it again closes the menu instead of reopening it.
-                {...{ [SUBMENU_ATTRIBUTE]: 'view-menu' }}
                 aria-haspopup="menu"
                 aria-expanded={open}
                 aria-label={`View: ${VIEW_LABELS[view]}`}
@@ -71,6 +67,7 @@ export function SidebarViewMenu({ view, showTree, dimmed, onChoose }: SidebarVie
             {open && buttonRef.current && (
                 <ViewMenu
                     anchor={buttonRef.current}
+                    chip={buttonRef.current}
                     view={view}
                     views={views}
                     onChoose={next => {
@@ -84,22 +81,42 @@ export function SidebarViewMenu({ view, showTree, dimmed, onChoose }: SidebarVie
     )
 }
 
-function ViewMenu({ anchor, view, views, onChoose, onClose }: {
+function ViewMenu({ anchor, chip, view, views, onChoose, onClose }: {
     anchor: HTMLElement
+    /** Its own chip: a press there toggles the menu (the chip's onClick), so it does not count as outside. */
+    chip: HTMLElement
     view: SidebarView
     views: SidebarView[]
     onChoose: (view: SidebarView) => void
     onClose: (refocus: boolean) => void
 }) {
-    // Esc gives the focus back to the chip; a click elsewhere leaves it where the click put it. Registered
-    // before useCloseOnOutside's listener so it runs first and the close knows which it was.
-    const escapedRef = useRef(false)
+    // Not useCloseOnOutside: that treats every submenu-marked button as inside, so the role/tag filter's
+    // button next to this one would open its menu over this one (and this chip over that one) — codex review
+    // of view-filter-1127. Here only this menu and its own chip are inside. Esc gives focus back to the chip;
+    // a press elsewhere leaves focus where the press put it.
+    const menuRef = useRef<HTMLDivElement>(null)
+    const closeRef = useRef(onClose)
+    closeRef.current = onClose
     useEffect(() => {
-        const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') escapedRef.current = true }
-        window.addEventListener('keydown', onKey, true)
-        return () => window.removeEventListener('keydown', onKey, true)
-    }, [])
-    const menuRef = useCloseOnOutside(() => onClose(escapedRef.current))
+        const onPointerDown = (e: PointerEvent): void => {
+            const target = e.target as Node
+            if (menuRef.current?.contains(target) || chip.contains(target)) return
+            closeRef.current(false)
+        }
+        const onKeyDown = (e: KeyboardEvent): void => {
+            if (e.key !== 'Escape') return
+            // Kept from the terminal behind the menu: Esc there would interrupt the agent.
+            e.preventDefault()
+            e.stopPropagation()
+            closeRef.current(true)
+        }
+        window.addEventListener('pointerdown', onPointerDown, true)
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => {
+            window.removeEventListener('pointerdown', onPointerDown, true)
+            window.removeEventListener('keydown', onKeyDown, true)
+        }
+    }, [chip])
     useLayoutEffect(() => {
         const menu = menuRef.current
         if (!menu) return
