@@ -3,7 +3,7 @@ import { EventEmitter } from 'events'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { TerminalMirror } from '../../src/main/TerminalMirror'
-import { isBusyRow, opencodeAwaitsSecondEsc } from '../../src/main/screenLines'
+import { opencodeAwaitsSecondEsc, screenShowsBusy } from '../../src/main/screenLines'
 
 /**
  * T193 — OpenCode screens, without Electron.
@@ -91,13 +91,48 @@ test.describe('T193 OpenCode screens', () => {
         expect(mirror.opencodeInput('s1')).toBeNull()
     })
 
-    test('the busy row: the bar with esc interrupt, not a quoted phrase; a second Esc is awaited after the first', () => {
-        expect(rows('working').some(isBusyRow)).toBe(true)
-        expect(rows('answered').some(isBusyRow)).toBe(false)
-        expect(isBusyRow('     press esc interrupt to stop it (a sentence in an answer)')).toBe(false)
-        expect(isBusyRow('   ⬝⬝ esc interrupt')).toBe(false)
+    test('the busy row: the bar with esc interrupt as the last row, not a quoted one; a second Esc is awaited after the first', () => {
+        expect(screenShowsBusy(rows('working'))).toBe(true)
+        expect(screenShowsBusy(rows('answered'))).toBe(false)
+        expect(screenShowsBusy(['     press esc interrupt to stop it (a sentence in an answer)'])).toBe(false)
+        expect(screenShowsBusy(['   ⬝⬝ esc interrupt'])).toBe(false)
+        // review: the same bar quoted in an answer above an idle footer is no work
+        expect(screenShowsBusy(['  Codex said:', '   ⬝■■■■■■⬝  esc interrupt   tab agents', '', '› ', '  ? for shortcuts'])).toBe(false)
         expect(opencodeAwaitsSecondEsc(rows('working'))).toBe(false)
         expect(opencodeAwaitsSecondEsc(rows('esc-again'))).toBe(true)
+        expect(opencodeAwaitsSecondEsc(['   ⬝■■■■■■⬝  esc again to interrupt', '  idle footer'])).toBe(false)
+    })
+
+    test('the question and permission words quoted in an answer, outside a ┃ panel, wait on nobody', async () => {
+        const events = new EventEmitter()
+        const mirror = new TerminalMirror({ events, getSize: () => ({ cols: COLS, rows: ROWS }), hasTerminal: () => true } as never)
+        events.emit('created', 's1', COLS, ROWS)
+        events.emit('output', 's1', ['  OpenCode shows △ Permission required when a tool asks.', '  Its footer reads ↑↓ select  enter submit  esc dismiss.', '', '› ', '  ? for shortcuts'].join('\r\n'))
+        await mirror.flush('s1')
+        expect(mirror.showsAwaitingInput('s1')).toBe(false)
+    })
+
+    test('the composer without colour: a typed draft is typed, the hint is not', async () => {
+        const draw = (line: string) => ['  ┃', `  ┃  ${line}`, '  ┃', '  ┃  Build · Mock Model OpenCode', `  ╹${'▀'.repeat(60)}`, '   ~/project     ctrl+p commands']
+        const events = new EventEmitter()
+        const mirror = new TerminalMirror({ events, getSize: () => ({ cols: COLS, rows: ROWS }), hasTerminal: () => true } as never)
+        events.emit('created', 's1', COLS, ROWS)
+        events.emit('output', 's1', draw('fix the failing test').join('\r\n'))
+        await mirror.flush('s1')
+        expect(mirror.opencodeInput('s1')?.typed).toBe('fix the failing test')
+        events.emit('output', 's1', '\x1b[2J\x1b[H' + draw('Ask anything... "Fix broken tests"').join('\r\n'))
+        await mirror.flush('s1')
+        expect(mirror.opencodeInput('s1')?.typed).toBe('')
+    })
+
+    test('the hint\'s words typed in plain colour, under a coloured model row, are typed text', async () => {
+        const muted = (text: string) => `\x1b[38;5;8m${text}\x1b[m`
+        const events = new EventEmitter()
+        const mirror = new TerminalMirror({ events, getSize: () => ({ cols: COLS, rows: ROWS }), hasTerminal: () => true } as never)
+        events.emit('created', 's1', COLS, ROWS)
+        events.emit('output', 's1', ['  ┃', '  ┃  Ask anything... "Explain this module"', '  ┃', `  ┃  Build ${muted('·')} Mock ${muted('OpenCode')}`, `  ╹${'▀'.repeat(60)}`].join('\r\n'))
+        await mirror.flush('s1')
+        expect(mirror.opencodeInput('s1')?.typed).toBe('Ask anything... "Explain this module"')
     })
 
     test('the terminal title OpenCode sets is kept', async () => {

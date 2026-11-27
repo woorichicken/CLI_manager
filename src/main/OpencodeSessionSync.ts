@@ -13,11 +13,12 @@ import { hasSession, sessionsIn, sessionsTitled } from './transcript/opencodeSto
  * installs into the person's OpenCode config, which this app does not do (decision 0002). What a terminal
  * does show of it:
  *
- * 1. `--session <id>` / `-s <id>` on the command line: that session.
- * 2. Otherwise the top-level sessions of the process's folder whose title the terminal title OpenCode sets
+ * 1. The top-level sessions of the process's folder whose title the terminal title OpenCode sets
  *    stands for — `OC | <session title>`, once the first answer named it (ovis paneSession, MIT); several
  *    (a title cut at 40 characters, a title used twice): the one used since the process started. The home
- *    screen and an unnamed session are titled `OpenCode`: no session yet.
+ *    screen and an unnamed session are titled `OpenCode`: no session yet. The title follows a `/sessions`
+ *    switch inside the TUI.
+ * 2. Without a session title on screen, `--session <id>` / `-s <id>` on the command line.
  *
  * Bound only when exactly one session is left. Two OpenCodes in one folder whose sessions share a title, or
  * a title not written to the store yet, stay unbound until it is clear — a wrong session in the chat is worse
@@ -157,12 +158,23 @@ export class OpencodeSessionSync {
         const open = await (this.deps.openFiles ?? readOpenFiles)(row.pid)
         const stores = open.files.filter((file) => file.endsWith('.db'))
         const store = stores.find((file) => path.basename(path.dirname(file)) === 'opencode') ?? stores[0] ?? fallbackStore
+        const fromTitle = this.titled(row, terminalId, open.cwd, store, now, taken)
+        if (fromTitle !== undefined) return fromTitle
+        // no session title on screen yet: the one the command line opened
         const named = namedSession(row.args)
-        if (named) return hasSession(store, named) ? named : null
+        return named && !taken.has(named) && hasSession(store, named) ? named : null
+    }
+
+    /**
+     * The session the terminal title names in the process's folder; null when the title names one but not
+     * exactly; undefined when it names none (the home screen, an unnamed session). The title follows a
+     * `/sessions` switch inside the TUI, so it goes before `--session` (Codex review).
+     */
+    private titled(row: OpencodeProcess, terminalId: string, cwd: string | null, store: string | null, now: number, taken: Set<string>): string | null | undefined {
         const title = this.deps.title(terminalId)
-        if (!title || opencodeTitleStart(title) === null) return null // its home screen, or not named yet
-        if (!open.cwd) return null
-        const folders = [...new Set([open.cwd, realpath(open.cwd)])]
+        if (!title || opencodeTitleStart(title) === null) return undefined
+        if (!cwd) return null
+        const folders = [...new Set([cwd, realpath(cwd)])]
         // the sessions this title stands for in the process's folder — an older one too: OpenCode switches
         // sessions inside the TUI (`/sessions`) and the title follows
         const titled = sessionsIn(store, folders, sessionsTitled(store, title)).filter((session) => !taken.has(session.id))

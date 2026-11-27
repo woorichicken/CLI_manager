@@ -117,9 +117,20 @@ test.describe('T194 OpenCode conversation', () => {
         const absent = path.join(root, 'absent', 'opencode.db')
         expect(new TranscriptReader({ claudeConfigDir: () => root, codexHome: () => root, opencodeStore: () => absent }).read('t4', 'opencode', s.session)).toBeNull()
         expect(fs.existsSync(absent)).toBe(false)
-        const v2 = storeV1()
+        // the same terminal now runs another agent: the OpenCode state does not answer its outputs
+        const tool = storeV1()
+        tool.user('read')
+        const step = tool.assistant([{ type: 'tool', tool: 'read', callID: 'c', state: { status: 'completed', input: {}, output: 'z'.repeat(5000) } }], { finish: 'stop' })
+        const toolReader = new TranscriptReader({ claudeConfigDir: () => root, codexHome: () => root, opencodeStore: () => tool.path })
+        toolReader.read('t9', 'opencode', tool.session)
+        return toolReader.toolOutput('t9', `${step}:0`).then(async (whole) => {
+            expect(whole).toBe('z'.repeat(5000))
+            expect(toolReader.read('t9', 'claude', '00000000-0000-4000-8000-000000000001', root)).toBeNull()
+            expect(await toolReader.toolOutput('t9', `${step}:0`)).toBeNull()
+            const v2 = storeV1()
         v2.db.exec('CREATE TABLE session_v2 (id text PRIMARY KEY)')
-        expect(new TranscriptReader({ claudeConfigDir: () => root, codexHome: () => root, opencodeStore: () => v2.path }).read('t5', 'opencode', v2.session)).toBeNull()
+            expect(new TranscriptReader({ claudeConfigDir: () => root, codexHome: () => root, opencodeStore: () => v2.path }).read('t5', 'opencode', v2.session)).toBeNull()
+        })
     })
 
     test('sessionsIn: top-level sessions of the folder among the ids, newest first; a subagent session never', () => {
@@ -236,6 +247,13 @@ test.describe('T194 OpenCode session sync', () => {
         const missing = harness({ title: null, args: 'opencode --session ses_notThere' })
         await missing.sync.tick(UPDATED + 1000)
         expect(missing.reported).toEqual([])
+    })
+
+    test('a /sessions switch inside the TUI: the title wins over the --session it was started with', async () => {
+        const h = harness({ title: 'OC | Another piece of work', args: 'opencode --session ses_de2ba62b2ffeWjO9LBV13XqX3l' })
+        h.db.prepare("INSERT INTO session (id, project_id, parent_id, slug, directory, title, version, time_created, time_updated) VALUES ('ses_switched1', 'p', NULL, 's', ?, 'Another piece of work', '1.18.15', 1, 2)").run(h.directory)
+        await h.sync.tick(UPDATED + 1000)
+        expect(h.reported).toEqual([['term-1', 'ses_switched1', 'opencode']])
     })
 
     test('two sessions with the same title in the folder: the one used since the process started, or none', async () => {

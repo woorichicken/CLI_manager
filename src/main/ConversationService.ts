@@ -887,26 +887,31 @@ export class ConversationService {
             this.dropIfIdle(sessionId, entry)
             return REVOKED
         }
+        const opencode = agentOf(this.deps.session(sessionId)) === 'opencode'
+        // OpenCode already took one Esc (its row says `esc again to interrupt`): this one interrupts — no second
+        const armed = opencode && opencodeAwaitsSecondEsc(this.deps.mirror.screen(sessionId))
         this.deps.writeInput(sessionId, INTERRUPT_KEY)
-        if (agentOf(this.deps.session(sessionId)) === 'opencode') await this.secondEsc(sessionId, sender)
+        if (opencode && !armed) await this.secondEsc(sessionId, sender)
         this.bump(sessionId, entry)
         this.dropIfIdle(sessionId, entry)
         return { status: 'stopped' }
     }
 
-    /** OpenCode's second Esc, once its busy row asks for it (OPENCODE_SECOND_ESC_MS at most). */
+    /**
+     * OpenCode's second Esc — only once its busy row turned into `esc again to interrupt` after the first. Not seen
+     * within OPENCODE_SECOND_ESC_MS (the first was lost, the turn ended): nothing more is sent; an Esc that lands
+     * on an idle OpenCode would go to its composer or a dialog (Codex review). Stop can be pressed again.
+     */
     private async secondEsc(sessionId: string, sender: ChatSender | null): Promise<void> {
         const deadline = Date.now() + OPENCODE_SECOND_ESC_MS
-        for (;;) {
+        while (Date.now() < deadline) {
             await sleep(OPENCODE_SECOND_ESC_POLL_MS)
             await this.deps.mirror.flush(sessionId)
-            const screen = this.deps.mirror.screen(sessionId)
-            // the turn ended on the first Esc (or the screen moved on): a second would land in the composer
-            if (!screenShowsBusy(screen)) return
-            if (opencodeAwaitsSecondEsc(screen) || Date.now() >= deadline) break
+            if (!opencodeAwaitsSecondEsc(this.deps.mirror.screen(sessionId))) continue
+            if (sender && !sender.allowed()) return
+            this.deps.writeInput(sessionId, INTERRUPT_KEY)
+            return
         }
-        if (sender && !sender.allowed()) return
-        this.deps.writeInput(sessionId, INTERRUPT_KEY)
     }
 
     /** A picture the conversation holds (an image part's or a tool's `ref`), as a data: URL. */

@@ -40,18 +40,25 @@ const CLAUDE_SPINNER_ROW = /^\s*[·✢✳✶✻✽*]\s+[^\s()…][^()…]*…\s*
  * `esc again to interrupt` after one Esc — and, while a request is retried, the reason between the two
  * (`⬝⬝⬝⬝ Free usage exceeded … [retrying in 10h 58m attempt #1]   esc interrupt`). Idle, the row is its
  * folder and key hints (opencode 1.18.15, recorded 2026-11-27; herdr manifests/opencode.toml, Apache-2.0).
- * No «to» in `esc interrupt`, so ESC_TO_INTERRUPT misses it; the bar keeps a quoted `esc interrupt` out.
+ * No «to» in `esc interrupt`, so ESC_TO_INTERRUPT misses it. Only as the screen's last row: the same bar quoted
+ * in an answer (another agent's, or OpenCode's own scrollback) is no work.
  */
 const OPENCODE_BUSY_ROW = /^\s*[■⬝]{4,}\s.*\besc (?:again to )?interrupt\b/
 
 /** A screen row that says the agent is working on a turn (see above). */
 export function isBusyRow(row: string): boolean {
-    return (ESC_TO_INTERRUPT.test(row) && !CODEX_ASK_HINT.test(row)) || CLAUDE_SPINNER_ROW.test(row) || OPENCODE_BUSY_ROW.test(row)
+    return (ESC_TO_INTERRUPT.test(row) && !CODEX_ASK_HINT.test(row)) || CLAUDE_SPINNER_ROW.test(row)
 }
 
-/** The row is OpenCode's busy row after one Esc: a second Esc interrupts. */
+/** OpenCode's busy row, the screen's last non-blank row (see OPENCODE_BUSY_ROW); undefined when not busy. */
+function opencodeBusyRow(rows: readonly string[]): string | undefined {
+    const last = [...rows].reverse().find((row) => row.trim() !== '')
+    return last !== undefined && OPENCODE_BUSY_ROW.test(last) ? last : undefined
+}
+
+/** OpenCode's busy row says `esc again to interrupt`: one Esc was taken, the next interrupts. */
 export function opencodeAwaitsSecondEsc(rows: readonly string[]): boolean {
-    return rows.some((row) => OPENCODE_BUSY_ROW.test(row) && /\besc again to interrupt\b/.test(row))
+    return /\besc again to interrupt\b/.test(opencodeBusyRow(rows) ?? '')
 }
 
 /**
@@ -75,7 +82,7 @@ export function isAgyCancelFooter(row: string): boolean {
  * required, so a shell with a braille progress bar (npm) never reads as an agent at work.
  */
 export function screenShowsBusy(rows: readonly string[]): boolean {
-    if (rows.some(isBusyRow)) return true
+    if (rows.some(isBusyRow) || opencodeBusyRow(rows) !== undefined) return true
     const shown = rows.filter((row) => row.trim() !== '')
     const last = shown.at(-1)
     return last !== undefined && isAgyCancelFooter(last) && shown.some((row) => AGY_SPINNER_ROW.test(row))

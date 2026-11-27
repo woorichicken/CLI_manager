@@ -33,7 +33,13 @@ let sqlite: { DatabaseSync: typeof DatabaseSyncType } | null = null
 function database(path: string): DatabaseSyncType {
     sqlite ??= createRequire(__filename)('node:sqlite') as { DatabaseSync: typeof DatabaseSyncType }
     const db = new sqlite.DatabaseSync(path, { readOnly: true })
-    db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`)
+    try {
+        db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`)
+    } catch (error) {
+        // not left open: the sync asks every few seconds (review)
+        db.close()
+        throw error
+    }
     return db
 }
 

@@ -165,7 +165,12 @@ export class TranscriptReader {
      * for this `key` (a terminal session id). Null when no file is found.
      */
     read(key: string, agent: ChatAgent, id: string, cwd?: string): TranscriptRead | null {
-        if (agent === 'opencode') return this.readOpencode(key, id)
+        if (agent === 'opencode') {
+            this.states.delete(key)
+            return this.readOpencode(key, id)
+        }
+        // the same terminal ran OpenCode before: its state must not answer this agent's images and outputs
+        this.opencodeStates.delete(key)
         let state = this.states.get(key)
         let restarted = false
         if (!state || state.agent !== agent || state.id !== id) {

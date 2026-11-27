@@ -77,8 +77,9 @@ const AWAITING_INPUT_PATTERNS = [
     /↑\/↓ Navigate · (?:enter Select · esc Skip|tab Amend|enter Confirm)/,
     // OpenCode's question (`↑↓ select  enter submit  esc dismiss`, opencode 1.18.15 recorded 2026-11-27) and its
     // permission prompt (herdr manifests/opencode.toml, Apache-2.0 — not recorded here)
-    /↑↓ select\s+enter (?:submit|confirm|toggle)\s+esc dismiss/,
-    /△ Permission required/
+    // — inside its `┃` panel: the same words quoted in an answer are no dialog (Codex review)
+    /┃\s*↑↓ select\s+enter (?:submit|confirm|toggle)\s+esc dismiss/,
+    /┃\s*△ Permission required/
 ]
 
 /**
@@ -544,13 +545,19 @@ export class TerminalMirror {
         if (statusRow === undefined) return { typed: '', typedRows: 0, suggestion: '' }
         const cell = buffer.getNullCell()
         const colour = (): string => `${cell.isFgRGB() ? 'r' : cell.isFgPalette() ? 'p' : 'd'}${cell.getFgColor()}`
-        // the muted colour: what the model row draws its `·` in
+        // the muted colour: what the model row draws its `·` in — unless that is also the colour of its first word
+        // (`Build`; a colourless screen, a theme without a muted shade): then colour tells nothing, the hint's words do
         const muted = new Set<string>()
+        let plain: string | null = null
         const status = buffer.getLine(buffer.viewportY + statusRow)
         for (let col = edge + 1; status && col < status.length; col++) {
             status.getCell(col, cell)
-            if (cell.getChars() === '·') muted.add(colour())
+            const chars = cell.getChars()
+            if (chars === '·') muted.add(colour())
+            else if (plain === null && /[A-Za-z]/.test(chars)) plain = colour()
         }
+        const byColour = muted.size > 0 && (plain === null || !muted.has(plain))
+        if (!byColour) muted.clear()
         const typed: string[] = []
         for (const row of rows) {
             const line = buffer.getLine(buffer.viewportY + row)
@@ -563,7 +570,8 @@ export class TerminalMirror {
                 text += chars.trim() === '' || cell.isDim() || muted.has(colour()) ? ' ' : chars
             }
             const collapsed = collapseSpaces(text)
-            if (collapsed && !OPENCODE_EMPTY_HINT.test(collapsed)) typed.push(collapsed)
+            // the hint's words count only where colour cannot tell: typed `Ask anything... "…"` in plain colour is typed
+            if (collapsed && !(!byColour && OPENCODE_EMPTY_HINT.test(collapsed))) typed.push(collapsed)
         }
         return { typed: typed.join(' '), typedRows: typed.length, suggestion: '' }
     }

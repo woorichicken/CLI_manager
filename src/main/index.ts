@@ -40,7 +40,6 @@ import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { AgySessionSync, agyStartCommand } from './AgySessionSync'
 import { OpencodeSessionSync, opencodeStartCommand } from './OpencodeSessionSync'
 import { opencodeDatabasePath, OPENCODE_SESSION_ID } from './transcript/opencodeTranscript'
-import { hasSession as opencodeHasSession } from './transcript/opencodeStore'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
@@ -1488,15 +1487,10 @@ function validateCliSessionIds(): void {
     let modified = false
     for (const ws of workspaces) {
         for (const session of ws.sessions) {
-            if (session.cliSessionId && session.cliToolName === 'opencode') {
-                if (opencodeHasSession(opencodeStore(), session.cliSessionId)) continue
-                console.log(`[validateCliSessionIds] CLEAR stale opencode session ${session.cliSessionId} (not in the store)`)
-                delete session.cliSessionId
-                delete session.cliToolName
-                delete session.cliCommand
-                modified = true
-                continue
-            }
+            // OpenCode bindings are kept: the shell's OPENCODE_DB / XDG_DATA_HOME may name another store than the
+            // app's (Finder) environment, so «not in the store» proves nothing here, and a store that cannot be read
+            // must not stop the start. A resumed id OpenCode no longer has opens its home screen.
+            if (session.cliToolName === 'opencode') continue
             if (session.cliSessionId && session.cliToolName === 'agy') {
                 if (agyConversationExists(session.cliSessionId)) continue
                 console.log(`[validateCliSessionIds] CLEAR stale agy conversation ${session.cliSessionId} (no ledger)`)
