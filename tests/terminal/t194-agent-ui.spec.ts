@@ -12,7 +12,9 @@ import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainW
  * an answered card locks, the request stays unread, the session gets no AI mark. A card for
  * another session than the caller, or one outside the allowlist, is refused.
  *
- * T194_SHOTS=<dir> + T194_LABEL saves captures (1280 and 390) before the checks.
+ * T194_SHOTS=<dir> + T194_LABEL saves captures (1280 and 390) before the checks. T194_BEFORE=1 only
+ * captures the same request sent as a plain inbox request (what an agent can do without show_ui) —
+ * the review's "before", runnable on the old build.
  */
 
 const CLAUDE = 's-t194-claude'
@@ -122,6 +124,19 @@ test('T194: an agent card in the inbox — drawn, a button types one line into t
     const { page, home } = await launch()
     await waitForBufferText(page, CLAUDE, 'Claude Code (mock)', 20_000)
     const api = await apiFor(home)
+
+    if (process.env.T194_BEFORE === '1') {
+        expect((await api('POST', '/v1/inbox', { kind: 'question', text: 'Merge PR #324? (docs(backlog) · 1 file · tests pass) — reply approve or hold' }, CLAUDE)).status).toBe(200)
+        await page.locator('[data-testid="inbox-button"]:visible').first().click()
+        await expect(page.getByTestId('inbox-popover')).toBeVisible()
+        await shot(page, 't194-card-1280')
+        await page.keyboard.press('Escape')
+        await resizeMainWindow(result!.app, 390, 800)
+        await page.locator('[data-testid="inbox-button"]:visible').first().click()
+        await expect(page.getByTestId('inbox-popover')).toBeVisible()
+        await shot(page, 't194-card-390')
+        return
+    }
 
     // --- The API: what is refused, what goes in -----------------------------
     const bad = await api('POST', '/v1/ui', { text: 'x', components: [{ id: 'root', component: 'Image', url: 'https://example.com/a.png' }] }, CLAUDE)
