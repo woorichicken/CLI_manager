@@ -27,6 +27,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - 폰: OpenCode 세션도 폰에서는 Terminal 만이다 — `phoneSetup.ts` 의 에이전트 판정 두 줄이 claude·codex 만 본다. agy 와 같은 결함으로 `found-defects.md` 「폰 — agy(Antigravity) 세션에 Chat 이 없다」에 적혀 있고, 그 고침(「Chat 이 읽는 에이전트」 목록 한 곳)이 OpenCode 도 함께 연다.
 - Owner: 없음
 
+### OpenCode — 코드 리뷰가 남긴 작은 것 5건 (#210)
+- Discovered: 2026-11-28 `/code-review feat/opencode-1127`(중요 2건은 같은 PR 에서 고침 — 이름 겹침 소거 · 보낸 글 확인).
+- Evidence: ① Stop 이 둘째 Esc 를 못 보내도(`esc again to interrupt` 가 1초 안에 안 뜸) `stopped` 를 돌려준다(`ConversationService.ts` `secondEsc`) ② `OpencodeSessionSync.sync()` 가 터미널을 보기 전에 mark·titles·scannedAt 을 저장해, 한 터미널의 SQLite busy 예외가 그 틱 전체를 버리고 30초까지 미룬다 ③ 잘린 제목 비교가 JS UTF-16 `slice(0, 37)` ↔ SQLite `substr` 코드포인트라 37자 근처 이모지 제목은 못 찾는다(`opencodeStore.ts`) ④ `validateCliSessionIds` 가 OpenCode 를 건너뛰어 지운 세션의 묶음이 남는다(재시작마다 `--session ses_gone`) ⑤ 렌더러 `resumeCommand.ts` 의 OpenCode 재시작 명령이 저장된 `cliCommand` 옵션을 빼고 보인다(main 이 치는 것과 다름).
+- Why deferred: 리뷰 등급 nit — 정상 사용에선 안 보이거나 드물다.
+- Trigger: OpenCode Stop 이 「멈췄다」는데 계속 돈다는 제보 · OpenCode 세션이 Chat 버튼을 늦게 얻거나 못 얻음 · 지운 세션이 재시작마다 열림 → 그 줄부터.
+- Fix direction: ① `secondEsc` 가 보냈는지 돌려주고 못 보냈으면 `not_stopped` ② 루프 뒤에 저장하고 터미널마다 try/catch ③ `Array.from(title)` 로 자르기 ④ 앱 저장소를 읽을 수 있고 `OPENCODE_DB`·`XDG_DATA_HOME` 이 없을 때만 지움 ⑤ `opencodeStartCommand` 규칙으로 만들기.
+- Owner: 없음
+
 ### 폰 ↔ Mac 격차 첫 묶음 ② — Chat 입력칸 `@` 세션 태그가 폰에 없다
 - Discovered: 2026-11-28 phone-parity-1128 대화 세션(제보 61f92f7c 「맥북 데스크톱에서 되는거 웹에서도 다 되었으면」). 사람 11-28 「진행하자」 — 추천안 A(PR 폰 한 줄 + 격차 백로그) 채택, 첫 묶음 순서 agy → @ 세션 → 스레드.
 - Evidence: `ChatTransport.listSessionMentions` 는 선택 메서드고(`src/shared/conversation.ts`) Mac 만 구현한다(`utils/electronChatTransport.ts` — 렌더러의 세션 목록·관계·최근 본 순). `phone/phoneChatTransport.ts` 에 없어서 `Composer.tsx:354` 가 「Sessions」 묶음을 말없이 건너뛴다.
