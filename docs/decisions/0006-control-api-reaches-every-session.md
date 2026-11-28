@@ -31,7 +31,9 @@ The maintainer decided (2026-09-30): if the API is switched on, all sessions are
   terminals something else may type into.
 - **"Disconnect AI" interrupts, it does not lock.** It clears the mark and makes a wait in flight
   fail with `409 disconnected`. The next call from the API marks the session again. Ending access
-  means switching the API off.
+  means switching the API off. *(2026-11-28: the sidebar's "Disconnect AI" menu item was removed
+  (report 2ea599ad) — a mark needs no button to take it back, and ending access is switching the API
+  off. `POST /v1/sessions/:id/release` still clears the mark and stops a wait in flight.)*
 - **That includes what the API left scheduled** *(2026-11-14)*. Autocron jobs a client made over
   `/v1/crons` do not run while the API is off — a job's `agent` is a command typed into a shell, so
   a job left behind would otherwise keep reaching the Mac after access was ended. Jobs made in the

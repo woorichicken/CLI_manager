@@ -36,16 +36,19 @@
     line-height: 1.55;
 }
 .chat-main { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.chat-view.has-thread { flex-direction: row; }
+/* side by side, the panel stands apart from the chat (bda9e39b): a gap, then a bordered, rounded card. The gap plus
+   the card's right margin is THREAD_PANEL_GAP_PX in ThreadPanel.tsx — keep the two in step. */
+.chat-view.has-thread { flex-direction: row; gap: 10px; }
 .chat-thread-panel {
     position: relative; display: flex; flex-direction: column; flex: 0 0 clamp(340px, 40%, 520px); min-width: 340px; max-width: 520px; min-height: 0;
-    border-left: 1px solid var(--chat-line); background: var(--chat-bg); z-index: 31; outline: none;
+    margin: 8px 8px 8px 0; border: 1px solid var(--chat-line); border-radius: 10px;
+    background: var(--chat-bg); z-index: 31; outline: none;
 }
 /* a dragged width (fb-1117 9a135707), never squeezing the chat below 360px when the window narrows */
-.chat-thread-panel[data-resized] { flex: 0 0 clamp(300px, var(--chat-thread-panel-width), calc(100% - 360px)); max-width: none; min-width: 300px; }
+.chat-thread-panel[data-resized] { flex: 0 0 clamp(300px, var(--chat-thread-panel-width), calc(100% - 360px - 18px)); max-width: none; min-width: 300px; }
 .chat-thread-panel-resize {
-    /* above the embedded child chat (z-45 inside the panel) */
-    position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; z-index: 50; cursor: col-resize; touch-action: none; outline: none;
+    /* in the gap left of the card (its 8px inside the 10px gap), above the embedded child chat (z-45 inside the panel) */
+    position: absolute; top: 0; bottom: 0; left: -9px; width: 8px; z-index: 50; cursor: col-resize; touch-action: none; outline: none;
 }
 .chat-thread-panel-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background 0.12s; }
 .chat-thread-panel-resize:hover::after, .chat-thread-panel-resize:focus-visible::after, .chat-thread-panel[data-dragging] .chat-thread-panel-resize::after { background: #3b82f6; }
@@ -64,14 +67,17 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-thread-open-session { padding: 4px 5px; font-size: 0.72em; white-space: nowrap; }
 .chat-thread-panel-close { position: absolute; top: 8px; right: 8px; padding: 5px; }
 .chat-thread-panel-status { grid-row: 2; grid-column: 1; display: flex; align-items: center; gap: 7px; color: var(--chat-dim); font-size: 0.76em; }
-.chat-thread-quote { padding: 12px 14px 10px; border-bottom: 1px solid var(--chat-line); }
+/* first in the thread conversation's column (271a1e32): it scrolls with the replies */
+.chat-thread-quote { padding: 2px 0 12px; margin-bottom: 14px; border-bottom: 1px solid var(--chat-line); }
 /* the parent's reply reads like a reply in the chat beside it: its text colour and size, the agent under it */
 .chat-thread-quote-text { margin: 0; color: var(--chat-fg); font-size: 0.92em; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .chat-thread-quote-label { margin-top: 4px; color: var(--chat-dim); font-size: 0.72em; }
-.chat-thread-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
+/* the child chat's own background stays inside the card's rounded bottom corners */
+.chat-thread-body { position: relative; flex: 1; min-height: 0; min-width: 0; border-radius: 0 0 9px 9px; overflow: hidden; }
 .chat-thread-body > .chat-view[data-thread-embedded] { inset: 0; }
 @container chat-layout (max-width: 759px) {
-    .chat-thread-panel, .chat-thread-panel[data-resized] { position: absolute; inset: 0; width: 100%; min-width: 0; max-width: none; border-left: none; z-index: 33; }
+    .chat-thread-panel, .chat-thread-panel[data-resized] { position: absolute; inset: 0; width: 100%; min-width: 0; max-width: none; margin: 0; border: none; border-radius: 0; z-index: 33; }
+    .chat-thread-body { border-radius: 0; }
     /* the panel covers the chat here: nothing to resize */
     .chat-thread-panel-resize { display: none; }
 }
@@ -308,6 +314,7 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-popover.is-end { right: 0; }
 .chat-popover.chat-thread-list { bottom: auto; min-width: 0; max-width: none; z-index: 32; }
 .chat-menu-list { display: flex; flex-direction: column; }
+.chat-menu-group { display: flex; flex-direction: column; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--chat-line); }
 .chat-menu-caption { color: var(--chat-faint); font-size: 0.86em; padding: 4px 8px 6px; overflow-wrap: anywhere; }
 .chat-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; border-radius: 6px; text-align: left; }
 .chat-menu-item:hover { background: var(--chat-soft); }

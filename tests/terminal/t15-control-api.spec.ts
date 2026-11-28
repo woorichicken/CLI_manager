@@ -252,11 +252,16 @@ test.describe('T15 AI Control API', () => {
         await expect(userRow).not.toHaveClass(/emerald/, { timeout: 5_000 })
         expect((await api<ApiSession[]>('GET', '/v1/sessions')).json.map(s => s.id)).not.toContain(USER_SESSION_ID)
 
-        // --- Disconnect AI interrupts a wait in flight ---------------------
+        // --- Release interrupts a wait in flight ---------------------------
+        // The sidebar's "Disconnect AI" item is gone (fb-1128 2ea599ad, T197): the menu has no such entry,
+        // and release is the way the mark comes off — it still stops a wait the AI left running.
+        await aiRow.click({ button: 'right' })
+        await expect(page.locator('[data-sidebar-menu="session"]')).toBeVisible()
+        await expect(page.locator('[data-sidebar-menu="session"]')).not.toContainText('Disconnect')
+        await page.keyboard.press('Escape')
         const interrupted = api<{ error: { code: string } }>('POST', `/v1/sessions/${sessionId}/wait`, { timeoutMs: 60_000, quietMs: 40_000 })
         await page.waitForTimeout(500)
-        await aiRow.click({ button: 'right' })
-        await page.getByText('Disconnect AI').click()
+        expect((await api('POST', `/v1/sessions/${sessionId}/release`)).status).toBe(200)
         await expect(aiRow).not.toHaveClass(/emerald/, { timeout: 5_000 })
         const stopped = await interrupted
         expect(stopped.status).toBe(409)

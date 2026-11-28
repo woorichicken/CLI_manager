@@ -161,6 +161,8 @@ const held = []
 let workTimer = null
 let workSpin = null
 let claudeModel = 'claude-opus-5-5'
+/** what `/effort <level>` set (Claude Code 2.1.332 answers «Set effort level to <level> (saved as your default …)») */
+let claudeEffort = 'high'
 const CLAUDE_NAMES = { opus: ['Opus 5.5', 'claude-opus-5-5'], sonnet: ['Sonnet 5', 'claude-sonnet-5'], haiku: ['Haiku 4.5', 'claude-haiku-4-5'], default: ['Opus 5.5', 'claude-opus-5-5'] }
 
 function record(entry) {
@@ -203,14 +205,14 @@ function recordAnswer(text) {
         record({ timestamp: now(), type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { total_tokens: tokens }, model_context_window: 200000 } } })
         record({ timestamp: now(), type: 'event_msg', payload: { type: 'task_complete' } })
     } else {
-        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: usage() }, { effort: 'high' })
+        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: usage() }, { effort: claudeEffort })
     }
 }
 function recordToolUse(id, command) {
     if (AGENT === 'codex') {
         record({ timestamp: now(), type: 'response_item', payload: { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ cmd: command }), call_id: id } })
     } else {
-        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'tool_use', id, name: 'Bash', input: { command, description: 'Create a probe file' } }], stop_reason: 'tool_use', usage: usage() }, { effort: 'high' })
+        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'tool_use', id, name: 'Bash', input: { command, description: 'Create a probe file' } }], stop_reason: 'tool_use', usage: usage() }, { effort: claudeEffort })
     }
 }
 function recordToolResult(id, output, isError) {
@@ -410,7 +412,7 @@ function recordPlan() {
         record({ timestamp: now(), type: 'response_item', payload: { type: 'function_call', name: 'update_plan', arguments: JSON.stringify({ plan: todos.map((t) => ({ step: t.content, status: t.status })) }), call_id: 'call_plan' } })
         record({ timestamp: now(), type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_plan', output: 'Plan updated' } })
     } else {
-        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'tool_use', id: 'toolu_plan', name: 'TodoWrite', input: { todos } }], stop_reason: 'tool_use', usage: usage() }, { effort: 'high' })
+        claudeEntry('assistant', { role: 'assistant', model: claudeModel, content: [{ type: 'tool_use', id: 'toolu_plan', name: 'TodoWrite', input: { todos } }], stop_reason: 'tool_use', usage: usage() }, { effort: claudeEffort })
         claudeEntry('user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_plan', content: 'Todos have been modified successfully.' }] })
     }
 }
@@ -646,6 +648,16 @@ function submit(text) {
             panel = model ? 'Select model (mock picker)' : 'Settings (mock /config panel)'
             say(`PANEL: ${text.trim()}`)
         }
+        return
+    }
+    const effort = AGENT !== 'codex' ? /^\/effort\s+(low|medium|high|xhigh|max)\s*$/.exec(text) : null
+    if (effort) {
+        claudeEffort = effort[1]
+        // as 2.1.332: max is kept for the session only, the others are saved as the default
+        const kept = effort[1] === 'max' ? '(this session only)' : '(saved as your default for new sessions)'
+        recordCommand('effort', effort[1], `Set effort level to ${effort[1]} ${kept}`)
+        say(`  ⎿  Set effort level to ${effort[1]} ${kept}`)
+        say(`EFFORT: ${effort[1]}`)
         return
     }
     const skill = AGENT !== 'codex' ? /^\/([a-z][\w:-]*)(?:\s+([\s\S]+))?$/.exec(text.trim()) : null

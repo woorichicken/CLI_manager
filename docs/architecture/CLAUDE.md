@@ -180,7 +180,7 @@ rules stay in the root; this file is the inventory.
   셸 따옴표가 필요 없고, 셸 줄 편집기가 뜨기 전 긴 줄이 터미널 줄 상한(macOS MAX_CANON 1024)에 걸리지 않는다. 시작 명령은 `agentCommand.ts` 규칙대로
   사람의 alias·옵션·준비 줄을 지키고 옛 resume 대상은 뺀다(`chatFork.forkBaseCommand`).
   main: `ConversationService.fork` 가 그 답을 기록에서 다시 읽어 **같은 자리·같은 시각의 에이전트 턴**인지 확인(`turn_changed`) → `ControlApiService.openFork` 가
-  부모의 워크스페이스·세션 폴더에 새 세션(`<이름> · fork`, `cliToolName`·`cliCommand` 는 미리, `cliSessionId` 는 없음)을 만들고 `focus: false` 로 알린 뒤
+  부모의 워크스페이스·세션 폴더에 새 세션(`<이름> · thread` — fb-1128 전은 `· fork`, `cliToolName`·`cliCommand` 는 미리, `cliSessionId` 는 없음)을 만들고 `focus: false` 로 알린 뒤
   Related 「Opened」(부모 → 새 세션)에 검증한 답의 `anchor: { turnTs, turnIndex }`를 남긴다. REST·MCP·CLI가 턴을 생략하면 서버가 고른 마지막 답을 저장한다. **사람의 동작이라 AI 표시·오케스트레이터 표시가 없다.** 새 대화 id 는 Claude 는 `ClaudeSessionSync`(레지스트리),
   Codex `fork` 는 터미널의 시작 감지가 안 잡아서(`isInteractiveCodex` 에서 fork 는 비대화형) main 이 직접 `startCodexCapture` 를 건다. `cliSessionId` 를
   미리 넣지 않는 이유: TerminalView 는 `resumeCommand` 가 있으면 `initialCommand` 대신 그걸 친다 — 아직 없는 대화를 resume 하게 된다.
@@ -416,7 +416,7 @@ User Action (Renderer)
 #### AI Control API (NEW)
 - `get-control-api-state` / `set-control-api`: 서버 실제 상태 조회 · 켜기/끄기/포트 적용 (즉시 반영)
 - `regenerate-control-api-token`: 토큰 재발급 (기존 클라이언트 연결 끊김)
-- `control-api-release-session`: 사이드바 "Disconnect AI" — 세션은 유지, API 접근만 회수
+- `control-api-release-session`: AI 표시 떼기 — 세션은 유지. 사이드바 "Disconnect AI" 메뉴가 2026-11-28 빠져 지금은 부르는 창이 없다(API `release` 와 같은 일)
 - `control-api-session` (main → renderer): API가 세션을 열기/닫기/갱신/포커스했음을 알림
 
 #### Related Sessions

@@ -231,9 +231,9 @@ test.describe('ConversationService.fork', () => {
     test('whole: the fork command on the saved alias, the person\'s words as the first message', async () => {
         const { service, calls } = setup()
         const result = await service.fork('parent', request())
-        expect(result).toEqual({ status: 'forked', sessionId: 'new-session', name: 'T116 parent · fork', messageSent: true })
+        expect(result).toEqual({ status: 'forked', sessionId: 'new-session', name: 'T116 parent · thread', messageSent: true })
         expect(calls).toEqual([
-            { parentId: 'parent', anchor: { turnTs: '2026-11-10T10:00:05.000Z', turnIndex: 1 }, agent: 'claude', name: 'T116 parent · fork', command: `cldy --resume ${ID} --fork-session`, cliCommand: 'cldy', prompt: 'Branch here', watchCodex: false }
+            { parentId: 'parent', anchor: { turnTs: '2026-11-10T10:00:05.000Z', turnIndex: 1 }, agent: 'claude', name: 'T116 parent · thread', command: `cldy --resume ${ID} --fork-session`, cliCommand: 'cldy', prompt: 'Branch here', watchCodex: false }
         ])
     })
 

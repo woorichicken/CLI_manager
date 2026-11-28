@@ -6,11 +6,12 @@ import { useShortcutHint } from '../utils/shortcutHints'
 /**
  * "Terminal | Chat" in a session header (single view and split panes). The
  * terminal keeps running either way; Chat only draws the same session from the
- * agent's transcript. Shown for Claude Code and Codex sessions. Narrow headers
- * (390px window, split panes) get the icons alone — the header is already full
- * there (found-defects: header buttons overlap at 390).
+ * agent's transcript. Shown for Claude Code and Codex sessions. The main header has
+ * the icons alone (d5efaf86 — the words took room the other buttons need); a wide
+ * split pane keeps its words (`labels`). The name and the shortcut are always in the
+ * tooltip and the aria-label.
  */
-export function SessionViewToggle({ sessionId, compact = false }: { sessionId: string; compact?: boolean }) {
+export function SessionViewToggle({ sessionId, compact = false, labels = false }: { sessionId: string; compact?: boolean; labels?: boolean }) {
     const mode = useSessionViewMode(sessionId)
     const hint = useShortcutHint()
     const button = (value: 'terminal' | 'chat', label: string, Icon: typeof SquareTerminal) => {
@@ -20,7 +21,8 @@ export function SessionViewToggle({ sessionId, compact = false }: { sessionId: s
                 type="button"
                 data-testid={`view-toggle-${value}`}
                 aria-pressed={active}
-                title={value === 'chat' ? hint('Chat — read and reply like a chat', 'toggleChatView', false) : hint('Terminal', 'toggleChatView')}
+                aria-label={label}
+                title={hint(label, 'toggleChatView', false)}
                 onClick={(event) => {
                     event.stopPropagation()
                     switchSessionView(sessionId, value)
@@ -30,7 +32,7 @@ export function SessionViewToggle({ sessionId, compact = false }: { sessionId: s
                 }`}
             >
                 <Icon size={compact ? 12 : 13} aria-hidden="true" />
-                {!compact && <span className="hidden md:inline text-[11px] leading-none">{label}</span>}
+                {labels && !compact && <span className="hidden md:inline text-[11px] leading-none">{label}</span>}
             </button>
         )
     }

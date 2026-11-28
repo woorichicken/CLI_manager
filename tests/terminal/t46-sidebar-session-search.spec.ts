@@ -64,6 +64,29 @@ test.describe('T46 sidebar session search', () => {
         await expect(page.locator('[data-workspace-item="ws-one"]')).toHaveCount(0)
     })
 
+    test('the first 8 characters of a session id find that session and Enter opens it (a74575ea)', async () => {
+        const target = '7f3c9a1e-5b2d-4c8e-9f01-a2b3c4d5e6f7'
+        ctx = await launchAppWithWorkspaces(
+            [
+                { id: 'ws-a', name: 'T46IDWS', sessions: [{ id: '0b1c2d3e-0000-4000-8000-000000000001', name: 'T46FIRST' }, { id: target, name: 'T46TARGET' }] }
+            ],
+            { settings: { showHomeWorkspace: false } }
+        )
+        const { page } = ctx
+        await page.getByTestId('sidebar-search-toggle').click()
+        const input = page.getByTestId('sidebar-search-input')
+        const sessionRows = page.getByTestId('sidebar-search-session-results').locator('[data-session-item]')
+        if (process.env.T46_SHOTS) await input.fill(target.slice(0, 8))
+        if (process.env.T46_SHOTS) await page.screenshot({ path: process.env.T46_SHOTS })
+        await input.fill(target.slice(0, 8))
+        await expect.poll(() => sessionRows.evaluateAll(els => els.map(el => el.getAttribute('data-session-item')))).toEqual([target])
+        await input.press('Enter')
+        await expect.poll(() => visibleTerminal(page)).toBe(target)
+        // A pasted session link works the same way.
+        await input.fill(`climanager://session/${target.slice(0, 8)}`)
+        await expect(sessionRows).toHaveCount(1)
+    })
+
     test('projects stay first and Enter keeps opening the top project', async () => {
         ctx = await launchAppWithWorkspaces(
             [

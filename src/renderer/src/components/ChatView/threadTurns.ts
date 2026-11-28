@@ -21,6 +21,18 @@ export function hasEarlierThreadReplies(snapshot: ConversationSnapshot, forkedAt
         !snapshot.turns.some((turn) => turn.ts !== null && Date.parse(turn.ts) < forkedAt)
 }
 
+/** The tail «Reply in thread» puts on a new session's name (chatFork FORK_NAME_SUFFIX), and the one it used to put. */
+const THREAD_NAME_TAIL = / · (?:thread|fork)$/
+
+/**
+ * A thread's name where the place already says «thread» (its panel's head, the Threads list — 8d1fe130): without
+ * the « · thread» (or older « · fork») tail. The stored name is left as it is; a name that is only the tail stays.
+ */
+export function threadDisplayName(name: string): string {
+    const shown = name.replace(THREAD_NAME_TAIL, '')
+    return shown.trim() ? shown : name
+}
+
 /** Resolve the exact parent reply in a paged snapshot; a stale indexed anchor must never quote a different reply. */
 export function replyForThread(snapshot: Pick<ConversationSnapshot, 'turns' | 'totalTurns'>, thread: Pick<ChatThread, 'turnTs' | 'turnIndex'>): ConversationTurn | undefined {
     if (thread.turnIndex !== undefined) {

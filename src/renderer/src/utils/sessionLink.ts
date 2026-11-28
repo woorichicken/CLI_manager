@@ -51,6 +51,22 @@ export function parseSessionLink(uri: string): string[] | null {
     return refs.length > 0 ? refs : null
 }
 
+/** Fewer characters than this would be a guess among ids, not a pick (search, a74575ea). */
+const MIN_ID_QUERY_LENGTH = 4
+const ID_QUERY_REGEX = /^[0-9a-f-]+$/
+
+/**
+ * The session id prefix a search box asks for (a74575ea): the query itself when it is hex and hyphens
+ * and at least four characters long, or the first ref of a pasted session link. Lowercased; null when
+ * the query is not an id. The sidebar search and the phone's list search both use it.
+ */
+export function sessionIdQuery(query: string): string | null {
+    const q = query.trim().toLowerCase()
+    const fromLink = parseSessionLink(q)?.[0]
+    if (fromLink) return fromLink
+    return q.length >= MIN_ID_QUERY_LENGTH && ID_QUERY_REGEX.test(q) ? q : null
+}
+
 export interface LinkedSession {
     workspace: Workspace
     session: TerminalSession

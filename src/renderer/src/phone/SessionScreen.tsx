@@ -196,6 +196,7 @@ export function SessionScreen({
                         onSessionLink={onSessionLink}
                         onOpenTerminal={() => onLens('terminal')}
                         turnPage={PHONE_CHAT_TURN_PAGE}
+                        isThread={session.thread === true}
                     />
                 ) : (
                     // keyed: another session's terminal must not inherit this one's Type, Ctrl or line
