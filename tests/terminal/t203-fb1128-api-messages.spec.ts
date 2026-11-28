@@ -5,6 +5,7 @@ import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText, writeToTerminal } from './helpers'
 import type { ConversationTurn } from '../../src/shared/conversation'
 import { ApiInputLog, inputHash, markApiTurns, MATCH_WINDOW_MS, MAX_PER_SESSION, type ApiInputEntry } from '../../src/main/ApiInputLog'
+import { createClaudeTranscriptParser } from '../../src/main/transcript/claudeTranscript'
 
 /**
  * T203 — fb-1128 efa3932b: «Mine» leaves out what other sessions sent. The agent's record does not say who typed a
@@ -58,6 +59,27 @@ test.describe('T203 unit: which user turns the API typed', () => {
         const turns = [user('a', T0 + 1), user('b', T0 + 2), user('c', T0 + 3)]
         const marked = markApiTurns(turns, [entry('a', T0, { from: 'gone', fromName: 'Old lead' }), entry('b', T0, { from: 'live', fromName: 'Before rename' }), entry('c', T0, { client: 'autocron' })], (id) => (id === 'live' ? 'Renamed lead' : undefined))
         expect(marked.map((turn) => turn.via)).toEqual([{ kind: 'api', from: 'Old lead' }, { kind: 'api', from: 'Renamed lead' }, { kind: 'api', client: 'autocron' }])
+    })
+    // Measured (lead, real Claude Code 2.1.332, `clim send` of 31 lines): the record wraps a paste as
+    // "\n\n<pasted_content id=\"d93e\">\n<the words>\n</pasted_content id=\"d93e\">\n" — the id 4 hex, the same on both tags
+    test('a long paste Claude Code recorded inside <pasted_content> still matches what the API sent', () => {
+        const sent = Array.from({ length: 31 }, (_, i) => `line ${i + 1}: check the release ${i % 3 === 0 ? '— notes' : 'items'}`).join('\n')
+        const wrapped = `\n\n<pasted_content id="d93e">\n${sent}\n</pasted_content id="d93e">\n`
+        const mixed = `my own words first\n\n<pasted_content id="a1b2">\n${sent}\n</pasted_content id="a1b2">\n`
+        for (const content of [wrapped, [{ type: 'text', text: wrapped }]]) {
+            const parser = createClaudeTranscriptParser()
+            parser.write(JSON.stringify({ type: 'user', uuid: 'u1', parentUuid: null, timestamp: at(T0 + 2000), message: { role: 'user', content } }) + '\n')
+            const turns = parser.snapshot()
+            expect(turns).toHaveLength(1)
+            expect(markApiTurns(turns, [entry(sent, T0)])[0].via?.kind).toBe('api')
+        }
+        // a paste inside the person's own words is the person's: not matched
+        const parser = createClaudeTranscriptParser()
+        parser.write(JSON.stringify({ type: 'user', uuid: 'u2', parentUuid: null, timestamp: at(T0 + 2000), message: { role: 'user', content: mixed } }) + '\n')
+        expect(markApiTurns(parser.snapshot(), [entry(sent, T0)])[0].via).toBeUndefined()
+        // and the wrapped text as it stands in the record, unparsed, must not slip through either way
+        expect(markApiTurns([user(wrapped, T0 + 2000)], [entry(sent, T0)])[0].via?.kind).toBe('api')
+        expect(markApiTurns([user(mixed, T0 + 2000)], [entry(sent, T0)])[0].via).toBeUndefined()
     })
     test('the log keeps hashes only, survives a restart, caps each session, forgets closed sessions', () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'climanager-t203-unit-'))

@@ -23,6 +23,13 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 Control API state — 답 전에 Esc 로 멈춘 Claude 세션이 15초 넘게 `busy` 로 남는다
+- Date: 2026-11-28
+- Where: Control API 세션 `state`(`ControlApiService` 의 busy/idle 판정 — 화면·출력 시각).
+- What: 실제 Claude Code 2.1.332 에서 답 전에 Esc 하면 화면은 쉬는 입력 상자 + 돌아온 프롬프트인데 `state` 가 15초 넘게 `busy` 다(팀장 실측, fb-1128 f49af50a 확인 중). `wait` 가 그만큼 늦게 끝난다.
+- Surfaced by: fb-1128 chat 갈래 실측(팀장 세션). 이번 범위(Chat 말풍선 접기) 밖이라 안 고쳤다.
+- Fix direction: 돌아온 글이 든 입력 상자를 「쉼」으로 읽는지, busy 를 정하는 신호(최근 출력·스피너 줄)가 무엇인지 먼저 잰다.
+
 ### 🐛 Chat 「일하는 중」 — 대화 글 속 `(esc to interrupt)` 를 진행 중인 턴으로 읽는다(대화 상자가 없을 때)
 - Date: 2026-11-23
 - Where: `src/main/ConversationService.ts` `refreshScreen`(`entry.working = prompt === null && screen.some(isBusyRow)`) · `TerminalMirror.showsBusy`/`screenStatus`(사이드바 상태 점).

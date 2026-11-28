@@ -70,11 +70,20 @@ function turnHash(turn: ConversationTurn): string | null {
     return hash
 }
 
+/**
+ * A paste Claude Code recorded whole: `\n\n<pasted_content id="d93e">\n<the words>\n</pasted_content id="d93e">\n` (measured
+ * 2.1.332, a 31-line `clim send`; the id 4 hex, the same on both tags). The parser's unwrapPastes already takes the words
+ * out; this is the same rule here, so a record that reaches the matcher wrapped still matches. Only a wrapper around the
+ * whole text — words the person typed around a paste are the person's message.
+ */
+const WHOLE_PASTE = /^\s*<pasted_content id="([0-9a-f]{1,64})">\r?\n([\s\S]*?)\r?\n<\/pasted_content id="\1">\s*$/
+
 /** The person's seat words of a user turn: its text parts (the «stopped» marker is no one's message). */
 function turnWords(turn: ConversationTurn): string {
-    return turn.parts
+    const words = turn.parts
         .flatMap((part) => (part.kind === 'text' && !/^\[Request interrupted by user(?: for tool use)?\]$/.test(part.text.trim()) ? [part.text] : []))
         .join('\n\n')
+    return WHOLE_PASTE.exec(words)?.[2] ?? words
 }
 
 /**
