@@ -177,12 +177,15 @@ export class OpencodeSessionSync {
         const folders = [...new Set([cwd, realpath(cwd)])]
         // the sessions this title stands for in the process's folder — an older one too: OpenCode switches
         // sessions inside the TUI (`/sessions`) and the title follows
-        const titled = sessionsIn(store, folders, sessionsTitled(store, title)).filter((session) => !taken.has(session.id))
-        if (titled.length === 1) return titled[0].id
+        // counted before the ones other terminals took are left out: by elimination, which terminal is
+        // looked at first (the `ps` order) would decide the binding and could swap it (code review)
+        const titled = sessionsIn(store, folders, sessionsTitled(store, title))
+        const free = (id: string) => (taken.has(id) ? null : id)
+        if (titled.length === 1) return free(titled[0].id)
         // the same title twice (a cut title stands for several): the one used since this process started
         const since = now - row.age * 1000 - START_SLACK_MS
         const recent = titled.filter((session) => session.updated >= since)
-        return recent.length === 1 ? recent[0].id : null
+        return recent.length === 1 ? free(recent[0].id) : null
     }
 }
 

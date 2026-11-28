@@ -27,6 +27,8 @@ const { DatabaseSync } = require('node:sqlite')
 
 const args = process.argv.slice(2)
 const WORK_MS = Number(process.env.OPENCODE_MOCK_WORK_MS) || 1500
+// Enters swallowed while text is in the composer (a redraw eating the key): the text stays there
+let loseEnters = Number(process.env.OPENCODE_MOCK_LOSE_ENTERS) || 0
 let sessionId = null
 for (let i = 0; i < args.length; i++) {
     if (args[i] === '--session' || args[i] === '-s') sessionId = args[i + 1]
@@ -88,7 +90,9 @@ function draw() {
         question.options.forEach((option, index) => out.push(`  ┃  ${index === question.at ? '>' : ' '}${index + 1}. ${option}`))
         out.push('  ┃', '  ┃  ↑↓ select  enter submit  esc dismiss', '  ┃')
     } else {
-        out.push('  ┃', box ? `  ┃  ${box}` : `  ┃  ${MUTED}Ask anything... "Fix broken tests"${RESET}`, '  ┃', `  ┃  Build ${MUTED}·${RESET} Mock Model ${MUTED}OpenCode${RESET}`, `  ╹${'▀'.repeat(Math.max(10, width - 6))}`)
+        // a blank row above the composer, as the real screen has (fixtures/opencode): the last message's `┃` block
+        // does not run into the composer's
+        out.push('', '  ┃', box ? `  ┃  ${box}` : `  ┃  ${MUTED}Ask anything... "Fix broken tests"${RESET}`, '  ┃', `  ┃  Build ${MUTED}·${RESET} Mock Model ${MUTED}OpenCode${RESET}`, `  ╹${'▀'.repeat(Math.max(10, width - 6))}`)
         out.push(working ? `   ⬝■■■■■■⬝  ${escOnce ? 'esc again to interrupt' : 'esc interrupt'}     tab agents  ctrl+p commands` : `   ${process.cwd()}     ctrl+p commands`)
     }
     process.stdout.write(out.join('\r\n'))
@@ -176,6 +180,10 @@ process.stdin.on('data', (data) => {
     }
     for (const char of text) {
         if (char === '\r') {
+            if (box.trim() && loseEnters > 0) {
+                loseEnters--
+                continue
+            }
             const sent = box
             box = ''
             if (sent.trim()) submit(sent)

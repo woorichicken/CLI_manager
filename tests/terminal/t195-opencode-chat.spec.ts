@@ -175,3 +175,35 @@ test('T195 OpenCode: resumed, read and driven from the Chat, found when started 
     // the resumed one kept its id and command
     expect(sessionsIn(userDataDir).find((session) => session.id === 't195-oc')).toMatchObject({ cliToolName: 'opencode', cliSessionId: RESUMED_ID, cliCommand: 'opencode -m mock/mock-model' })
 })
+
+test('T195 OpenCode: an Enter lost in the composer is pressed again (code review)', async () => {
+    test.setTimeout(120_000)
+    const box = sandbox()
+    seedStore(box.data, box.project)
+    result = await launchAppWithWorkspaces(
+        [{ id: 'w-t195b', name: 'T195 project', path: box.project, sessions: [{ id: 't195-lost', name: 'T195 lost enter', cliSessionId: RESUMED_ID, cliToolName: 'opencode', cliCommand: 'opencode' }] }],
+        {
+            env: {
+                HOME: box.home,
+                ZDOTDIR: box.home,
+                PATH: `${box.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
+                SHELL: '/bin/zsh',
+                XDG_DATA_HOME: box.data,
+                OPENCODE_MOCK_LOSE_ENTERS: '1',
+                OPENCODE_MOCK_WORK_MS: '500',
+                CLIMANAGER_OPENCODE_SYNC_MS: '300'
+            }
+        }
+    )
+    const { page } = result
+    await page.getByText('T195 lost enter', { exact: true }).first().click()
+    await waitForBufferText(page, 't195-lost', 'OpenCode (mock)', 30_000)
+    await page.getByTestId('view-toggle-chat').click()
+    const view = chat(page)
+    await expect(view.locator('[data-testid="chat-answer"]', { hasText: 'There is one file, notes.txt.' })).toBeVisible()
+    const composer = view.getByTestId('chat-composer')
+    await composer.fill('after a lost enter')
+    await composer.press('Enter')
+    // the first Enter is swallowed: the text sits in OpenCode's composer until the Chat presses Enter again
+    await waitForBufferText(page, 't195-lost', 'ANSWER[3]: after a lost enter', 20_000)
+})

@@ -821,7 +821,7 @@ export class ControlApiService {
         const running = (): boolean => this.deps.terminals.hasTerminal(terminalId) && !this.deps.mirror.hasExited(terminalId)
         if (!running()) return 'gone'
         await this.deps.mirror.flush(terminalId)
-        const box = agent === 'codex' ? this.deps.mirror.codexInput(terminalId) : this.deps.mirror.inputBox(terminalId)
+        const box = agent === 'codex' ? this.deps.mirror.codexInput(terminalId) : this.promptBox(terminalId)
         if (box?.typed.trim()) return 'busy'
         const line = text.replace(/[\r\n]+/g, ' ')
         await this.settleAfterEscape(terminalId)
@@ -914,10 +914,19 @@ export class ControlApiService {
         if (since < ESCAPE_SETTLE_MS) await sleep(ESCAPE_SETTLE_MS - since)
     }
 
+    /**
+     * The program's input box: OpenCode's `┃` composer when one is drawn (its shape is OpenCode's own),
+     * else Claude Code's rule-line box. Without the composer an OpenCode send was never checked for
+     * submission, and an answer's `─` table could read as a box (code review).
+     */
+    private promptBox(sessionId: string): ReturnType<TerminalMirror['inputBox']> {
+        return this.deps.mirror.opencodeInput(sessionId) ?? this.deps.mirror.inputBox(sessionId)
+    }
+
     /** How many `[Pasted text #n …]` placeholders the agent's input box shows now (0 without a box). */
     private async pastePlaceholders(sessionId: string): Promise<number> {
         await this.deps.mirror.flush(sessionId)
-        return countPastePlaceholders(this.deps.mirror.inputBox(sessionId)?.typed ?? '')
+        return countPastePlaceholders(this.promptBox(sessionId)?.typed ?? '')
     }
 
     /**
@@ -933,7 +942,7 @@ export class ControlApiService {
         if (!head) return true
         const stillInBox = async (): Promise<boolean> => {
             await this.deps.mirror.flush(sessionId)
-            const box = this.deps.mirror.inputBox(sessionId)
+            const box = this.promptBox(sessionId)
             return box !== null && (box.typed.includes(head) || countPastePlaceholders(box.typed) > placeholdersBefore)
         }
 

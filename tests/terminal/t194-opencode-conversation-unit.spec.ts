@@ -275,6 +275,14 @@ test.describe('T194 OpenCode session sync', () => {
         expect(h.reported.length).toBe(1)
     })
 
+    test('two terminals with one title and two sessions: no binding by elimination (code review)', async () => {
+        const h = harness({ title: 'OC | Counting folder entries with ls -1', age: 10, extraTerminal: true })
+        h.db.prepare("INSERT INTO session (id, project_id, parent_id, slug, directory, title, version, time_created, time_updated) VALUES ('ses_older1', 'p', NULL, 's', ?, 'Counting folder entries with ls -1', '1.18.15', 1, 2)").run(h.directory)
+        await h.sync.tick(UPDATED + 5_000)
+        // the recent one goes to one terminal; the other is not handed the old one because it is left over
+        expect(h.reported.map(([, id]) => id)).toEqual([h.session])
+    })
+
     test('a quiet store and the same titles: no ps, no lsof until the full scan', async () => {
         const h = harness({ title: 'OC | Counting folder entries with ls -1' })
         await h.sync.tick(UPDATED + 1000)
