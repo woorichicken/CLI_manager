@@ -416,7 +416,7 @@ User Action (Renderer)
 #### AI Control API (NEW)
 - `get-control-api-state` / `set-control-api`: 서버 실제 상태 조회 · 켜기/끄기/포트 적용 (즉시 반영)
 - `regenerate-control-api-token`: 토큰 재발급 (기존 클라이언트 연결 끊김)
-- `control-api-release-session`: 사이드바 "Disconnect AI" — 세션은 유지, API 접근만 회수
+- `control-api-release-session`: AI 표시 떼기 — 세션은 유지. 사이드바 "Disconnect AI" 메뉴가 2026-11-28 빠져 지금은 부르는 창이 없다(API `release` 와 같은 일)
 - `control-api-session` (main → renderer): API가 세션을 열기/닫기/갱신/포커스했음을 알림
 
 #### Related Sessions

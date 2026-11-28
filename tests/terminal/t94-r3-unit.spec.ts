@@ -187,6 +187,17 @@ test.describe('T94 phone session search (1b92a570)', () => {
         expect(names('없는말')).toEqual([])
     })
 
+    test('the start of a session id or a pasted session link finds it too (fb-1128 a74575ea)', () => {
+        const withIds: PhoneSessionsResponse = {
+            ...data,
+            sessions: [...data.sessions, phoneSession('7f3c9a1e-5b2d-4c8e-9f01-a2b3c4d5e6f7', 'Review', 'prj-kits')]
+        }
+        const found = (query: string) => searchLines(withIds, query)?.map((line) => (line.kind === 'row' ? line.session.name : line.kind))
+        expect(found('7F3C9A1E')).toEqual(['Review'])
+        expect(found('climanager://session/7f3c9a1e')).toEqual(['Review'])
+        expect(found('7f3')).toEqual([])
+    })
+
     test('an empty box is no search', () => {
         expect(searchLines(data, '')).toBeNull()
         expect(searchLines(data, '   ')).toBeNull()

@@ -251,3 +251,11 @@ body:has([data-fk-pick-toggle='on']) .draggable {
   background-color: transparent !important;
 }
 
+
+/* Sidebar "Go to Folder" (report 14d866d3): the row it landed on, for a moment. */
+[data-session-item][data-revealed="true"] {
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.8);
+  background-color: rgba(59, 130, 246, 0.18);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}

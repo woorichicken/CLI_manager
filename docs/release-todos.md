@@ -29,4 +29,10 @@ whose version has shipped, then deletes them in a commit that says what was done
 
 ## Open
 
-None right now. The last row (session role and tags — teach the skill) was done after v1.38.0 shipped; see the commit that removed it.
+- **The sidebar has no "Disconnect AI" item any more** (fb-1128 2ea599ad, branch `fix/fb-1128-sidebar`).
+  - **Waits for**: the release that carries it — the installed app's session right-click menu has no
+    "Disconnect AI" (Control API answers do not change: `409 disconnected` still comes from `release`).
+  - **Do**: `climanager-session` — `SKILL.md` (exit code 4 row and safety rule 4) and `scripts/clim.mjs`
+    (the `disconnected` comment) say the user clicked Disconnect AI; say instead that the session was
+    released (`POST /v1/sessions/:id/release`) during the wait, and keep "stop using that session".
+  - **Not before**: on an older app the menu item still exists and the current wording is still right.
