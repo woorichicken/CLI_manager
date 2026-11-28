@@ -29,4 +29,9 @@ whose version has shipped, then deletes them in a commit that says what was done
 
 ## Open
 
-None right now. The last row (session role and tags — teach the skill) was done after v1.38.0 shipped; see the commit that removed it.
+- **Thread names end in « · thread»** (fb-1128 8d1fe130, branch `fix/fb-1128-chat`)
+  - **Waits for**: the release with that commit — check: `clim fork` on a test session, the new session's name ends
+    in ` · thread` (`GET /v1/sessions/:id` → `name`).
+  - **Do**: `~/skills/macbook-cc/climanager-session/references/app.md` 「fork」 line — `<이름> · fork` → `<이름> · thread`
+    (the release after 1.38.0; older apps still name it ` · fork`). Nothing in `clim.mjs` reads the tail.
+  - **Not before**: the installed app still writes ` · fork`, and the skill would describe a name the person does not see.
