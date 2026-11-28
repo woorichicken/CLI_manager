@@ -4,12 +4,12 @@ import type { ChatCommand, ChatPreferences, ChatSendOptions, ChatSendResult, Cha
 import { InputBusyNote } from './InputBusyNote'
 import { ComposerSuggestion } from './ComposerSuggestion'
 import { DEFAULT_QUICK_REPLIES, MAX_CHAT_TEXT_LENGTH, quickReplyColorOf } from '../../../../shared/conversation'
-import { activeTrigger, commandPieces, fileMention, mayNameCommand, isComposerEmpty, rankCommands, sendsQueuedNow, skillTriggerFor } from './chatLib'
+import { activeTrigger, composerPieces, fileMention, mayNameCommand, isComposerEmpty, rankCommands, sendsQueuedNow, skillTriggerFor } from './chatLib'
 import { QuickReplyRow } from './QuickReplyRow'
 import { appendDraft, onDraftReplaced, readDraft, saveDraft } from './draftStore'
 import { DictationButton } from './DictationButton'
 import { useDictation } from './useDictation'
-import { sessionMentionText } from '../../utils/sessionMentions'
+import { mentionNameFor, sessionMentionText } from '../../utils/sessionMentions'
 
 export { appendDraft } from './draftStore'
 
@@ -366,10 +366,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const commandChoices = trigger?.kind === 'slash' && commands ? rankCommands(commands, trigger, usage) : []
     const shownSessions = trigger?.kind === 'file' && sessionMentions.query === trigger.query ? sessionMentions.rows : []
     const choices: (ChatCommand | string | SessionMention)[] = trigger?.kind === 'slash' ? commandChoices : trigger?.kind === 'file' ? [...shownSessions, ...files] : []
-    // Only the command reads light blue, wherever it stands (85259f8e · 1fcd9008 · e833d0b9). A textarea has one
-    // colour, so its words go transparent and a copy underneath paints them.
-    const pieces = useMemo(() => (commands && wantsCommands ? commandPieces(text, commands, codex) : []), [text, commands, wantsCommands, codex])
-    const painted = pieces.some((piece) => piece.command)
+    // Only the command reads light blue, wherever it stands (85259f8e · 1fcd9008 · e833d0b9), and a session picked
+    // with `@` (a9ed0f1c). A textarea has one colour, so its words go transparent and a copy underneath paints them.
+    const pieces = useMemo(
+        () => composerPieces(text, { commands: commands && wantsCommands ? commands : null, codex, sessionName: mentionNameFor }),
+        [text, commands, wantsCommands, codex]
+    )
+    const painted = pieces.some((piece) => piece.kind !== null)
     useLayoutEffect(() => {
         if (backdrop.current && box.current) backdrop.current.scrollTop = box.current.scrollTop
     })
@@ -770,8 +773,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                         // box then shows words that are not what gets sent (Galaxy M23, fb-1106)
                         <div ref={backdrop} className="chat-composer-backdrop notranslate" translate="no" aria-hidden="true" data-testid="chat-composer-backdrop">
                             {pieces.map((piece, index) =>
-                                piece.command ? (
-                                    <span key={index} className="chat-composer-token" data-testid="chat-composer-token">
+                                piece.kind ? (
+                                    <span key={index} className="chat-composer-token" data-testid="chat-composer-token" data-kind={piece.kind}>
                                         {piece.text}
                                     </span>
                                 ) : (

@@ -170,7 +170,7 @@ export function SplitTerminalHeader({
                 {wide && session.aiControl && (
                     <span
                         className="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
-                        title={`AI connected — driven by ${session.aiControl.client}. Right-click the session → Disconnect AI to take it back.`}
+                        title={`AI connected — driven by ${session.aiControl.client}. Turn the AI Control API off in Settings to end its access.`}
                         aria-label="AI connected"
                         data-ai-badge={session.id}
                     >
@@ -188,7 +188,7 @@ export function SplitTerminalHeader({
         const buttonClass = 'p-2 hover:bg-white/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
         return (
             <div className="flex items-center gap-2 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                {isAgentSession(session) && <SessionViewToggle sessionId={session.id} />}
+                {isAgentSession(session) && <SessionViewToggle sessionId={session.id} labels />}
                 {onShowSession && <ParentSessionButton parents={parents} onShow={onShowSession} />}
                 {onOpenRelated && (
                     <RelatedSessionsButton sessionId={session.id} count={relatedCount} onOpen={onOpenRelated} />

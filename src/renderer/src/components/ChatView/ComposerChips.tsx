@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, Bot, ChevronDown, ExternalLink, Layers, ListChecks } from 'lucide-react'
+import { AlertTriangle, Bot, Check, ChevronDown, ExternalLink, Layers, ListChecks } from 'lucide-react'
 import type { ChatAgent, ChatSendResult, ConversationAgent, ConversationMeta } from '../../../../shared/conversation'
 import { formatTokens, modelLabel, todoProgress, type TodoItem } from './chatLib'
 import { TodoList } from './WorkBlock'
@@ -47,6 +47,13 @@ const CLAUDE_MODELS: { alias: string; label: string; note: string }[] = [
 ]
 
 /**
+ * Claude Code's reasoning levels (`/effort <level>`, 2.1.332 — the same names `--effort` takes). Claude saves
+ * the pick as the default for new sessions (userSettings effortLevel; «saved as your default for new
+ * sessions»), so a pick asks first, like the model (b50ec326).
+ */
+export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/**
  * The model chip. ovis only shows it; here it also changes the model, because the person asked
  * for it — through the agent's own `/model`, the only way either agent offers. Claude Code saves a
  * `/model` choice as the default for new sessions too, so every change asks first.
@@ -70,19 +77,36 @@ export function ModelChip({
     onOpenTerminal?: () => void
 }) {
     const [open, setOpen] = useState(false)
-    const [confirm, setConfirm] = useState<{ text: string; label: string } | null>(null)
+    const [confirm, setConfirm] = useState<{ text: string; label: string; kind?: 'model' | 'effort' } | null>(null)
+    /** opened from the chip's `· high`: the menu starts at the Effort group (b50ec326) */
+    const [atEffort, setAtEffort] = useState(false)
+    const effortGroup = useRef<HTMLDivElement>(null)
     /**
      * why the `/model` was not typed (fb-1123 0adc1255: after a usage-limit failure Codex 0.171 asks «Switch to
      * gpt-6-luna?» — a menu the chat has no card for — and the refusal was dropped, so the chip did nothing at all)
      */
     const [refused, setRefused] = useState<string | null>(null)
     const [running, setRunning] = useState(false)
+    useEffect(() => {
+        if (!open || !atEffort || confirm || refused) return
+        const group = effortGroup.current
+        group?.scrollIntoView({ block: 'nearest' })
+        // the current level, else the group's first row (a selector list would match in document order)
+        // Codex has no levels here: the picker row, which sets it
+        ;(group?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ??
+            group?.querySelector<HTMLButtonElement>('button') ??
+            group?.parentElement?.querySelector<HTMLButtonElement>('[data-testid="chat-model-picker"]'))?.focus()
+    }, [open, atEffort, confirm, refused])
     /** the panel's opening the answer belongs to: one that comes after it was closed (or reopened) is dropped */
     const opening = useRef(0)
     const model = meta?.model ? modelLabel(meta.model) : null
+    // Claude Code 2.1.332 saves low · medium · high · xhigh as the default; `max` it keeps for the session only
+    // (its persist check takes those four, and answers «(this session only)» for max)
+    const sessionOnly = confirm?.text === '/effort max'
     const close = (): void => {
         opening.current++
         setOpen(false)
+        setAtEffort(false)
         setConfirm(null)
         setRefused(null)
         setRunning(false)
@@ -122,8 +146,13 @@ export function ModelChip({
                 data-testid="chat-model-chip"
                 aria-haspopup="dialog"
                 aria-expanded={open}
-                title={`${meta?.model ?? 'Model not recorded yet'}${meta?.effort ? ` · reasoning ${meta.effort}` : ''} — change model`}
-                onClick={() => (open ? close() : (opening.current++, setOpen(true)))}
+                title={`${meta?.model ?? 'Model not recorded yet'}${meta?.effort ? ` · reasoning ${meta.effort}` : ''} — change model or effort`}
+                onClick={(event) => {
+                    if (open) return close()
+                    opening.current++
+                    setAtEffort((event.target as HTMLElement).closest('[data-testid="chat-model-effort"]') !== null)
+                    setOpen(true)
+                }}
             >
                 <Bot size={12} aria-hidden="true" />
                 <span className={model && !model.named ? 'chat-meta-id' : undefined} data-testid="chat-model-name">
@@ -155,12 +184,16 @@ export function ModelChip({
                         </div>
                     </div>
                 ) : confirm ? (
-                    <div className="chat-confirm" data-testid="chat-model-confirm">
+                    <div className="chat-confirm" data-testid="chat-model-confirm" data-kind={confirm.kind ?? 'model'} data-session-only={sessionOnly ? 'true' : undefined}>
                         <p className="chat-confirm-title">
-                            <AlertTriangle size={13} aria-hidden="true" /> Also changes the default
+                            <AlertTriangle size={13} aria-hidden="true" /> {sessionOnly ? 'This session only' : 'Also changes the default'}
                         </p>
                         <p>
-                            {agent === 'claude'
+                            {sessionOnly
+                                ? `Claude Code keeps ${confirm.label} for this session only — it does not save max as a default, so new Claude sessions keep the effort they had.`
+                                : confirm.kind === 'effort'
+                                ? `Claude Code saves a /effort choice as your default for new sessions (its settings.json). This also changes your default effort for new Claude sessions: they will use ${confirm.label}.`
+                                : agent === 'claude'
                                 ? `Claude Code saves a /model choice as your default for new sessions (its settings.json). This session and every new Claude Code session will use ${confirm.label}.`
                                 : 'Codex may save the model you pick as its default for new sessions (config.toml).'}
                         </p>
@@ -202,9 +235,37 @@ export function ModelChip({
                             data-testid="chat-model-picker"
                             onClick={() => setConfirm({ text: '/model', label: 'the model you pick' })}
                         >
-                            <span>{agent === 'claude' ? 'Other model or effort…' : 'Change model or effort…'}</span>
+                            <span>{agent === 'claude' ? 'Other model…' : 'Change model or effort…'}</span>
                             <span className="chat-menu-note">picker in the terminal</span>
                         </button>
+                        <div ref={effortGroup} className="chat-menu-group" role="group" aria-label="Effort" data-testid="chat-effort-group">
+                            <div className="chat-menu-caption">Effort</div>
+                            {agent === 'claude' ? (
+                                CLAUDE_EFFORTS.map((level) => {
+                                    const current = meta?.effort === level
+                                    return (
+                                        <button
+                                            key={level}
+                                            type="button"
+                                            role="menuitemradio"
+                                            aria-checked={current}
+                                            className="chat-menu-item"
+                                            data-testid="chat-effort-option"
+                                            data-level={level}
+                                            onClick={() => setConfirm({ text: `/effort ${level}`, label: `${level} effort`, kind: 'effort' })}
+                                        >
+                                            <span>{level}</span>
+                                            {current && <Check size={12} aria-label="current" data-testid="chat-effort-current" />}
+                                        </button>
+                                    )
+                                })
+                            ) : (
+                                // Codex sets reasoning inside its /model picker — the «Change model or effort…» row above opens it
+                                <p className="chat-menu-caption" data-testid="chat-effort-terminal">
+                                    Codex sets it in its /model picker: Change model or effort… above, in the terminal.
+                                </p>
+                            )}
+                        </div>
                     </div>
                 )}
             </Popover>

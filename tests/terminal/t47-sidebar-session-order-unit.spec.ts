@@ -74,6 +74,36 @@ test.describe('T47 sidebar session order', () => {
         expect(findMatchingSessions(entries, 'nope')).toEqual([])
     })
 
+    test('session id match (a74575ea): the start of the id, a full id or a pasted link; names still first', () => {
+        const target = '7f3c9a1e-5b2d-4c8e-9f01-a2b3c4d5e6f7'
+        const other = '7f3d0000-1111-4222-8333-444455556666'
+        const entries = [
+            { workspace: all[0], session: session(other, 'other work') },
+            { workspace: all[1], session: session(target, 'review notes') },
+            // A name made of hex letters keeps matching by name, ahead of any id hit.
+            { workspace: all[2], session: session('cafe-name', 'cafe tasks') }
+        ]
+        const first8 = target.slice(0, 8)
+        expect(ids(findMatchingSessions(entries, first8))).toEqual([target])
+        expect(ids(findMatchingSessions(entries, target))).toEqual([target])
+        expect(ids(findMatchingSessions(entries, first8.toUpperCase()))).toEqual([target])
+        expect(ids(findMatchingSessions(entries, `  climanager://session/${first8}  `))).toEqual([target])
+        expect(ids(findMatchingSessions(entries, `climanager://session/${target}`))).toEqual([target])
+        // Four characters already narrow it; both ids start with 7f3 so three would be a guess — not matched.
+        expect(ids(findMatchingSessions(entries, '7f3c'))).toEqual([target])
+        expect(findMatchingSessions(entries, '7f3')).toEqual([])
+        // Only the start of an id counts, and a word with spaces is a name search.
+        expect(findMatchingSessions(entries, target.slice(9, 17))).toEqual([])
+        expect(findMatchingSessions(entries, `${first8} x`)).toEqual([])
+        expect(ids(findMatchingSessions(entries, 'cafe'))).toEqual(['cafe-name'])
+        // One query matching a name and an id at once: the name comes first, though the id's row is first in the list.
+        const both = [
+            { workspace: all[0], session: session(target, 'review notes') },
+            { workspace: all[1], session: session('named', `build ${first8}`) }
+        ]
+        expect(ids(findMatchingSessions(both, first8))).toEqual(['named', target])
+    })
+
     test('Cmd+[ / ] steps through the All sessions rows and wraps (dc11b60f)', () => {
         const order = ['a', 'b', 'c']
         expect(stepInOrder(order, 'a', 1)).toBe('b')

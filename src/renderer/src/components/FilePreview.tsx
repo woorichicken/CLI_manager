@@ -228,6 +228,7 @@ export function FilePreview({ isOpen, onClose, filePath, relativePath, line, onO
             <div
                 className={`relative w-full ${webPage ? 'max-w-6xl h-[88vh]' : 'max-w-2xl max-h-[60vh]'} bg-[#1e1e1e] rounded-lg shadow-2xl border border-white/20 flex flex-col overflow-hidden`}
                 data-testid="file-preview-window"
+                data-doc-zoom-scope
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}

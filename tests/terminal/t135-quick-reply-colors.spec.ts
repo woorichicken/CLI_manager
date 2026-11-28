@@ -387,6 +387,24 @@ test('T135 a colour per quick reply: Settings → Mac Chat → phone, kept acros
 const editorTexts = (root: Page): Promise<string[]> =>
     root.locator('[data-testid^="quick-reply-text-"]').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))
 
+/**
+ * Drags row `index` by `rows` rows with the real mouse from its grip (5b907de1). framer-motion swaps as the
+ * dragged row passes a neighbour's middle (T18): the move goes a row and a half-row per row, in small steps.
+ */
+async function dragRow(page: Page, index: number, rows: number): Promise<void> {
+    const grip = (await page.getByTestId(`quick-reply-grip-${index}`).boundingBox())!
+    const first = (await page.getByTestId('quick-reply-row-0').boundingBox())!
+    const second = (await page.getByTestId('quick-reply-row-1').boundingBox())!
+    const pitch = second.y - first.y
+    const x = grip.x + grip.width / 2
+    const y = grip.y + grip.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x, y + rows * pitch, { steps: 12 * Math.abs(rows) })
+    await page.mouse.up()
+    await page.waitForTimeout(200)
+}
+
 /** The Mac Chat's chips, left to right. */
 const chipTexts = (chat: Locator): Promise<string[]> => chat.getByTestId('chat-quick-replies').getByRole('button').allTextContents().then((texts) => texts.map((t) => t.trim()))
 
@@ -454,17 +472,31 @@ test('T135 quick replies are one list to edit: add, reorder, delete, a colour pe
     await editor.getByTestId('quick-reply-add').click()
     await expect(editor.getByTestId('quick-reply-text-3')).toBeFocused()
     await page.keyboard.type('ㅇㅋ 머지')
-    // move it up one: the third reply goes below it
-    await editor.getByTestId('quick-reply-up-3').click()
-    expect(await editorTexts(page)).toEqual(['계속 진행해 줘', PHRASES[1], 'ㅇㅋ 머지', PHRASES[2]])
-    // the first one down: its colour goes with it
-    await editor.getByTestId('quick-reply-down-0').click()
-    expect(await editorTexts(page)).toEqual([PHRASES[1], '계속 진행해 줘', 'ㅇㅋ 머지', PHRASES[2]])
-    await expect(editor.getByTestId('quick-reply-color-1')).toHaveAttribute('data-color', 'green')
+    // drag it up one by its grip (a real mouse, 5b907de1): the third reply goes below it
+    await expect(editor.getByTestId('quick-reply-up-3'), 'the ↑ / ↓ buttons gave way to the grip').toHaveCount(0)
+    await dragRow(page, 3, -1)
+    await expect.poll(() => editorTexts(page)).toEqual(['계속 진행해 줘', PHRASES[1], 'ㅇㅋ 머지', PHRASES[2]])
+    // the first one down two rows by the mouse: its colour goes with it
+    await dragRow(page, 0, 2)
+    await expect.poll(() => editorTexts(page)).toEqual([PHRASES[1], 'ㅇㅋ 머지', '계속 진행해 줘', PHRASES[2]])
+    await expect(editor.getByTestId('quick-reply-color-2')).toHaveAttribute('data-color', 'green')
     await expect(editor.getByTestId('quick-reply-color-0')).toHaveAttribute('data-color', 'red')
+    // the keyboard: ↑ on a focused grip moves its row and the grip keeps the focus; ⌥↑ too
+    await editor.getByTestId('quick-reply-grip-2').focus()
+    await page.keyboard.press('ArrowUp')
+    expect(await editorTexts(page)).toEqual([PHRASES[1], '계속 진행해 줘', 'ㅇㅋ 머지', PHRASES[2]])
+    await expect(editor.getByTestId('quick-reply-grip-1')).toBeFocused()
+    await expect(editor.getByTestId('quick-reply-color-1')).toHaveAttribute('data-color', 'green')
+    await page.keyboard.press('Alt+ArrowUp')
+    expect(await editorTexts(page)).toEqual(['계속 진행해 줘', PHRASES[1], 'ㅇㅋ 머지', PHRASES[2]])
+    await expect(editor.getByTestId('quick-reply-grip-0')).toBeFocused()
     // the ends cannot move further
-    await expect(editor.getByTestId('quick-reply-up-0')).toBeDisabled()
-    await expect(editor.getByTestId('quick-reply-down-3')).toBeDisabled()
+    await page.keyboard.press('ArrowUp')
+    expect(await editorTexts(page)).toEqual(['계속 진행해 줘', PHRASES[1], 'ㅇㅋ 머지', PHRASES[2]])
+    await page.keyboard.press('ArrowDown')
+    expect(await editorTexts(page)).toEqual([PHRASES[1], '계속 진행해 줘', 'ㅇㅋ 머지', PHRASES[2]])
+    await expect(editor.getByTestId('quick-reply-color-0')).toHaveAttribute('data-color', 'red')
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `${SHOT_LABEL}-grip.png`) })
 
     // --- × deletes the red one; its colour goes with it --------------------------------
     await editor.getByTestId('quick-reply-delete-0').click()

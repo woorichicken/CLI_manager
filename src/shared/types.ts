@@ -86,8 +86,8 @@ export interface TerminalSession {
      * Set while an external AI works in this session through the Control API:
      * when the API opens it, or the first time the API reads, types into, waits
      * on or focuses it. A visible mark, not a permission — the API reaches every
-     * session while it is switched on. Disconnect AI clears it and interrupts a
-     * wait in flight.
+     * session while it is switched on. `release` clears it and interrupts a
+     * wait in flight (the sidebar's Disconnect AI item was removed 2026-11-28).
      */
     aiControl?: AiControlInfo
 }
@@ -250,6 +250,12 @@ export interface UserSettings {
      * (default: true). Off only hides the buttons; nothing about git changes (fb-1117 0e6c4a0a).
      */
     showSourceControl?: boolean
+    /**
+     * Main-header buttons the person turned off (d5efaf86) — ids from HEADER_BUTTONS. Absent (an older store):
+     * every button shows. Source Control is not here: it keeps its own `showSourceControl`. A hidden button's
+     * shortcut still works.
+     */
+    hiddenHeaderButtons?: string[]
     /** Offer the Tree layout (sessions under the session that opened them) in the sidebar's All sessions view (default: true). Off shows the list only. */
     showSessionTree?: boolean
     /**
@@ -1329,4 +1335,34 @@ export interface PhoneState {
     pushDevices: number
     /** the alert key file is there but malformed: no alert goes out until it is restored or deleted */
     pushError?: string
+}
+
+/**
+ * The main header's buttons a person may hide (Settings › Sidebar › Header buttons, d5efaf86), left to right.
+ * Settings is not one: it is the way back to this list. `sourceControl` reads `showSourceControl`, the switch
+ * it had before (it also hides the split panes' Git button).
+ */
+export const HEADER_BUTTONS = [
+    { id: 'viewToggle', label: 'Terminal / Chat' },
+    { id: 'checklists', label: 'Checklists' },
+    { id: 'parentSession', label: 'Parent session' },
+    { id: 'related', label: 'Related' },
+    { id: 'searchFiles', label: 'Search Files' },
+    { id: 'sourceControl', label: 'Source Control' },
+    { id: 'reviewDiff', label: 'Review Diff' },
+    { id: 'loop', label: 'Loop Dashboard' },
+    { id: 'systemMonitor', label: 'System Monitor' }
+] as const
+export type HeaderButtonId = (typeof HEADER_BUTTONS)[number]['id']
+
+export function headerButtonShown(settings: Pick<UserSettings, 'hiddenHeaderButtons' | 'showSourceControl'>, id: HeaderButtonId): boolean {
+    if (id === 'sourceControl') return settings.showSourceControl ?? true
+    return !(Array.isArray(settings.hiddenHeaderButtons) && settings.hiddenHeaderButtons.includes(id))
+}
+
+/** The settings with `id` shown or hidden. */
+export function withHeaderButton<T extends Pick<UserSettings, 'hiddenHeaderButtons' | 'showSourceControl'>>(settings: T, id: HeaderButtonId, shown: boolean): T {
+    if (id === 'sourceControl') return { ...settings, showSourceControl: shown }
+    const hidden = (Array.isArray(settings.hiddenHeaderButtons) ? settings.hiddenHeaderButtons : []).filter((item) => item !== id)
+    return { ...settings, hiddenHeaderButtons: shown ? hidden : [...hidden, id] }
 }

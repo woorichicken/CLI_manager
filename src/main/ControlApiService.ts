@@ -39,8 +39,8 @@ import { ChecklistStatus, ChecklistStore, checkChecklistInput, checkItemTexts, c
  * app, including the ones the user opened (decision 0006). `aiControl` is no
  * longer a permission — it is the visible mark that an AI is working in a
  * session. Opening a session sets it, and so does the first read, input, wait
- * or focus on a session that does not carry it. "Disconnect AI" and
- * `release` clear the mark; switching the API off is what ends access.
+ * or focus on a session that does not carry it. `release` clears the mark
+ * (the sidebar's "Disconnect AI" item went 2026-11-28); switching the API off is what ends access.
  */
 
 /** Output-silence that counts as "settled" when nothing else says the agent is busy. */
@@ -1010,7 +1010,7 @@ export class ControlApiService {
             const gap = Date.now() - before - WAIT_POLL_MS
             if (gap >= SLEEP_GAP_MS) sleptMs += gap
             // The user may close the session, or take it back, while we wait.
-            // Stopping here is what makes "Disconnect AI" interrupt the AI.
+            // Stopping here is what makes `release` interrupt the AI.
             if (!this.requireSession(sessionId).session.aiControl) {
                 throw new ControlApiError(
                     409,
@@ -1499,7 +1499,7 @@ export class ControlApiService {
     // Hooks for the rest of the app
     // ------------------------------------------------------------------
 
-    /** Sidebar "Disconnect AI". Returns false when the session was not under AI control. */
+    /** `release`, and the unused `control-api-release-session` IPC. Returns false when the session was not under AI control. */
     clearAiControl(sessionId: string): boolean {
         const workspaces = this.workspaces()
         for (const workspace of workspaces) {

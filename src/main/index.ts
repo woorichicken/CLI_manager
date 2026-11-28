@@ -3866,10 +3866,11 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('regenerate-control-api-token', (): ControlApiState => controlApiServer.regenerateToken())
 
-    /** Sidebar "Disconnect AI": the session keeps running, the API loses access. */
     /** Orchestrator marks, for a renderer that (re)loaded after they were broadcast. */
     ipcMain.handle('get-control-api-masters', () => controlApiService.mastersSnapshot())
 
+    // Takes the AI mark off. No window calls it since the sidebar's "Disconnect AI" item went (2026-11-28,
+    // report 2ea599ad); kept for a later way to do it by hand. The API's `release` does the same.
     ipcMain.handle('control-api-release-session', (_e, sessionId: string): boolean =>
         controlApiService.clearAiControl(sessionId)
     )

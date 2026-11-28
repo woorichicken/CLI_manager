@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Unplug, Type, Hash, Link2, Plus, Bot } from 'lucide-react'
+import { Terminal, GitBranch, Settings as SettingsIcon, Edit2, Trash2, GitMerge, Download, HardDrive, Copy, RefreshCw, FolderOpen, SquareX, Eraser, Pin, Folder, FolderMinus, ChevronRight, Repeat, Type, Hash, Link2, Plus, Bot, LocateFixed } from 'lucide-react'
 import { Workspace, TerminalTemplate, TerminalSession } from '../../../../shared/types'
 import { TemplateIcon } from '../TemplateIcon'
 import { AgentTemplateRows } from './AgentTemplateRows'
@@ -681,9 +681,13 @@ interface SessionContextMenuProps {
     onRename: () => void
     onDelete: () => void
     onClear: () => void
-    onConnectConversation: () => void
-    /** Present only for a session an AI is driving through the Control API. */
-    onDisconnectAi?: () => void
+    /**
+     * Absent for a session that already has an agent conversation (a saved one, or its CLI running):
+     * there is nothing to connect it to (report 2ea599ad).
+     */
+    onConnectConversation?: () => void
+    /** All sessions only: show the session where it lives in the Folders view (report 14d866d3). */
+    onGoToFolder?: () => void
     /** The session's role and tags (decision 0015). */
     role?: SessionWorkRole
     tagCount: number
@@ -710,7 +714,7 @@ export function SessionContextMenu({
     onDelete,
     onClear,
     onConnectConversation,
-    onDisconnectAi,
+    onGoToFolder,
     role,
     tagCount,
     onSetRole,
@@ -751,17 +755,18 @@ export function SessionContextMenu({
                 <Eraser size={12} className="text-gray-400 shrink-0" />
                 <span className="truncate">Clear Terminal</span>
             </button>
-            {onDisconnectAi && (
+            {onGoToFolder && (
                 <button
-                    className="w-full text-left px-2.5 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/15 hover:text-emerald-200 transition-colors flex items-center gap-2"
+                    data-testid="session-menu-go-to-folder"
+                    className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
                     onClick={() => {
-                        onDisconnectAi()
+                        onGoToFolder()
                         onClose()
                     }}
-                    title="Keep the session running but stop the AI from typing into or reading it"
+                    title="Show this session in the Folders view, inside its workspace"
                 >
-                    <Unplug size={12} className="text-emerald-400 shrink-0" />
-                    <span className="truncate">Disconnect AI</span>
+                    <LocateFixed size={12} className="text-gray-400 shrink-0" />
+                    <span className="truncate">Go to Folder</span>
                 </button>
             )}
             <div className="border-t border-white/10 my-0.5"></div>
@@ -804,17 +809,19 @@ export function SessionContextMenu({
                     <span className="truncate">Copy for agent</span>
                 </button>
             )}
-            <button
-                data-testid="connect-agent-conversation"
-                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
-                onClick={() => {
-                    onConnectConversation()
-                    onClose()
-                }}
-            >
-                <Link2 size={12} className="text-gray-400 shrink-0" />
-                <span>Connect to agent conversation…</span>
-            </button>
+            {onConnectConversation && (
+                <button
+                    data-testid="connect-agent-conversation"
+                    className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                    onClick={() => {
+                        onConnectConversation()
+                        onClose()
+                    }}
+                >
+                    <Link2 size={12} className="text-gray-400 shrink-0" />
+                    <span>Connect to agent conversation…</span>
+                </button>
+            )}
             <div className="border-t border-white/10 my-0.5"></div>
             <SessionLabelMenuItems
                 sessionId={sessionId}

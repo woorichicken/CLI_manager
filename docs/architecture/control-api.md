@@ -39,14 +39,14 @@ opened. Rationale: [`../decisions/0006-control-api-reaches-every-session.md`](..
 |---|---|
 | List workspaces, templates and sessions | Anything while the API is switched off |
 | Open sessions (and register a new folder as a workspace) | Type text while the screen shows a question (unless `force: true`) |
-| Read, type into, wait on, focus, release and close any session | Keep waiting after the user clicks **Disconnect AI** (`409 disconnected`) |
+| Read, type into, wait on, focus, release and close any session | Keep waiting after the session is released (`409 disconnected`) |
 | Unregister a workspace **it registered**, once it has no sessions | Unregister, move or re-flag a workspace the user added (`403 not_ai_registered`) |
 
 `aiControl: { client, since }` in the store is a **mark, not a permission**. It is set when the API
 opens a session and the first time it reads, types into, waits on or focuses one; looking a session
 up does not set it. The mark persists across restarts and machine sleep; the sidebar draws marked
-sessions in green with a bot icon, and the header shows "AI connected". `release` and
-**Disconnect AI** clear it — the next call from the API sets it again.
+sessions in green with a bot icon, and the header shows "AI connected". `release` clears it — the
+next call from the API sets it again. The sidebar has no "Disconnect AI" item since 2026-11-28 (0006).
 
 Every terminal is mirrored from the moment its pty starts — whether or not the API is on, since the
 mirror is also the terminal's history ([0008](../decisions/0008-terminal-history-lives-in-main.md)) —
@@ -406,7 +406,7 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 A session carries `aiControlled`, `controlledBy`, `connectedAt` (both `''` when unmarked),
 `screenPartial`, `orchestrator` and `openedBy` (see [Master sessions](#master-sessions-orchestrators)).
 
-Status codes that carry meaning: `409 disconnected` (the user clicked Disconnect AI during a wait),
+Status codes that carry meaning: `409 disconnected` (the session was released during a wait),
 `404 not_found`, `409 awaiting_input` (a question is on screen), `409 not_started`,
 `403 not_ai_registered` / `409 has_sessions` (unregistering a workspace).
 
@@ -484,8 +484,8 @@ curl -s "${H[@]}" -d '{"done":true}' "$URL/v1/checklists/v1.24%20release/items/1
 닫힐 때 등록도 같이 사라진다.
 
 에이전트가 쓸 때는 **HTTP 상태 코드로 분기**한다: `409 awaiting_input` 은 화면에 질문이
-있다는 뜻이므로 텍스트 대신 `keys` 로 답하고, `409 disconnected` 는 기다리는 도중 사용자가
-Disconnect AI 를 눌렀다는 뜻이므로 사용자가 다시 시키기 전에는 그 세션 사용을 멈춘다. `wait` 의 `timedOut: true` 는 실패가 아니라
+있다는 뜻이므로 텍스트 대신 `keys` 로 답하고, `409 disconnected` 는 기다리는 도중 세션이
+release 됐다는 뜻이므로 사용자가 다시 시키기 전에는 그 세션 사용을 멈춘다. `wait` 의 `timedOut: true` 는 실패가 아니라
 "아직 실행 중"이다.
 
 ## 요청 하나가 도는 길

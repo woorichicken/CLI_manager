@@ -1,5 +1,5 @@
 import { ChatViewSettings } from './ChatViewSettings'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { UserSettings, EditorType, TerminalTemplate, HooksSettings, LoopDetectionConfig, LoopCountMode, DEFAULT_LOOP_DETECTION, DEFAULT_PHONE } from '../../../shared/types'
 import { Smartphone, PanelLeft, MessageSquare } from 'lucide-react'
 import { X, Check, AlertCircle, CircleAlert, Plus, Trash2, Code2, Play, Package, GitBranch, Terminal, Settings as SettingsIcon, Monitor, Github, FolderOpen, Folder, Download, RefreshCw, Loader2, Home, Keyboard, Bug, HelpCircle, ExternalLink, GripVertical, Bot } from 'lucide-react'
@@ -13,6 +13,9 @@ import { CHANGELOG_URL } from '../constants/links'
 import { FeedbackModeSetting } from './Feedback/FeedbackModeSetting'
 import { TerminalLinkSchemesSetting } from './TerminalLinkSchemesSetting'
 import { StatusCommandSetting } from './StatusCommandSetting'
+import { HeaderButtonsSetting } from './HeaderButtonsSetting'
+import { SettingsCategoryList, revealSetting } from './SettingsCategoryList'
+import type { SettingsCategory } from './settingsIndex'
 import { ThirdPartyNotices } from './ThirdPartyNotices'
 import { TemplateLogoField } from './TemplateLogoField'
 
@@ -33,7 +36,9 @@ interface SettingsProps {
     onResetOnboarding?: () => void
 }
 
-type SettingsCategory = 'general' | 'sidebar' | 'editor' | 'terminal' | 'chat' | 'keyboard' | 'agents' | 'phone' | 'port-monitoring' | 'templates' | 'git' | 'github' | 'loop' | 'developer'
+/** How long the search keeps looking for a found setting's title while its tab draws (some load their parts). */
+const REVEAL_TRIES = 20
+const REVEAL_TRY_MS = 50
 
 export function Settings({ isOpen, onClose, onSave, initialCategory = 'general', onResetOnboarding }: SettingsProps) {
     const [settings, setSettings] = useState<UserSettings>({
@@ -62,6 +67,20 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
     const [templates, setTemplates] = useState<TerminalTemplate[]>([])
     const [editingTemplate, setEditingTemplate] = useState<TerminalTemplate | null>(null)
     const [activeCategory, setActiveCategory] = useState<SettingsCategory>(initialCategory)
+    /** the setting the search opened (74c893e6): its tab scrolls to it once drawn */
+    const [revealTitle, setRevealTitle] = useState<{ title: string; at: number } | null>(null)
+    const contentRef = useRef<HTMLDivElement>(null)
+    useEffect(() => {
+        if (!revealTitle) return
+        let tries = 0
+        let timer = 0
+        const look = (): void => {
+            if (revealSetting(contentRef.current, revealTitle.title) || ++tries >= REVEAL_TRIES) return
+            timer = window.setTimeout(look, REVEAL_TRY_MS)
+        }
+        timer = window.setTimeout(look, 0)
+        return () => window.clearTimeout(timer)
+    }, [revealTitle, activeCategory])
     const [appVersion, setAppVersion] = useState<string>('')
     const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' })
     const [showUpdateHelp, setShowUpdateHelp] = useState(false)
@@ -314,29 +333,15 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                     <div className="flex flex-1 overflow-hidden">
                         {/* Left Sidebar - Categories */}
                         <div className="w-48 border-r border-white/10 bg-black/20 overflow-hidden flex flex-col">
-                            <div className="flex-1 overflow-y-auto p-2">
-                                {categoryGroups.map(group => (
-                                    <div key={group.label} data-settings-group={group.label} className="mb-2 last:mb-0">
-                                        <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 select-none">
-                                            {group.label}
-                                        </div>
-                                        {group.items.map(category => (
-                                            <button
-                                                key={category.id}
-                                                data-testid={`settings-category-${category.id}`}
-                                                onClick={() => setActiveCategory(category.id)}
-                                                className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors ${activeCategory === category.id
-                                                        ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
-                                                        : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                                                    }`}
-                                            >
-                                                {category.icon}
-                                                <span>{category.label}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                ))}
-                            </div>
+                            {/* the search over the tabs (74c893e6) and the tabs, grouped */}
+                            <SettingsCategoryList
+                                groups={categoryGroups}
+                                activeCategory={activeCategory}
+                                onOpen={(category, entry) => {
+                                    setActiveCategory(category)
+                                    setRevealTitle(entry ? { title: entry.title, at: Date.now() } : null)
+                                }}
+                            />
                             {/* Version and Update Section */}
                             <div className="p-3 border-t border-white/5 space-y-2">
                                 {appVersion && (
@@ -497,7 +502,7 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                         </div>
 
                         {/* Right Content Area */}
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                        <div ref={contentRef} className="flex-1 overflow-y-auto p-6 space-y-6">
                             {/* General Settings */}
                             {activeCategory === 'general' && (
                                 <>
@@ -810,35 +815,8 @@ export function Settings({ isOpen, onClose, onSave, initialCategory = 'general',
                                                 </button>
                                             </div>
 
-                                            {/* Source Control header button toggle (fb-1117 0e6c4a0a) */}
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <p className="text-sm text-gray-300">Show Source Control</p>
-                                                    <p className="text-xs text-gray-500 mt-1">
-                                                        The Source Control (Git panel) button in the header and in split panes.
-                                                        Off only hides the buttons.
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    data-testid="settings-show-source-control"
-                                                    aria-pressed={settings.showSourceControl ?? true}
-                                                    onClick={() => setSettings(prev => ({
-                                                        ...prev,
-                                                        showSourceControl: !(prev.showSourceControl ?? true)
-                                                    }))}
-                                                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-4 ${
-                                                        (settings.showSourceControl ?? true)
-                                                            ? 'bg-emerald-600'
-                                                            : 'bg-white/20'
-                                                    }`}
-                                                >
-                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                                                        (settings.showSourceControl ?? true)
-                                                            ? 'translate-x-6'
-                                                            : 'translate-x-1'
-                                                    }`} />
-                                                </button>
-                                            </div>
+                                            {/* Header buttons — each one can be hidden (d5efaf86); Source Control's switch (fb-1117 0e6c4a0a) is one of them */}
+                                            <HeaderButtonsSetting settings={settings} onChange={setSettings} />
 
                                             {/* Sidebar status dots read from the screen */}
                                             <div className="flex items-center justify-between">

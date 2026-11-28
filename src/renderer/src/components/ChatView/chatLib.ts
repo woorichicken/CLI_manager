@@ -439,10 +439,21 @@ export function mayNameCommand(text: string): boolean {
  * a built-in only opening the message; a name the agent does not know (`/usr/bin`, a typo) stays words.
  */
 export function commandPieces(text: string, commands: ChatCommand[], codex: boolean): { text: string; command: boolean }[] {
+    return cutPieces(text, commandRanges(text, commands, codex)).map((piece) => ({ text: piece.text, command: piece.kind !== null }))
+}
+
+type PaintKind = 'command' | 'session'
+interface PaintRange {
+    start: number
+    end: number
+    kind: PaintKind
+}
+
+/** Where commandPieces' blue words stand (the rule is there). */
+function commandRanges(text: string, commands: ChatCommand[], codex: boolean): PaintRange[] {
     const opening = text.search(/\S/)
     const midPrefix = codex ? '$' : '/'
-    const pieces: { text: string; command: boolean }[] = []
-    let last = 0
+    const ranges: PaintRange[] = []
     for (const match of text.matchAll(COMMAND_WORD)) {
         const start = (match.index ?? 0) + match[1].length
         const prefix = match[2]
@@ -450,13 +461,60 @@ export function commandPieces(text: string, commands: ChatCommand[], codex: bool
         const known = commands.some(
             (command) => command.name === match[3] && (command.trigger ?? '/') === prefix && (atOpening || (prefix === midPrefix && command.source !== 'builtin'))
         )
-        if (!known) continue
-        if (start > last) pieces.push({ text: text.slice(last, start), command: false })
-        pieces.push({ text: `${prefix}${match[3]}`, command: true })
-        last = start + 1 + match[3].length
+        if (known) ranges.push({ start, end: start + 1 + match[3].length, kind: 'command' })
     }
-    if (last < text.length) pieces.push({ text: text.slice(last), command: false })
+    return ranges
+}
+
+/** `(climanager://session/<ref>)` as the `@` menu writes it (sessionMentionText) — a ref is 8 to 36 hex digits and dashes. */
+const SESSION_MENTION = /\(climanager:\/\/session\/([0-9a-fA-F][0-9a-fA-F-]{7,35})\)(?![0-9a-zA-Z-])/g
+
+/**
+ * Where the session mentions stand (a9ed0f1c): `<name> (climanager://session/<8>)` as the `@` menu leaves it.
+ * The link always paints; the name before it too when `nameOf` knows that session and the words before the
+ * link are its name (a session that is gone, or one the phone cannot look up, paints the link alone).
+ */
+function sessionRanges(text: string, nameOf?: (ref: string) => string | undefined): PaintRange[] {
+    const ranges: PaintRange[] = []
+    for (const match of text.matchAll(SESSION_MENTION)) {
+        const at = match.index ?? 0
+        const name = nameOf?.(match[1].toLowerCase())
+        const named = name ? `${name} ` : ''
+        const start = named && text.slice(0, at).endsWith(named) ? at - named.length : at
+        // a name that itself holds a link shape: the whole mention takes the link already found inside its name
+        while (ranges.length > 0 && ranges[ranges.length - 1].start >= start) ranges.pop()
+        ranges.push({ start, end: at + match[0].length, kind: 'session' })
+    }
+    return ranges
+}
+
+/** The text cut at the ranges (sorted, not overlapping), every character kept. */
+function cutPieces(text: string, ranges: PaintRange[]): { text: string; kind: PaintKind | null }[] {
+    const pieces: { text: string; kind: PaintKind | null }[] = []
+    let last = 0
+    for (const range of ranges) {
+        // overlapping ranges would draw their words twice in the backdrop
+        if (range.start < last) continue
+        if (range.start > last) pieces.push({ text: text.slice(last, range.start), kind: null })
+        pieces.push({ text: text.slice(range.start, range.end), kind: range.kind })
+        last = range.end
+    }
+    if (last < text.length) pieces.push({ text: text.slice(last), kind: null })
     return pieces
+}
+
+/**
+ * The draft cut for painting: the commands (commandPieces' rule, when `commands` is known) and the sessions
+ * picked with `@` (a9ed0f1c). A command word inside a session's name is part of the mention.
+ */
+export function composerPieces(
+    text: string,
+    options: { commands: ChatCommand[] | null; codex: boolean; sessionName?: (ref: string) => string | undefined }
+): { text: string; kind: PaintKind | null }[] {
+    const sessions = sessionRanges(text, options.sessionName)
+    const commands = options.commands ? commandRanges(text, options.commands, options.codex) : []
+    const outside = commands.filter((command) => !sessions.some((session) => command.start < session.end && session.start < command.end))
+    return cutPieces(text, [...sessions, ...outside].sort((a, b) => a.start - b.start))
 }
 
 /**

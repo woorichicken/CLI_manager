@@ -29,9 +29,24 @@ whose version has shipped, then deletes them in a commit that says what was done
 
 ## Open
 
+- **The sidebar has no "Disconnect AI" item any more** (fb-1128 2ea599ad, branch `fix/fb-1128-sidebar`).
+  - **Waits for**: the release that carries it — the installed app's session right-click menu has no
+    "Disconnect AI" (Control API answers do not change: `409 disconnected` still comes from `release`).
+  - **Do**: `climanager-session` — `SKILL.md` (exit code 4 row and safety rule 4) and `scripts/clim.mjs`
+    (the `disconnected` comment) say the user clicked Disconnect AI; say instead that the session was
+    released (`POST /v1/sessions/:id/release`) during the wait, and keep "stop using that session".
+  - **Not before**: on an older app the menu item still exists and the current wording is still right.
 - **Thread names end in « · thread»** (fb-1128 8d1fe130, branch `fix/fb-1128-chat`)
   - **Waits for**: the release with that commit — check: `clim fork` on a test session, the new session's name ends
     in ` · thread` (`GET /v1/sessions/:id` → `name`).
   - **Do**: `~/skills/macbook-cc/climanager-session/references/app.md` 「fork」 line — `<이름> · fork` → `<이름> · thread`
     (the release after 1.38.0; older apps still name it ` · fork`). Nothing in `clim.mjs` reads the tail.
   - **Not before**: the installed app still writes ` · fork`, and the skill would describe a name the person does not see.
+- **Check ⌘+ / ⌘- / ⌘0 inside an HTML document with the real keyboard** (fb-1128 5c6ddf8f, branch `fix/fb-1128-composer`)
+  - **Waits for**: the release that carries the document zoom.
+  - **Do**: in the installed app open a `.html` preview (and a split document pane), click inside the document, press ⌘+
+    twice and ⌘0 on the keyboard. The document should grow and come back; the terminal font must not change. T209 sends
+    the keys with `webContents.sendInputEvent`, which reaches main whatever has focus, so it does not prove that a key
+    pressed while the out-of-process frame holds focus reaches `before-input-event`. If it does not, the bridge script
+    has to send the keydown up (one line in decision 0013) — then reopen 5c6ddf8f.
+  - **Not before**: an older app has no document zoom at all.
