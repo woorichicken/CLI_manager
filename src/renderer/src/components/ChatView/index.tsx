@@ -579,7 +579,8 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const rail = useMemo(
         () =>
             turns.flatMap((turn, index) => {
-                if (turn.role !== 'user' || index === returned?.prompt) return []
+                // the person's own messages: not Stop's returned prompt, not words the Control API typed (efa3932b)
+                if (turn.role !== 'user' || turn.via || index === returned?.prompt) return []
                 const words = userTurnWords(turn).replace(/\n\n/g, ' ')
                 return words ? [{ index, words }] : []
             }),
@@ -750,7 +751,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                     <BackgroundChip meta={snapshot?.meta ?? null} transport={transport} sessionId={sessionId} />
                                     {/* only what the person said, to read back over it (96d478ed) */}
                                     <button type="button" className="chat-chip chat-mine-toggle" data-testid="chat-only-mine" aria-pressed={onlyMine}
-                                        title={onlyMine ? 'Show the whole conversation' : 'Show only your messages'} onClick={() => setOnlyMine((on) => !on)}>
+                                        title={onlyMine ? 'Show the whole conversation' : 'Show only your messages — not answers, nor messages other sessions sent'} onClick={() => setOnlyMine((on) => !on)}>
                                         <UserRound size={12} aria-hidden="true" /> {onlyMine ? 'Only mine' : 'Mine'}
                                     </button>
                                     <span className="chat-status-spacer" />
@@ -885,7 +886,7 @@ function Turns({ snapshot, answerNumbers = null, foldWork, onFork, onShowEarlier
                 </div>
             )}
             {snapshot.turns.length === 0 && <NoTurnsYet />}
-            {snapshot.turns.map((turn, index) => onlyMine && turn.role !== 'user' ? null : returned?.markers.includes(index) ? null : index === returned?.prompt ? (
+            {snapshot.turns.map((turn, index) => onlyMine && (turn.role !== 'user' || turn.via) ? null : returned?.markers.includes(index) ? null : index === returned?.prompt ? (
                 <ReturnedPrompt key={`${snapshot.totalTurns - snapshot.turns.length + index}-${turn.ts ?? ''}`} words={userTurnWords(turn)} index={index} />
             ) : (
                 <ChatTurn

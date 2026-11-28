@@ -10,6 +10,7 @@ import type {
     ChatAgent,
     ConversationAgent,
     ConversationSnapshot,
+    ConversationTurn,
     InterruptResult,
     PromptAnswer,
     PromptAnswerResult,
@@ -183,6 +184,8 @@ export interface ConversationServiceDeps {
     openFork?(input: ForkOpenInput): Promise<ForkOpenResult>
     /** Tests shrink it; the app uses IDLE_KEEP_MS. */
     idleKeepMs?: number
+    /** The user turns the Control API typed, marked `via` (ApiInputLog.mark). Absent: none are marked. */
+    markApiTurns?(sessionId: string, turns: ConversationTurn[]): ConversationTurn[]
 }
 
 interface Watched {
@@ -356,7 +359,9 @@ export class ConversationService {
             const read = this.deps.reader.read(sessionId, agent, info.cliSessionId, info.cwd)
             this.dropIfIdle(sessionId, entry)
             if (read === null) return { ...base, agent, unavailable: 'not-found', turns: [], totalTurns: 0, truncated: false }
-            const turns = read.turns.slice(-Math.max(1, Math.min(limit, 2000)))
+            // matched over the whole read: an entry whose turn is above the page must not take a later one
+            const all = this.deps.markApiTurns ? this.deps.markApiTurns(sessionId, read.turns) : read.turns
+            const turns = all.slice(-Math.max(1, Math.min(limit, 2000)))
             // the screen follows shift+tab at once; the record only names the mode of the last prompt
             const screenMeta = agent === 'claude' ? { ...(entry.screenMode ? { mode: entry.screenMode } : {}), ...(entry.background ? { background: entry.background } : {}) } : {}
             const meta = Object.keys(screenMeta).length > 0 ? { ...(read.meta ?? { model: null, effort: null }), ...screenMeta } : read.meta

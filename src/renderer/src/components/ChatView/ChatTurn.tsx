@@ -63,7 +63,8 @@ export const ChatTurn = memo(function ChatTurn({
             .flatMap((part) => (part.kind === 'text' && !INTERRUPTED_TEXT.test(part.text.trim()) ? [part.text] : []))
             .join('\n\n')
         return (
-            <div className="chat-turn chat-turn-user" data-testid="chat-turn" data-role="user" data-turn-index={index} title={turnTime(turn.ts)}>
+            <div className={`chat-turn chat-turn-user${turn.via ? ' is-api' : ''}`} data-testid="chat-turn" data-role="user" data-via={turn.via?.kind} data-turn-index={index} title={turnTime(turn.ts)}>
+                {turn.via && <ApiMark via={turn.via} />}
                 <UserParts parts={turn.parts} last={last} />
                 {said.trim() && <CopyMine text={said} />}
             </div>
@@ -145,6 +146,19 @@ export const ChatTurn = memo(function ChatTurn({
         </div>
     )
 })
+
+/**
+ * A message the Control API typed, not the person (fb-1128 efa3932b): who sent it, over the bubble. «Mine» hides
+ * these. The client name says it when no session did (an AI outside CLI Manager, Autocron).
+ */
+function ApiMark({ via }: { via: NonNullable<ConversationTurn['via']> }) {
+    const who = via.from ? `From ${via.from}` : via.client === 'autocron' ? 'From Autocron' : 'Sent through the Control API'
+    return (
+        <div className="chat-api-mark" data-testid="chat-api-mark" title={via.client ? `${who} · ${via.client}` : who}>
+            <Bot size={11} aria-hidden="true" /> {who}
+        </div>
+    )
+}
 
 /** «2:14 PM» today, «11/9 2:14 PM» another day — the turn-end line's «done» time. */
 function clockTime(ts: string): string {
