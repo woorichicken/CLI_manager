@@ -27,6 +27,20 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 - Trigger: 좁은 창 제보가 오거나 앱 최소 창 폭을 정할 때.
 - Owner: 없음
 
+### Grok CLI(`grok`, xAI Grok Build) 붙이기 — 설치·실제 화면 녹화가 먼저
+- Discovered: 2026-11-27 `/opensource` 조사(사람: 「opencode 까지 하고 나머지는 백로그로」). 브리프 `~/Downloads/_batches/agents-port-1127/port-grok.md`(ovis 175d24c MIT · herdr e8d7d97 Apache-2.0).
+- Evidence: 설치 `curl -fsSL https://x.ai/cli/install.sh | bash` → `~/.grok/bin`, 데이터 `$GROK_HOME` 또는 `~/.grok`(이 Mac 에 없음). 대화 `<home>/sessions/<cwd 그룹>/<id>/updates.jsonl` — ACP `session/update` 줄(`user_message_chunk`·`agent_message_chunk`·`tool_call`/`tool_call_update`(toolCallId 로 합침)·`turn_completed`·`rewind_marker`). 재시작 `grok --resume <id>`, fork 없음. 멈추기는 Esc 가 아니라 Ctrl+C(권한 패널에서 Esc 는 포커스만 옮김), 작업 중 Enter 는 대기열. **세션 묶기가 가장 어렵다** — grok 은 옛 세션의 `events.jsonl` 도 계속 열어 두어 `lsof` 만으로는 못 고르고, ovis 는 herdr 훅(`~/.grok/hooks/herdr.json`, `SessionStart` 만 — 따로 소유한 파일이라 0002 와 충돌 없음)에서 id 를 받는데 TUI 안 `/resume` 은 훅이 안 불린다. 화면 규칙 herdr `grok.toml` 13개(작업 중 `⠋… [stop]`·`esc:cancel`, 질문 `┃ N (○)`). 옮길 원본 시험: `grok.test.ts` 48건 중 순수 파싱 약 15 + 픽스처 4개.
+- Why deferred: 이 Mac 에 grok 이 없어 형식·화면이 전부 ovis 가상 픽스처와 herdr 글에서 왔다 — 실측 없이 옮기면 옛 가정을 들여온다(`opensource` 이식 3단계).
+- Trigger: 사람이 grok 을 설치하면 → 프롬프트·도구·`/resume` 한 번씩 실제 `updates.jsonl`·화면·`lsof` 캡처 → agy 와 같은 1차(읽기 Chat·세션 찾기·resume, 모호하면 안 묶음).
+- Owner: 없음
+
+### Devin CLI(`devin`) 붙이기 — 설치·로그인·실제 화면 녹화가 먼저
+- Discovered: 2026-11-27 같은 조사. 브리프 `~/Downloads/_batches/agents-port-1127/port-devin.md`.
+- Evidence: 대화는 SQLite `~/.local/share/devin/cli/sessions.db`(`sessions`·`message_nodes`·`tool_call_state`, 보이는 대화는 `main_chain_id` 조상만, 노드 `created_at` 은 믿을 수 없음, ovis `server/devin.ts:60`). 스키마가 닫힌 바이너리 것이라 3000.11 ↔ 3000.12 사이에도 달라졌다 — 읽기는 안 되는 쪽으로 닫아야 한다. 세션 id 는 ovis 가 `devin acp` 자식의 `session_locks/<id>.lock` flock 으로(리눅스 `/proc` 전용) — macOS 는 `ps`+`lsof` 로 agy 처럼 하되 미실측. 재시작 `devin --resume <id>`, fork 는 앱 안 `/fork` 뿐. 멈추기 Esc 두 번(약 150ms, ovis `src/lib/hermesStop.ts:47`) — 우리 `ESC_TO_INTERRUPT` 가 「esc twice to interrupt」를 못 잡는다. herdr `devin.toml` 7규칙(신뢰 `Do you trust the authors of this directory?` · 권한 `approve once`). 옮길 원본 시험 약 30건(`devin.test.ts` 25 · `devin-session.test.ts` 6 + 스킬).
+- Why deferred: 이 Mac 에 없고 `devin auth login` 이 필요하다(픽스처에 「Free plan」 — 유료 아닐 가능성, 미확인).
+- Trigger: 사람이 설치·로그인하면 → 실제 DB·화면·lock 캡처 → agy 와 같은 1차. `node:sqlite` 읽기는 opencode 이식(`feat/opencode-1127`)이 먼저 깐 길을 쓴다.
+- Owner: 없음
+
 ### 사용량이 두 출처로 갈려 보인다 — 앱 값과 agent-swap 값을 한 목록으로 (플러그인 작업 뒤)
 - Discovered: 2026-11-27 CLI 팀장 대화 세션(`~/Downloads/_batches/talk-resource-usage-1126/notes.md` 「11-26 실측」).
 - Evidence: 폰 `src/renderer/src/phone/PhoneUsagePanel.tsx` 가 「Claude Code」·「Codex」(앱 `UsageTracker`)와 「agent-swap accounts」·「Codex (agent-swap)」(`src/main/phone/phoneUsage.ts` 의 `aswap list --json`)를 칸을 나눠 따로 그린다. 데스크톱 `src/renderer/src/components/UsageIndicator.tsx` 는 앱 값만 읽는다. 앱의 Claude 값은 statusLine 브리지가 마지막으로 받은 페이로드 하나(계정 표시 없음, 쉬는 세션은 갱신 안 함)라, statusLine 을 래핑하지 않은 Mac 에서는 비어 있다(11-26 이 Mac: statusLine = omc-hud). 같은 날 aswap 은 work 7d 98% · codex·muse `timed out`.
