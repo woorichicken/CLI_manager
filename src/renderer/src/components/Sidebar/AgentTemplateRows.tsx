@@ -7,11 +7,12 @@ import { AgentLogo } from './AgentLogo'
 const INSTALL_HINT: Record<AgentCli, string> = {
     claude: '`claude` was not found in your shell. Install Claude Code, then open this again. (Click to try anyway.)',
     codex: '`codex` was not found in your shell. Install Codex, then open this again. (Click to try anyway.)',
-    agy: '`agy` was not found in your shell. Install the Antigravity CLI, then open this again. (Click to try anyway.)'
+    agy: '`agy` was not found in your shell. Install the Antigravity CLI, then open this again. (Click to try anyway.)',
+    opencode: '`opencode` was not found in your shell. Install OpenCode, then open this again. (Click to try anyway.)'
 }
 
 /** Marks drawn in the text colour need a light tint on the dark menu */
-const MONO_MARK: ReadonlySet<AgentCli> = new Set<AgentCli>(['codex', 'agy'])
+const MONO_MARK: ReadonlySet<AgentCli> = new Set<AgentCli>(['codex', 'agy', 'opencode'])
 
 interface AgentTemplateRowsProps {
     /** the person's own templates — a row is left out when one of them already starts the same program */
@@ -23,7 +24,7 @@ interface AgentTemplateRowsProps {
 }
 
 /**
- * The folder "+" menu's built-in Claude Code, Codex and Antigravity rows (fb-1120b). When the program is not
+ * The folder "+" menu's built-in Claude Code, Codex, Antigravity and OpenCode rows (fb-1120b). When the program is not
  * found they are drawn dim with «Not installed» — still clickable, because the check reads the
  * shell the app's terminals use and can be wrong (an install it cannot see still works).
  */
