@@ -96,6 +96,12 @@ test.describe('T47 sidebar session order', () => {
         expect(findMatchingSessions(entries, target.slice(9, 17))).toEqual([])
         expect(findMatchingSessions(entries, `${first8} x`)).toEqual([])
         expect(ids(findMatchingSessions(entries, 'cafe'))).toEqual(['cafe-name'])
+        // One query matching a name and an id at once: the name comes first, though the id's row is first in the list.
+        const both = [
+            { workspace: all[0], session: session(target, 'review notes') },
+            { workspace: all[1], session: session('named', `build ${first8}`) }
+        ]
+        expect(ids(findMatchingSessions(both, first8))).toEqual(['named', target])
     })
 
     test('Cmd+[ / ] steps through the All sessions rows and wraps (dc11b60f)', () => {

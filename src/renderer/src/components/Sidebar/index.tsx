@@ -942,7 +942,14 @@ export function Sidebar({
         setRevealSessionId(sessionId)
     }
     useEffect(() => {
-        if (!revealSessionId || viewMode !== 'folders') return
+        if (!revealSessionId) return
+        // Left Folders before the mark faded: drop it, or coming back later would scroll to and mark
+        // that old row unasked (review r2). goToFolder switches the view in the same render, so this
+        // never drops a fresh one.
+        if (viewMode !== 'folders') {
+            setRevealSessionId(null)
+            return
+        }
         let frame = 0
         let tries = 0
         let row: HTMLElement | null = null

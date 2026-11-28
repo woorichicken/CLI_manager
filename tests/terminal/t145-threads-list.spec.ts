@@ -307,6 +307,21 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     await page.waitForTimeout(500)
     await expect(row(CHILD_IDLE)).toHaveCount(1)
     expect(storedIds()).toContain(CHILD_IDLE)
+    // fb-1128 r2: the clicked × keeps the focus, but a mouse focus does not keep it shown once the pointer leaves
+    await page.mouse.move(5, 5)
+    await expect(close(CHILD_IDLE)).toHaveCSS('opacity', '0')
+    await expect(row(CHILD_IDLE).getByTestId('sidebar-thread-time')).toBeVisible()
+    // from the keyboard: Tab from the row reaches the × (shown while focused), and Enter asks the same way
+    await answerDialog(0)
+    await row(CHILD_IDLE).focus()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Tab')
+    await expect(close(CHILD_IDLE)).toBeFocused()
+    await expect(close(CHILD_IDLE)).toHaveCSS('opacity', '1')
+    await page.keyboard.press('Enter')
+    await expect.poll(asked).toBe(1)
+    await page.waitForTimeout(500)
+    await expect(row(CHILD_IDLE)).toHaveCount(1)
     // Terminate: the row, the stored session and its thread go; the parent stays
     await answerDialog(1)
     await row(CHILD_IDLE).hover()

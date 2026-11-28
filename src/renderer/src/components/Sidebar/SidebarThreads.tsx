@@ -134,9 +134,9 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                             <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-gray-200" title={thread.name}>{thread.name}</span>
                             {/* room for the split icon over this corner */}
                             <span className="shrink-0 w-5" aria-hidden="true" />
-                            {/* the × takes this corner while the row is pointed at or focused */}
+                            {/* the × takes this corner while the row is pointed at or reached from the keyboard (a mouse click's focus does not keep it) */}
                             <span
-                                className={`shrink-0 text-[11px] text-gray-500 ${onCloseThread ? 'group-hover/thread:invisible group-focus-within/thread:invisible' : ''}`}
+                                className={`shrink-0 text-[11px] text-gray-500 ${onCloseThread ? 'group-hover/thread:invisible group-has-[:focus-visible]/thread:invisible' : ''}`}
                                 data-testid="sidebar-thread-time"
                                 title={new Date(thread.lastActivityAt).toLocaleString()}
                             >
@@ -175,7 +175,7 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                             title="Close thread"
                             aria-label={`Close «${thread.name}»`}
                             onClick={() => onCloseThread(thread.childId)}
-                            className="absolute top-1 right-1 p-0.5 rounded text-gray-500 hover:text-gray-200 hover:bg-white/10 opacity-0 group-hover/thread:opacity-100 group-focus-within/thread:opacity-100 focus:opacity-100"
+                            className="absolute top-1 right-1 p-0.5 rounded text-gray-500 hover:text-gray-200 hover:bg-white/10 opacity-0 group-hover/thread:opacity-100 group-has-[:focus-visible]/thread:opacity-100 focus-visible:opacity-100"
                         >
                             <X size={13} aria-hidden="true" />
                         </button>

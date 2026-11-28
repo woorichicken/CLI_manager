@@ -93,4 +93,44 @@ test.describe('T198 Go to Folder from All sessions', () => {
 
         expect(ctx.pageErrors).toEqual([])
     })
+
+    test('leaving Folders while the row is still marked drops the mark — coming back later does not scroll or mark it again', async () => {
+        ctx = await launchAppWithWorkspaces(
+            [
+                { id: 'ws-t198-top', name: 'T198 top', sessions: FILLERS },
+                { id: 'ws-t198-in', name: 'T198 inside', folderId: 'f-t198', sessions: [{ id: TARGET, name: 'T198 target' }] }
+            ],
+            {
+                folders: [{ id: 'f-t198', name: 'T198 folder', isExpanded: false, createdAt: 1700000000000 }],
+                settings: { showHomeWorkspace: false }
+            }
+        )
+        const { app, page } = ctx
+        await resizeMainWindow(app, 1280, 520)
+        await page.locator('[data-session-item="s-t198-fill-0"]').first().click()
+        await chooseSidebarView(page, 'list')
+        await page.locator(`[data-testid="sidebar-all-sessions"] [data-session-item="${TARGET}"]`).click({ button: 'right' })
+        const row = page.locator(`[data-session-item="${TARGET}"]`)
+        // Back to List straight away — well inside the 1.6 s mark — and stay there past it.
+        const movedAt = Date.now()
+        await goToFolder(page).click()
+        await page.locator('[data-testid="sidebar-view-menu"][data-view="folders"]').waitFor()
+        await chooseSidebarView(page, 'list')
+        expect(Date.now() - movedAt).toBeLessThan(1_500)
+        await page.waitForTimeout(2_500)
+        // Folders again: the old target is not scrolled to or marked. Any mark set at all is recorded,
+        // however short — the row may be drawn a frame after the switch.
+        await page.evaluate(() => {
+            const w = window as unknown as { __t198Marks: number }
+            w.__t198Marks = 0
+            new MutationObserver((records) => {
+                for (const r of records) if ((r.target as Element).getAttribute?.('data-revealed') === 'true') w.__t198Marks++
+            }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-revealed'] })
+        })
+        await chooseSidebarView(page, 'folders')
+        await page.waitForTimeout(800)
+        await expect(row).toHaveCount(1)
+        expect(await page.evaluate(() => (window as unknown as { __t198Marks: number }).__t198Marks)).toBe(0)
+        expect(ctx.pageErrors).toEqual([])
+    })
 })
