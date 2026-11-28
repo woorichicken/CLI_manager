@@ -46,6 +46,7 @@ import { SessionFolders } from './SessionFolders'
 import { RecentSessions } from './RecentSessions'
 import { SessionTabs } from './SessionTabs'
 import { INBOX_CHANNEL, InboxStore } from './InboxStore'
+import { ApiInputLog } from './ApiInputLog'
 import { CHECKLISTS_CHANNEL, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText } from './ChecklistStore'
 import { CronStore } from './CronStore'
 import { CronService, CRON_MADE_IN_WINDOW } from './CronService'
@@ -471,6 +472,12 @@ const inbox = new InboxStore(store, (requests) => {
 
 const checklists = new ChecklistStore(store, (all) => broadcast(CHECKLISTS_CHANNEL, all))
 
+/** What the Control API typed into each session — Chat's «Mine» hides it, and marks it (fb-1128 efa3932b). */
+const apiInputs = new ApiInputLog(path.join(app.getPath('userData'), 'api-inputs.json'))
+const sessionNameOf = (id: string): string | undefined =>
+    ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => w.sessions ?? []).find((s) => s.id === id)?.name
+apiInputs.prune(((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => (w.sessions ?? []).map((s) => s.id)))
+
 const controlApiService = new ControlApiService({
     resolveAlias: (name) => cliSessionTracker.resolveAlias(name),
     store,
@@ -484,6 +491,7 @@ const controlApiService = new ControlApiService({
     checklists,
     conversations: () => agentConversations,
     watchCodexStart: (sessionId, baseCommand) => watchCodexStart(sessionId, baseCommand),
+    noteApiInput: (sessionId, text, origin, at) => apiInputs.note(sessionId, text, { callerId: origin.caller, callerName: origin.caller ? sessionNameOf(origin.caller) : undefined, client: origin.client }, at),
     forkConversation: async (sessionId, request, aiClient): Promise<ChatForkResult> => {
         await ensureShellAliases()
         return conversationService.fork(sessionId, request, undefined, { aiClient })
@@ -495,6 +503,7 @@ const controlApiService = new ControlApiService({
         sessionTabs.forget(sessionId)
         inbox.forget(sessionId)
         conversationService.forget(sessionId)
+        apiInputs.forget(sessionId)
         stopCodexCapture(sessionId)
         forgetClaudeSession(sessionId)
         phone?.forgetSession(sessionId)
@@ -696,6 +705,7 @@ const conversationService = new ConversationService({
     agentProcess: (id) => terminalManager.foregroundProgram(id),
     resolveAlias: (name) => cliSessionTracker.resolveAlias(name),
     openFork: (input) => controlApiService.openFork(input),
+    markApiTurns: (sessionId, turns) => apiInputs.mark(sessionId, turns, sessionNameOf),
     onChange: (sessionId, revision) => {
         broadcast('conversation-changed', { sessionId, revision })
         phoneConversationListeners.emit(sessionId, revision)
@@ -4395,6 +4405,7 @@ app.on('will-quit', () => {
     void phone?.server.stop()
     terminalMirror.disposeAll()
     dictation.dispose()
+    apiInputs.flush()
 })
 
 // Handle app quit request (Cmd+Q or close button)

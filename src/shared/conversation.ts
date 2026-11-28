@@ -85,6 +85,11 @@ export interface ConversationTurn {
     done?: { at: string; ms: number }
     /** Claude's idle recap (`away_summary`) written after this answer */
     recap?: string
+    /**
+     * A user turn the Control API typed, not the person (ApiInputLog, fb-1128 efa3932b): `from` the sending session's
+     * name, `client` the API client. Absent: the person's — or one the app could not match.
+     */
+    via?: { kind: 'api'; from?: string; client?: string }
 }
 
 export type ConversationAgent = 'claude' | 'codex'

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon, UserRound } from 'lucide-react'
+import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon, Undo2, UserRound } from 'lucide-react'
 import type { ChatCommand, ChatForkRequest, ChatOpenMode, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatAgent, ChatTransport, ConversationSnapshot, ConversationTurn } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
 import { isMac } from '../../utils/platform'
@@ -20,7 +20,7 @@ import { hasEarlierThreadReplies, replyForThread, replyQuote, turnsAfterFork } f
 import { ThreadPanel, ThreadQuote } from './ThreadPanel'
 import { onOpenThreadChange, openThreadOf, setOpenThread } from './threadSelection'
 import { draftBackAfterStop } from './draftHandoff'
-import { artifactLinks, chatOpenTitle, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, sendKeyName, terminalCommand } from './chatLib'
+import { artifactLinks, chatOpenTitle, fileLineTarget, isCommandText, lastPersonTurnTs, latestTodos, resolveChatPath, returnedPromptTurns, sendKeyName, settleReturnedDraft, terminalCommand, userTurnWords, type ReturnedDraft } from './chatLib'
 import './chat.css'
 
 /**
@@ -112,6 +112,16 @@ const NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', agy
  */
 const scrollMemory = new Map<string, { top: number; pinned: boolean; limit: number }>()
 
+/**
+ * Each session's prompt that Stop took back from Claude's input box into the message box (682ea4de): its turn is
+ * folded into one line instead of a sent bubble (f49af50a). Kept past a remount (a view switch); a send ends it.
+ */
+const returnedPrompts = new Map<string, ReturnedDraft>()
+/** The session is gone (its Chat slot unmounted for good): drop its Stop latch. */
+export function forgetReturnedPrompt(sessionId: string): void {
+    returnedPrompts.delete(sessionId)
+}
+
 /** Each session's command list, for telling which sent commands open the terminal. */
 const commandLists = new Map<string, Promise<ChatCommand[]>>()
 function commandsFor(transport: ChatTransport, sessionId: string): Promise<ChatCommand[]> {
@@ -173,6 +183,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const [selectedThreadId, setSelectedThreadId] = useState<string | null>(() => openThreadOf(sessionId))
     /** «Mine»: only the person's own messages on screen (96d478ed) — per view, off again in another session */
     const [onlyMine, setOnlyMine] = useState(false)
+    const [returnedPrompt, setReturnedPrompt] = useState<ReturnedDraft | null>(() => returnedPrompts.get(sessionId) ?? null)
     useEffect(() => setOnlyMine(false), [sessionId])
     const refreshThreads = useRef<(() => void) | null>(null)
     const forkReturnFocus = useRef<HTMLElement | null>(null)
@@ -272,6 +283,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
         setGallery(null)
         setForkTarget(null)
         setSelectedThreadId(openThreadOf(sessionId))
+        setReturnedPrompt(returnedPrompts.get(sessionId) ?? null)
     }, [sessionId])
 
     const restored = useRef<string | null>(null)
@@ -428,6 +440,9 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
             stopRound.current++
             if (stopLook.current !== null) window.clearTimeout(stopLook.current)
             stopLook.current = null
+            // a new message: the prompt Stop sent back is history again (a re-send would otherwise fold itself)
+            returnedPrompts.delete(sessionId)
+            setReturnedPrompt(null)
             // the person's words show at once, faded, while they are typed into the terminal
             const bubble = isCommandText(text) ? null : { id: ++sentSequence, text, at: Date.now() }
             if (bubble) {
@@ -474,6 +489,15 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                     if (round !== stopRound.current) return
                     void draftBackAfterStop(transport, sessionId, sent).then((outcome) => {
                         if (round !== stopRound.current) return
+                        // the prompt is in the message box now, not sent: its bubble folds (f49af50a)
+                        if (outcome === 'moved') {
+                            // bound to that turn: the same words sent again later (terminal, inbox) are a new turn
+                            const turns = snapshotRef.current?.turns ?? []
+                            const stopped = returnedPromptTurns(turns, sent)
+                            const latch: ReturnedDraft = stopped ? { text: sent, ts: turns[stopped.prompt].ts } : { text: sent, ts: null, after: lastPersonTurnTs(turns) }
+                            returnedPrompts.set(sessionId, latch)
+                            setReturnedPrompt(latch)
+                        }
                         if (outcome === 'none' && ++tries < STOP_DRAFT_LOOKS.length) stopLook.current = window.setTimeout(look, STOP_DRAFT_LOOKS[tries])
                     })
                 }
@@ -558,14 +582,26 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     // a multiple choice is ticked on the card, not picked by its number
     const promptOptions = prompt ? (prompt.answerable && !prompt.multi ? prompt.options.flatMap((option) => (option.number !== null && !option.custom ? [option.number] : [])) : []) : null
 
+    // a latch made before the record had the stopped turn: bound by the first person's turn after it, or dropped
+    useEffect(() => {
+        if (!returnedPrompt || returnedPrompt.ts !== null) return
+        const settled = settleReturnedDraft(turns, returnedPrompt)
+        if (settled === returnedPrompt) return
+        if (settled) returnedPrompts.set(sessionId, settled)
+        else returnedPrompts.delete(sessionId)
+        setReturnedPrompt(settled)
+    }, [turns, returnedPrompt, sessionId])
+    // Stop's prompt back in the message box: folded, and out of the rail and the pinned last message
+    const returned = useMemo(() => (agent === 'claude' ? (returnedPrompt?.ts ? returnedPromptTurns(turns, returnedPrompt.text, returnedPrompt.ts) : null) : null), [agent, turns, returnedPrompt])
     const rail = useMemo(
         () =>
             turns.flatMap((turn, index) => {
-                if (turn.role !== 'user') return []
-                const words = turn.parts.flatMap((part) => (part.kind === 'text' && !INTERRUPTED_TEXT.test(part.text.trim()) ? [part.text] : [])).join(' ')
+                // the person's own messages: not Stop's returned prompt, not words the Control API typed (efa3932b)
+                if (turn.role !== 'user' || turn.via || index === returned?.prompt) return []
+                const words = userTurnWords(turn).replace(/\n\n/g, ' ')
                 return words ? [{ index, words }] : []
             }),
-        [turns]
+        [turns, returned?.prompt]
     )
     const lastSaid = preferences.pinLastMessage === true ? rail.at(-1) ?? null : null
     lastSaidIndex.current = lastSaid?.index ?? null
@@ -637,7 +673,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} answerNumbers={answerNumbers} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch && !isThread ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} onlyMine={onlyMine} />
+                            <Turns snapshot={snapshot} answerNumbers={answerNumbers} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch && !isThread ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} onlyMine={onlyMine} returned={returned} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -732,7 +768,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                                     <BackgroundChip meta={snapshot?.meta ?? null} transport={transport} sessionId={sessionId} />
                                     {/* only what the person said, to read back over it (96d478ed) */}
                                     <button type="button" className="chat-chip chat-mine-toggle" data-testid="chat-only-mine" aria-pressed={onlyMine}
-                                        title={onlyMine ? 'Show the whole conversation' : 'Show only your messages'} onClick={() => setOnlyMine((on) => !on)}>
+                                        title={onlyMine ? 'Show the whole conversation' : 'Show only your messages — not answers, nor messages other sessions sent'} onClick={() => setOnlyMine((on) => !on)}>
                                         <UserRound size={12} aria-hidden="true" /> {onlyMine ? 'Only mine' : 'Mine'}
                                     </button>
                                     <span className="chat-status-spacer" />
@@ -841,7 +877,7 @@ function PinnedLastMessage({ words, onGo }: { words: string; onGo: () => void })
     )
 }
 
-function Turns({ snapshot, answerNumbers = null, foldWork, onFork, onShowEarlier, threads, onOpenThread, threadView, hasEarlierThreadReplies, onlyMine = false }: { snapshot: ConversationSnapshot; answerNumbers?: Map<ConversationTurn, number> | null; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void; threadView?: boolean; hasEarlierThreadReplies?: boolean; onlyMine?: boolean }) {
+function Turns({ snapshot, answerNumbers = null, foldWork, onFork, onShowEarlier, threads, onOpenThread, threadView, hasEarlierThreadReplies, onlyMine = false, returned = null }: { snapshot: ConversationSnapshot; answerNumbers?: Map<ConversationTurn, number> | null; foldWork: boolean; onFork?: (index: number, options: boolean) => void; onShowEarlier: () => void; threads: ChatThread[]; onOpenThread?: (childId: string) => void; threadView?: boolean; hasEarlierThreadReplies?: boolean; onlyMine?: boolean; returned?: { prompt: number; markers: number[] } | null }) {
     const agent = snapshot.agent ?? 'claude'
     const hidden = snapshot.totalTurns - snapshot.turns.length
     const previousGroups = useRef<ThreadGroups>(new Map())
@@ -867,7 +903,9 @@ function Turns({ snapshot, answerNumbers = null, foldWork, onFork, onShowEarlier
                 </div>
             )}
             {snapshot.turns.length === 0 && <NoTurnsYet />}
-            {snapshot.turns.map((turn, index) => onlyMine && turn.role !== 'user' ? null : (
+            {snapshot.turns.map((turn, index) => onlyMine && (turn.role !== 'user' || turn.via) ? null : returned?.markers.includes(index) ? null : index === returned?.prompt ? (
+                <ReturnedPrompt key={`${snapshot.totalTurns - snapshot.turns.length + index}-${turn.ts ?? ''}`} words={userTurnWords(turn)} index={index} />
+            ) : (
                 <ChatTurn
                     key={`${snapshot.totalTurns - snapshot.turns.length + index}-${turn.ts ?? ''}`}
                     turn={turn}
@@ -887,6 +925,18 @@ function Turns({ snapshot, answerNumbers = null, foldWork, onFork, onShowEarlier
                 />
             ))}
         </>
+    )
+}
+
+/**
+ * A prompt Stop took back into the message box before Claude answered (f49af50a): not a sent message — the same
+ * words sit in the box below. One dim line in its place says where they went; the words are in its tooltip.
+ */
+function ReturnedPrompt({ words, index }: { words: string; index: number }) {
+    return (
+        <div className="chat-turn chat-turn-returned" data-testid="chat-returned-prompt" data-turn-index={index} title={words}>
+            <Undo2 size={12} aria-hidden="true" /> Stopped before an answer — your message went back to the message box
+        </div>
     )
 }
 

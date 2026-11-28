@@ -172,6 +172,12 @@ rules stay in the root; this file is the inventory.
   보관: 글 30일 · 소리 7일, 시작 때 + 하루 한 번 `prune`(꺼져 있어도 남은 것은 지운다, 폴더는 만들지 않는다). 기록을 쓰기 직전에 설정을 다시 읽어 그새 끄면 아무것도 안 남긴다.
   렌더러는 보낸 결과만 알린다(`useDictation` 의 `takeForSend`·`sent`·`restore`·`boxEmptied` — 세션마다 모듈 맵, 초안처럼 보기를 넘어 산다). 제보·폰·Control API 어디에도 안 실린다.
   회귀: `t106-dictation-unit`(누적) · `t114-dictation-log-unit` · `t115-dictation-log`(앱 — 가짜 헬퍼 `pause` 모드)
+- **Control API 가 친 말**(fb-1128 efa3932b): 대화 기록에는 사람이 친 말과 다른 세션이 `send_input`·`clim send` 로 넣은 말의 구분이 없다.
+  `src/main/ApiInputLog.ts` 가 API 가 치고 Enter 하는 곳(`sendInput` 의 text+submit · `openSession` 의 prompt — Autocron 포함 · AI 의 `fork_session` 첫 말)에서
+  **글의 해시**(공백 접은 뒤 sha256 앞 32자)·시각·보낸 세션 id/이름·client 만 `userData/api-inputs.json`(0600)에 둔다 — 글은 남기지 않는다. 세션당 200개, 세션이 닫히면 지우고 시작 때 없는 세션을 뺀다.
+  `ConversationService.getConversation` 이 전체 턴에 맞춰(보낸 순서대로, 같은 글로 그 뒤 6시간 안에 기록된 첫 사람 턴 — 일하는 중 보낸 말은 늦게 기록된다) 맞은 턴에 `via: { kind: 'api', from?, client? }` 를 붙인다.
+  Chat 은 그 말풍선 위에 「From <세션>」을 달고 「Mine」에서 숨긴다(레일·고정 마지막 말에서도 뺀다). Chat 보내기·폰·인박스 Reply(`typeForChat`)는 사람 몫이라 기록하지 않는다.
+  못 맞춘 턴은 사람 것으로 둔다. 회귀: `t203-fb1128-api-messages`
 
 - **Reply in thread**(11-14 1단계, 기존 fork 기반): 에이전트 답 머리의 갈래 아이콘(복사 옆, 툴팁 「Reply in thread (Shift+click for options)」)을 일반 클릭하면 모달 없이 Whole·첫 말 없음으로 뒤에서 연다. Shift+클릭은 기존 `ForkDialog.tsx`(Excerpt·Quote·첫 말)를 연다. 폰 터치는 기존 모달을 유지한다.
   넘길 것 = **Whole**(기본 — Claude `<저장된 시작 명령> --resume <id> --fork-session`, Codex `<…> fork <id>`, 이 답 **뒤** 대화도 같이 복사된다) 또는

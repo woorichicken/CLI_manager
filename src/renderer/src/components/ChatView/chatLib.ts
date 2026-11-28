@@ -3,7 +3,7 @@
 // (lineDiff, verbatim), src/lib/userMessageFold.ts (verbatim), src/lib/modelName.ts (modelLabel, verbatim),
 // src/lib/todos.ts (todoSnapshot · todoCallSummary for Claude TodoWrite and Codex update_plan only — the
 // omp/omo/gjc operation lists are left out). Gathered in one file; the chat's own helpers follow at the end.
-import type { ChatCommand, ChatOpenMode, ConversationPart, ToolPart } from '../../../../shared/conversation'
+import type { ChatCommand, ChatOpenMode, ConversationPart, ConversationTurn, ToolPart } from '../../../../shared/conversation'
 import { BROWSER_PAGE_EXTENSIONS, SYSTEM_TYPES } from '../../../../shared/fileKinds'
 import { SESSION_LINK_REGEX } from '../../utils/sessionLink'
 
@@ -340,6 +340,67 @@ export function isCommandText(text: string): boolean {
 
 /** Claude Code's marker of a turn the person stopped. */
 export const INTERRUPTED_TEXT = /^\[Request interrupted by user(?: for tool use)?\]$/
+
+/** The person's words in a user turn: its text parts, without the «stopped» marker. */
+export function userTurnWords(turn: ConversationTurn): string {
+    return turn.parts.flatMap((part) => (part.kind === 'text' && !INTERRUPTED_TEXT.test(part.text.trim()) ? [part.text] : [])).join('\n\n')
+}
+
+const sameWords = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim()
+
+/**
+ * Stop before Claude answered puts the prompt back in its input box, and Chat's Stop takes it into the message box
+ * (682ea4de). That prompt is not a sent message any more (f49af50a): which turns to fold — the conversation's last
+ * prompt, when its words are `returned` and no answer came after it, and any «[Request interrupted by user]» marker
+ * written after it (Claude Code 2.1.3xx wrote none on the reported screen; older records and chat-mock do). Null
+ * when the tail is anything else: an answer, other words, nothing returned. `ts`: the stopped turn's time when it was
+ * known — a later prompt with the same words (sent again from the terminal, the inbox) is that new turn, not folded.
+ */
+/**
+ * The words Stop brought back, bound to the turn they were. `ts` null: the record had not shown that turn yet when Stop
+ * moved the words; `after` is then the newest person's turn seen at that moment (null: none), so the next one decides.
+ */
+export interface ReturnedDraft {
+    text: string
+    ts: string | null
+    after?: string | null
+}
+
+/**
+ * Settles a latch Stop made before the record had the stopped turn (review r2 #8): the first person's turn after `after`
+ * binds it when it has the words, and ends it when it has other words — sent from anywhere (terminal, inbox, phone). A
+ * bound latch, or one with nothing new yet, comes back as it is (same object).
+ */
+export function settleReturnedDraft(turns: ConversationTurn[], latch: ReturnedDraft): ReturnedDraft | null {
+    if (latch.ts !== null) return latch
+    const people = turns.filter((turn) => turn.role === 'user' && userTurnWords(turn).trim())
+    const start = latch.after ? people.findIndex((turn) => turn.ts === latch.after) + 1 : 0
+    const next = people[start]
+    if (!next) return latch
+    return sameWords(userTurnWords(next), latch.text) && next.ts ? { text: latch.text, ts: next.ts } : null
+}
+
+/** The newest person's turn (its time), for a latch made before the record caught up. */
+export function lastPersonTurnTs(turns: ConversationTurn[]): string | null {
+    for (let at = turns.length - 1; at >= 0; at--) if (turns[at].role === 'user' && userTurnWords(turns[at]).trim()) return turns[at].ts
+    return null
+}
+
+export function returnedPromptTurns(turns: ConversationTurn[], returned: string | null, ts?: string | null): { prompt: number; markers: number[] } | null {
+    if (!returned?.trim()) return null
+    const markers: number[] = []
+    let at = turns.length - 1
+    for (; at >= 0; at--) {
+        const turn = turns[at]
+        const onlyMarker = turn.role === 'user' && turn.parts.length > 0 && turn.parts.every((part) => part.kind === 'text' && INTERRUPTED_TEXT.test(part.text.trim()))
+        if (!onlyMarker) break
+        markers.push(at)
+    }
+    const prompt = turns[at]
+    if (!prompt || prompt.role !== 'user' || !sameWords(userTurnWords(prompt), returned)) return null
+    if (ts !== undefined && ts !== null && prompt.ts !== ts) return null
+    return { prompt: at, markers }
+}
 
 /**
  * What the composer's menu is completing: a `/command` (or Codex `$skill`) at a line's start, a skill after
