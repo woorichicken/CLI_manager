@@ -23,6 +23,13 @@ prevents recurrence (a test, a rule, a decision record) before deleting.
 
 ---
 
+### 🐛 폰 — agy(Antigravity) 세션에 Chat 이 없다(Terminal 만)
+- Date: 2026-11-28
+- Where: `src/main/phone/phoneSetup.ts:163`(`agent = cliToolName === 'claude' ? … : 'codex' ? … : null`)·`:90`(`findSession` 의 `agent`). 폰은 `agent` 가 null 이면 Chat 탭을 안 그린다(`phone/SessionScreen.tsx:110`).
+- What: Mac 은 agy 세션을 Chat 으로 읽고 보낸다(T178). 같은 세션을 폰에서 열면 Terminal 만 있다. 대화 경로는 `ConversationService` 를 그대로 부르니 판정 두 줄만 빠진 것이다. 열린 PR #210(OpenCode)도 같은 두 줄을 안 건드려 OpenCode 도 같게 된다.
+- Surfaced by: phone-parity-1128 격차표(코드로 확인 — 폰에서 agy 세션을 실제로 열어 보지는 않았다).
+- Fix direction: 에이전트 판정을 한 곳(`src/shared` 의 「Chat 이 읽는 에이전트」 목록 — `ChatAgent`)으로 모으고 폰 두 곳·`src/main/index.ts` 의 반복(`cliToolName === 'claude' || … 'codex'` 8곳)이 그걸 쓰게. `PhoneSession.agent` 타입(`src/shared/phone.ts`)도 넓힌다. 시험: T178 의 agy 모의 세션을 폰(390)에서 열어 Chat 탭·보내기.
+
 ### 🐛 Chat 「일하는 중」 — 대화 글 속 `(esc to interrupt)` 를 진행 중인 턴으로 읽는다(대화 상자가 없을 때)
 - Date: 2026-11-23
 - Where: `src/main/ConversationService.ts` `refreshScreen`(`entry.working = prompt === null && screen.some(isBusyRow)`) · `TerminalMirror.showsBusy`/`screenStatus`(사이드바 상태 점).
