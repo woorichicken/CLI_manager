@@ -15,7 +15,8 @@ import { maskSecretLines } from './maskSecrets'
  * starts would hit the terminal's line limit.
  */
 
-export const FORK_NAME_SUFFIX = ' · fork'
+/** «Reply in thread» (Chat, phone and the Control API's fork_session alike — every fork has an answer anchor) */
+export const FORK_NAME_SUFFIX = ' · thread'
 /** The excerpt's turns, newest kept: the reply, and the turns before it up to this many in all. */
 export const EXCERPT_MAX_TURNS = 6
 /** One turn's words in the excerpt (the start is kept: an answer's point is usually up front). */
@@ -29,7 +30,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const AGENT_NAMES: Record<ConversationAgent, string> = { claude: 'Claude', codex: 'Codex' }
 const CUT_MARK = ' … (cut)'
 
-/** «<name> · fork», the name cut first so the mark always shows. */
+/** «<name> · thread», the name cut first so the mark always shows. */
 export function forkSessionName(name: string, maxLength = 80): string {
     const base = name.trim() || 'Session'
     const room = Math.max(1, maxLength - FORK_NAME_SUFFIX.length)

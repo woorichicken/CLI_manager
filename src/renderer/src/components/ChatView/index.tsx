@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Clock, CornerRightUp, Loader2, Terminal as TerminalIcon, UserRound } from 'lucide-react'
 import type { ChatCommand, ChatForkRequest, ChatOpenMode, ChatPreferences, ChatSendOptions, ChatSendResult, ChatThread, ChatAgent, ChatTransport, ConversationSnapshot, ConversationTurn } from '../../../../shared/conversation'
 import { CHAT_TURN_LIMIT } from '../../../../shared/conversation'
@@ -17,7 +17,7 @@ import { ChatActionsContext, onChatCommand, type ChatActions, type GalleryImage 
 import { ForkDialog, ForkNotice, type ForkProgress, type ForkTarget } from './ForkDialog'
 import { groupThreadsByTurn, threadsForTurn, type ThreadGroups } from './threadGroups'
 import { hasEarlierThreadReplies, replyForThread, replyQuote, turnsAfterFork } from './threadTurns'
-import { ThreadPanel } from './ThreadPanel'
+import { ThreadPanel, ThreadQuote } from './ThreadPanel'
 import { onOpenThreadChange, openThreadOf, setOpenThread } from './threadSelection'
 import { draftBackAfterStop } from './draftHandoff'
 import { artifactLinks, chatOpenTitle, fileLineTarget, INTERRUPTED_TEXT, isCommandText, latestTodos, resolveChatPath, sendKeyName, terminalCommand } from './chatLib'
@@ -73,6 +73,13 @@ export interface ChatViewProps {
     onOpenSessionTerminal?: (sessionId: string, command?: string) => void
     /** Rename a session from the chat — the thread panel's name (b808043e). Absent: the name is only shown. */
     onRenameSession?: (sessionId: string, name: string) => Promise<boolean>
+    /**
+     * This session is a reply thread (threadSessionIds — an `opened` relation with an answer anchor): no «Reply in
+     * thread» under its answers and no thread chips, so a thread does not grow threads of its own (12bf830d).
+     */
+    isThread?: boolean
+    /** Drawn first in the conversation's column, scrolling with it — a thread's quoted reply (271a1e32). */
+    lead?: ReactNode
 }
 
 /** After Stop, when to look for the prompt Claude puts back in its input box (ms after the last look). */
@@ -124,7 +131,7 @@ interface SentWaiting {
 let sentSequence = 0
 let forkSequence = 0
 
-export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink, turnPage, forkedAt, embedded = false, placeholder, onOpenSessionTerminal, onRenameSession }: ChatViewProps) {
+export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, preferences = {}, touch = false, readOnly = false, canOpenFiles = true, onSessionLink, turnPage, forkedAt, embedded = false, placeholder, onOpenSessionTerminal, onRenameSession, isThread = false, lead }: ChatViewProps) {
     const firstTurns = turnPage ?? CHAT_TURN_LIMIT
     const moreTurns = turnPage ?? MORE_TURNS
     const [limit, setLimit] = useState(() => scrollMemory.get(sessionId)?.limit ?? firstTurns)
@@ -512,7 +519,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
             setForkTarget(target)
         } else submitFork({ ...target, scope: 'whole', message: '', quote: false })
     }, [submitFork, touch])
-    const openFork = transport.fork && !readOnly && !embedded ? forkFromTurn : undefined
+    const openFork = transport.fork && !readOnly && !embedded && !isThread ? forkFromTurn : undefined
     // closing the dialog gives the keyboard back to where it was (the message box, its caret and draft untouched)
     const closeFork = useCallback((): void => {
         setForkTarget(null)
@@ -616,6 +623,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 {!embedded && !selectedThread && lastSaid && lastAbove && <PinnedLastMessage key={lastSaid.index} words={lastSaid.words} onGo={() => jumpTo(lastSaid.index)} />}
                 <div className="chat-scroll" ref={scroller} onScroll={onScroll} data-testid="chat-scroll">
                     <div className="chat-column" ref={column}>
+                        {lead}
                         {snapshot === null ? (
                             <ReadingConversation />
                         ) : embedded && (snapshot.unavailable === 'not-found' || snapshot.unavailable === 'no-conversation' || (!snapshot.unavailable && snapshot.turns.length === 0)) ? (
@@ -629,7 +637,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         ) : snapshot.unavailable ? (
                             <Unavailable snapshot={snapshot} onOpenTerminal={() => onOpenTerminal()} />
                         ) : (
-                            <Turns snapshot={snapshot} answerNumbers={answerNumbers} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} onlyMine={onlyMine} />
+                            <Turns snapshot={snapshot} answerNumbers={answerNumbers} foldWork={preferences.foldWork !== false} onFork={openFork} onShowEarlier={showEarlier} threads={threads} onOpenThread={!embedded && !touch && !isThread ? openThread : undefined} threadView={embedded} hasEarlierThreadReplies={earlierThreadReplies} onlyMine={onlyMine} />
                         )}
                         {sent.length > 0 && (
                             <div className="chat-sent" data-testid="chat-sent-waiting">
@@ -740,7 +748,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 {forkTarget && snapshot && (
                     <ForkDialog
                         agent={agent === 'codex' ? 'codex' : 'claude'}
-                        wholeUnavailable={snapshot.agent === null || snapshot.unavailable ? 'The conversation file is not there yet, so the agent cannot fork it.' : null}
+                        wholeUnavailable={snapshot.agent === null || snapshot.unavailable ? 'The conversation file is not there yet, so the agent cannot carry it over.' : null}
                         touch={touch}
                         onCancel={closeFork}
                         onFork={startFork}
@@ -755,13 +763,14 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                 )}
                 </div>
                 {selectedThread && (
-                    <ThreadPanel thread={selectedThread} agentName={agentName} quote={quotedReply} onClose={closeThread}
+                    <ThreadPanel thread={selectedThread} onClose={closeThread}
                         onRename={onRenameSession && !readOnly ? (name) => onRenameSession(selectedThread.childId, name) : undefined}
                         onOpenSession={onSessionLink ? () => onSessionLink(`climanager://session/${selectedThread.childId}`) : undefined}>
                         <ChatView key={selectedThread.childId} sessionId={selectedThread.childId} transport={transport}
                             onOpenTerminal={(command) => onOpenSessionTerminal ? onOpenSessionTerminal(selectedThread.childId, command) : onSessionLink?.(`climanager://session/${selectedThread.childId}`)}
                             fontSize={fontSize} preferences={preferences} readOnly={readOnly} canOpenFiles={canOpenFiles}
-                            onSessionLink={onSessionLink} forkedAt={selectedThread.forkedAt} embedded placeholder="Reply in thread…" />
+                            onSessionLink={onSessionLink} forkedAt={selectedThread.forkedAt} embedded placeholder="Reply in thread…"
+                            lead={<ThreadQuote quote={quotedReply} agentName={agentName} />} />
                     </ThreadPanel>
                 )}
             </div>

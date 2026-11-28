@@ -1,4 +1,5 @@
 import type { PhoneSession, PhoneSessionsResponse } from '../../../shared/phone'
+import { sessionIdQuery } from '../utils/sessionLink'
 
 /**
  * The phone's session list as lines to draw: the rows exactly in the order main sent them
@@ -105,12 +106,14 @@ export function searchLines(data: PhoneSessionsResponse, query: string): ListLin
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
     if (words.length === 0) return null
     const folderName = new Map(data.sessionFolders.map((folder) => [folder.id, folder.name]))
+    // The start of a session id, or a pasted session link, finds that session too (a74575ea — the sidebar's rule).
+    const idPrefix = sessionIdQuery(query)
     return data.sessions
         .filter((session) => {
             const haystack = [session.name, session.workspaceName, session.sessionFolderId ? folderName.get(session.sessionFolderId) ?? '' : '']
                 .join('\n')
                 .toLowerCase()
-            return words.every((word) => haystack.includes(word))
+            return words.every((word) => haystack.includes(word)) || (idPrefix !== null && session.id.toLowerCase().startsWith(idPrefix))
         })
         .map((session) => ({ kind: 'row', key: session.id, session }))
 }
