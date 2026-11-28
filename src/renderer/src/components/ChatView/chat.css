@@ -401,6 +401,8 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-working-time { color: var(--chat-faint); font-variant-numeric: tabular-nums; }
 .chat-working-hint { color: var(--chat-faint); font-size: 0.85em; margin-left: auto; }
 .chat-stopped { display: inline-flex; align-items: center; gap: 4px; color: var(--chat-faint); font-size: 0.8em; border: 1px dashed var(--chat-line); border-radius: 999px; padding: 1px 8px; }
+/* a prompt Stop sent back to the message box (f49af50a): one dim line on the person's side, not a sent bubble */
+.chat-turn-returned { display: flex; justify-content: flex-end; align-items: center; gap: 5px; color: var(--chat-faint); font-size: 0.8em; font-style: italic; }
 .chat-user-fold { display: block; margin-top: 4px; color: #60a5fa; font-size: 0.82em; }
 .chat-user-fold:hover { text-decoration: underline; }
 .chat-pinned-last {

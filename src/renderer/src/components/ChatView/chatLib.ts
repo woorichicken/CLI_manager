@@ -3,7 +3,7 @@
 // (lineDiff, verbatim), src/lib/userMessageFold.ts (verbatim), src/lib/modelName.ts (modelLabel, verbatim),
 // src/lib/todos.ts (todoSnapshot · todoCallSummary for Claude TodoWrite and Codex update_plan only — the
 // omp/omo/gjc operation lists are left out). Gathered in one file; the chat's own helpers follow at the end.
-import type { ChatCommand, ChatOpenMode, ConversationPart, ToolPart } from '../../../../shared/conversation'
+import type { ChatCommand, ChatOpenMode, ConversationPart, ConversationTurn, ToolPart } from '../../../../shared/conversation'
 import { BROWSER_PAGE_EXTENSIONS, SYSTEM_TYPES } from '../../../../shared/fileKinds'
 import { SESSION_LINK_REGEX } from '../../utils/sessionLink'
 
@@ -340,6 +340,35 @@ export function isCommandText(text: string): boolean {
 
 /** Claude Code's marker of a turn the person stopped. */
 export const INTERRUPTED_TEXT = /^\[Request interrupted by user(?: for tool use)?\]$/
+
+/** The person's words in a user turn: its text parts, without the «stopped» marker. */
+export function userTurnWords(turn: ConversationTurn): string {
+    return turn.parts.flatMap((part) => (part.kind === 'text' && !INTERRUPTED_TEXT.test(part.text.trim()) ? [part.text] : [])).join('\n\n')
+}
+
+const sameWords = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim()
+
+/**
+ * Stop before Claude answered puts the prompt back in its input box, and Chat's Stop takes it into the message box
+ * (682ea4de). That prompt is not a sent message any more (f49af50a): which turns to fold — the conversation's last
+ * prompt, when its words are `returned` and no answer came after it, and any «[Request interrupted by user]» marker
+ * written after it (Claude Code 2.1.3xx wrote none on the reported screen; older records and chat-mock do). Null
+ * when the tail is anything else: an answer, other words, nothing returned.
+ */
+export function returnedPromptTurns(turns: ConversationTurn[], returned: string | null): { prompt: number; markers: number[] } | null {
+    if (!returned?.trim()) return null
+    const markers: number[] = []
+    let at = turns.length - 1
+    for (; at >= 0; at--) {
+        const turn = turns[at]
+        const onlyMarker = turn.role === 'user' && turn.parts.length > 0 && turn.parts.every((part) => part.kind === 'text' && INTERRUPTED_TEXT.test(part.text.trim()))
+        if (!onlyMarker) break
+        markers.push(at)
+    }
+    const prompt = turns[at]
+    if (!prompt || prompt.role !== 'user' || !sameWords(userTurnWords(prompt), returned)) return null
+    return { prompt: at, markers }
+}
 
 /**
  * What the composer's menu is completing: a `/command` (or Codex `$skill`) at a line's start, a skill after

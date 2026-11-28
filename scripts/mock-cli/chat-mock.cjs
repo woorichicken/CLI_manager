@@ -19,6 +19,8 @@
  *                         Tab takes it into the box (as Claude does), a submitted prompt drops it (ba2ae0cb, T143)
  *   --restore-on-esc      (Claude) Esc while the turn works puts the sent prompt back in the input box, as Claude Code
  *                         does when a turn is stopped before it answered (682ea4de, T156)
+ *   --quiet-stop          (Claude) that Esc records no "[Request interrupted by user]" — the prompt stays the record's last
+ *                         entry, as on the reported 2.1.3xx screen (f49af50a: no «Stopped» under the returned prompt, T202)
  *   --paste-placeholder   (Claude) a paste with a line break, or longer than 800 characters, stands in the input box as
  *                         `[Pasted text #n +L lines]` (Claude Code folds a long paste so); the words go out whole on Enter
  *   --lose-enters N       (Claude) the next N Enters pressed while the box holds a paste placeholder do nothing — the
@@ -396,7 +398,7 @@ function interrupt() {
     say('  ⎿  Interrupted · What should Claude do instead?')
     say('INTERRUPTED')
     if (AGENT === 'codex') record({ timestamp: now(), type: 'event_msg', payload: { type: 'turn_aborted', reason: 'interrupted' } })
-    else claudeEntry('user', { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] })
+    else if (!process.argv.includes('--quiet-stop')) claudeEntry('user', { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] })
     draw()
 }
 
