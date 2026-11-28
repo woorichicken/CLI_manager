@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText, writeToTerminal } from './helpers'
 import type { ConversationTurn } from '../../src/shared/conversation'
-import { returnedPromptTurns } from '../../src/renderer/src/components/ChatView/chatLib'
+import { lastPersonTurnTs, returnedPromptTurns, settleReturnedDraft } from '../../src/renderer/src/components/ChatView/chatLib'
 
 /**
  * T202 — fb-1128 f49af50a: Stop before Claude answered. Claude Code puts the prompt back in its input box and Chat's
@@ -62,6 +62,24 @@ test('T202 unit: which turns fold — the unanswered last prompt with the return
     const again = { ...user(PROMPT), ts: '2026-11-28T01:05:00.000Z' }
     expect(returnedPromptTurns([answer('ok'), stopped], PROMPT, stopped.ts)).toEqual({ prompt: 1, markers: [] })
     expect(returnedPromptTurns([answer('ok'), stopped, user(MARKER), again], PROMPT, stopped.ts)).toBeNull()
+})
+
+test('T202 unit: a latch made before the record caught up — bound by the next person\'s turn, dropped by other words', () => {
+    const before = [user('first'), answer('ok')]
+    before[0] = { ...before[0], ts: '2026-11-28T01:00:00.000Z' }
+    const latch = { text: PROMPT, ts: null, after: lastPersonTurnTs(before) }
+    expect(latch.after).toBe('2026-11-28T01:00:00.000Z')
+    // nothing new yet: the same latch
+    expect(settleReturnedDraft(before, latch)).toBe(latch)
+    // the stopped prompt shows up: bound to its time, and folds
+    const stopped = { ...user(PROMPT), ts: '2026-11-28T01:01:00.000Z' }
+    const bound = settleReturnedDraft([...before, stopped], latch)
+    expect(bound).toEqual({ text: PROMPT, ts: stopped.ts })
+    expect(returnedPromptTurns([...before, stopped], PROMPT, bound!.ts)).toEqual({ prompt: 2, markers: [] })
+    // a person's turn with other words came first (sent from the terminal, the inbox): the latch ends
+    expect(settleReturnedDraft([...before, { ...user('something else'), ts: '2026-11-28T01:02:00.000Z' }], latch)).toBeNull()
+    // a bound latch is left as it is
+    expect(settleReturnedDraft([...before, stopped], bound!)).toBe(bound)
 })
 
 for (const shape of ['marker', 'quiet'] as const) {

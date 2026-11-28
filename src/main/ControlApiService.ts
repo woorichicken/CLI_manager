@@ -28,6 +28,7 @@ import { TerminalMirror } from './TerminalMirror'
 import { SessionRelations } from './SessionRelations'
 import { SessionFolders, SESSION_FOLDERS_CHANNEL } from './SessionFolders'
 import { checkInboxInput, InboxStore } from './InboxStore'
+import { isApiMessage } from './ApiInputLog'
 import { ChecklistStatus, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText, isComplete } from './ChecklistStore'
 
 /**
@@ -693,7 +694,7 @@ export class ControlApiService {
             } else {
                 const typedAt = Date.now()
                 const submitted = await this.typeAndSubmit(session.id, { text: input.prompt, submit: true })
-                this.deps.noteApiInput?.(session.id, input.prompt, { caller: input.caller, client: input.client }, typedAt)
+                if (submitted) this.deps.noteApiInput?.(session.id, input.prompt, { caller: input.caller, client: input.client }, typedAt)
                 result.promptSent = submitted
                 if (!submitted) {
                     addNote(
@@ -759,7 +760,7 @@ export class ControlApiService {
             const typedAt = Date.now()
             result.messageSent = await this.typeAndSubmit(session.id, { text: input.prompt, submit: true }, input.allowed, (id) => this.deps.mirror.asksQuestion(id))
             // an AI's fork_session: its first message is the AI's; the Chat's own fork is the person's
-            if (input.aiClient) this.deps.noteApiInput?.(session.id, input.prompt, { client: input.aiClient }, typedAt)
+            if (input.aiClient && result.messageSent) this.deps.noteApiInput?.(session.id, input.prompt, { client: input.aiClient }, typedAt)
             if (!result.messageSent) result.note = 'The first message is in the new session\'s input box but was not submitted. Press Enter there.'
         } catch (error) {
             if (error instanceof ControlApiError && error.code === 'revoked') throw error
@@ -801,7 +802,7 @@ export class ControlApiService {
         const typedAt = Date.now()
         const submitted = await this.typeAndSubmit(sessionId, input)
         // text typed and submitted by an AI: the Chat tells it from the person's (fb-1128 efa3932b) — only once typed
-        if (input.text?.trim() && input.submit !== false) this.deps.noteApiInput?.(sessionId, input.text, { caller: input.caller, client: input.client }, typedAt)
+        if (isApiMessage(input, submitted) && input.text) this.deps.noteApiInput?.(sessionId, input.text, { caller: input.caller, client: input.client }, typedAt)
         const { workspace, session } = this.requireSession(sessionId)
         return { ...this.describe(workspace, session), ...(submitted ? {} : { submitted: false as const }) }
     }
@@ -840,11 +841,15 @@ export class ControlApiService {
         if (box?.typed.trim()) return 'busy'
         const line = text.replace(/[\r\n]+/g, ' ')
         await this.settleAfterEscape(terminalId)
+        const typedAt = Date.now()
         this.write(terminalId, line)
         await sleep(submitDelay(line.length))
         if (!running()) return 'gone'
         this.write(terminalId, '\r')
-        return (await this.confirmSubmitted(terminalId, line)) ? 'submitted' : 'stuck'
+        if (!(await this.confirmSubmitted(terminalId, line))) return 'stuck'
+        // Autocron's prompt, not the person's: «From Autocron» in that terminal's Chat (review r2 #7)
+        this.deps.noteApiInput?.(terminalId, line, { client: 'autocron' }, typedAt)
+        return 'submitted'
     }
 
     /**

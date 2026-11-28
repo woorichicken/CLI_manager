@@ -1,6 +1,7 @@
 import { MessageSquareText, X } from 'lucide-react'
 import type { ChatPreferences } from '../../../shared/conversation'
-import { ChatView } from './ChatView'
+import { useEffect } from 'react'
+import { ChatView, forgetReturnedPrompt } from './ChatView'
 import { setSessionPeek, setSessionViewMode, useSessionPeek, useSessionViewMode } from '../hooks/useSessionViewMode'
 import { electronChatTransport } from '../utils/electronChatTransport'
 
@@ -37,6 +38,8 @@ export function SessionChatSlot({
     /** a reply thread: its chat starts no threads of its own (12bf830d) */
     isThread?: boolean
 }) {
+    // this slot lives as long as the session: its Stop latch goes with it (review r2 #8)
+    useEffect(() => () => forgetReturnedPrompt(sessionId), [sessionId])
     const mode = useSessionViewMode(sessionId)
     const peek = useSessionPeek(sessionId)
     if (!visible || !enabled) return null

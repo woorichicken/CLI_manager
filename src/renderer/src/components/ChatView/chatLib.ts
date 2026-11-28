@@ -356,6 +356,36 @@ const sameWords = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim
  * when the tail is anything else: an answer, other words, nothing returned. `ts`: the stopped turn's time when it was
  * known — a later prompt with the same words (sent again from the terminal, the inbox) is that new turn, not folded.
  */
+/**
+ * The words Stop brought back, bound to the turn they were. `ts` null: the record had not shown that turn yet when Stop
+ * moved the words; `after` is then the newest person's turn seen at that moment (null: none), so the next one decides.
+ */
+export interface ReturnedDraft {
+    text: string
+    ts: string | null
+    after?: string | null
+}
+
+/**
+ * Settles a latch Stop made before the record had the stopped turn (review r2 #8): the first person's turn after `after`
+ * binds it when it has the words, and ends it when it has other words — sent from anywhere (terminal, inbox, phone). A
+ * bound latch, or one with nothing new yet, comes back as it is (same object).
+ */
+export function settleReturnedDraft(turns: ConversationTurn[], latch: ReturnedDraft): ReturnedDraft | null {
+    if (latch.ts !== null) return latch
+    const people = turns.filter((turn) => turn.role === 'user' && userTurnWords(turn).trim())
+    const start = latch.after ? people.findIndex((turn) => turn.ts === latch.after) + 1 : 0
+    const next = people[start]
+    if (!next) return latch
+    return sameWords(userTurnWords(next), latch.text) && next.ts ? { text: latch.text, ts: next.ts } : null
+}
+
+/** The newest person's turn (its time), for a latch made before the record caught up. */
+export function lastPersonTurnTs(turns: ConversationTurn[]): string | null {
+    for (let at = turns.length - 1; at >= 0; at--) if (turns[at].role === 'user' && userTurnWords(turns[at]).trim()) return turns[at].ts
+    return null
+}
+
 export function returnedPromptTurns(turns: ConversationTurn[], returned: string | null, ts?: string | null): { prompt: number; markers: number[] } | null {
     if (!returned?.trim()) return null
     const markers: number[] = []

@@ -20,7 +20,7 @@ import { hasEarlierThreadReplies, replyForThread, replyQuote, turnsAfterFork } f
 import { ThreadPanel, ThreadQuote } from './ThreadPanel'
 import { onOpenThreadChange, openThreadOf, setOpenThread } from './threadSelection'
 import { draftBackAfterStop } from './draftHandoff'
-import { artifactLinks, chatOpenTitle, fileLineTarget, isCommandText, latestTodos, resolveChatPath, returnedPromptTurns, sendKeyName, terminalCommand, userTurnWords } from './chatLib'
+import { artifactLinks, chatOpenTitle, fileLineTarget, isCommandText, lastPersonTurnTs, latestTodos, resolveChatPath, returnedPromptTurns, sendKeyName, settleReturnedDraft, terminalCommand, userTurnWords, type ReturnedDraft } from './chatLib'
 import './chat.css'
 
 /**
@@ -117,10 +117,9 @@ const scrollMemory = new Map<string, { top: number; pinned: boolean; limit: numb
  * folded into one line instead of a sent bubble (f49af50a). Kept past a remount (a view switch); a send ends it.
  */
 const returnedPrompts = new Map<string, ReturnedDraft>()
-/** The words Stop brought back, and the time of the turn they were (null: not in the record yet when it happened). */
-interface ReturnedDraft {
-    text: string
-    ts: string | null
+/** The session is gone (its Chat slot unmounted for good): drop its Stop latch. */
+export function forgetReturnedPrompt(sessionId: string): void {
+    returnedPrompts.delete(sessionId)
 }
 
 /** Each session's command list, for telling which sent commands open the terminal. */
@@ -495,7 +494,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                             // bound to that turn: the same words sent again later (terminal, inbox) are a new turn
                             const turns = snapshotRef.current?.turns ?? []
                             const stopped = returnedPromptTurns(turns, sent)
-                            const latch = { text: sent, ts: stopped ? turns[stopped.prompt].ts : null }
+                            const latch: ReturnedDraft = stopped ? { text: sent, ts: turns[stopped.prompt].ts } : { text: sent, ts: null, after: lastPersonTurnTs(turns) }
                             returnedPrompts.set(sessionId, latch)
                             setReturnedPrompt(latch)
                         }
@@ -583,8 +582,17 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     // a multiple choice is ticked on the card, not picked by its number
     const promptOptions = prompt ? (prompt.answerable && !prompt.multi ? prompt.options.flatMap((option) => (option.number !== null && !option.custom ? [option.number] : [])) : []) : null
 
+    // a latch made before the record had the stopped turn: bound by the first person's turn after it, or dropped
+    useEffect(() => {
+        if (!returnedPrompt || returnedPrompt.ts !== null) return
+        const settled = settleReturnedDraft(turns, returnedPrompt)
+        if (settled === returnedPrompt) return
+        if (settled) returnedPrompts.set(sessionId, settled)
+        else returnedPrompts.delete(sessionId)
+        setReturnedPrompt(settled)
+    }, [turns, returnedPrompt, sessionId])
     // Stop's prompt back in the message box: folded, and out of the rail and the pinned last message
-    const returned = useMemo(() => (agent === 'claude' ? returnedPromptTurns(turns, returnedPrompt?.text ?? null, returnedPrompt?.ts) : null), [agent, turns, returnedPrompt])
+    const returned = useMemo(() => (agent === 'claude' ? (returnedPrompt?.ts ? returnedPromptTurns(turns, returnedPrompt.text, returnedPrompt.ts) : null) : null), [agent, turns, returnedPrompt])
     const rail = useMemo(
         () =>
             turns.flatMap((turn, index) => {

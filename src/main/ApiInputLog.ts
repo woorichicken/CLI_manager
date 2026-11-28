@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
 import path from 'path'
 import type { ConversationTurn } from '../shared/conversation'
 
@@ -45,8 +45,11 @@ export const MAX_PER_SESSION = 200
  * and take a later message the person typed with the same words.
  */
 export const MATCH_WINDOW_MS = 6 * 60 * 60 * 1000
-/** The agent's clock and this one may differ by a little. */
-export const CLOCK_SKEW_MS = 10_000
+/**
+ * The agent records a prompt while it is typed, on this same machine's clock: a little slack only. A wide one lets an
+ * entry take the person's identical turn written just before it (review r2 #3: 10 s swapped the labels).
+ */
+export const CLOCK_SKEW_MS = 2_000
 const SAVE_DELAY_MS = 500
 
 /** Spacing and line breaks are not the words: the record keeps a paste's lines, the API may have sent them as one. */
@@ -54,18 +57,39 @@ export function normaliseWords(text: string): string {
     return text.replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Whether an API typing is a message to remember (review r2 #2): words, submitted with Enter, and taken out of the input
+ * box. Not text left in the box (`submitted: false` — the person may change or send it), not `force` (typed into a
+ * question or menu, which is no prompt). Either would wait as an entry and take the person's same words later.
+ */
+export function isApiMessage(input: { text?: string; submit?: boolean; force?: boolean }, submitted: boolean): boolean {
+    return Boolean(input.text?.trim()) && input.submit !== false && input.force !== true && submitted
+}
+
 export function inputHash(text: string): string {
     return createHash('sha256').update(normaliseWords(text)).digest('hex').slice(0, 32)
 }
 
-/** A turn's hash, once: the reader keeps its parsed turns, so a chat re-read hashes only new ones. Null: no words. */
-const turnHashes = new WeakMap<ConversationTurn, string | null>()
-function turnHash(turn: ConversationTurn): string | null {
-    let hash = turnHashes.get(turn)
+/**
+ * A turn's hash, once. The reader's snapshot is a fresh copy on every read (structuredClone), so the key is the turn's
+ * time and its words' length, not the object. Bounded: cleared past TURN_HASH_CACHE_MAX keys.
+ */
+const TURN_HASH_CACHE_MAX = 20_000
+const turnHashes = new Map<string, string | null>()
+let hashesComputed = 0
+/** How many turn hashes were computed (tests: a turn outside every entry's window is not hashed). */
+export function turnHashCount(): number {
+    return hashesComputed
+}
+function turnHash(turn: ConversationTurn, ts: string): string | null {
+    const words = turnWords(turn)
+    const key = `${ts}\0${words.length}`
+    let hash = turnHashes.get(key)
     if (hash === undefined) {
-        const words = turnWords(turn)
+        hashesComputed++
         hash = normaliseWords(words) ? inputHash(words) : null
-        turnHashes.set(turn, hash)
+        if (turnHashes.size >= TURN_HASH_CACHE_MAX) turnHashes.clear()
+        turnHashes.set(key, hash)
     }
     return hash
 }
@@ -98,13 +122,16 @@ export function markApiTurns(turns: ConversationTurn[], entries: readonly ApiInp
     const byHash = new Map<string, number[]>()
     pending.forEach((entry, at) => byHash.set(entry.h, [...(byHash.get(entry.h) ?? []), at]))
     const used = new Set<number>()
+    // a turn no entry could take is not hashed at all: before the oldest send, or past the newest send's window
+    const earliest = pending[0].at - CLOCK_SKEW_MS
+    const latest = pending[pending.length - 1].at + MATCH_WINDOW_MS
     let out: ConversationTurn[] | null = null
     for (let index = 0; index < turns.length; index++) {
         const turn = turns[index]
         if (turn.role !== 'user' || turn.ts === null || used.size === pending.length) continue
         const ts = Date.parse(turn.ts)
-        if (!Number.isFinite(ts)) continue
-        const hash = turnHash(turn)
+        if (!Number.isFinite(ts) || ts < earliest || ts > latest) continue
+        const hash = turnHash(turn, turn.ts)
         if (hash === null) continue
         const match = byHash.get(hash)?.find((at) => !used.has(at) && pending[at].at <= ts + CLOCK_SKEW_MS && ts - pending[at].at <= MATCH_WINDOW_MS)
         if (match === undefined) continue
@@ -129,7 +156,11 @@ export class ApiInputLog {
             if (saved?.version !== 1 || typeof saved.sessions !== 'object' || saved.sessions === null) return
             for (const [sessionId, list] of Object.entries(saved.sessions)) {
                 if (!Array.isArray(list)) continue
-                const entries = list.filter((entry): entry is ApiInputEntry => typeof entry?.h === 'string' && Number.isFinite(entry?.at)).slice(-MAX_PER_SESSION)
+                // every field checked: a hand-edited value would reach the Chat's label (an object there breaks the view)
+                const optionalText = (value: unknown): boolean => value === undefined || typeof value === 'string'
+                const entries = list.filter((entry): entry is ApiInputEntry =>
+                    typeof entry?.h === 'string' && typeof entry?.at === 'number' && Number.isFinite(entry.at) &&
+                    optionalText(entry.from) && optionalText(entry.fromName) && optionalText(entry.client)).slice(-MAX_PER_SESSION)
                 if (entries.length > 0) this.sessions.set(sessionId, entries)
             }
         } catch {
@@ -189,7 +220,10 @@ export class ApiInputLog {
         const saved: Saved = { version: 1, sessions: Object.fromEntries(this.sessions) }
         try {
             mkdirSync(path.dirname(this.file), { recursive: true })
-            writeFileSync(this.file, JSON.stringify(saved), { mode: 0o600 })
+            // a crash mid-write leaves the old file whole: write beside it, then swap
+            const temp = `${this.file}.tmp`
+            writeFileSync(temp, JSON.stringify(saved), { mode: 0o600 })
+            renameSync(temp, this.file)
         } catch (error) {
             console.error('[api-inputs] save failed', error)
         }

@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText, writeToTerminal } from './helpers'
 import type { ConversationTurn } from '../../src/shared/conversation'
-import { ApiInputLog, inputHash, markApiTurns, MATCH_WINDOW_MS, MAX_PER_SESSION, type ApiInputEntry } from '../../src/main/ApiInputLog'
+import { ApiInputLog, CLOCK_SKEW_MS, inputHash, isApiMessage, markApiTurns, MATCH_WINDOW_MS, MAX_PER_SESSION, turnHashCount, type ApiInputEntry } from '../../src/main/ApiInputLog'
 import { createClaudeTranscriptParser } from '../../src/main/transcript/claudeTranscript'
 
 /**
@@ -46,9 +46,32 @@ test.describe('T203 unit: which user turns the API typed', () => {
         expect(markApiTurns(tooLate, [entry('status please', T0)])[0].via).toBeUndefined()
     })
     test('spacing is not the words; a paste\'s lines match its one-line send; clock skew is allowed', () => {
-        const turns = [user('line one\nline two', T0 - 5_000)]
+        const turns = [user('line one\nline two', T0 - 1_500)]
         expect(markApiTurns(turns, [entry('  line one  line two ', T0)])[0].via?.kind).toBe('api')
         expect(markApiTurns([user('x', T0 - 60_000)], [entry('x', T0)])[0].via).toBeUndefined()
+        // review r2 #3: same machine, 2 s — a person's identical turn 5 s before the send stays theirs
+        expect(CLOCK_SKEW_MS).toBe(2_000)
+        expect(markApiTurns([user('ok', T0 - 5_000)], [entry('ok', T0)])[0].via).toBeUndefined()
+    })
+    test('review r2 #1: turns no entry could take are not hashed; a re-read of fresh copies hashes nothing new', () => {
+        const outside = [user('long ago', T0 - 60_000), user('much later', T0 + MATCH_WINDOW_MS + 60_000)]
+        const before = turnHashCount()
+        markApiTurns(outside, [entry('x', T0)])
+        expect(turnHashCount()).toBe(before)
+        // inside the window: hashed once, then a structuredClone of the same turns (the reader's snapshot) hits the cache
+        const inside = [user('in the window', T0 + 1_000)]
+        markApiTurns(inside, [entry('x', T0)])
+        expect(turnHashCount()).toBe(before + 1)
+        markApiTurns(structuredClone(inside), [entry('x', T0)])
+        expect(turnHashCount()).toBe(before + 1)
+    })
+    test('review r2 #2: only words that left the input box are the API\'s — not left in the box, not forced into a menu', () => {
+        expect(isApiMessage({ text: 'status please' }, true)).toBe(true)
+        expect(isApiMessage({ text: 'status please' }, false)).toBe(false)
+        expect(isApiMessage({ text: 'status please', force: true }, true)).toBe(false)
+        expect(isApiMessage({ text: 'status please', submit: false }, true)).toBe(false)
+        expect(isApiMessage({ text: '   ' }, true)).toBe(false)
+        expect(isApiMessage({ keys: ['enter'] } as { text?: string }, true)).toBe(false)
     })
     test('two sends of the same words take two turns, a third turn is the person\'s', () => {
         const turns = [user('go on', T0 + 1000), reply(T0 + 2000), user('go on', T0 + 3000), reply(T0 + 4000), user('go on', T0 + 5000)]
@@ -102,6 +125,12 @@ test.describe('T203 unit: which user turns the API typed', () => {
         again.prune(['s2', 's3'])
         again.flush()
         expect(Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')).sessions)).toEqual(['s2'])
+        // written beside, then swapped: no temp file left, still 0600 (review r2 #4)
+        expect(fs.existsSync(`${file}.tmp`)).toBe(false)
+        expect((fs.statSync(file).mode & 0o777).toString(8)).toBe('600')
+        // a hand-edited entry whose name is not text is dropped on load, the good ones kept (review r2 #5)
+        fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: { s4: [{ h: 'a', at: 1, from: { x: 1 } }, { h: 'b', at: 2, client: 7 }, { h: 'c', at: '3' }, { h: 'd', at: 4, fromName: 'Lead' }] } }))
+        expect(new ApiInputLog(file).entries('s4')).toEqual([{ h: 'd', at: 4, fromName: 'Lead' }])
         fs.rmSync(dir, { recursive: true, force: true })
     })
 })
