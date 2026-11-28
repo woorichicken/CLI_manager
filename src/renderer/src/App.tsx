@@ -46,7 +46,7 @@ import { useTemplates } from './hooks/useTemplates'
 import { useSessionRelations } from './hooks/useSessionRelations'
 import { useSessionFolders } from './hooks/useSessionFolders'
 import { InboxButton } from './components/Inbox/InboxButton'
-import { parentSessionsOf, relatedCounts, unlistedSessionIds, withoutThreadSessions } from './utils/relatedSessions'
+import { parentSessionsOf, relatedCounts, threadSessionIds, unlistedSessionIds, withoutThreadSessions } from './utils/relatedSessions'
 import { setSessionCatalog } from './utils/sessionMentions'
 import { setActiveShortcuts, useShortcutHint } from './utils/shortcutHints'
 import { useSessionTabs } from './hooks/useSessionTabs'
@@ -1402,6 +1402,8 @@ function App() {
     // ⌘[ ] and ⌘⇧[ ] walk the sessions the sidebar lists: reply threads (1b965ad1) and Autocron's background
     // sessions are not among them, except one on screen (the active session or a split pane), which keeps its place.
     const sidebarThreadIds = useMemo(() => unlistedSessionIds(sessionRelations, workspaces), [sessionRelations, workspaces])
+    // reply threads only (not Autocron's hidden sessions): their chat starts no threads of its own (12bf830d)
+    const replyThreadIds = useMemo(() => threadSessionIds(sessionRelations), [sessionRelations])
     const onScreenKey = [activeSession?.id ?? '', ...(splitLayout?.sessionIds ?? [])].join('\n')
     const navigationWorkspaces = useMemo(
         () => withoutThreadSessions(workspacesInSidebarOrder, sidebarThreadIds, onScreenKey.split('\n')),
@@ -2284,6 +2286,7 @@ function App() {
                                             preferences={settings.chat}
                                             onSessionLink={handleSessionLink}
                                             onRenameSession={renameSessionById}
+                                            isThread={replyThreadIds.has(session.id)}
                                         />
                                         <SessionMemo
                                             ref={(handle) => {
