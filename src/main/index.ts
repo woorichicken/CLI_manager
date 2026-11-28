@@ -491,7 +491,7 @@ const controlApiService = new ControlApiService({
     checklists,
     conversations: () => agentConversations,
     watchCodexStart: (sessionId, baseCommand) => watchCodexStart(sessionId, baseCommand),
-    noteApiInput: (sessionId, text, origin) => apiInputs.note(sessionId, text, { callerId: origin.caller, callerName: origin.caller ? sessionNameOf(origin.caller) : undefined, client: origin.client }),
+    noteApiInput: (sessionId, text, origin, at) => apiInputs.note(sessionId, text, { callerId: origin.caller, callerName: origin.caller ? sessionNameOf(origin.caller) : undefined, client: origin.client }, at),
     forkConversation: async (sessionId, request, aiClient): Promise<ChatForkResult> => {
         await ensureShellAliases()
         return conversationService.fork(sessionId, request, undefined, { aiClient })

@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText } from './helpers'
+import { closeApp, launchAppWithWorkspaces, LaunchResult, REPO_ROOT, resizeMainWindow, waitForBufferText, writeToTerminal } from './helpers'
 import type { ConversationTurn } from '../../src/shared/conversation'
 import { returnedPromptTurns } from '../../src/renderer/src/components/ChatView/chatLib'
 
@@ -57,6 +57,11 @@ test('T202 unit: which turns fold — the unanswered last prompt with the return
     expect(returnedPromptTurns([...asked, answer('half'), user(MARKER)], PROMPT)).toBeNull()
     // only the conversation's last prompt: an older one with the same words stays
     expect(returnedPromptTurns([user(PROMPT), answer('ok'), user('later')], PROMPT)).toBeNull()
+    // bound to the stopped turn's time: the same words sent again later are a new turn, not folded
+    const stopped = { ...user(PROMPT), ts: '2026-11-28T01:00:00.000Z' }
+    const again = { ...user(PROMPT), ts: '2026-11-28T01:05:00.000Z' }
+    expect(returnedPromptTurns([answer('ok'), stopped], PROMPT, stopped.ts)).toEqual({ prompt: 1, markers: [] })
+    expect(returnedPromptTurns([answer('ok'), stopped, user(MARKER), again], PROMPT, stopped.ts)).toBeNull()
 })
 
 for (const shape of ['marker', 'quiet'] as const) {
@@ -106,10 +111,17 @@ for (const shape of ['marker', 'quiet'] as const) {
         await expect(chat.getByTestId('chat-stopped')).toHaveCount(0)
         await expect(userBubbles).toHaveCount(answered)
 
+        // the same words sent again from the terminal (not this Chat's send) are a new turn: a bubble, not folded
+        await writeToTerminal(page, ID, `${PROMPT}\r`)
+        await waitForBufferText(page, ID, `ANSWER[2]: ${PROMPT}`, 10_000)
+        await expect(userBubbles.filter({ hasText: PROMPT }).last()).toBeVisible({ timeout: 10_000 })
+        await expect(folded).toHaveCount(0)
+        await waitForBufferText(page, ID, `Echo: ${PROMPT}`, 20_000)
+
         // a new message: the folded line goes back to being history, the new words are a bubble
         await composer.fill('just list them')
         await composer.press('Enter')
-        await waitForBufferText(page, ID, 'ANSWER[2]: just list them', 10_000)
+        await waitForBufferText(page, ID, 'ANSWER[3]: just list them', 10_000)
         await expect(userBubbles.filter({ hasText: 'just list them' })).toHaveCount(1, { timeout: 10_000 })
         await expect(folded).toHaveCount(0)
     })

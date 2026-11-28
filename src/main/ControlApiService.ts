@@ -427,10 +427,12 @@ export interface ControlApiDeps {
     /** The Chat's fork (ConversationService.fork) — `fork_session` checks the reply and builds the command there. */
     forkConversation?: (sessionId: string, request: ChatForkRequest, aiClient: string) => Promise<ChatForkResult>
     /**
-     * Words the API is about to type and submit into a session — not the person's (ApiInputLog, fb-1128 efa3932b).
+     * Words the API typed and submitted into a session — not the person's (ApiInputLog, fb-1128 efa3932b). Called once
+     * the typing went through (a refusal — a question on screen, an exited shell — leaves no entry to take a later
+     * message), with `at` taken before the typing: the agent records the prompt while it is typed.
      * typeForChat (Chat, phone, inbox Reply) never calls it.
      */
-    noteApiInput?: (sessionId: string, text: string, origin: { caller?: string; client?: string }) => void
+    noteApiInput?: (sessionId: string, text: string, origin: { caller?: string; client?: string }, at: number) => void
 }
 
 export interface ForkSessionInput {
@@ -689,8 +691,9 @@ export class ControlApiService {
                     'Read the screen, answer it with send_input keys (e.g. ["down","enter"]), then send the prompt.'
                 )
             } else {
-                this.deps.noteApiInput?.(session.id, input.prompt, { caller: input.caller, client: input.client })
+                const typedAt = Date.now()
                 const submitted = await this.typeAndSubmit(session.id, { text: input.prompt, submit: true })
+                this.deps.noteApiInput?.(session.id, input.prompt, { caller: input.caller, client: input.client }, typedAt)
                 result.promptSent = submitted
                 if (!submitted) {
                     addNote(
@@ -753,9 +756,10 @@ export class ControlApiService {
             return result
         }
         try {
-            // an AI's fork_session: its first message is the AI's; the Chat's own fork is the person's
-            if (input.aiClient) this.deps.noteApiInput?.(session.id, input.prompt, { client: input.aiClient })
+            const typedAt = Date.now()
             result.messageSent = await this.typeAndSubmit(session.id, { text: input.prompt, submit: true }, input.allowed, (id) => this.deps.mirror.asksQuestion(id))
+            // an AI's fork_session: its first message is the AI's; the Chat's own fork is the person's
+            if (input.aiClient) this.deps.noteApiInput?.(session.id, input.prompt, { client: input.aiClient }, typedAt)
             if (!result.messageSent) result.note = 'The first message is in the new session\'s input box but was not submitted. Press Enter there.'
         } catch (error) {
             if (error instanceof ControlApiError && error.code === 'revoked') throw error
@@ -794,9 +798,10 @@ export class ControlApiService {
      */
     async sendInput(sessionId: string, input: SendInputInput): Promise<ApiSession & { submitted?: false }> {
         this.connect(sessionId, input.client, input.caller, 'record')
-        // text typed and submitted by an AI: the Chat tells it from the person's (fb-1128 efa3932b)
-        if (input.text?.trim() && input.submit !== false) this.deps.noteApiInput?.(sessionId, input.text, { caller: input.caller, client: input.client })
+        const typedAt = Date.now()
         const submitted = await this.typeAndSubmit(sessionId, input)
+        // text typed and submitted by an AI: the Chat tells it from the person's (fb-1128 efa3932b) — only once typed
+        if (input.text?.trim() && input.submit !== false) this.deps.noteApiInput?.(sessionId, input.text, { caller: input.caller, client: input.client }, typedAt)
         const { workspace, session } = this.requireSession(sessionId)
         return { ...this.describe(workspace, session), ...(submitted ? {} : { submitted: false as const }) }
     }

@@ -166,6 +166,19 @@ test('T203 efa3932b: a message another session sent is marked «From …», and 
     await expect(chat.locator('[data-testid="chat-turn"][data-role="assistant"]')).toHaveCount(0)
     await shot(page, 't203-2-mine')
 
+    // a send the API refused (a question on screen, 409) leaves no entry: the person's same words later stay theirs
+    await chat.getByTestId('chat-only-mine').click()
+    await writeToTerminal(page, WORKER, 'ASK\r')
+    await waitForBufferText(page, WORKER, 'Do you want to proceed?', 10_000)
+    expect(await send('hold on please')).toBe(409)
+    await writeToTerminal(page, WORKER, '\r')
+    await waitForBufferText(page, WORKER, 'CHOSE:', 10_000)
+    await page.waitForTimeout(800)
+    await writeToTerminal(page, WORKER, 'hold on please\r')
+    await waitForBufferText(page, WORKER, 'Echo: hold on please', 20_000)
+    await expect(bubble('hold on please')).toHaveCount(1, { timeout: 10_000 })
+    await expect(bubble('hold on please').getByTestId('chat-api-mark')).toHaveCount(0)
+
     // the app keeps no words, only hashes
     const kept = path.join(result.userDataDir, 'api-inputs.json')
     await expect.poll(() => fs.existsSync(kept), { timeout: 5000 }).toBe(true)

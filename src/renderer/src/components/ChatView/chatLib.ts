@@ -353,9 +353,10 @@ const sameWords = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim
  * (682ea4de). That prompt is not a sent message any more (f49af50a): which turns to fold — the conversation's last
  * prompt, when its words are `returned` and no answer came after it, and any «[Request interrupted by user]» marker
  * written after it (Claude Code 2.1.3xx wrote none on the reported screen; older records and chat-mock do). Null
- * when the tail is anything else: an answer, other words, nothing returned.
+ * when the tail is anything else: an answer, other words, nothing returned. `ts`: the stopped turn's time when it was
+ * known — a later prompt with the same words (sent again from the terminal, the inbox) is that new turn, not folded.
  */
-export function returnedPromptTurns(turns: ConversationTurn[], returned: string | null): { prompt: number; markers: number[] } | null {
+export function returnedPromptTurns(turns: ConversationTurn[], returned: string | null, ts?: string | null): { prompt: number; markers: number[] } | null {
     if (!returned?.trim()) return null
     const markers: number[] = []
     let at = turns.length - 1
@@ -367,6 +368,7 @@ export function returnedPromptTurns(turns: ConversationTurn[], returned: string 
     }
     const prompt = turns[at]
     if (!prompt || prompt.role !== 'user' || !sameWords(userTurnWords(prompt), returned)) return null
+    if (ts !== undefined && ts !== null && prompt.ts !== ts) return null
     return { prompt: at, markers }
 }
 

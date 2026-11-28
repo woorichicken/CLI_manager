@@ -128,12 +128,12 @@ export class ApiInputLog {
         }
     }
 
-    /** The API typed `text` into a session (and pressed Enter). Empty words are no message. */
-    note(sessionId: string, text: string, origin: ApiInputOrigin = {}): void {
+    /** The API typed `text` into a session (and pressed Enter), starting at `at`. Empty words are no message. */
+    note(sessionId: string, text: string, origin: ApiInputOrigin = {}, at: number = this.now()): void {
         if (!normaliseWords(text)) return
         const entry: ApiInputEntry = {
             h: inputHash(text),
-            at: this.now(),
+            at,
             ...(origin.callerId && origin.callerId !== sessionId ? { from: origin.callerId } : {}),
             ...(origin.callerName && origin.callerId !== sessionId ? { fromName: origin.callerName.slice(0, 120) } : {}),
             ...(origin.client ? { client: origin.client.slice(0, 60) } : {})

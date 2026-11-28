@@ -116,7 +116,12 @@ const scrollMemory = new Map<string, { top: number; pinned: boolean; limit: numb
  * Each session's prompt that Stop took back from Claude's input box into the message box (682ea4de): its turn is
  * folded into one line instead of a sent bubble (f49af50a). Kept past a remount (a view switch); a send ends it.
  */
-const returnedPrompts = new Map<string, string>()
+const returnedPrompts = new Map<string, ReturnedDraft>()
+/** The words Stop brought back, and the time of the turn they were (null: not in the record yet when it happened). */
+interface ReturnedDraft {
+    text: string
+    ts: string | null
+}
 
 /** Each session's command list, for telling which sent commands open the terminal. */
 const commandLists = new Map<string, Promise<ChatCommand[]>>()
@@ -179,7 +184,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const [selectedThreadId, setSelectedThreadId] = useState<string | null>(() => openThreadOf(sessionId))
     /** «Mine»: only the person's own messages on screen (96d478ed) — per view, off again in another session */
     const [onlyMine, setOnlyMine] = useState(false)
-    const [returnedPrompt, setReturnedPrompt] = useState<string | null>(() => returnedPrompts.get(sessionId) ?? null)
+    const [returnedPrompt, setReturnedPrompt] = useState<ReturnedDraft | null>(() => returnedPrompts.get(sessionId) ?? null)
     useEffect(() => setOnlyMine(false), [sessionId])
     const refreshThreads = useRef<(() => void) | null>(null)
     const forkReturnFocus = useRef<HTMLElement | null>(null)
@@ -487,8 +492,12 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
                         if (round !== stopRound.current) return
                         // the prompt is in the message box now, not sent: its bubble folds (f49af50a)
                         if (outcome === 'moved') {
-                            returnedPrompts.set(sessionId, sent)
-                            setReturnedPrompt(sent)
+                            // bound to that turn: the same words sent again later (terminal, inbox) are a new turn
+                            const turns = snapshotRef.current?.turns ?? []
+                            const stopped = returnedPromptTurns(turns, sent)
+                            const latch = { text: sent, ts: stopped ? turns[stopped.prompt].ts : null }
+                            returnedPrompts.set(sessionId, latch)
+                            setReturnedPrompt(latch)
                         }
                         if (outcome === 'none' && ++tries < STOP_DRAFT_LOOKS.length) stopLook.current = window.setTimeout(look, STOP_DRAFT_LOOKS[tries])
                     })
@@ -575,7 +584,7 @@ export function ChatView({ sessionId, transport, onOpenTerminal, fontSize = 14, 
     const promptOptions = prompt ? (prompt.answerable && !prompt.multi ? prompt.options.flatMap((option) => (option.number !== null && !option.custom ? [option.number] : [])) : []) : null
 
     // Stop's prompt back in the message box: folded, and out of the rail and the pinned last message
-    const returned = useMemo(() => (agent === 'claude' ? returnedPromptTurns(turns, returnedPrompt) : null), [agent, turns, returnedPrompt])
+    const returned = useMemo(() => (agent === 'claude' ? returnedPromptTurns(turns, returnedPrompt?.text ?? null, returnedPrompt?.ts) : null), [agent, turns, returnedPrompt])
     const rail = useMemo(
         () =>
             turns.flatMap((turn, index) => {
