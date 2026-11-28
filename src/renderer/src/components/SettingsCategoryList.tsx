@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Search, X } from 'lucide-react'
 import { searchSettings, type SettingsCategory, type SettingsEntry } from './settingsIndex'
+import { hasPrimaryModifier } from '../utils/platform'
 
 export interface SettingsCategoryGroup {
     label: string
@@ -50,10 +51,10 @@ export function SettingsCategoryList({
     const order = groups.flatMap((group) => group.items)
     const results = searchSettings(query, order)
 
-    // ⌘F (Ctrl+F elsewhere) while Settings is open: the search box, not the app's own find
+    // ⌘F (Ctrl+F off macOS — on a Mac Ctrl+F is a text box's own key) while Settings is open: the search box
     useEffect(() => {
         const onKey = (event: KeyboardEvent): void => {
-            if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
+            if (hasPrimaryModifier(event) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
                 event.preventDefault()
                 event.stopPropagation()
                 input.current?.focus()
