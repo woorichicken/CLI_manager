@@ -1,20 +1,43 @@
 /**
  * First-run "Getting started" checklist and the built-in agent templates (fb-1120b tutorial).
  *
- * The checklist has three steps, each ticked by what actually happened in the app — never by a
+ * The checklist has four steps, each ticked by what actually happened in the app — never by a
  * click on the card: a project folder exists, an agent (Claude Code or Codex) is running in a
- * session, and that agent's conversation has a first message. Once a step is seen it stays
- * ticked (latched), so closing the session or removing the folder does not untick it.
+ * session, that agent's conversation has a first message, and an AI agent can drive the app (the
+ * Control API is running and the `climanager-session` skill is installed). Once a step is seen it
+ * stays ticked (latched), so closing the session or removing the folder does not untick it.
  *
  * The state is created only when the welcome screen's Continue is pressed (first run, or the
  * Settings › General "Onboarding" replay). Existing users who never pass the welcome screen again
- * never see the card.
+ * never see the card. A state stored before the fourth step existed has no `withAiStep`: it keeps
+ * its three steps, so a person who finished (or closed) the card is not asked again.
  */
 import type { TerminalTemplate, Workspace } from './types'
 
-export type GettingStartedStep = 'folder' | 'agent' | 'chat'
+export type GettingStartedStep = 'folder' | 'agent' | 'chat' | 'ai'
 
-export const GETTING_STARTED_STEPS: readonly GettingStartedStep[] = ['folder', 'agent', 'chat']
+export const GETTING_STARTED_STEPS: readonly GettingStartedStep[] = ['folder', 'agent', 'chat', 'ai']
+
+/** The steps a card created before the «Connect an AI agent» step existed has. */
+const LEGACY_STEPS: readonly GettingStartedStep[] = ['folder', 'agent', 'chat']
+
+/** Public install command of the skill that lets an AI agent drive CLI Manager sessions. */
+export const SKILL_INSTALL_COMMAND = 'npx skills add woorichicken/climanager-session@climanager-session -g'
+
+export const SKILL_NAME = 'climanager-session'
+
+export const AI_CONTROL_API_DOCS_URL = 'https://climanager.solhun.com/docs/ai-control-api'
+
+/** Where an installed skill shows up for Claude Code, the shared agents folder and Codex (symlinks count). */
+export function skillInstallPaths(home: string): string[] {
+    return ['.claude', '.agents', '.codex'].map((dir) => `${home}/${dir}/skills/${SKILL_NAME}/SKILL.md`)
+}
+
+/** What the «Connect an AI agent» step looks at right now; not stored — read again on every check. */
+export interface AiConnectStatus {
+    apiOn: boolean
+    skillFound: boolean
+}
 
 export interface GettingStartedState {
     /** when the welcome screen was last accepted (ms) */
@@ -28,6 +51,15 @@ export interface GettingStartedState {
      * Show Again) marks them «Already done» instead of asking for them again. Empty on a first run.
      */
     alreadyDone: GettingStartedStep[]
+    /** the card was created with the «Connect an AI agent» step; absent on a card stored before it existed */
+    withAiStep?: true
+    /** live view of that step's two conditions — added by a check for the card, never saved */
+    ai?: AiConnectStatus
+}
+
+/** The steps this card asks for: all four, or the original three for a card stored before the fourth. */
+export function stepsOf(state: Pick<GettingStartedState, 'withAiStep'>): readonly GettingStartedStep[] {
+    return state.withAiStep ? GETTING_STARTED_STEPS : LEGACY_STEPS
 }
 
 /** Programs with a built-in "+" menu row. The Getting started "agent" step still counts only Claude Code and Codex. */
@@ -102,12 +134,12 @@ export function isProjectFolder(workspace: Pick<Workspace, 'isHome' | 'isPlaygro
 /** A fresh state for an accepted welcome screen; a replay keeps the steps already done and says so. */
 export function beginGettingStarted(previous: GettingStartedState | null | undefined, now: number): GettingStartedState {
     const done = { ...(previous?.done ?? {}) }
-    return { startedAt: now, dismissed: false, done, alreadyDone: GETTING_STARTED_STEPS.filter((step) => done[step]) }
+    return { startedAt: now, dismissed: false, done, alreadyDone: GETTING_STARTED_STEPS.filter((step) => done[step]), withAiStep: true }
 }
 
 /** Steps newly seen are added; a step once done stays done. Returns the same object when nothing changed. */
 export function latchGettingStarted(state: GettingStartedState, seen: Partial<Record<GettingStartedStep, boolean>>): GettingStartedState {
-    const added = GETTING_STARTED_STEPS.filter((step) => seen[step] && !state.done[step])
+    const added = stepsOf(state).filter((step) => seen[step] && !state.done[step])
     if (added.length === 0) return state
     const done = { ...state.done }
     for (const step of added) done[step] = true
@@ -115,12 +147,12 @@ export function latchGettingStarted(state: GettingStartedState, seen: Partial<Re
 }
 
 export function gettingStartedComplete(state: GettingStartedState): boolean {
-    return GETTING_STARTED_STEPS.every((step) => state.done[step])
+    return stepsOf(state).every((step) => state.done[step])
 }
 
 /** A replay that found every step already done: the card stays as an «all done» note until ✕. */
 export function gettingStartedReplayedDone(state: GettingStartedState): boolean {
-    return state.alreadyDone.length === GETTING_STARTED_STEPS.length
+    return state.alreadyDone.length === stepsOf(state).length
 }
 
 /**
@@ -141,5 +173,7 @@ export function readGettingStartedState(value: unknown): GettingStartedState | n
     for (const step of GETTING_STARTED_STEPS) if (rawDone[step] === true) done[step] = true
     const rawAlready = Array.isArray(raw.alreadyDone) ? raw.alreadyDone : []
     const alreadyDone = GETTING_STARTED_STEPS.filter((step) => rawAlready.includes(step) && done[step])
-    return { startedAt: raw.startedAt, dismissed: raw.dismissed === true, done, alreadyDone }
+    const state: GettingStartedState = { startedAt: raw.startedAt, dismissed: raw.dismissed === true, done, alreadyDone }
+    if (raw.withAiStep === true) state.withAiStep = true
+    return state
 }

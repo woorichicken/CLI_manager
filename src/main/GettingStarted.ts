@@ -5,17 +5,22 @@
  * `settings`, which the welcome screen and the Settings window write back whole from their copy.
  */
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
 import {
     beginGettingStarted,
     gettingStartedVisible,
     isProjectFolder,
     latchGettingStarted,
     readGettingStartedState,
+    skillInstallPaths,
+    stepsOf,
     type AgentCli,
     type AgentCliStatus,
     type AgentCliStatuses,
     type GettingStartedState,
     type GettingStartedStep,
+    type AiConnectStatus,
     AGENT_CLIS,
     unknownAgentCliStatuses
 } from '../shared/gettingStarted'
@@ -34,7 +39,16 @@ export interface GettingStartedDeps {
     agentStarted(): boolean
     /** whether a session's linked conversation has a message from the person; undefined when unknown */
     hasConversation(sessionId: string): boolean | undefined
+    /** whether the AI Control API server is actually listening (not just switched on in Settings) */
+    controlApiRunning(): boolean
+    /** whether the `climanager-session` skill folder exists for Claude Code, Codex or the shared agents folder */
+    skillInstalled(): boolean
     now?(): number
+}
+
+/** Real check for `GettingStartedDeps.skillInstalled`: a skill folder (a symlink to one counts) in any agent's skills dir. */
+export function isSkillInstalled(home: string = homedir(), exists: (path: string) => boolean = existsSync): boolean {
+    return skillInstallPaths(home).some((path) => exists(path))
 }
 
 export class GettingStarted {
@@ -49,8 +63,20 @@ export class GettingStarted {
      * look at once, so a replay does not draw a card the first check then takes away.
      */
     async begin(): Promise<GettingStartedState | null> {
-        this.deps.save(beginGettingStarted(this.get(), this.deps.now?.() ?? Date.now()))
-        return this.check()
+        const previous = this.get()
+        this.deps.save(beginGettingStarted(previous, this.deps.now?.() ?? Date.now()))
+        const checked = await this.check()
+        if (!previous) return checked
+        // A replay: what that first look finds is already done too. Without this a person who had set up the
+        // API and the skill before the fourth step existed gets 3 «already done» + the step latched by the
+        // look itself, which is neither «all done» (no card) nor a step to do.
+        const stored = this.get()
+        if (!stored) return checked
+        const found = stepsOf(stored).filter((step) => stored.done[step] && !stored.alreadyDone.includes(step))
+        if (found.length === 0) return checked
+        const next = { ...stored, alreadyDone: stepsOf(stored).filter((step) => stored.alreadyDone.includes(step) || found.includes(step)) }
+        this.deps.save(next)
+        return next
     }
 
     dismiss(): GettingStartedState | null {
@@ -68,6 +94,11 @@ export class GettingStarted {
     async check(): Promise<GettingStartedState | null> {
         const state = this.get()
         if (!gettingStartedVisible(state)) return state
+        // two flags and three file lookups: cheap enough for the card's 3-second timer, and only read while that step is open
+        const aiStep = stepsOf(state).includes('ai') && !state.done.ai
+        const ai: AiConnectStatus | undefined = aiStep
+            ? { apiOn: this.deps.controlApiRunning(), skillFound: this.deps.skillInstalled() }
+            : undefined
         const workspaces = this.deps.workspaces()
         const seen: Partial<Record<GettingStartedStep, boolean>> = {}
         if (!state.done.folder) seen.folder = workspaces.some(isProjectFolder)
@@ -83,9 +114,11 @@ export class GettingStarted {
                 seen.agent = !!running && running.size > 0
             }
         }
+        if (ai) seen.ai = ai.apiOn && ai.skillFound
         const next = latchGettingStarted(state, seen)
         if (next !== state) this.deps.save(next)
-        return next
+        // `ai` is a live reading for the card, not part of the stored state
+        return ai && !next.done.ai ? { ...next, ai } : next
     }
 }
 

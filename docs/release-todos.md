@@ -29,4 +29,7 @@ whose version has shipped, then deletes them in a commit that says what was done
 
 ## Open
 
-None right now. The last row (session role and tags — teach the skill) was done after v1.38.0 shipped; see the commit that removed it.
+| Waits for | Do | Not before |
+| --- | --- | --- |
+| This PR (Getting started 4th step «Connect an AI agent», onboarding-1127) merged **and released**; the installed app shows the step: `gettingStarted` in `config.json` has `withAiStep` after «Show Again», or the card shows 0/4 | **Skill (original)**: push this batch's local `climanager-session` commits (list: `~/Downloads/_batches/onboarding-1127/reports/multi-skill.md` «같이 고친 문서») — other sessions' unpushed commits sit on the same local `main`, so stop and report if `git log --oneline origin/main..HEAD` holds more than yours. **Public edition**: in a clone of `woorichicken/climanager-session`, `git am ~/Downloads/_batches/onboarding-1127/public-multi-skill.patch` (two commits: onboarding, then the move to `skills/<name>/` plus the new `climanager-team` skill — it replaces the older `public-onboarding.patch`), replace «next release» in the feature map with the shipped version, run `verify-release.mjs` once per skill (`--skill climanager-session`, `--skill climanager-team`), and check on a temporary public branch — before `main` — that an old install picks up the new layout with `npx skills update -g` (order in the skill's `references/release.md`), then merge to public `main` (procedure: skill `references/release.md`; never `sync-release`) | The skill's onboarding tells people to press the card's **Turn on AI Control API** button; an app without the card has only Settings › Agents. The public repo must not describe a card its users cannot find |
+

@@ -11,7 +11,7 @@ import { GitPanel } from './components/GitPanel'
 import { DiffModal } from './components/DiffModal'
 import { FileSearch } from './components/FileSearch'
 import { ConfirmationModal } from './components/Sidebar/Modals'
-import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, EditorType, TerminalTemplate, PortActionLog, SessionStatus, SplitTerminalLayout, AgentStatusSource } from '../../shared/types'
+import { DEFAULT_CONTROL_API, Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, EditorType, TerminalTemplate, PortActionLog, SessionStatus, SplitTerminalLayout, AgentStatusSource } from '../../shared/types'
 import { getErrorMessage } from './utils/errorMessages'
 import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare, Bot } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
@@ -59,6 +59,7 @@ import { DocSplitPane } from './components/HtmlDoc/DocSplitPane'
 import { useDocPanes } from './hooks/useDocPanes'
 import { isDocPaneId, sessionPaneIds, splitAfterRemove } from './utils/docPanes'
 import { GettingStartedCard } from './components/GettingStarted/GettingStartedCard'
+import { AI_CONTROL_API_DOCS_URL, SKILL_INSTALL_COMMAND } from '../../shared/gettingStarted'
 import { useGettingStarted } from './hooks/useGettingStarted'
 
 /** Let the window settle before spending anything on a network check. */
@@ -1079,6 +1080,50 @@ function App() {
         await refreshWorkspacesFromStore()
     }
 
+    // Getting started › Connect an AI agent. Turning the API on goes through the same IPC and the same
+    // saved key as Settings › Agents; the App's own copy of the settings is updated too, because
+    // this window saves it back whole and would otherwise switch the API off again on its next save.
+    const [controlApiError, setControlApiError] = useState<string | null>(null)
+    const [controlApiBusy, setControlApiBusy] = useState(false)
+    const controlApiStarting = useRef(false) // a ref: two clicks in one frame both see the same state value
+    const handleTurnOnControlApi = async () => {
+        // one start at a time: a second click while the first is binding the port would hit EADDRINUSE and stop the server the first one started
+        if (controlApiStarting.current) return
+        controlApiStarting.current = true
+        setControlApiBusy(true)
+        try {
+            // Settings › Agents applies a change to main at once but this window's copy only changes on Save,
+            // so build the value from what is saved — a port or folder name set there must survive this click
+            const saved = (await window.api.getSettings()) as UserSettings | undefined
+            const next = { ...DEFAULT_CONTROL_API, ...(saved?.controlApi ?? settings.controlApi ?? {}), enabled: true }
+            const state = await window.api.setControlApi(next)
+            setControlApiError(state.running ? null : state.error ?? 'The API did not start.')
+            // main saved the switch even when the server could not start (same as Settings), so the copy follows
+            setSettings(prev => ({ ...prev, controlApi: next }))
+        } catch (error) {
+            setControlApiError(error instanceof Error ? error.message : 'The API did not start.')
+        } finally {
+            controlApiStarting.current = false
+            setControlApiBusy(false)
+        }
+        void gettingStarted.refresh()
+    }
+    const handleCopySkillInstall = async (): Promise<boolean> => {
+        try {
+            await navigator.clipboard.writeText(SKILL_INSTALL_COMMAND)
+            return true
+        } catch {
+            return false
+        }
+    }
+    const aiConnectProps = {
+        onTurnOnControlApi: () => void handleTurnOnControlApi(),
+        onCopyInstallCommand: handleCopySkillInstall,
+        onOpenApiDocs: () => void window.api.openExternal(AI_CONTROL_API_DOCS_URL),
+        controlApiError,
+        controlApiBusy
+    }
+
     const handleAddWorkspace = async () => {
         const result = await window.api.addWorkspace()
         if (!result) return // User cancelled dialog
@@ -1803,7 +1848,7 @@ function App() {
                     footerSlot={<>
                         {/* once a session fills the main pane, the checklist moves here, small */}
                         {gettingStartedState && (activeSession || splitLayout) && (
-                            <GettingStartedCard state={gettingStartedState} variant="compact" onDismiss={() => void gettingStarted.dismiss()} />
+                            <GettingStartedCard state={gettingStartedState} variant="compact" onDismiss={() => void gettingStarted.dismiss()} {...aiConnectProps} />
                         )}
                         <PhoneBadge onOpenSettings={() => handleOpenSettings('phone')} />
                     </>}
@@ -2318,6 +2363,7 @@ function App() {
                                             variant="full"
                                             onDismiss={() => void gettingStarted.dismiss()}
                                             onAddFolder={() => void handleAddWorkspace()}
+                                            {...aiConnectProps}
                                         />
                                     </div>
                                 )}

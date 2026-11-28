@@ -70,7 +70,7 @@ import { net } from 'electron'
 import { DictationService } from './Dictation'
 import { DictationLog } from './DictationLog'
 import { openInDock } from './dockOpen'
-import { AgentCliChecker, GettingStarted, checkAgentClis, parseAgentCliFake } from './GettingStarted'
+import { AgentCliChecker, GettingStarted, checkAgentClis, isSkillInstalled, parseAgentCliFake } from './GettingStarted'
 import { BUILTIN_AGENT_TEMPLATES } from '../shared/gettingStarted'
 import { dockLocation } from './phone/phoneDock'
 import { BROWSER_PAGE_EXTENSIONS } from '../shared/fileKinds'
@@ -710,7 +710,9 @@ const gettingStarted = new GettingStarted({
     foregroundAgents: () => terminalManager.foregroundAgentKinds(),
     agentStarted: () => codexAwaitingFirstMessage.size > 0 || ((store.get('workspaces') as Workspace[] | undefined) ?? [])
         .some((w) => (w.sessions ?? []).some((s) => s.cliToolName === 'claude' || s.cliToolName === 'codex')),
-    hasConversation: (id) => conversationService.hasConversation(id)
+    hasConversation: (id) => conversationService.hasConversation(id),
+    controlApiRunning: () => controlApiServer.state().running,
+    skillInstalled: () => isSkillInstalled()
 })
 // Tests never ask the person's shell: CLIMANAGER_AGENT_CLI_FAKE answers instead, and without it the answer is unknown
 const agentCliChecker = new AgentCliChecker(process.env.CLIMANGER_TEST_USERDATA

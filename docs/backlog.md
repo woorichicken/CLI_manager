@@ -19,6 +19,14 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### Getting started 카드가 좁은 창에서 찌그러진다 — 사이드바가 열린 채 메인 칸이 약 110px 일 때
+- Discovered: 2026-11-27 온보딩 4번째 칸 작업(onboarding-1127)의 390 폭 캡처.
+- Evidence: 창 폭 390 + 사이드바 열림(256px)이면 메인 칸이 약 110px 라 풀 카드(`w-[360px] max-w-[calc(100%-32px)]`)의 글이 한 글자 폭으로 접힌다 — 4번째 칸을 넣기 **전 판에서도 같다**(`~/Downloads/_batches/onboarding-1127/review/shots/a-fresh-full-390-before.png`). 데스크톱 앱이라 실사용 폭이 아닐 수 있다.
+- 제안: 메인 칸이 카드 최소폭(약 240px)보다 좁으면 풀 카드 대신 사이드바 아래 compact 로 보내거나 사이드바를 접는 안내.
+- Why deferred: 이번 범위(4번째 칸)가 아니고, 이 폭이 실제로 쓰이는지 사람이 정해야 한다.
+- Trigger: 좁은 창 제보가 오거나 앱 최소 창 폭을 정할 때.
+- Owner: 없음
+
 ### Grok CLI(`grok`, xAI Grok Build) 붙이기 — 설치·실제 화면 녹화가 먼저
 - Discovered: 2026-11-27 `/opensource` 조사(사람: 「opencode 까지 하고 나머지는 백로그로」). 브리프 `~/Downloads/_batches/agents-port-1127/port-grok.md`(ovis 175d24c MIT · herdr e8d7d97 Apache-2.0).
 - Evidence: 설치 `curl -fsSL https://x.ai/cli/install.sh | bash` → `~/.grok/bin`, 데이터 `$GROK_HOME` 또는 `~/.grok`(이 Mac 에 없음). 대화 `<home>/sessions/<cwd 그룹>/<id>/updates.jsonl` — ACP `session/update` 줄(`user_message_chunk`·`agent_message_chunk`·`tool_call`/`tool_call_update`(toolCallId 로 합침)·`turn_completed`·`rewind_marker`). 재시작 `grok --resume <id>`, fork 없음. 멈추기는 Esc 가 아니라 Ctrl+C(권한 패널에서 Esc 는 포커스만 옮김), 작업 중 Enter 는 대기열. **세션 묶기가 가장 어렵다** — grok 은 옛 세션의 `events.jsonl` 도 계속 열어 두어 `lsof` 만으로는 못 고르고, ovis 는 herdr 훅(`~/.grok/hooks/herdr.json`, `SessionStart` 만 — 따로 소유한 파일이라 0002 와 충돌 없음)에서 id 를 받는데 TUI 안 `/resume` 은 훅이 안 불린다. 화면 규칙 herdr `grok.toml` 13개(작업 중 `⠋… [stop]`·`esc:cancel`, 질문 `┃ N (○)`). 옮길 원본 시험: `grok.test.ts` 48건 중 순수 파싱 약 15 + 픽스처 4개.
