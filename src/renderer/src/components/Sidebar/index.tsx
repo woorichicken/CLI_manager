@@ -81,6 +81,9 @@ function ReorderableRow<T>({ value, title, children, onDragStart, onDragEnd }: R
 
 type SidebarViewMode = 'folders' | 'all'
 const VIEW_MODE_STORAGE_KEY = 'sidebar-view-mode'
+/** How long "Go to Folder" marks the row it lands on, and how many frames it waits for that row. */
+const REVEAL_MARK_MS = 1600
+const REVEAL_LOOK_FRAMES = 30
 
 // List or Tree inside the All sessions view; a per-machine view choice like the view mode.
 const ALL_SESSIONS_LAYOUT_STORAGE_KEY = 'sidebar-all-sessions-layout'
@@ -922,6 +925,51 @@ export function Sidebar({
         setSearchQuery('')
     }
 
+    // "Go to Folder" (14d866d3): the Folders view, opened down to the session's row, which then
+    // scrolls into view and is marked for a moment. The session on screen does not change.
+    const [revealSessionId, setRevealSessionId] = useState<string | null>(null)
+    const goToFolder = (workspaceId: string, sessionId: string) => {
+        const workspace = workspaces.find(w => w.id === workspaceId)
+        if (!workspace) return
+        // A worktree is drawn under its parent, so the parent and the parent's folder open too.
+        const parent = workspace.parentWorkspaceId ? workspaces.find(w => w.id === workspace.parentWorkspaceId) : undefined
+        const folderId = (parent ?? workspace).folderId
+        if (folderId && folders.some(f => f.id === folderId && !f.isExpanded)) onSetFoldersExpanded([folderId], true)
+        // Add, never toggle: a workspace that is already open stays open.
+        setExpanded(prev => new Set([...prev, workspace.id, ...(parent ? [parent.id] : [])]))
+        closeSearch()
+        chooseView('folders')
+        setRevealSessionId(sessionId)
+    }
+    useEffect(() => {
+        if (!revealSessionId || viewMode !== 'folders') return
+        let frame = 0
+        let tries = 0
+        let row: HTMLElement | null = null
+        let fade = 0
+        // The row appears once the view switch and the opened folders have rendered; look for a few frames.
+        const look = () => {
+            row = document.querySelector<HTMLElement>(`[data-session-item="${CSS.escape(revealSessionId)}"]`)
+            if (!row) {
+                if (++tries < REVEAL_LOOK_FRAMES) frame = requestAnimationFrame(look)
+                else setRevealSessionId(null)
+                return
+            }
+            row.scrollIntoView({ block: 'nearest' })
+            row.setAttribute('data-revealed', 'true')
+            fade = window.setTimeout(() => {
+                row?.removeAttribute('data-revealed')
+                setRevealSessionId(null)
+            }, REVEAL_MARK_MS)
+        }
+        frame = requestAnimationFrame(look)
+        return () => {
+            cancelAnimationFrame(frame)
+            window.clearTimeout(fade)
+            row?.removeAttribute('data-revealed')
+        }
+    }, [revealSessionId, viewMode])
+
     const openTopSearchResult = () => {
         const top = searchResults[0]
         // Projects keep their place at the top; a name that only matches a session opens that session.
@@ -1111,12 +1159,17 @@ export function Sidebar({
                             window.api.clearTerminal(sessionMenuOpen.sessionId)
                             setSessionMenuOpen(null)
                         }}
-                        onConnectConversation={() => setConversationSessionId(sessionMenuOpen.sessionId)}
-                        onDisconnectAi={
-                            menuSession?.aiControl
-                                ? () => { void window.api.releaseAiSession(sessionMenuOpen.sessionId) }
-                                : undefined
-                        }
+                        // Only where no conversation is connected yet (2ea599ad): a saved conversation id is one.
+                        // A remembered tool name is not — a Codex template's session keeps `cliToolName` with a
+                        // shell in front and no conversation, which is what this item is for (T104). The renderer
+                        // cannot see the foreground program; the dialog says what is in front.
+                        // The AI mark has no item — it is a mark, not a permission (0006).
+                        onConnectConversation={menuSession && !menuSession.cliSessionId
+                            ? () => setConversationSessionId(sessionMenuOpen.sessionId)
+                            : undefined}
+                        onGoToFolder={isAllSessionsView && allSessionEntries.some(entry => entry.session.id === sessionMenuOpen.sessionId)
+                            ? () => goToFolder(sessionMenuOpen.workspaceId, sessionMenuOpen.sessionId)
+                            : undefined}
                         role={menuSession?.role}
                         tagCount={menuSession?.tags?.length ?? 0}
                         onSetRole={role => { void onSetSessionLabels(sessionMenuOpen.sessionId, { role }) }}
@@ -1411,6 +1464,15 @@ export function Sidebar({
                                     const owner = workspaces.find((w) => w.sessions?.some((s) => s.id === childId))
                                     if (owner && name) handleRenameSubmit(owner.id, childId, name)
                                     else setRenamingSessionId(null)
+                                }}
+                                // The sidebar's Delete and session menu, on the thread's own session (385ccba4)
+                                onCloseThread={(childId) => {
+                                    const owner = workspaces.find((w) => w.sessions?.some((s) => s.id === childId))
+                                    if (owner) void removeFromList(owner.id, childId, false)
+                                }}
+                                onThreadContextMenu={(event, childId) => {
+                                    const owner = workspaces.find((w) => w.sessions?.some((s) => s.id === childId))
+                                    if (owner) handleSessionContextMenu(event, owner.id, childId)
                                 }}
                             />
                         ) : allSessionEntries.length === 0 ? (

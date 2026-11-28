@@ -278,6 +278,44 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     await expect(panel).toHaveCount(0)
     await expect(row(CHILD_WAIT)).toHaveCount(0)
 
+    // fb-1128 385ccba4: the row's × closes the thread — the sidebar's Delete (same confirm: a running agent asks first)
+    const close = (id: string) => page.locator(`[data-child-id="${id}"] ~ [data-testid="sidebar-thread-close"]`)
+    await page.mouse.move(5, 5)
+    await expect(close(CHILD_IDLE)).toHaveCSS('opacity', '0')
+    await row(CHILD_IDLE).hover()
+    await expect(close(CHILD_IDLE)).toHaveCSS('opacity', '1')
+    await expect(close(CHILD_IDLE)).toHaveAttribute('title', 'Close thread')
+    await shot(page, 't145-5-close-hover')
+    expect(await overflowingRows(page)).toEqual([])
+    // the row's right-click is the session menu
+    await row(CHILD_IDLE).click({ button: 'right' })
+    await expect(page.locator('[data-sidebar-menu="session"]')).toContainText('Copy Session ID')
+    await page.keyboard.press('Escape')
+    const storedIds = (): string[] => JSON.parse(fs.readFileSync(path.join(result!.userDataDir, 'config.json'), 'utf-8'))
+        .workspaces.flatMap((w: { sessions: Array<{ id: string }> }) => w.sessions.map((s) => s.id))
+    const answerDialog = (response: number) => result!.app.evaluate(({ dialog }, answer) => {
+        const asked = globalThis as unknown as { __t145Asked: number }
+        asked.__t145Asked = 0
+        dialog.showMessageBox = (async () => { asked.__t145Asked++; return { response: answer, checkboxChecked: false } }) as unknown as typeof dialog.showMessageBox
+    }, response)
+    const asked = () => result!.app.evaluate(() => (globalThis as unknown as { __t145Asked: number }).__t145Asked)
+    // Cancel: nothing closes
+    await answerDialog(0)
+    await row(CHILD_IDLE).hover()
+    await close(CHILD_IDLE).click()
+    await expect.poll(asked).toBe(1)
+    await page.waitForTimeout(500)
+    await expect(row(CHILD_IDLE)).toHaveCount(1)
+    expect(storedIds()).toContain(CHILD_IDLE)
+    // Terminate: the row, the stored session and its thread go; the parent stays
+    await answerDialog(1)
+    await row(CHILD_IDLE).hover()
+    await close(CHILD_IDLE).click()
+    await expect(row(CHILD_IDLE)).toHaveCount(0, { timeout: 3000 })
+    await expect(rows(page)).toHaveCount(1)
+    await expect.poll(storedIds).not.toContain(CHILD_IDLE)
+    expect(storedIds()).toContain(PARENT_A)
+
     // the icon again: back to the list, in the layout it had
     await icon.click()
     await expect(icon).toHaveAttribute('aria-pressed', 'false')
@@ -288,7 +326,7 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
 
     // on again, then restart: the list is still open
     await icon.click()
-    await expect(rows(page)).toHaveCount(2)
+    await expect(rows(page)).toHaveCount(1)
     const userDataDir = result!.userDataDir
     await result!.app.close()
     keepDirs.push(userDataDir)
@@ -304,7 +342,7 @@ test('T145: the Threads icon lists every anchored thread, opens it beside the pa
     })
     const again = await relaunched.firstWindow()
     await expect(again.getByTestId('all-sessions-threads')).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 })
-    await expect(again.getByTestId('sidebar-thread-row')).toHaveCount(2, { timeout: 15_000 })
+    await expect(again.getByTestId('sidebar-thread-row')).toHaveCount(1, { timeout: 15_000 })
 })
 
 test('T145: with no threads the list says how to make one, and nothing else is listed', async () => {

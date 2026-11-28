@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Columns2 } from 'lucide-react'
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { Columns2, X } from 'lucide-react'
 import { RENAME_FOCUS_GRACE_MS } from '../SessionTabs/SessionTabBar'
 import type { ChatThread, ChatThreadEntry } from '../../../../shared/conversation'
 
@@ -35,6 +35,10 @@ interface SidebarThreadsProps {
     onStartRename?: (childId: string) => void
     /** the typed name, or null when cancelled */
     onFinishRename?: (childId: string, name: string | null) => void
+    /** the row's ×: ends the thread session as the sidebar's Delete does (385ccba4) */
+    onCloseThread?: (childId: string) => void
+    /** right-click: the session menu every sidebar row has */
+    onThreadContextMenu?: (event: ReactMouseEvent, childId: string) => void
 }
 
 function RowNameInput({ name, onFinish }: { name: string; onFinish: (name: string | null) => void }) {
@@ -79,7 +83,7 @@ function RowNameInput({ name, onFinish }: { name: string; onFinish: (name: strin
  * All sessions › Threads: every reply's thread in the app, newest activity first (the order main
  * gives — opening a row adds no output, so the rows stay put). Unread marks are not part of v1.
  */
-export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOpen, onOpenBeside, renamingChildId, onStartRename, onFinishRename }: SidebarThreadsProps) {
+export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOpen, onOpenBeside, renamingChildId, onStartRename, onFinishRename, onCloseThread, onThreadContextMenu }: SidebarThreadsProps) {
     const [now, setNow] = useState(Date.now)
     useEffect(() => {
         const tick = window.setInterval(() => setNow(Date.now()), TIME_REFRESH_MS)
@@ -115,6 +119,7 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                         aria-current={selected ? 'true' : undefined}
                         onClick={() => onOpen(thread)}
                         onDoubleClick={onStartRename ? () => onStartRename(thread.childId) : undefined}
+                        onContextMenu={onThreadContextMenu ? (event) => onThreadContextMenu(event, thread.childId) : undefined}
                         className={`w-full min-w-0 text-left px-2 py-1.5 rounded-md transition-colors ${
                             selected ? 'bg-blue-500/20' : 'hover:bg-white/5'
                         }`}
@@ -129,7 +134,12 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                             <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-gray-200" title={thread.name}>{thread.name}</span>
                             {/* room for the split icon over this corner */}
                             <span className="shrink-0 w-5" aria-hidden="true" />
-                            <span className="shrink-0 text-[11px] text-gray-500" data-testid="sidebar-thread-time" title={new Date(thread.lastActivityAt).toLocaleString()}>
+                            {/* the × takes this corner while the row is pointed at or focused */}
+                            <span
+                                className={`shrink-0 text-[11px] text-gray-500 ${onCloseThread ? 'group-hover/thread:invisible group-focus-within/thread:invisible' : ''}`}
+                                data-testid="sidebar-thread-time"
+                                title={new Date(thread.lastActivityAt).toLocaleString()}
+                            >
                                 {shortActivityTime(thread.lastActivityAt, now)}
                             </span>
                         </span>
@@ -158,6 +168,18 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                     >
                         <Columns2 size={13} aria-hidden="true" />
                     </button>
+                    {onCloseThread && (
+                        <button
+                            type="button"
+                            data-testid="sidebar-thread-close"
+                            title="Close thread"
+                            aria-label={`Close «${thread.name}»`}
+                            onClick={() => onCloseThread(thread.childId)}
+                            className="absolute top-1 right-1 p-0.5 rounded text-gray-500 hover:text-gray-200 hover:bg-white/10 opacity-0 group-hover/thread:opacity-100 group-focus-within/thread:opacity-100 focus:opacity-100"
+                        >
+                            <X size={13} aria-hidden="true" />
+                        </button>
+                    )}
                     </div>
                 )
             })}

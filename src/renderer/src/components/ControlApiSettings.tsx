@@ -246,8 +246,8 @@ export function ControlApiSettings({ config, onChange }: ControlApiSettingsProps
                     <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded">
                         <p className="text-xs text-blue-200">
                             <strong>Tip:</strong> Ask your AI something like "open a claude-code session in ~/project and have it
-                            fix the failing test". Right-click a green session → Disconnect AI to interrupt the AI there; turn this
-                            switch off to end its access.
+                            fix the failing test". A green session is one the AI has used; turn this switch off to end its
+                            access.
                         </p>
                     </div>
                 </div>

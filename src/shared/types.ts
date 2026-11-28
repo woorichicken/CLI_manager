@@ -86,8 +86,8 @@ export interface TerminalSession {
      * Set while an external AI works in this session through the Control API:
      * when the API opens it, or the first time the API reads, types into, waits
      * on or focuses it. A visible mark, not a permission — the API reaches every
-     * session while it is switched on. Disconnect AI clears it and interrupts a
-     * wait in flight.
+     * session while it is switched on. `release` clears it and interrupts a
+     * wait in flight (the sidebar's Disconnect AI item was removed 2026-11-28).
      */
     aiControl?: AiControlInfo
 }
