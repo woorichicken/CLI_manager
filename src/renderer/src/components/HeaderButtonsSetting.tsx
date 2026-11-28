@@ -2,15 +2,15 @@ import { HEADER_BUTTONS, headerButtonShown, withHeaderButton, type UserSettings 
 
 /**
  * Settings › Sidebar › Header buttons (d5efaf86): a switch for each button on the right of the main header.
- * All on by default. Settings itself has no switch — it is the way back here. A hidden button's shortcut
- * still works. Source Control keeps its old test id (T36 · T158 click it).
+ * All on by default. Settings itself has no switch — it is the way back here. A hidden button that has a
+ * shortcut still works by it (Loop, Review Diff, System Monitor and Parent session have none). Source Control keeps its old test id (T36 · T158 click it).
  */
 export function HeaderButtonsSetting({ settings, onChange }: { settings: UserSettings; onChange: (update: (prev: UserSettings) => UserSettings) => void }) {
     return (
         <div data-testid="settings-header-buttons">
             <p className="text-sm text-gray-300">Header buttons</p>
             <p className="text-xs text-gray-500 mt-1 mb-3">
-                The buttons on the right of the header. Off only hides a button: its shortcut still works. Settings always stays.
+                The buttons on the right of the header. Off only hides a button: one with a shortcut (Related ⌘⇧L, Checklists ⌘⇧J, Search Files, Terminal / Chat ⌘⇧M) still opens with it. Settings always stays.
             </p>
             <div className="space-y-2">
                 {HEADER_BUTTONS.map((button) => {

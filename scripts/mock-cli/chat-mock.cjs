@@ -653,8 +653,10 @@ function submit(text) {
     const effort = AGENT !== 'codex' ? /^\/effort\s+(low|medium|high|xhigh|max)\s*$/.exec(text) : null
     if (effort) {
         claudeEffort = effort[1]
-        recordCommand('effort', effort[1], `Set effort level to ${effort[1]} (saved as your default for new sessions)`)
-        say(`  ⎿  Set effort level to ${effort[1]} (saved as your default for new sessions)`)
+        // as 2.1.332: max is kept for the session only, the others are saved as the default
+        const kept = effort[1] === 'max' ? '(this session only)' : '(saved as your default for new sessions)'
+        recordCommand('effort', effort[1], `Set effort level to ${effort[1]} ${kept}`)
+        say(`  ⎿  Set effort level to ${effort[1]} ${kept}`)
         say(`EFFORT: ${effort[1]}`)
         return
     }

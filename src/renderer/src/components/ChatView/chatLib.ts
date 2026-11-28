@@ -420,6 +420,8 @@ function sessionRanges(text: string, nameOf?: (ref: string) => string | undefine
         const name = nameOf?.(match[1].toLowerCase())
         const named = name ? `${name} ` : ''
         const start = named && text.slice(0, at).endsWith(named) ? at - named.length : at
+        // a name that itself holds a link shape: the whole mention takes the link already found inside its name
+        while (ranges.length > 0 && ranges[ranges.length - 1].start >= start) ranges.pop()
         ranges.push({ start, end: at + match[0].length, kind: 'session' })
     }
     return ranges
@@ -430,6 +432,8 @@ function cutPieces(text: string, ranges: PaintRange[]): { text: string; kind: Pa
     const pieces: { text: string; kind: PaintKind | null }[] = []
     let last = 0
     for (const range of ranges) {
+        // overlapping ranges would draw their words twice in the backdrop
+        if (range.start < last) continue
         if (range.start > last) pieces.push({ text: text.slice(last, range.start), kind: null })
         pieces.push({ text: text.slice(range.start, range.end), kind: range.kind })
         last = range.end

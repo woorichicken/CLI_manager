@@ -88,6 +88,11 @@ test('T208 app: dictation → Chat, scrolled and lit; tree → Sidebar; no match
     await content.click({ position: { x: 5, y: 5 } })
     await page.keyboard.press('Meta+f')
     await expect(search).toBeFocused()
+    // with a Korean input source the same key says 'ㄹ' — the physical key (code KeyF) still focuses the box
+    await content.click({ position: { x: 5, y: 5 } })
+    await expect(search).not.toBeFocused()
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ㄹ', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })))
+    await expect(search).toBeFocused()
 
     // «dictation»: Chat alone, its setting under it; Enter opens it there and lights it
     await page.keyboard.type('dictation')

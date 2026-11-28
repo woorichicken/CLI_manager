@@ -44,6 +44,12 @@ test.describe('T205 unit', () => {
         expect(composerPieces('other words (climanager://session/205b0002)', { commands: null, codex: false, sessionName: name }).filter((p) => p.kind).map((p) => p.text)).toEqual([
             '(climanager://session/205b0002)'
         ])
+        // a name that holds a link shape: one piece, each character drawn once
+        const linky = (ref: string): string | undefined => (ref === '205c0003' ? 'see (climanager://session/205b0002)' : undefined)
+        const nested = 'go see (climanager://session/205b0002) (climanager://session/205c0003) now'
+        const nestedPieces = composerPieces(nested, { commands: null, codex: false, sessionName: linky })
+        expect(nestedPieces.map((piece) => piece.text).join('')).toBe(nested)
+        expect(nestedPieces.filter((piece) => piece.kind).map((piece) => piece.text)).toEqual(['see (climanager://session/205b0002) (climanager://session/205c0003)'])
         // not a mention: no brackets, a longer word, too short a ref
         for (const words of ['climanager://session/205b0002', '(climanager://session/205b0002zz)', '(climanager://session/205b)']) {
             expect(composerPieces(words, { commands: null, codex: false }).every((piece) => piece.kind === null), words).toBe(true)

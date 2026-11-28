@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Search, X } from 'lucide-react'
 import { searchSettings, type SettingsCategory, type SettingsEntry } from './settingsIndex'
 import { hasPrimaryModifier } from '../utils/platform'
+import { keyFromCode } from '../hooks/useKeyboardShortcuts'
 
 export interface SettingsCategoryGroup {
     label: string
@@ -54,7 +55,8 @@ export function SettingsCategoryList({
     // ⌘F (Ctrl+F off macOS — on a Mac Ctrl+F is a text box's own key) while Settings is open: the search box
     useEffect(() => {
         const onKey = (event: KeyboardEvent): void => {
-            if (hasPrimaryModifier(event) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
+            // the key's name, or the physical key: with a Korean input source ⌘F says 'ㄹ' (as useKeyboardShortcuts reads it)
+            if (hasPrimaryModifier(event) && !event.altKey && !event.shiftKey && (event.key.toLowerCase() === 'f' || keyFromCode(event.code) === 'f')) {
                 event.preventDefault()
                 event.stopPropagation()
                 input.current?.focus()

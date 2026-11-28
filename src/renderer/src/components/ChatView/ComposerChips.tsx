@@ -92,11 +92,17 @@ export function ModelChip({
         const group = effortGroup.current
         group?.scrollIntoView({ block: 'nearest' })
         // the current level, else the group's first row (a selector list would match in document order)
-        ;(group?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ?? group?.querySelector<HTMLButtonElement>('button'))?.focus()
+        // Codex has no levels here: the picker row, which sets it
+        ;(group?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ??
+            group?.querySelector<HTMLButtonElement>('button') ??
+            group?.parentElement?.querySelector<HTMLButtonElement>('[data-testid="chat-model-picker"]'))?.focus()
     }, [open, atEffort, confirm, refused])
     /** the panel's opening the answer belongs to: one that comes after it was closed (or reopened) is dropped */
     const opening = useRef(0)
     const model = meta?.model ? modelLabel(meta.model) : null
+    // Claude Code 2.1.332 saves low · medium · high · xhigh as the default; `max` it keeps for the session only
+    // (its persist check takes those four, and answers «(this session only)» for max)
+    const sessionOnly = confirm?.text === '/effort max'
     const close = (): void => {
         opening.current++
         setOpen(false)
@@ -178,12 +184,14 @@ export function ModelChip({
                         </div>
                     </div>
                 ) : confirm ? (
-                    <div className="chat-confirm" data-testid="chat-model-confirm" data-kind={confirm.kind ?? 'model'}>
+                    <div className="chat-confirm" data-testid="chat-model-confirm" data-kind={confirm.kind ?? 'model'} data-session-only={sessionOnly ? 'true' : undefined}>
                         <p className="chat-confirm-title">
-                            <AlertTriangle size={13} aria-hidden="true" /> Also changes the default
+                            <AlertTriangle size={13} aria-hidden="true" /> {sessionOnly ? 'This session only' : 'Also changes the default'}
                         </p>
                         <p>
-                            {confirm.kind === 'effort'
+                            {sessionOnly
+                                ? `Claude Code keeps ${confirm.label} for this session only — it does not save max as a default, so new Claude sessions keep the effort they had.`
+                                : confirm.kind === 'effort'
                                 ? `Claude Code saves a /effort choice as your default for new sessions (its settings.json). This also changes your default effort for new Claude sessions: they will use ${confirm.label}.`
                                 : agent === 'claude'
                                 ? `Claude Code saves a /model choice as your default for new sessions (its settings.json). This session and every new Claude Code session will use ${confirm.label}.`
@@ -252,17 +260,10 @@ export function ModelChip({
                                     )
                                 })
                             ) : (
-                                // Codex sets reasoning inside its /model picker: only the terminal can show it
-                                <button
-                                    type="button"
-                                    role="menuitem"
-                                    className="chat-menu-item"
-                                    data-testid="chat-effort-terminal"
-                                    onClick={() => setConfirm({ text: '/model', label: 'the model you pick' })}
-                                >
-                                    <span>Change in Terminal</span>
-                                    <span className="chat-menu-note">Codex sets it in /model</span>
-                                </button>
+                                // Codex sets reasoning inside its /model picker — the «Change model or effort…» row above opens it
+                                <p className="chat-menu-caption" data-testid="chat-effort-terminal">
+                                    Codex sets it in its /model picker: Change model or effort… above, in the terminal.
+                                </p>
                             )}
                         </div>
                     </div>
