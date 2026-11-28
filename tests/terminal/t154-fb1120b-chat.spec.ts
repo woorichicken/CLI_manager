@@ -146,7 +146,7 @@ test('T154 551ee952 · c04532a6 · b808043e · 66e5ad19: Show opens the thread, 
     await field.fill('not this')
     await field.press('Escape')
     await expect(panel).toBeVisible()
-    await expect(panel.getByTestId('chat-thread-rename')).toHaveText(oldName)
+    await expect(panel.getByTestId('chat-thread-rename')).toHaveText(oldName.replace(/ · thread$/, ''))  // the head drops the « · thread» tail (T200)
     await panel.getByTestId('chat-thread-rename').click()
     await field.fill('Pricing follow-up')
     await field.press('Enter')

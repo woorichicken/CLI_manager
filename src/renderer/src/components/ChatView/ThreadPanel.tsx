@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { ExternalLink, MessagesSquare, X } from 'lucide-react'
 import type { ChatThread } from '../../../../shared/conversation'
+import { threadDisplayName } from './threadTurns'
 
 const STATUS_WORDS: Record<ChatThread['status'], string> = { working: 'Working', waiting: 'Waiting for you', idle: 'Idle' }
 
@@ -30,14 +31,19 @@ function saveWidth(width: number | null): void {
     }
 }
 
+/** The gap left of the panel plus its right margin, side by side (chat.css `.chat-view.has-thread`, bda9e39b). */
+const THREAD_PANEL_GAP_PX = 18
+
 /** The widest the panel may be in a chat view this wide. */
 function widestFor(viewWidth: number): number {
-    return Math.max(THREAD_PANEL_MIN_WIDTH, Math.min(THREAD_PANEL_MAX_WIDTH, viewWidth - THREAD_PANEL_MAIN_MIN_WIDTH))
+    return Math.max(THREAD_PANEL_MIN_WIDTH, Math.min(THREAD_PANEL_MAX_WIDTH, viewWidth - THREAD_PANEL_MAIN_MIN_WIDTH - THREAD_PANEL_GAP_PX))
 }
 
 /**
  * The thread's name; a click edits it in place (b808043e) — Enter or leaving the field saves, Escape keeps
- * the old one. Until the thread list catches up the saved name stays on screen.
+ * the old one. Until the thread list catches up the saved name stays on screen. The head shows it without the
+ * « · thread» tail (8d1fe130) — the full name is in the tooltip, and editing starts from the full name, so a save
+ * never drops the tail unseen.
  */
 function ThreadName({ name, onRename }: { name: string; onRename?: (name: string) => Promise<boolean> }) {
     const [editing, setEditing] = useState(false)
@@ -50,12 +56,13 @@ function ThreadName({ name, onRename }: { name: string; onRename?: (name: string
     useLayoutEffect(() => {
         if (editing) field.current?.select()
     }, [editing])
-    const shown = saved ?? name
-    if (!onRename) return <span className="chat-thread-panel-name" title={shown}>{shown}</span>
+    const full = saved ?? name
+    const shown = threadDisplayName(full)
+    if (!onRename) return <span className="chat-thread-panel-name" title={full}>{shown}</span>
     if (!editing) {
         return (
-            <button type="button" className="chat-thread-panel-name" data-testid="chat-thread-rename" title={`${shown} — click to rename`}
-                onClick={() => { finished.current = false; setDraft(shown); setEditing(true) }}>
+            <button type="button" className="chat-thread-panel-name" data-testid="chat-thread-rename" title={`${full} — click to rename`}
+                onClick={() => { finished.current = false; setDraft(full); setEditing(true) }}>
                 {shown}
             </button>
         )
@@ -65,7 +72,7 @@ function ThreadName({ name, onRename }: { name: string; onRename?: (name: string
         finished.current = true
         setEditing(false)
         const next = draft.trim()
-        if (!save || !next || next === shown) return
+        if (!save || !next || next === full) return
         setSaved(next)
         void onRename(next).then((ok) => { if (!ok) setSaved(null) }, () => setSaved(null))
     }
@@ -81,11 +88,22 @@ function ThreadName({ name, onRename }: { name: string; onRename?: (name: string
     )
 }
 
+/**
+ * The reply a thread hangs on, as a message like the chat's own (c04532a6). It is the thread conversation's first
+ * item, so it scrolls away with the replies (271a1e32) — the child ChatView draws it at the top of its column.
+ */
+export function ThreadQuote({ quote, agentName }: { quote: string; agentName: string }) {
+    return (
+        <div className="chat-thread-quote" data-testid="chat-thread-quote">
+            {quote && <blockquote className="chat-thread-quote-text">{quote}</blockquote>}
+            <div className="chat-thread-quote-label">Replying to {agentName}</div>
+        </div>
+    )
+}
+
 /** A shell around a child ChatView: keeping it as children avoids a recursive view import. */
-export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, onRename, children }: {
+export function ThreadPanel({ thread, onClose, onOpenSession, onRename, children }: {
     thread: ChatThread
-    agentName: string
-    quote: string
     onClose: () => void
     onOpenSession?: () => void
     onRename?: (name: string) => Promise<boolean>
@@ -198,11 +216,6 @@ export function ThreadPanel({ thread, agentName, quote, onClose, onOpenSession, 
                     <span>{STATUS_WORDS[thread.status]}</span>
                 </div>
             </header>
-            {/* the reply it hangs on, as a message like the chat's own (c04532a6) */}
-            <div className="chat-thread-quote" data-testid="chat-thread-quote">
-                {quote && <blockquote className="chat-thread-quote-text">{quote}</blockquote>}
-                <div className="chat-thread-quote-label">Replying to {agentName}</div>
-            </div>
             <div className="chat-thread-body">{children}</div>
         </aside>
     )

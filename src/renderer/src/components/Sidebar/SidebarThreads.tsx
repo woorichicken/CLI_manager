@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import { Columns2, X } from 'lucide-react'
 import { RENAME_FOCUS_GRACE_MS } from '../SessionTabs/SessionTabBar'
 import type { ChatThread, ChatThreadEntry } from '../../../../shared/conversation'
+import { threadDisplayName } from '../ChatView/threadTurns'
 
 const TIME_REFRESH_MS = 30_000
 const STATUS_WORDS: Partial<Record<ChatThread['status'], string>> = { waiting: 'Waiting for you', working: 'Working' }
@@ -131,7 +132,7 @@ export function SidebarThreads({ threads, selectedChildId, activeSessionId, onOp
                                 aria-hidden="true"
                                 className={`shrink-0 w-2 h-2 rounded-full border ${DOT_CLASSES[thread.status]}`}
                             />
-                            <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-gray-200" title={thread.name}>{thread.name}</span>
+                            <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-gray-200" title={thread.name}>{threadDisplayName(thread.name)}</span>
                             {/* room for the split icon over this corner */}
                             <span className="shrink-0 w-5" aria-hidden="true" />
                             {/* the × takes this corner while the row is pointed at or reached from the keyboard (a mouse click's focus does not keep it) */}

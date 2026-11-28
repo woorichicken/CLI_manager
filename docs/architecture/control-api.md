@@ -112,7 +112,7 @@ For MCP, set the header in the client config, e.g. Claude Code `.mcp.json`:
 
 `POST /v1/sessions/:id/fork` / MCP `fork_session` is the Chat view's **Fork** button for an AI: a new
 session that continues the conversation, opened **in the background** (no focus) in the same
-workspace and session folder, named `<name> · fork`, recorded as `opened` from the forked session in
+workspace and session folder, named `<name> · thread` (`· fork` before fb-1128), recorded as `opened` from the forked session in
 Related. Use it when the user **explicitly** asks to split a conversation — the MCP instructions and
 the `climanager-session` skill (`clim fork`) say so; an agent does not split on its own.
 
