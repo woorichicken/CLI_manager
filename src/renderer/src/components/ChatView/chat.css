@@ -314,6 +314,7 @@ button.chat-thread-panel-name:hover { background: var(--chat-soft); }
 .chat-popover.is-end { right: 0; }
 .chat-popover.chat-thread-list { bottom: auto; min-width: 0; max-width: none; z-index: 32; }
 .chat-menu-list { display: flex; flex-direction: column; }
+.chat-menu-group { display: flex; flex-direction: column; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--chat-line); }
 .chat-menu-caption { color: var(--chat-faint); font-size: 0.86em; padding: 4px 8px 6px; overflow-wrap: anywhere; }
 .chat-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; border-radius: 6px; text-align: left; }
 .chat-menu-item:hover { background: var(--chat-soft); }

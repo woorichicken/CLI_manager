@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp, Plus, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Reorder, useDragControls } from 'framer-motion'
+import { GripVertical, Plus, X } from 'lucide-react'
 import { QUICK_REPLY_COLORS, keepQuickReplyColors, quickReplyColorOf, type QuickReplyColor } from '../../../shared/conversation'
 // the colour dot is the chat's own chip (.chat-quick-reply), so it shows exactly what the chat will
 import './ChatView/chat.css'
@@ -75,9 +76,9 @@ interface QuickReplyEditorProps {
 }
 
 /**
- * Settings › Chat › Quick replies as one list (report c44bf0af): per row the colour dot (the chat's
- * chip in its colour; a small radio group pops from it), the reply's text, move up / down and delete,
- * then «+ Add reply». It replaces a text box with a second «Colour» list under it that repeated every reply.
+ * Settings › Chat › Quick replies as one list (report c44bf0af): per row a grip to drag it (5b907de1 —
+ * the sidebar's framer-motion Reorder; on the keyboard ↑ / ↓ or ⌥↑ / ⌥↓ on the grip), the colour dot (the
+ * chat's chip in its colour; a small radio group pops from it), the reply's text and delete, then «+ Add reply». It replaces a text box with a second «Colour» list under it that repeated every reply.
  * Saved as before — `quickReplies` strings and `quickReplyColors` by text — so the chat and phones read it unchanged.
  */
 export function QuickReplyEditor({ replies, colors, onChange }: QuickReplyEditorProps) {
@@ -119,9 +120,13 @@ export function QuickReplyEditor({ replies, colors, onChange }: QuickReplyEditor
 
     const edit = (id: number, patch: Partial<Row>): void => commit(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)))
     const move = (index: number, step: -1 | 1): void => {
+        const to = index + step
+        if (to < 0 || to >= rows.length) return
         const next = [...rows]
-        ;[next[index], next[index + step]] = [next[index + step], next[index]]
+        ;[next[index], next[to]] = [next[to], next[index]]
         commit(next)
+        // the grip keeps the focus as its row moves, so ↓ ↓ walks it down
+        setFocusId(`${rows[index].id}-grip`)
     }
     const remove = (index: number): void => {
         const next = rows.filter((_, i) => i !== index)
@@ -143,16 +148,21 @@ export function QuickReplyEditor({ replies, colors, onChange }: QuickReplyEditor
 
     return (
         <div ref={listRef} data-testid="quick-reply-editor" className="space-y-1.5">
+            {/* the rows are the values (the colour rides with its row); a drag commits each swap, as the arrows do */}
+            <Reorder.Group axis="y" values={rows} onReorder={commit} as="div" className="space-y-1.5">
             {rows.map((row, index) => {
                 const text = row.text.trim()
                 const repeat = text !== '' && seen.has(text)
                 if (text) seen.add(text)
                 return (
-                    <div
+                    <DraggableRow
                         key={row.id}
-                        data-testid={`quick-reply-row-${index}`}
-                        data-duplicate={repeat ? 'true' : undefined}
-                        className="relative flex items-center gap-2"
+                        row={row}
+                        index={index}
+                        count={rows.length}
+                        repeat={repeat}
+                        ring={ring}
+                        onMove={(step) => move(index, step)}
                     >
                         <ColorDot
                             index={index}
@@ -176,20 +186,13 @@ export function QuickReplyEditor({ replies, colors, onChange }: QuickReplyEditor
                             className={`flex-1 min-w-0 bg-black/30 border border-white/10 rounded px-2.5 py-1.5 text-sm focus:outline-none focus:border-blue-500 ${repeat ? 'text-gray-500' : 'text-white'}`}
                         />
                         {repeat && <span className="text-[11px] text-gray-500 shrink-0">Repeat</span>}
-                        <div className="flex items-center shrink-0">
-                            <button type="button" aria-label="Move up" title="Move up" data-testid={`quick-reply-up-${index}`} disabled={index === 0} onClick={() => move(index, -1)} className={iconButton}>
-                                <ChevronUp size={14} />
-                            </button>
-                            <button type="button" aria-label="Move down" title="Move down" data-testid={`quick-reply-down-${index}`} disabled={index === rows.length - 1} onClick={() => move(index, 1)} className={iconButton}>
-                                <ChevronDown size={14} />
-                            </button>
-                            <button type="button" aria-label="Delete reply" title="Delete reply" data-testid={`quick-reply-delete-${index}`} data-focus-id={`${row.id}-delete`} onClick={() => remove(index)} className={iconButton}>
-                                <X size={14} />
-                            </button>
-                        </div>
-                    </div>
+                        <button type="button" aria-label="Delete reply" title="Delete reply" data-testid={`quick-reply-delete-${index}`} data-focus-id={`${row.id}-delete`} onClick={() => remove(index)} className={`${iconButton} shrink-0`}>
+                            <X size={14} />
+                        </button>
+                    </DraggableRow>
                 )
             })}
+            </Reorder.Group>
             <div className="flex items-center justify-between gap-3 pt-1">
                 <button
                     type="button"
@@ -205,6 +208,60 @@ export function QuickReplyEditor({ replies, colors, onChange }: QuickReplyEditor
                 <p className="text-[11px] text-gray-500">Up to {MAX_QUICK_REPLIES}. Empty rows and repeats are not saved.</p>
             </div>
         </div>
+    )
+}
+
+interface DraggableRowProps {
+    row: Row
+    index: number
+    count: number
+    repeat: boolean
+    ring: string
+    onMove: (step: -1 | 1) => void
+    children: ReactNode
+}
+
+/**
+ * One reply row in the Reorder list. A hook per row (useDragControls), so its own component — as the
+ * sidebar's ReorderableRow. Only the grip starts a drag: the text box keeps its own clicks and selection.
+ */
+function DraggableRow({ row, index, count, repeat, ring, onMove, children }: DraggableRowProps) {
+    const dragControls = useDragControls()
+    return (
+        <Reorder.Item
+            as="div"
+            value={row}
+            dragListener={false}
+            dragControls={dragControls}
+            transition={{ layout: { duration: 0 } }}
+            data-testid={`quick-reply-row-${index}`}
+            data-duplicate={repeat ? 'true' : undefined}
+            className="relative flex items-center gap-2"
+        >
+            <button
+                type="button"
+                data-testid={`quick-reply-grip-${index}`}
+                data-focus-id={`${row.id}-grip`}
+                aria-label={`Move reply ${index + 1} of ${count} — drag, or press ↑ / ↓`}
+                title="Drag to reorder (↑ / ↓ on the keyboard)"
+                onPointerDown={(event) => {
+                    if (event.button !== 0) return
+                    event.preventDefault()
+                    dragControls.start(event)
+                }}
+                onKeyDown={(event) => {
+                    // ↑ / ↓, or ⌥↑ / ⌥↓ as a list editor elsewhere takes them
+                    const step = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0
+                    if (step === 0 || event.metaKey || event.ctrlKey || event.shiftKey) return
+                    event.preventDefault()
+                    onMove(step)
+                }}
+                className={`w-4 h-6 shrink-0 flex items-center justify-center rounded text-gray-500 hover:text-gray-200 cursor-grab active:cursor-grabbing touch-none ${ring}`}
+            >
+                <GripVertical size={14} aria-hidden="true" />
+            </button>
+            {children}
+        </Reorder.Item>
     )
 }
 

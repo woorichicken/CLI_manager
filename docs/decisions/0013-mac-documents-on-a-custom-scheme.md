@@ -56,6 +56,9 @@ to serve the page from.
   window or a pane, a link to another page, Side by side, Preview → Source, and a sidebar click or a session link that would replace a document pane ask «Keep open / Close anyway» in the app. Source view, the phone
   frame (0011) and a pane that goes because a session ended do not ask.
 - The Source view of a page over 500 KB says it is too large; Browser or an editor reads it.
+- ⌘+ / ⌘- / ⌘0 with the focus in a document zoom that document only (5c6ddf8f): the window lays the frame element out
+  at 1/zoom of its box and scales it back with `transform` — the page's CSS, its policy and the bridge are untouched, and the
+  keys still reach the window through main's `before-input-event`. Kept per path in memory, not saved.
 - A page can make the preview show another page of its own folder (or below it) without a click — even in `~/Downloads`, where
   its token serves nothing beside it. It is a page the person could open; the new page gets its own token and frame.
 - A page can still send itself out over WebRTC, which CSP cannot stop (as 0011). It holds no API answer and no cookie.

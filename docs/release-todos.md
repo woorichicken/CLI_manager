@@ -42,3 +42,11 @@ whose version has shipped, then deletes them in a commit that says what was done
   - **Do**: `~/skills/macbook-cc/climanager-session/references/app.md` 「fork」 line — `<이름> · fork` → `<이름> · thread`
     (the release after 1.38.0; older apps still name it ` · fork`). Nothing in `clim.mjs` reads the tail.
   - **Not before**: the installed app still writes ` · fork`, and the skill would describe a name the person does not see.
+- **Check ⌘+ / ⌘- / ⌘0 inside an HTML document with the real keyboard** (fb-1128 5c6ddf8f, branch `fix/fb-1128-composer`)
+  - **Waits for**: the release that carries the document zoom.
+  - **Do**: in the installed app open a `.html` preview (and a split document pane), click inside the document, press ⌘+
+    twice and ⌘0 on the keyboard. The document should grow and come back; the terminal font must not change. T209 sends
+    the keys with `webContents.sendInputEvent`, which reaches main whatever has focus, so it does not prove that a key
+    pressed while the out-of-process frame holds focus reaches `before-input-event`. If it does not, the bridge script
+    has to send the keydown up (one line in decision 0013) — then reopen 5c6ddf8f.
+  - **Not before**: an older app has no document zoom at all.

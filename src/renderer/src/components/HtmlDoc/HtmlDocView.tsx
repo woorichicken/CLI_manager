@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { DocPreviewOpenResult } from '../../../../shared/docPreview'
 import { DOC_PREVIEW_MESSAGE, DOC_PREVIEW_SANDBOX, docPreviewSibling } from '../../../../shared/docPreview'
+import { nextDocZoom } from '../../utils/docZoom'
 
 /**
  * An HTML report, drawn or as its source — the preview window's body (A) and a split pane's (B).
@@ -36,9 +37,51 @@ export function HtmlDocView({ path, line, source, onNavigate, onFrameFocus, leav
     return source ? <HtmlSource path={path} line={line} /> : <HtmlFrame path={path} onNavigate={onNavigate} onFrameFocus={onFrameFocus} leaveGuard={leaveGuard} />
 }
 
+/** each document's zoom while the app runs (memory only — not saved) */
+const zoomByPath = new Map<string, number>()
+/** the drawn frames on screen, each with its zoom key handler */
+const zoomTargets = new Map<HTMLIFrameElement, (key: string) => void>()
+
+/**
+ * ⌘+ / ⌘- / ⌘0 (main sends them as `terminal-zoom`): zooms the document that has the focus — the page itself (a frame
+ * with the focus is the window's active element) or its preview window or split pane (`data-doc-zoom-scope`) — and
+ * returns true, so the terminals keep their font. False when no document has the focus.
+ */
+export function zoomFocusedDocument(key: string): boolean {
+    const active = document.activeElement
+    if (!active || active === document.body) return false
+    for (const [frame, zoom] of zoomTargets) {
+        if (active === frame || frame.closest('[data-doc-zoom-scope]')?.contains(active)) {
+            zoom(key)
+            return true
+        }
+    }
+    return false
+}
+
 function HtmlFrame({ path, onNavigate, onFrameFocus, leaveGuard }: Pick<HtmlDocViewProps, 'path' | 'onNavigate' | 'onFrameFocus' | 'leaveGuard'>) {
     const [opened, setOpened] = useState<DocPreviewOpenResult | null>(null)
     const frameRef = useRef<HTMLIFrameElement>(null)
+    // ⌘+ / ⌘- (5c6ddf8f): the frame element is drawn larger and laid out smaller, as a browser zooms — the page's own
+    // CSS, its policy and the bridge stay as they are (decision 0013)
+    const [zoom, setZoom] = useState(() => zoomByPath.get(path) ?? 1)
+    useEffect(() => setZoom(zoomByPath.get(path) ?? 1), [path])
+    const live = opened?.status === 'ok'
+    useEffect(() => {
+        const frame = frameRef.current
+        if (!frame || !live) return
+        zoomTargets.set(frame, (key) =>
+            setZoom((current) => {
+                const next = nextDocZoom(current, key) ?? current
+                if (next === 1) zoomByPath.delete(path)
+                else zoomByPath.set(path, next)
+                return next
+            })
+        )
+        return () => {
+            zoomTargets.delete(frame)
+        }
+    }, [path, live])
     const handlers = useRef({ onNavigate, onFrameFocus, path })
     handlers.current = { onNavigate, onFrameFocus, path }
     // typed and not copied, as the bridge last said; and what waits for «Close anyway»
@@ -115,7 +158,7 @@ function HtmlFrame({ path, onNavigate, onFrameFocus, leaveGuard }: Pick<HtmlDocV
         )
     }
     return (
-        <div className="relative w-full h-full">
+        <div className="relative w-full h-full overflow-hidden">
             <iframe
                 ref={frameRef}
                 data-testid="html-doc-frame"
@@ -124,8 +167,24 @@ function HtmlFrame({ path, onNavigate, onFrameFocus, leaveGuard }: Pick<HtmlDocV
                 src={opened.url}
                 sandbox={DOC_PREVIEW_SANDBOX}
                 referrerPolicy="no-referrer"
+                data-zoom={zoom}
                 className="w-full h-full border-0 bg-white block"
+                style={zoom === 1 ? undefined : { width: `${100 / zoom}%`, height: `${100 / zoom}%`, transform: `scale(${zoom})`, transformOrigin: '0 0' }}
             />
+            {zoom !== 1 && (
+                <button
+                    type="button"
+                    data-testid="html-doc-zoom"
+                    title="Zoom — ⌘0 or click for 100%"
+                    onClick={() => {
+                        zoomByPath.delete(path)
+                        setZoom(1)
+                    }}
+                    className="absolute top-2 right-3 z-10 px-2 py-0.5 rounded-full bg-black/70 text-white text-[11px] tabular-nums shadow"
+                >
+                    {Math.round(zoom * 100)}%
+                </button>
+            )}
             {pending && (
                 <div
                     role="alertdialog"

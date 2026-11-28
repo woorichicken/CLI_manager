@@ -188,7 +188,7 @@ export function SplitTerminalHeader({
         const buttonClass = 'p-2 hover:bg-white/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
         return (
             <div className="flex items-center gap-2 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                {isAgentSession(session) && <SessionViewToggle sessionId={session.id} />}
+                {isAgentSession(session) && <SessionViewToggle sessionId={session.id} labels />}
                 {onShowSession && <ParentSessionButton parents={parents} onShow={onShowSession} />}
                 {onOpenRelated && (
                     <RelatedSessionsButton sessionId={session.id} count={relatedCount} onOpen={onOpenRelated} />
