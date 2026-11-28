@@ -21,7 +21,8 @@ export function SessionChatSlot({
     fontSize,
     preferences,
     onSessionLink,
-    onRenameSession
+    onRenameSession,
+    isThread = false
 }: {
     sessionId: string
     visible: boolean
@@ -33,6 +34,8 @@ export function SessionChatSlot({
     onSessionLink?: (uri: string) => void
     /** a session renamed from the chat (a thread panel's name) */
     onRenameSession?: (sessionId: string, name: string) => Promise<boolean>
+    /** a reply thread: its chat starts no threads of its own (12bf830d) */
+    isThread?: boolean
 }) {
     const mode = useSessionViewMode(sessionId)
     const peek = useSessionPeek(sessionId)
@@ -61,6 +64,7 @@ export function SessionChatSlot({
             preferences={preferences}
             onSessionLink={onSessionLink}
             onRenameSession={onRenameSession}
+            isThread={isThread}
             onOpenSessionTerminal={(childId, command) => {
                 setSessionViewMode(childId, 'terminal')
                 if (command) setSessionPeek(childId, command)

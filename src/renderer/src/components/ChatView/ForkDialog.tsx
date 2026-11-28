@@ -14,7 +14,7 @@ export interface ForkTarget {
 }
 
 /**
- * «Fork into a new session» from one reply: what to carry over (the agent's own fork of the whole
+ * «Reply in thread» with options (Shift+click) from one reply: what to carry over (the agent's own fork of the whole
  * conversation, or an excerpt up to this reply), the first message, and «Quote this reply». The new
  * session opens behind this one — the dialog closes at once and `ForkNotice` follows the request.
  */
@@ -49,7 +49,7 @@ export function ForkDialog({
                 className="chat-fork-dialog"
                 role="dialog"
                 aria-modal="true"
-                aria-label="Fork into a new session"
+                aria-label="Reply in thread"
                 onKeyDown={(event) => {
                     if (event.key === 'Escape') {
                         event.preventDefault()
@@ -62,7 +62,7 @@ export function ForkDialog({
                 }}
             >
                 <div className="chat-fork-title">
-                    <GitFork size={14} aria-hidden="true" /> Fork into a new session
+                    <GitFork size={14} aria-hidden="true" /> Reply in thread
                     <button type="button" className="chat-fork-close" aria-label="Cancel" onClick={onCancel}>
                         <X size={14} />
                     </button>
@@ -73,7 +73,7 @@ export function ForkDialog({
                         <input type="radio" name="chat-fork-scope" checked={scope === 'whole'} disabled={wholeUnavailable !== null} onChange={() => setScope('whole')} />
                         <span>
                             <strong>Whole conversation</strong>
-                            <small>{wholeUnavailable ?? `${name}'s own fork of this conversation. The replies after this one come along too.`}</small>
+                            <small>{wholeUnavailable ?? `${name} carries this whole conversation over. The replies after this one come along too.`}</small>
                         </span>
                     </label>
                     <label data-testid="chat-fork-scope-excerpt">
@@ -100,14 +100,14 @@ export function ForkDialog({
                     <span>Quote this reply{scope === 'excerpt' ? ' — the excerpt ends with it' : ''}</span>
                 </label>
                 <p className="chat-fork-note">
-                    Same workspace, same {name} start command, named after this session with « · fork», under this one in Related. It opens behind — you stay here.
+                    Same workspace, same {name} start command, named after this session with « · thread», under this one in Related. It opens behind — you stay here.
                 </p>
                 <div className="chat-fork-actions">
                     <button type="button" data-testid="chat-fork-cancel" onClick={onCancel}>
                         Cancel
                     </button>
                     <button type="button" className="chat-fork-primary" data-testid="chat-fork-submit" onClick={submit}>
-                        Fork
+                        Start thread
                     </button>
                 </div>
             </div>
@@ -128,10 +128,10 @@ export function ForkNotice({ progress, onShow, onDismiss }: { progress: ForkProg
         return () => window.clearTimeout(timer)
     }, [result, onDismiss])
     const text = !result
-        ? 'Opening the new session…'
+        ? 'Opening the thread…'
         : result.status === 'rejected'
-          ? `Not forked: ${result.message}`
-          : `Forked into «${result.name}».${result.note ? ` ${result.note}` : result.messageSent ? ' The first message went in.' : ''}`
+          ? `No thread started: ${result.message}`
+          : `Thread «${result.name}» started.${result.note ? ` ${result.note}` : result.messageSent ? ' The first message went in.' : ''}`
     return (
         <div className="chat-fork-notice" role="status" data-testid="chat-fork-notice" data-state={!result ? 'opening' : result.status}>
             {!result ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <GitFork size={14} aria-hidden="true" />}

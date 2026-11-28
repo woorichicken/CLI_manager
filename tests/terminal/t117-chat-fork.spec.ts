@@ -117,7 +117,7 @@ interface StoredSession {
 function readConfig(): { workspaces: { id: string; sessions: StoredSession[] }[]; sessionRelations?: { from: string; to: string; kind: string; anchor?: { turnTs: string; turnIndex?: number } }[] } {
     return JSON.parse(fs.readFileSync(path.join(result!.userDataDir, 'config.json'), 'utf8'))
 }
-const forks = (): StoredSession[] => readConfig().workspaces.flatMap((w) => w.sessions).filter((s) => s.name.endsWith(' · fork'))
+const forks = (): StoredSession[] => readConfig().workspaces.flatMap((w) => w.sessions).filter((s) => s.name.endsWith(' · thread'))
 
 const terminalLines = (page: Page, id: string): Promise<string> =>
     page.evaluate((sessionId) => window.api.feedbackTerminalContext(sessionId).then((c) => (c.terminal?.recentLines ?? []).join('\n')), id)
@@ -351,7 +351,7 @@ test('T117 Mac: threads open beside the parent, hide inherited turns, and send o
     await expect(waitingRow.getByTestId('chat-thread-status-dot')).toHaveAttribute('data-status', 'waiting')
     await expect(list.locator(`[data-child-id="${second.id}"]`).getByTestId('chat-thread-status-dot')).toHaveAttribute('data-status', 'idle')
     for (const row of await list.getByTestId('chat-thread-session').all()) {
-        await expect(row).toContainText('T117 Claude · fork')
+        await expect(row).toContainText('T117 Claude · thread')
         await expect(row).toContainText(/working|waiting|idle/i)
         await expect(row).toContainText(/ago|now/)
         const aligned = await row.evaluate((element) => {
@@ -556,7 +556,7 @@ test('T117 API: REST and MCP fork — the latest reply by default, an AI mark on
     // the agent in the parent asks to split itself: the latest reply, whole conversation
     const rest = await api(`/v1/sessions/${PARENT}/fork`, { message: 'API branch: only the docs' }, PARENT)
     expect(rest.status).toBe(201)
-    expect(rest.json.session.name).toBe('T117 Claude · fork')
+    expect(rest.json.session.name).toBe('T117 Claude · thread')
     expect(rest.json.scope).toBe('whole')
     expect(rest.json.messageSent).toBe(true)
     const first = forks().find((s) => s.id === rest.json.session.id)!
