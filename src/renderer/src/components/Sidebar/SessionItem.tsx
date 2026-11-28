@@ -296,7 +296,7 @@ export function SessionItem({
     ) : templateLogo ? (
         <span
             className="shrink-0 flex"
-            title={session.aiControl ? `Driven by AI (${session.aiControl.client}) — right-click → Disconnect AI to take it back` : undefined}
+            title={session.aiControl ? `Driven by AI (${session.aiControl.client}) — turn the AI Control API off in Settings to end its access` : undefined}
         >
             <img
                 src={templateLogo}
@@ -309,7 +309,7 @@ export function SessionItem({
     ) : session.aiControl ? (
         <span
             className="shrink-0 flex"
-            title={`Driven by AI (${session.aiControl.client}) — right-click → Disconnect AI to take it back`}
+            title={`Driven by AI (${session.aiControl.client}) — turn the AI Control API off in Settings to end its access`}
         >
             <Bot size={14} className="text-emerald-400" />
         </span>

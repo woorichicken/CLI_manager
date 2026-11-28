@@ -1868,7 +1868,7 @@ function App() {
                         {!splitLayout && activeAiControl && activeSession && (
                             <span
                                 className="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
-                                title={`AI connected — driven by ${activeAiControl.client}. Right-click the session → Disconnect AI to take it back.`}
+                                title={`AI connected — driven by ${activeAiControl.client}. Turn the AI Control API off in Settings to end its access.`}
                                 aria-label="AI connected"
                                 data-ai-badge={activeSession.id}
                             >

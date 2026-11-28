@@ -415,12 +415,14 @@ test('T104 review A2-A6: resume preserves shell drafts/questions and records API
         await expect(dialog).toHaveCount(0)
     }
     // A quickly exiting stand-in may legitimately be observed. Fail before launching it instead.
-    await page.evaluate(([id, command]) => window.api.updateSessionCliInfo('review', 'plain', id, 'codex', command), [ids[4], `false && ${bin}`])
-    const dialog = await openDialog('plain')
+    // 'plain' is connected above, and a session with a saved conversation has no Connect item (fb-1128
+    // 2ea599ad) — 'caller' has none yet. The stand-in command is stored once its dialog is open.
+    const dialog = await openDialog('caller')
+    await page.evaluate(([id, command]) => window.api.updateSessionCliInfo('review', 'caller', id, 'codex', command), [ids[5], `false && ${bin}`])
     await dialog.getByTestId('conversation-connect').click()
     await expect(dialog).toHaveCount(0)
     await expect(page.getByTestId('draft-handoff-notice')).toContainText('Press Enter in the terminal to resume.')
-    await expect(page.locator('[data-session-id=plain] .xterm-helper-textarea')).toBeFocused()
+    await expect(page.locator('[data-session-id=caller] .xterm-helper-textarea')).toBeFocused()
     await shot('after-unconfirmed-resume.png')
 })
 

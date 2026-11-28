@@ -2,11 +2,14 @@ import { useEffect, useRef } from 'react'
 import { Search, X } from 'lucide-react'
 import { Workspace, WorkspaceFolder } from '../../../../shared/types'
 import type { SessionEntry } from '../../utils/sessionNavigation'
+import { sessionIdQuery } from '../../utils/sessionLink'
 
 // Ranks keep the result the user most likely meant on top, so Enter opens it.
 const RANK_NAME_PREFIX = 0
 const RANK_NAME_CONTAINS = 1
 const RANK_OTHER_FIELD = 2
+/** A session found by the start of its id ranks after every name match (a74575ea). */
+const RANK_SESSION_ID = 3
 
 /**
  * Projects (top-level workspaces) whose name, path, sidebar folder or worktree
@@ -48,16 +51,21 @@ export function findMatchingProjects(
 /**
  * Sessions whose own name matches, in the order the caller gave (sidebar order).
  * A name that starts with the query comes before one that merely contains it,
- * so Enter lands on the closest name.
+ * so Enter lands on the closest name. A session whose id starts with the query
+ * (or with a pasted session link's id) comes after the name matches.
  */
 export function findMatchingSessions(entries: SessionEntry[], query: string): SessionEntry[] {
     const q = query.trim().toLowerCase()
     if (!q) return []
+    const idPrefix = sessionIdQuery(q)
 
     return entries
         .map((entry, index) => {
             const name = entry.session.name.toLowerCase()
-            const rank = name.startsWith(q) ? RANK_NAME_PREFIX : name.includes(q) ? RANK_NAME_CONTAINS : null
+            const rank = name.startsWith(q) ? RANK_NAME_PREFIX
+                : name.includes(q) ? RANK_NAME_CONTAINS
+                    : idPrefix && entry.session.id.toLowerCase().startsWith(idPrefix) ? RANK_SESSION_ID
+                        : null
             return { entry, index, rank }
         })
         .filter((r): r is { entry: SessionEntry; index: number; rank: number } => r.rank !== null)

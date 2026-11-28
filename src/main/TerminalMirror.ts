@@ -556,7 +556,7 @@ export class TerminalMirror {
     flush(id: string): Promise<void> {
         const mirror = this.mirrors.get(id)
         if (!mirror) return Promise.resolve()
-        // Bounded: a mirror disposed mid-flush (user clicked Disconnect AI
+        // Bounded: a mirror disposed mid-flush (the session was released
         // during a wait) never calls back, and a wait must not hang on it.
         return new Promise((resolve) => {
             const timer = setTimeout(resolve, FLUSH_TIMEOUT_MS)
