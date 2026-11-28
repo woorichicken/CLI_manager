@@ -28,6 +28,7 @@ import { TerminalMirror } from './TerminalMirror'
 import { SessionRelations } from './SessionRelations'
 import { SessionFolders, SESSION_FOLDERS_CHANNEL } from './SessionFolders'
 import { checkInboxInput, InboxStore } from './InboxStore'
+import { checkAgentUi } from './agentUi'
 import { ChecklistStatus, ChecklistStore, checkChecklistInput, checkItemTexts, cleanText, isComplete } from './ChecklistStore'
 
 /**
@@ -335,6 +336,20 @@ export interface NotifyInboxInput {
     text?: unknown
     url?: unknown
     /** The session asking. Falls back to `caller` (X-Caller-Session). */
+    sessionId?: string
+    client: string
+    caller?: string
+}
+
+export interface ShowUiInput {
+    /** One line for the inbox row (what the card asks). */
+    text?: unknown
+    /** A2UI v1.0 basic-catalog components (decision 0016). One has id "root". */
+    components?: unknown
+    /** The data model the components bind to with { "@path": "/…" }. */
+    data?: unknown
+    kind?: unknown
+    /** Optional; when given it must equal `caller` — the card is for the session that sends it. */
     sessionId?: string
     client: string
     caller?: string
@@ -1251,6 +1266,49 @@ export class ControlApiService {
             text: check.text,
             ...(check.url ? { url: check.url } : {}),
             client: input.client
+        })
+        return { request: this.describeInbox(request), created }
+    }
+
+    /**
+     * An agent sends a small UI — a question with choices, an approval with a note — that the app
+     * draws with its own parts (decision 0016). v1 shows it under the request's row in the inbox.
+     * A button press types one fixed-format line into this session through the Chat view's send
+     * (refused on a question screen, queued while the agent works, no AI mark). A card is for the
+     * session that sent it: another session's id is refused, so a card cannot type into a session
+     * that did not ask.
+     */
+    showUi(input: ShowUiInput): { request: ApiInboxRequest; created: boolean } {
+        const check = checkInboxInput({ kind: input.kind ?? 'question', text: input.text })
+        if (!check.ok) throw new ControlApiError(400, 'bad_request', check.message)
+        const ui = checkAgentUi({ components: input.components, data: input.data })
+        if (!ui.ok) throw new ControlApiError(400, 'bad_ui', ui.message)
+        // Only from a session, for itself: X-Caller-Session is required and is the target. (The header is
+        // asserted by the caller like everywhere in this API — the bearer token is the access check; this
+        // keeps a card's answer in the session that asked.)
+        const sessionId = input.caller
+        if (!sessionId) {
+            throw new ControlApiError(
+                400,
+                'session_required',
+                'Send the card from the session it is for, with X-Caller-Session (the CLIMANAGER_SESSION_ID of the terminal you run in).'
+            )
+        }
+        const named = input.sessionId?.trim()
+        if (named && named !== sessionId) {
+            throw new ControlApiError(
+                403,
+                'not_your_session',
+                'A card goes to the session that sends it — its answers are typed there. Leave sessionId out.'
+            )
+        }
+        this.requireSession(sessionId)
+        const { request, created } = this.deps.inbox.add({
+            sessionId,
+            kind: check.kind,
+            text: check.text,
+            client: input.client,
+            ui: ui.ui
         })
         return { request: this.describeInbox(request), created }
     }

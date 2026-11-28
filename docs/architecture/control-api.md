@@ -149,6 +149,44 @@ checks it off. The popover's Reply sends an answer to the asking session through
 No OS notification or sound in this version: twenty sessions asking at once would be noise. With the API
 switched off nothing can be sent (the inbox still shows what is kept).
 
+
+## Agent cards
+
+An agent that needs a decision — merge this? which of these? approve with a note? — can send a small card
+instead of prose (decision [0016](../decisions/0016-agent-ui-cards.md)). `POST /v1/ui` / MCP `show_ui` takes
+A2UI v1.0 basic-catalog components and a data model; the inbox draws the card under the request. A button
+press types one line into the sending session: `[CLI Manager card] <event name> <context JSON>`.
+
+| Piece | Contract |
+|---|---|
+| Components | `Card`, `Column`, `Row`, `Text`, `Divider`, `Button`, `TextField` (no `obscured`), `CheckBox`, `ChoicePicker`. Flat list, each with `id` and `component`; one has id `root`; `child`/`children` refer by id; each id is used in one place and every component is reachable from root |
+| Values | Literals, or `{ "@path": "/a/b" }` into `data`. No `@call`, `functionCall`, `userMessage`, `@checks`, templates |
+| Button | `{ "action": { "event": { "name": "approve", "context": { "pr": 324, "note": { "@path": "/note" } } } } }` — name 1–64 of `A-Z a-z 0-9 _ . : -`, at most 8 context keys |
+| Caps | 40 components · depth 8 · 12 children · 12 options · 500 characters a string · 16 KB of JSON |
+| Answer | Built by main from the stored card; only `@path` values come from the person's input (1000 characters each, line ≤ 2000). Sent like Chat: a question on screen or text in the input box refuses it (shown on the card, which stays open), a working agent gets it when its turn ends, no AI mark. Sent or queued → the card locks (`ui.answered`); the request stays unread |
+| Who | The card is for the session that sends it (`X-Caller-Session` required). A session without an agent gets a drawn but inert card |
+| Data | A bound slot's data must be what the part shows: text ← string/number/boolean · CheckBox ← boolean · ChoicePicker ← list of strings (or absent) |
+| Replace | The same unread text again replaces the card with a new `rev` (in the request's `ui`); a press on the old card is refused |
+
+Example:
+
+```json
+{ "text": "Merge PR #324?", "components": [
+  { "id": "root", "component": "Card", "child": "col" },
+  { "id": "col", "component": "Column", "children": ["title", "note", "row"] },
+  { "id": "title", "component": "Text", "text": { "@path": "/title" } },
+  { "id": "note", "component": "TextField", "label": "Note", "value": { "@path": "/note" } },
+  { "id": "row", "component": "Row", "children": ["ok", "no"] },
+  { "id": "okL", "component": "Text", "text": "Approve" },
+  { "id": "noL", "component": "Text", "text": "Hold" },
+  { "id": "ok", "component": "Button", "child": "okL", "variant": "primary",
+    "action": { "event": { "name": "approve", "context": { "pr": 324, "note": { "@path": "/note" } } } } },
+  { "id": "no", "component": "Button", "child": "noL", "action": { "event": { "name": "hold", "context": { "pr": 324 } } } }
+], "data": { "title": "PR #324 — merge?", "note": "" } }
+```
+
+Code: `src/main/agentUi.ts` (checks, answer line) · `ControlApiService.showUi` · main IPC `inbox-ui-action` ·
+renderer `components/AgentUi/`. Tests: `t193-agent-ui-unit.spec.ts`, `t194-agent-ui.spec.ts`.
 ## Checklists
 
 Titled lists with a deadline, usually for one project, shown in the main header — the plan a lead
@@ -392,6 +430,7 @@ All requests: `Authorization: Bearer <token>`. Optional `X-Client-Name` labels t
 | POST | `/v1/sessions/:id/release` | | hands it to the user; clears the AI mark |
 | DELETE | `/v1/sessions/:id` | `?handTo=<session id>` | kills the pty and removes the session — any session, including the user's. `{ ok, handedOver }`: with `handTo`, the closing session's shown Related pairs are first copied to that session (same kind, direction and time; skipped: the pair with `handTo` itself and any partner `handTo` already has a record with, removed ones included). `handTo` equal to the id → `400`, unknown → `404`, and nothing is closed in either case |
 | POST | `/v1/inbox` | `kind`, `text`, `url`; `sessionId` or the `X-Caller-Session` header | `{ request, created }` — see [Inbox](#inbox). `400 session_required`, `404 not_found` |
+| POST | `/v1/ui` | `text`, `components`, `data?`, `kind?` (default `question`); only from the session it is for — `X-Caller-Session` required (`sessionId`, if given, must equal it) | `201 { request, created: true }` (`200` with `created: false` when the same unread text repeats — the card is replaced, unanswered). `400 bad_ui` (first problem in words), `400 session_required`, `403 not_your_session`, `404 not_found` — see [Agent cards](#agent-cards) |
 | GET | `/v1/inbox` | `?unread=1` | `{ unreadCount, requests[] }`, newest first. A request carries `id`, `sessionId`, `sessionName`, `workspaceName`, `kind`, `text`, `url?`, `client`, `read`, `at`, `createdAt`, `readAt` (ISO) |
 | POST | `/v1/inbox/:id/read` | | the request, marked read. `404 not_found` |
 | GET | `/v1/checklists` | `?status=open\|done\|all` (default `open`) · `?project=` | `{ checklists[] }` in header order — see [Checklists](#checklists). A checklist carries `id`, `title`, `workspaceId`, `workspaceName`, `due`, `overdue`, `done`, `total`, `complete`, `items[]` (`id`, `n`, `text`, `done`, `doneAt`), `client`, `createdBy`, `createdByName`, `createdAt`, `updatedAt` (ISO; absent values are `null`) |
@@ -448,7 +487,7 @@ screen has then been quiet for 2s, and no question is showing. Otherwise `prompt
 2024-11-05 … 2025-11-25 are echoed. Tools: `list_workspaces`, `list_templates`, `list_sessions`,
 `open_session` (with `folder`, `session_folder`, `ephemeral`), `send_input` (with optional `wait_seconds`), `wait_for_idle`, `read_output`,
 `focus_session`, `rename_session`, `set_session_labels` (`session_id`, `role`: string or null, `tags`), `release_session`, `close_session` (with `hand_to`), `list_session_folders`, `create_session_folder`, `rename_session_folder`, `delete_session_folder`, `move_session_to_folder` (`session_id`, `folder`: string or null), `list_session_relations`, `fork_session` (`session_id`, `scope`, `message`, `quote`, `turn_index`), `unregister_workspace`, `inbox_notify`
-(`kind`, `text`, `url`, `session_id` — or the caller header), `inbox_list` (`unread_only`), `checklist_list` (`status`, `project`),
+(`kind`, `text`, `url`, `session_id` — or the caller header), `show_ui` (`text`, `components`, `data`, `kind`, `session_id` — see [Agent cards](#agent-cards)), `inbox_list` (`unread_only`), `checklist_list` (`status`, `project`),
 `checklist_create` (`title`, `items`, `due`, `project`), `checklist_update` (`checklist`, `title`, `due`, `project` — null clears),
 `checklist_add_items` (`checklist`, `items`), `checklist_check` (`checklist`, `item` — number from 1 or id, `done` default true; answers
 "<title>: 2/5 checked."), `checklist_remove_item`, `checklist_remove`. The server instructions ask a coordinating agent to keep its plan

@@ -1214,7 +1214,40 @@ export interface InboxRequest {
     readAt?: number
     /** X-Client-Name of the sender. */
     client: string
+    /**
+     * A small UI the agent sent with the request (Control API `show_ui`, decision 0016): A2UI v1.0
+     * basic-catalog components, already checked by main (`agentUi.ts`). The inbox draws it under the
+     * row; a button's answer goes to this session as one fixed-format line.
+     */
+    ui?: AgentUi
 }
+
+/** Components an agent may send (decision 0016) — a subset of the A2UI v1.0 basic catalog. No Image, Icon, media, Modal, Tabs or List. */
+export const AGENT_UI_COMPONENTS = ['Card', 'Column', 'Row', 'Text', 'Divider', 'Button', 'TextField', 'CheckBox', 'ChoicePicker'] as const
+export type AgentUiComponentName = (typeof AGENT_UI_COMPONENTS)[number]
+
+/** One A2UI component as checked by main: `id`, `component` and that component's allowed properties. */
+export type AgentUiComponent = { id: string; component: AgentUiComponentName } & Record<string, unknown>
+
+/** What an agent sent to draw (decision 0016). `root` is the component drawn first. */
+export interface AgentUi {
+    /**
+     * Which version of the card this is — set by the inbox each time a card is stored (a repeat replaces
+     * it). A press names the rev it was drawn from; a press on a replaced card is refused, so the person
+     * never answers what they did not see.
+     */
+    rev?: string
+    components: AgentUiComponent[]
+    /** The A2UI data model the components bind to with `{ "@path": "/…" }`. */
+    data?: Record<string, unknown>
+    /** Set once a button's answer went to the session: the card locks. A refused answer leaves it unset. */
+    answered?: { at: number; action: string; status: 'sent' | 'queued' }
+}
+
+/** What a button press on an agent UI did (decision 0016). `rejected` keeps the card open for another try. */
+export type AgentUiActionResult =
+    | { status: 'sent' | 'queued'; line: string }
+    | { status: 'rejected'; reason: string; message: string }
 
 /**
  * A titled list of items with an optional deadline, usually for one project — shown in

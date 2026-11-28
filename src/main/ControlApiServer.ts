@@ -527,6 +527,18 @@ export class ControlApiServer {
                     caller
                 })
             ),
+            route('POST', '/v1/ui', ({ body, client, caller }) => {
+                const result = service.showUi({
+                    kind: body.kind,
+                    text: body.text,
+                    components: body.components,
+                    data: body.data,
+                    sessionId: optionalString(body, 'sessionId'),
+                    client,
+                    caller
+                })
+                return result.created ? created(result) : result
+            }),
             route('GET', '/v1/inbox', ({ query }) => {
                 const unread = query.get('unread')
                 return service.listInbox({ unreadOnly: unread === '1' || unread === 'true' })

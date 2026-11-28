@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, StatusCommandResult, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
+import { Workspace, TerminalSession, UserSettings, IPCResult, SystemInfo, StatusCommandResult, LOOP_CHANNELS, LoopState, LoopSession, LoopDetectionConfig, LoopUpdatePayload, UsageSnapshot, AgentStatusUpdate, HookInstallState, HookIntegrationSettings, UsageAlertSettings, DiffBase, DiffSummary, FileDiff, SessionStatus, AgentStatusSource, ControlApiSettings, ControlApiState, ControlApiSessionEvent, ControlApiMasters, SessionRelation, SessionFolder, SessionPeek, InboxRequest, AgentUiActionResult, Checklist, TerminalAttachResult, FeedbackRelayRequest, FeedbackRelayResponse, FeedbackTerminalContext, SessionScreenStatusMessage, SESSION_SCREEN_STATUS_CHANNEL } from '../shared/types'
 import { CRON_CHANNELS, CronInput, CronOpenTerminal, CronRun, CronState, CronView } from '../shared/autocron'
 import type { AgentConversationList, AgentConversationConnectInput, AgentConversationConnectResult, AgentConversationFailure, AttachResult, BackgroundTaskList, ChatCommand, ChatForkRequest, ChatForkResult, ChatThread, ChatThreadEntry, ChatSendOptions, ChatSendResult, DraftFromTerminalResult, DraftToTerminalResult, ConversationSnapshot, InterruptResult, PromptAnswer, PromptAnswerResult } from '../shared/conversation'
 import type { PhoneState } from '../shared/types'
@@ -386,6 +386,9 @@ const api = {
     markInboxRead: (id: string): Promise<void> => ipcRenderer.invoke('mark-inbox-read', id),
     markInboxAllRead: (): Promise<void> => ipcRenderer.invoke('mark-inbox-all-read'),
     clearInboxRead: (): Promise<number> => ipcRenderer.invoke('clear-inbox-read'),
+    /** A button on an agent's card (decision 0016): main types the answer line into the card's session. */
+    answerInboxUi: (requestId: string, rev: string | undefined, componentId: string, context: Record<string, unknown>): Promise<AgentUiActionResult> =>
+        ipcRenderer.invoke('inbox-ui-action', requestId, rev, componentId, context),
     getChecklists: (): Promise<Checklist[]> => ipcRenderer.invoke('get-checklists'),
     onChecklists: (callback: (checklists: Checklist[]) => void) => {
         const listener = (_e: unknown, checklists: Checklist[]) => callback(checklists)
