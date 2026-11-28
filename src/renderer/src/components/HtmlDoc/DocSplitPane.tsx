@@ -49,6 +49,7 @@ export function DocSplitPane({ paneId, pane, isActive, wide, className = '', lea
         <div
             className={`flex flex-col overflow-hidden pointer-events-auto bg-[#121216] outline-none ${className}`}
             data-doc-pane={paneId}
+            data-doc-zoom-scope
             data-path={pane.path}
             tabIndex={-1}
             onMouseDown={onActivate}

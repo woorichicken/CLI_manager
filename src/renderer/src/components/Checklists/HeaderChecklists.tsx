@@ -12,6 +12,8 @@ interface HeaderChecklistsProps {
     onOpenChange: (open: boolean) => void
     /** Split view: the header is shorter. */
     compact: boolean
+    /** the chip is turned off in Settings › Header buttons (d5efaf86): ⌘⇧J still opens the panel, at the header's right */
+    hidden?: boolean
     workspaces: Workspace[]
     /** The project a new checklist starts with: the workspace of the session in view. */
     activeWorkspaceId?: string
@@ -29,6 +31,8 @@ function focusTerminal(sessionId: string): void {
 
 const PANEL_WIDTH = 320
 const VIEWPORT_MARGIN = 8
+/** where the panel hangs from when the chip is hidden: just under the header row (h-12) */
+const HIDDEN_CHIP_BOTTOM = 48
 /** The deadline on the small chip is a dot in its tone (6ab4bf73); the label is in the tooltip and the panel. */
 const DUE_DOT_CLASSES: Record<DueTone, string> = {
     overdue: 'bg-red-400',
@@ -43,7 +47,7 @@ const DUE_DOT_CLASSES: Record<DueTone, string> = {
  * The panel is a portal like the inbox popover: the header is a window-drag region and
  * sits below the terminal's own overlays in stacking order.
  */
-export function HeaderChecklists({ open, onOpenChange, compact, workspaces, activeWorkspaceId, viewedSessionId, onShowSession }: HeaderChecklistsProps) {
+export function HeaderChecklists({ open, onOpenChange, compact, hidden = false, workspaces, activeWorkspaceId, viewedSessionId, onShowSession }: HeaderChecklistsProps) {
     const nav = useCurrentChecklist(activeWorkspaceId)
     const hint = useShortcutHint()
     const { current } = nav
@@ -89,13 +93,15 @@ export function HeaderChecklists({ open, onOpenChange, compact, workspaces, acti
         ? `${label} — ${current.title} · ${done}/${total}${dueText}`
         : label}\n${shortcutDescription('toggleChecklists')}`
 
-    const anchor = open ? chipRef.current?.getBoundingClientRect() : undefined
+    const anchor = !open ? undefined : hidden ? { bottom: HIDDEN_CHIP_BOTTOM, right: window.innerWidth - VIEWPORT_MARGIN } : chipRef.current?.getBoundingClientRect()
     const width = Math.min(PANEL_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2)
 
     return (
         <>
             <button
                 ref={chipRef}
+                // display: none, not the hidden attribute — the `flex` class would win over it
+                style={hidden ? { display: 'none' } : undefined}
                 data-testid="checklist-chip"
                 data-checklist-id={current?.id ?? ''}
                 data-progress={current ? `${done}/${total}` : ''}

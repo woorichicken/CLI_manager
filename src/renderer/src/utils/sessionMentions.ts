@@ -77,3 +77,16 @@ export function sessionMentionText(mention: Pick<SessionMention, 'id' | 'name'>)
     const name = folded.length > MAX_MENTION_NAME_LENGTH ? `${folded.slice(0, MAX_MENTION_NAME_LENGTH - 1).trimEnd()}…` : folded
     return `${name} (climanager://session/${mention.id.slice(0, 8)})`
 }
+
+/**
+ * The name the `@` menu writes before `ref`'s link (sessionMentionText), for painting the whole mention blue
+ * in the box (a9ed0f1c). A ref is a full id or its first 8+ characters; undefined when no session (or more
+ * than one) starts with it.
+ */
+export function mentionNameFor(ref: string): string | undefined {
+    const wanted = ref.toLowerCase()
+    const found = catalog.workspaces.flatMap((workspace) => (workspace.sessions ?? []).filter((session) => session.id.toLowerCase().startsWith(wanted)))
+    if (found.length !== 1) return undefined
+    const written = sessionMentionText(found[0])
+    return written.slice(0, written.lastIndexOf(' ('))
+}

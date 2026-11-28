@@ -11,7 +11,7 @@ import { GitPanel } from './components/GitPanel'
 import { DiffModal } from './components/DiffModal'
 import { FileSearch } from './components/FileSearch'
 import { ConfirmationModal } from './components/Sidebar/Modals'
-import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, EditorType, TerminalTemplate, PortActionLog, SessionStatus, SplitTerminalLayout, AgentStatusSource } from '../../shared/types'
+import { Workspace, WorkspaceFolder, TerminalSession, UserSettings, IPCResult, EditorType, TerminalTemplate, PortActionLog, SessionStatus, SplitTerminalLayout, AgentStatusSource, headerButtonShown, type HeaderButtonId } from '../../shared/types'
 import { getErrorMessage } from './utils/errorMessages'
 import { PanelLeft, Search, LayoutGrid, MessageSquare, Monitor, Repeat, GitCompare, Bot } from 'lucide-react'
 import { SplitTerminalHeader } from './components/SplitTerminalHeader'
@@ -56,6 +56,7 @@ import { closeSessionTab, stepSessionTab } from '../../shared/sessionTabs'
 import { splitAfterDrop, SPLIT_DIVIDER_PX, splitHeadersWide, PANE_HEADER_WIDE_PX, PANE_HEADER_COMPACT_PX } from './utils/splitLayout'
 import { SplitDividers } from './components/SplitDividers'
 import { DocSplitPane } from './components/HtmlDoc/DocSplitPane'
+import { zoomFocusedDocument } from './components/HtmlDoc/HtmlDocView'
 import { useDocPanes } from './hooks/useDocPanes'
 import { isDocPaneId, sessionPaneIds, splitAfterRemove } from './utils/docPanes'
 import { GettingStartedCard } from './components/GettingStarted/GettingStartedCard'
@@ -273,6 +274,8 @@ function App() {
     const [sidebarWidth, setSidebarWidth] = useState(256)
     const [isSidebarOpen, setIsSidebarOpen] = useState(true)
     const hint = useShortcutHint()
+    /** Settings › Sidebar › Header buttons (d5efaf86): a hidden button's shortcut still works */
+    const showHeaderButton = (id: HeaderButtonId): boolean => headerButtonShown(settings, id)
     // Tooltips name the bindings set in Settings › Keyboard, not the defaults (report 386b0c76).
     useEffect(() => {
         setActiveShortcuts(settings.keyboard?.shortcuts)
@@ -596,6 +599,8 @@ function App() {
     // settings.fontSize는 UI용이므로 별도의 terminalFontSize 상태를 조절
     useEffect(() => {
         const cleanup = window.api.onTerminalZoom((key: string) => {
+            // a document with the focus zooms itself, not the terminals (5c6ddf8f)
+            if (zoomFocusedDocument(key)) return
             // Cmd/Ctrl + = 또는 + (확대)
             if (key === '=' || key === '+') {
                 setTerminalFontSize(prev => Math.min(prev + FONT_SIZE_STEP, MAX_FONT_SIZE))
@@ -1879,11 +1884,13 @@ function App() {
                         {/* Terminal | Chat — first on the right, where the button row never covers it (found-defects:
                             at 390 the row pushes into the left group). Read the live session: cliToolName arrives
                             after the CLI starts. */}
-                        {!splitLayout && activeSession && isAgentSession(activeLiveSession) && (
+                        {!splitLayout && activeSession && isAgentSession(activeLiveSession) && showHeaderButton('viewToggle') && (
                             <SessionViewToggle sessionId={activeSession.id} />
                         )}
-                        {/* Checklists belong to no session, so they stay in split view too */}
+                        {/* Checklists belong to no session, so they stay in split view too. Hidden (d5efaf86), the
+                            panel still opens with ⌘⇧J */}
                         <HeaderChecklists
+                            hidden={!showHeaderButton('checklists')}
                             open={checklistsOpen}
                             onOpenChange={setChecklistsOpen}
                             compact={Boolean(splitLayout)}
@@ -1895,14 +1902,15 @@ function App() {
                         {/* Single view buttons - hidden in split view (each pane has its own) */}
                         {!splitLayout && (
                             <>
-                                <ParentSessionButton parents={activeParents} onShow={id => showSessions([id])} />
-                                {activeSession && (
+                                {showHeaderButton('parentSession') && <ParentSessionButton parents={activeParents} onShow={id => showSessions([id])} />}
+                                {activeSession && showHeaderButton('related') && (
                                     <RelatedSessionsButton
                                         sessionId={activeSession.id}
                                         count={relatedCountBySession.get(activeSession.id) ?? 0}
                                         onOpen={setRelatedDialogSessionId}
                                     />
                                 )}
+                                {showHeaderButton('searchFiles') && (
                                 <button
                                     onClick={() => {
                                         if (activeWorkspace) {
@@ -1915,7 +1923,8 @@ function App() {
                                 >
                                     <Search size={16} className="text-gray-400" />
                                 </button>
-                                {(settings.showSourceControl ?? true) && (
+                                )}
+                                {showHeaderButton('sourceControl') && (
                                 <button
                                     onClick={() => setGitPanelOpen(true)}
                                     className="p-2 hover:bg-white/10 rounded transition-colors no-drag"
@@ -1929,6 +1938,7 @@ function App() {
                                     </svg>
                                 </button>
                                 )}
+                                {showHeaderButton('reviewDiff') && (
                                 <button
                                     onClick={() => {
                                         if (activeWorkspace) setDiffModalOpen(true)
@@ -1939,6 +1949,8 @@ function App() {
                                 >
                                     <GitCompare size={16} className="text-gray-400" />
                                 </button>
+                                )}
+                                {showHeaderButton('loop') && (
                                 <button
                                     onClick={async () => {
                                         try {
@@ -1952,6 +1964,8 @@ function App() {
                                 >
                                     <Repeat size={16} className="text-gray-400" />
                                 </button>
+                                )}
+                                {showHeaderButton('systemMonitor') && (
                                 <button
                                     ref={monitorButtonRef}
                                     onClick={() => setShowMonitor(prev => !prev)}
@@ -1960,6 +1974,7 @@ function App() {
                                 >
                                     <Monitor size={16} className="text-gray-400" />
                                 </button>
+                                )}
                                 <button
                                     onClick={() => handleOpenSettings('general')}
                                     className="p-2 hover:bg-white/10 rounded transition-colors no-drag"

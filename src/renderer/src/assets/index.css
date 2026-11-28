@@ -251,3 +251,11 @@ body:has([data-fk-pick-toggle='on']) .draggable {
   background-color: transparent !important;
 }
 
+
+/* Settings search (74c893e6): the setting it scrolled to, lit for a moment */
+.settings-found {
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.14);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14), 0 0 0 5px rgba(96, 165, 250, 0.45);
+    transition: background 0.3s, box-shadow 0.3s;
+}
