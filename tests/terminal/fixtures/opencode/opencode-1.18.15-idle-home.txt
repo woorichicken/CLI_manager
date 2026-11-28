@@ -1,0 +1,36 @@
+                                                                                                              
+                                                                                                              
+                                                ┃                                                          ┃  
+                                                ┃  Model anthropic/claude-sonnet-4-5-20250929 is not       ┃  
+                                                ┃  valid                                                   ┃  
+                                                ┃                                                          ┃  
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                     ▄                                        
+                                    █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█                                   
+                                    █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀                                   
+                                    ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀                                   
+                                                                                                              
+                                                                                                              
+                  ┃                                                                                           
+                  ┃  Ask anything... "Fix broken tests"                                                       
+                  ┃                                                                                           
+                  ┃  Build · Big Pickle OpenCode                                                              
+                  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                 
+                  tab agents  ctrl+p commands                                                                 
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+  /private/tmp/oc-sandbox/project  ⊙ 1 MCP /status                                                 1.18.15  
+                                                                                                              

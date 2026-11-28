@@ -31,9 +31,9 @@ export interface GettingStartedState {
 }
 
 /** Programs with a built-in "+" menu row. The Getting started "agent" step still counts only Claude Code and Codex. */
-export type AgentCli = 'claude' | 'codex' | 'agy'
+export type AgentCli = 'claude' | 'codex' | 'agy' | 'opencode'
 
-export const AGENT_CLIS: readonly AgentCli[] = ['claude', 'codex', 'agy']
+export const AGENT_CLIS: readonly AgentCli[] = ['claude', 'codex', 'agy', 'opencode']
 
 /** 'unknown' until checked, or when the check itself failed — never drawn as missing. */
 export type AgentCliStatus = 'installed' | 'missing' | 'unknown'
@@ -69,10 +69,18 @@ export const BUILTIN_AGENT_TEMPLATES: readonly (TerminalTemplate & { agent: Agen
         description: 'Start the Antigravity CLI in this folder',
         command: 'agy',
         agent: 'agy'
+    },
+    {
+        id: 'builtin-opencode',
+        name: 'OpenCode',
+        icon: 'opencode',
+        description: 'Start OpenCode in this folder',
+        command: 'opencode',
+        agent: 'opencode'
     }
 ]
 
-/** The program a template command starts, when it is plainly `claude …`, `codex …` or `agy …`. */
+/** The program a template command starts, when it is plainly `claude …`, `codex …`, `agy …` or `opencode …`. */
 export function agentOfCommand(command: string | undefined): AgentCli | null {
     const first = (command ?? '').trim().split(/\s+/)[0] ?? ''
     const name = first.split('/').pop() ?? ''
@@ -81,7 +89,7 @@ export function agentOfCommand(command: string | undefined): AgentCli | null {
 
 /** Every built-in program, as 'unknown' — the answer before (or instead of) a shell check. */
 export function unknownAgentCliStatuses(): AgentCliStatuses {
-    return { claude: 'unknown', codex: 'unknown', agy: 'unknown' }
+    return { claude: 'unknown', codex: 'unknown', agy: 'unknown', opencode: 'unknown' }
 }
 
 /**

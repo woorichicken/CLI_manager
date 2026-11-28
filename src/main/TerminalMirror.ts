@@ -74,7 +74,12 @@ const AWAITING_INPUT_PATTERNS = [
     /\bYes, proceed\b/i,
     // Antigravity CLI's dialogs (agy 1.5.16, recorded 2026-11-25): its question, its permission prompt,
     // its folder-trust question. Its slash menu (`enter Select · tab Complete`) asks nothing.
-    /↑\/↓ Navigate · (?:enter Select · esc Skip|tab Amend|enter Confirm)/
+    /↑\/↓ Navigate · (?:enter Select · esc Skip|tab Amend|enter Confirm)/,
+    // OpenCode's question (`↑↓ select  enter submit  esc dismiss`, opencode 1.18.15 recorded 2026-11-27) and its
+    // permission prompt (herdr manifests/opencode.toml, Apache-2.0 — not recorded here)
+    // — inside its `┃` panel: the same words quoted in an answer are no dialog (Codex review)
+    /┃\s*↑↓ select\s+enter (?:submit|confirm|toggle)\s+esc dismiss/,
+    /┃\s*△ Permission required/
 ]
 
 /**
@@ -117,6 +122,8 @@ interface Mirror {
     exited: boolean
     /** Attached to a pty that was already running, so earlier output is missing. */
     partial: boolean
+    /** The title the program set (OSC 0/2): OpenCode names its session there (`OC | <title>`). Null until set. */
+    title: string | null
 }
 
 export interface SnapshotOptions {
@@ -197,7 +204,11 @@ export class TerminalMirror {
             if (params[0] === ERASE_SCROLLBACK_PARAM) this.onScrollbackErased?.(id)
             return false
         })
-        this.mirrors.set(id, { term, serializer, lastOutputAt: 0, outputCount: 0, exited: false, partial: this.terminals.hasTerminal(id) })
+        const mirror: Mirror = { term, serializer, lastOutputAt: 0, outputCount: 0, exited: false, partial: this.terminals.hasTerminal(id), title: null }
+        term.onTitleChange((title) => {
+            mirror.title = title
+        })
+        this.mirrors.set(id, mirror)
     }
 
     /**
@@ -498,6 +509,73 @@ export class TerminalMirror {
         return null
     }
 
+    /** The window title the terminal's program set last (OSC 0/2), or null. */
+    title(id: string): string | null {
+        return this.mirrors.get(id)?.title ?? null
+    }
+
+    /**
+     * OpenCode's composer (opencode 1.18.15, recorded 2026-11-27): rows behind a `┃` closed by `╹▀▀▀…`, the last
+     * of them its agent · model row (`Build · Big Pickle OpenCode`). The rows above that hold the draft. An empty
+     * composer shows a hint (`Ask anything... "Fix broken tests"`) in the muted colour its model row draws `·`
+     * and `OpenCode` in — read as typed, it would refuse every Chat send to an idle OpenCode (agy did, 11-25).
+     * A toast or dialog draws `┃` rows too, but none is closed by `╹▀`. Null when no composer is on screen
+     * (a question or permission panel takes its place).
+     */
+    opencodeInput(id: string): InputBox | null {
+        const mirror = this.mirrors.get(id)
+        if (!mirror) return null
+        const buffer = mirror.term.buffer.active
+        const rowText = (row: number): string => buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? ''
+        let bottom = -1
+        for (let row = mirror.term.rows - 1; row >= 0; row--) {
+            if (OPENCODE_COMPOSER_END.test(rowText(row))) {
+                bottom = row
+                break
+            }
+        }
+        if (bottom < 0) return null
+        const edge = rowText(bottom).indexOf('╹')
+        let top = bottom
+        while (top > 0 && rowText(top - 1).charAt(edge) === '┃') top--
+        if (top === bottom) return null
+        const rows: number[] = []
+        for (let row = top; row < bottom; row++) if (rowText(row).slice(edge + 1).trim() !== '') rows.push(row)
+        const statusRow = rows.pop()
+        if (statusRow === undefined) return { typed: '', typedRows: 0, suggestion: '' }
+        const cell = buffer.getNullCell()
+        const colour = (): string => `${cell.isFgRGB() ? 'r' : cell.isFgPalette() ? 'p' : 'd'}${cell.getFgColor()}`
+        // the muted colour: what the model row draws its `·` in — unless that is also the colour of its first word
+        // (`Build`; a colourless screen, a theme without a muted shade): then colour tells nothing, the hint's words do
+        const muted = new Set<string>()
+        let plain: string | null = null
+        const status = buffer.getLine(buffer.viewportY + statusRow)
+        for (let col = edge + 1; status && col < status.length; col++) {
+            status.getCell(col, cell)
+            const chars = cell.getChars()
+            if (chars === '·') muted.add(colour())
+            else if (plain === null && /[A-Za-z]/.test(chars)) plain = colour()
+        }
+        const byColour = muted.size > 0 && (plain === null || !muted.has(plain))
+        if (!byColour) muted.clear()
+        const typed: string[] = []
+        for (const row of rows) {
+            const line = buffer.getLine(buffer.viewportY + row)
+            if (!line) continue
+            let text = ''
+            for (let col = edge + 1; col < line.length; col++) {
+                line.getCell(col, cell)
+                if (cell.getWidth() === 0) continue
+                const chars = cell.getChars()
+                text += chars.trim() === '' || cell.isDim() || muted.has(colour()) ? ' ' : chars
+            }
+            const collapsed = collapseSpaces(text)
+            // the hint's words count only where colour cannot tell: typed `Ask anything... "…"` in plain colour is typed
+            if (collapsed && !(!byColour && OPENCODE_EMPTY_HINT.test(collapsed))) typed.push(collapsed)
+        }
+        return { typed: typed.join(' '), typedRows: typed.length, suggestion: '' }
+    }
+
     /** The screen currently shows an agent turn in progress. */
     showsBusy(id: string): boolean {
         return screenShowsBusy(this.screen(id))
@@ -653,6 +731,11 @@ const QUESTION_LINE_MAX = 160
 
 /** Agent dialogs draw a box around the question; its borders are not part of it. */
 const BOX_BORDER = /[│┃╭╮╰╯─━┌┐└┘]/g
+
+/** The bottom edge of OpenCode's composer: `╹` and a heavy half-block rule. */
+const OPENCODE_COMPOSER_END = /^\s*╹▀{8,}\s*$/
+/** OpenCode's empty-composer hint, in case its colour is not the model row's muted one (a theme). */
+const OPENCODE_EMPTY_HINT = /^Ask anything\.\.\. ".*"$/
 
 /** A prompt line inside an input box: "❯ " with whatever was typed, never a numbered option. */
 const PROMPT_LINE = /^[❯>](?!\s*\d+\.\s)/

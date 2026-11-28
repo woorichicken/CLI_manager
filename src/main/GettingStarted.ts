@@ -122,7 +122,7 @@ function parseProbe(output: string, names: AgentCli[]): Partial<AgentCliStatuses
 }
 
 /**
- * Whether `claude`, `codex` and `agy` can be started from a terminal in this app. A non-interactive
+ * Whether `claude`, `codex`, `agy` and `opencode` can be started from a terminal in this app. A non-interactive
  * login shell skips `.zshrc`, where PATH for these tools is often set, while the app's terminals
  * are interactive — so a "missing" from the login shell is asked again in an interactive one
  * before it counts. A check that times out or fails stays 'unknown' (drawn as normal, never dim).

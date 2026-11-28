@@ -20,7 +20,7 @@ import type {
 import { CHAT_TURN_LIMIT, drivesChat, MAX_CHAT_TEXT_LENGTH, terminalCommand } from '../shared/conversation'
 // the chat's own functions (pure): a phone may open what the chat shows as a link, by the same reading
 import { addLinkedText, mentionedPaths } from '../renderer/src/components/ChatView/chatMentions'
-import { screenAgentMode, screenBackground, screenShowsBusy } from './screenLines'
+import { opencodeAwaitsSecondEsc, screenAgentMode, screenBackground, screenShowsBusy } from './screenLines'
 import { answerSteps, confirmTarget, KEYS, PromptAnswerError, readPrompt } from './promptScreen'
 import type { TranscriptReader } from './TranscriptReader'
 import { BackgroundTaskReader, settleBackground } from './transcript/backgroundTasks'
@@ -55,6 +55,12 @@ const QUEUE_QUIET_MS = 1500
 const MAX_TEXT_LENGTH = MAX_CHAT_TEXT_LENGTH
 /** What the agent's terminal takes as "stop this turn" (Claude Code and Codex both print "esc to interrupt"). */
 const INTERRUPT_KEY = '\x1b'
+/**
+ * OpenCode stops a turn on a second Esc: the first turns its busy row into `esc again to interrupt` (opencode
+ * 1.18.15, recorded 2026-11-27). The second goes once the screen says so, or after this long.
+ */
+const OPENCODE_SECOND_ESC_MS = 1_000
+const OPENCODE_SECOND_ESC_POLL_MS = 50
 /** Between the keys of a card's answer, as the Control API spaces keys. */
 const KEY_GAP_MS = 60
 /**
@@ -153,6 +159,8 @@ export interface ConversationMirror {
     inputBox(id: string): { typed: string; suggestion?: string; clipped?: boolean; typedRows?: number } | null
     /** TerminalMirror.codexInput — Codex's `›` line; Codex has no box for inputBox to read. */
     codexInput(id: string): { typed: string; suggestion?: string; clipped?: boolean; typedRows?: number } | null
+    /** TerminalMirror.opencodeInput — OpenCode's `┃` composer; without it an OpenCode session reads no draft. */
+    opencodeInput?(id: string): { typed: string; suggestion?: string; clipped?: boolean; typedRows?: number } | null
 }
 
 export interface ConversationServiceDeps {
@@ -452,6 +460,7 @@ export class ConversationService {
         const info = this.deps.session(sessionId)
         if (!info) return { status: 'rejected', reason: 'unknown_session', message: 'This session no longer exists.' }
         if (agentOf(info) === 'agy') return { status: 'rejected', reason: 'no_conversation', message: 'Antigravity conversations cannot be forked from the chat yet.' }
+        if (agentOf(info) === 'opencode') return { status: 'rejected', reason: 'no_conversation', message: 'OpenCode conversations cannot be forked from the chat yet.' }
         const agent = drivenAgentOf(info)
         if (!agent || !info.cliSessionId || !this.deps.openFork) {
             return { status: 'rejected', reason: 'no_conversation', message: 'This session has no agent conversation to fork yet.' }
@@ -878,10 +887,31 @@ export class ConversationService {
             this.dropIfIdle(sessionId, entry)
             return REVOKED
         }
+        const opencode = agentOf(this.deps.session(sessionId)) === 'opencode'
+        // OpenCode already took one Esc (its row says `esc again to interrupt`): this one interrupts — no second
+        const armed = opencode && opencodeAwaitsSecondEsc(this.deps.mirror.screen(sessionId))
         this.deps.writeInput(sessionId, INTERRUPT_KEY)
+        if (opencode && !armed) await this.secondEsc(sessionId, sender)
         this.bump(sessionId, entry)
         this.dropIfIdle(sessionId, entry)
         return { status: 'stopped' }
+    }
+
+    /**
+     * OpenCode's second Esc — only once its busy row turned into `esc again to interrupt` after the first. Not seen
+     * within OPENCODE_SECOND_ESC_MS (the first was lost, the turn ended): nothing more is sent; an Esc that lands
+     * on an idle OpenCode would go to its composer or a dialog (Codex review). Stop can be pressed again.
+     */
+    private async secondEsc(sessionId: string, sender: ChatSender | null): Promise<void> {
+        const deadline = Date.now() + OPENCODE_SECOND_ESC_MS
+        while (Date.now() < deadline) {
+            await sleep(OPENCODE_SECOND_ESC_POLL_MS)
+            await this.deps.mirror.flush(sessionId)
+            if (!opencodeAwaitsSecondEsc(this.deps.mirror.screen(sessionId))) continue
+            if (sender && !sender.allowed()) return
+            this.deps.writeInput(sessionId, INTERRUPT_KEY)
+            return
+        }
     }
 
     /** A picture the conversation holds (an image part's or a tool's `ref`), as a data: URL. */
@@ -999,8 +1029,8 @@ export class ConversationService {
         }
         await this.deps.mirror.flush(sessionId)
         const driven = drivenAgentOf(this.deps.session(sessionId))
-        // agy's dialogs have no card yet (no reader for them): answered in the terminal
-        const current = agentOf(this.deps.session(sessionId)) === 'agy' ? null : readPrompt(this.deps.mirror.screen(sessionId), driven ?? 'claude')
+        // agy's and OpenCode's dialogs have no card yet (no reader for them): answered in the terminal
+        const current = readsOnly(agentOf(this.deps.session(sessionId))) ? null : readPrompt(this.deps.mirror.screen(sessionId), driven ?? 'claude')
         const answered = this.lastAnswer.get(sessionId)
         // the same menu with nothing printed since its answer went: the agent has not read those keys yet
         const alreadyAnswered = answered?.signature === answer.signature && answered.outputAt === this.deps.mirror.lastOutputAt(sessionId)
@@ -1093,7 +1123,7 @@ export class ConversationService {
         // (a table's separators read as one — fb-1117 1d15e1c2), and its input is the `›` line.
         // After the question test above, on purpose: a Codex approval menu's `› 1. Yes, proceed` row reads
         // as typed text to codexInput, and Enter would pick it — it must be refused as awaiting_input.
-        const box = agent === 'codex' ? mirror.codexInput(sessionId) : mirror.inputBox(sessionId)
+        const box = agent === 'codex' ? mirror.codexInput(sessionId) : agent === 'opencode' ? (mirror.opencodeInput?.(sessionId) ?? null) : mirror.inputBox(sessionId)
         const clipped = box?.clipped === true && claude
         if (box?.typed.trim() || clipped) {
             const draft = claude ? clearableDraft(box) : null
@@ -1235,8 +1265,8 @@ export class ConversationService {
         const agent = drivesChat(reading) ? reading : null
         // readPrompt reads a turn in progress only from the dialog's own rows: a dialog drawn last is what the
         // agent waits on, whatever its words above it say (f7bff999 — «(esc to interrupt)» in them hid the card).
-        // agy's dialogs have no card reader yet: none, and the chat says to answer in the terminal.
-        entry.prompt = reading === 'agy' ? null : readPrompt(screen, agent ?? 'claude')
+        // agy's and OpenCode's dialogs have no card reader yet: none, and the chat says to answer in the terminal.
+        entry.prompt = readsOnly(reading) ? null : readPrompt(screen, agent ?? 'claude')
         entry.working = entry.prompt === null && screenShowsBusy(screen)
         entry.screenMode = screenAgentMode(screen)
         entry.background = screenBackground(screen)
@@ -1416,7 +1446,12 @@ function clearableDraft(box: { typed: string; clipped?: boolean; typedRows?: num
 
 function agentOf(info: ConversationSessionInfo | null): ChatAgent | null {
     if (!info?.cliToolName) return null
-    return info.cliToolName === 'codex' || info.cliToolName === 'claude' || info.cliToolName === 'agy' ? info.cliToolName : null
+    return info.cliToolName === 'codex' || info.cliToolName === 'claude' || info.cliToolName === 'agy' || info.cliToolName === 'opencode' ? info.cliToolName : null
+}
+
+/** An agent the chat reads and sends to, with no card for its dialogs (answered in the terminal). */
+function readsOnly(agent: ChatAgent | null): boolean {
+    return agent === 'agy' || agent === 'opencode'
 }
 
 /** The agent when the chat drives it (sends, answers, forks); null for one it only reads (agy). */

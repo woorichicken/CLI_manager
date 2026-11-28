@@ -38,6 +38,8 @@ import { TerminalEventLog } from './TerminalEventLog'
 import { buildFeedbackTerminalContext } from './feedbackTerminalContext'
 import { ClaudeSessionSync } from './ClaudeSessionSync'
 import { AgySessionSync, agyStartCommand } from './AgySessionSync'
+import { OpencodeSessionSync, opencodeStartCommand } from './OpencodeSessionSync'
+import { opencodeDatabasePath, OPENCODE_SESSION_ID } from './transcript/opencodeTranscript'
 import { ControlApiError, ControlApiService } from './ControlApiService'
 import { ControlApiServer } from './ControlApiServer'
 import { SessionRelations, SESSION_RELATIONS_CHANNEL } from './SessionRelations'
@@ -673,6 +675,8 @@ const agyHome = (): string => process.env.ANTIGRAVITY_APP_DATA_DIR || path.join(
 /** The ledger a stored agy conversation reads from (TranscriptReader.locateAgy). */
 const agyConversationExists = (id: string): boolean =>
     /^[0-9a-f-]{36}$/i.test(id) && existsSync(path.join(agyHome(), 'brain', id, '.system_generated', 'logs', 'transcript_full.jsonl'))
+/** OpenCode's store, as OpenCode resolves it from the app's environment (OPENCODE_DB · XDG_DATA_HOME). */
+const opencodeStore = (): string | null => opencodeDatabasePath(process.env, os.homedir())
 const conversationService = new ConversationService({
     session: (id) => {
         const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
@@ -685,7 +689,7 @@ const conversationService = new ConversationService({
         }
         return null
     },
-    reader: new TranscriptReader({ claudeConfigDir, codexHome, agyHome }),
+    reader: new TranscriptReader({ claudeConfigDir, codexHome, agyHome, opencodeStore }),
     listCommands: createChatCommandLister({ home: os.homedir(), claudeConfigDir, codexHome }),
     home: os.homedir(),
     mirror: terminalMirror,
@@ -764,8 +768,8 @@ function persistDetectedSession(info: { terminalId: string; cliSessionId: string
         if (!session) continue
         session.cliSessionId = info.cliSessionId
         session.cliToolName = info.cliToolName
-        if (info.cliToolName === 'agy') {
-            // AgySessionSync hands over the command without its conversation flags (resumableCommand)
+        if (info.cliToolName === 'agy' || info.cliToolName === 'opencode') {
+            // AgySessionSync / OpencodeSessionSync hand over the command without its session flags (resumableCommand)
             session.cliCommand = info.baseCommand
         } else {
             const agent = info.cliToolName === 'claude' ? 'claude' : 'codex'
@@ -1483,6 +1487,10 @@ function validateCliSessionIds(): void {
     let modified = false
     for (const ws of workspaces) {
         for (const session of ws.sessions) {
+            // OpenCode bindings are kept: the shell's OPENCODE_DB / XDG_DATA_HOME may name another store than the
+            // app's (Finder) environment, so «not in the store» proves nothing here, and a store that cannot be read
+            // must not stop the start. A resumed id OpenCode no longer has opens its home screen.
+            if (session.cliToolName === 'opencode') continue
             if (session.cliSessionId && session.cliToolName === 'agy') {
                 if (agyConversationExists(session.cliSessionId)) continue
                 console.log(`[validateCliSessionIds] CLEAR stale agy conversation ${session.cliSessionId} (no ledger)`)
@@ -1536,7 +1544,7 @@ app.whenReady().then(async () => {
     void ensureShellAliases()
     validateCliSessionIds()
     for (const ws of (store.get('workspaces') as Workspace[])) {
-        for (const session of ws.sessions) if (session.cliSessionId && (session.cliToolName === 'codex' || session.cliToolName === 'claude' || session.cliToolName === 'agy')) pendingSessionRestores.add(session.id)
+        for (const session of ws.sessions) if (session.cliSessionId && (session.cliToolName === 'codex' || session.cliToolName === 'claude' || session.cliToolName === 'agy' || session.cliToolName === 'opencode')) pendingSessionRestores.add(session.id)
     }
 
     // Histories of sessions deleted since the last run; then keep saving.
@@ -1816,7 +1824,12 @@ app.whenReady().then(async () => {
     ipcMain.handle('get-session-resume-command', async (_event, terminalId: string): Promise<string | undefined> => {
         await ensureShellAliases()
         const session = ((store.get('workspaces') as Workspace[] | undefined) ?? []).flatMap((w) => w.sessions).find((s) => s.id === terminalId)
-        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude' && session.cliToolName !== 'agy')) { pendingSessionRestores.delete(terminalId); return undefined }
+        if (!session?.cliSessionId || (session.cliToolName !== 'codex' && session.cliToolName !== 'claude' && session.cliToolName !== 'agy' && session.cliToolName !== 'opencode')) { pendingSessionRestores.delete(terminalId); return undefined }
+        // OpenCode: the command it was started with (OpencodeSessionSync stored it without session flags)
+        if (session.cliToolName === 'opencode') {
+            if (!OPENCODE_SESSION_ID.test(session.cliSessionId)) { pendingSessionRestores.delete(terminalId); return undefined }
+            return `${opencodeStartCommand(session.cliCommand)} --session ${session.cliSessionId}`
+        }
         if (!CONVERSATION_ID.test(session.cliSessionId)) { pendingSessionRestores.delete(terminalId); return undefined }
         // agy: the command it was started with (AgySessionSync stored it without conversation flags)
         if (session.cliToolName === 'agy') return `${agyStartCommand(session.cliCommand)} --conversation ${session.cliSessionId}`
@@ -1879,12 +1892,28 @@ app.whenReady().then(async () => {
             persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'agy', baseCommand: command })
         }
     })
+    // The OpenCode session each terminal shows (its command line, or its folder and terminal title), the same way.
+    const opencodeSessionSync = new OpencodeSessionSync({
+        defaultStore: opencodeStore,
+        ptyPids: () => terminalManager.listPtyPids(),
+        title: (terminalId) => terminalMirror.title(terminalId),
+        intervalMs: Number(process.env.CLIMANAGER_OPENCODE_SYNC_MS) || undefined,
+        onSession: (terminalId, cliSessionId, command) => {
+            const workspaces = (store.get('workspaces') as Workspace[] | undefined) ?? []
+            const session = workspaces.flatMap((w) => w.sessions ?? []).find((s) => s.id === terminalId)
+            if (!session || (session.cliToolName === 'opencode' && session.cliSessionId === cliSessionId)) return
+            console.log(`[opencode-session] ${terminalId} → ${cliSessionId} (was ${session.cliSessionId ?? 'none'})`)
+            persistDetectedSession({ terminalId, cliSessionId, cliToolName: 'opencode', baseCommand: command })
+        }
+    })
     forgetClaudeSession = (id) => {
         claudeSessionSync.forget(id)
         agySessionSync.forget(id)
+        opencodeSessionSync.forget(id)
     }
     claudeSessionSync.start()
     agySessionSync.start()
+    opencodeSessionSync.start()
 
     // Update CLI session info on a session (from renderer, e.g., template rewrite)
     ipcMain.handle('update-session-cli-info', (_, workspaceId: string, sessionId: string, cliSessionId: string, cliToolName: string, cliCommand?: string): boolean => {

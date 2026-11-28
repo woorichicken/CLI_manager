@@ -8,7 +8,7 @@ import { isLiveWorkTurn, turnSegments, workBlockStartsOpen } from './workBlocks'
 import { answerForAgent, formatElapsed, INTERRUPTED_TEXT } from './chatLib'
 import { ThreadChip } from './ThreadChip'
 
-const AGENT_NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', agy: 'Antigravity' }
+const AGENT_NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', agy: 'Antigravity', opencode: 'OpenCode' }
 const COPIED_MS = 1500
 
 /** "14:02" today, "11/2 14:02" another day — on hover (ovis TurnTime). */

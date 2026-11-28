@@ -92,9 +92,9 @@ export type ConversationAgent = 'claude' | 'codex'
 /**
  * Every agent whose conversation the chat reads. `ConversationAgent` stays the agents the chat can
  * also drive (send, Stop, fork, question cards, `/` commands): a function typed with it cannot be
- * handed another agent by mistake. Antigravity CLI (`agy`) is read only so far.
+ * handed another agent by mistake. Antigravity CLI (`agy`) and OpenCode (`opencode`) are read only so far.
  */
-export type ChatAgent = ConversationAgent | 'agy'
+export type ChatAgent = ConversationAgent | 'agy' | 'opencode'
 
 /** The agents the chat drives (see ChatAgent). */
 export function drivesChat(agent: ChatAgent | null): agent is ConversationAgent {

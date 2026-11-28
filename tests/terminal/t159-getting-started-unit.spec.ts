@@ -24,20 +24,22 @@ const workspace = (over: Partial<Workspace>): Workspace => ({ id: 'w', name: 'w'
 
 test.describe('built-in agent rows', () => {
     test('every row, Claude first, when there are no templates', () => {
-        expect(builtinTemplatesFor([]).map((t) => t.name)).toEqual(['Claude Code', 'Codex', 'Antigravity'])
-        expect(BUILTIN_AGENT_TEMPLATES.map((t) => t.command)).toEqual(['claude', 'codex', 'agy'])
-        expect(BUILTIN_AGENT_TEMPLATES.map((t) => t.id)).toEqual(['builtin-claude-code', 'builtin-codex', 'builtin-antigravity'])
+        expect(builtinTemplatesFor([]).map((t) => t.name)).toEqual(['Claude Code', 'Codex', 'Antigravity', 'OpenCode'])
+        expect(BUILTIN_AGENT_TEMPLATES.map((t) => t.command)).toEqual(['claude', 'codex', 'agy', 'opencode'])
+        expect(BUILTIN_AGENT_TEMPLATES.map((t) => t.id)).toEqual(['builtin-claude-code', 'builtin-codex', 'builtin-antigravity', 'builtin-opencode'])
     })
 
     test('a template of the person that starts the same program hides that row only', () => {
         const own = [{ id: 'a', name: 'My Claude', icon: 'code', description: '', command: 'claude --model opus' }]
-        expect(builtinTemplatesFor(own).map((t) => t.agent)).toEqual(['codex', 'agy'])
+        expect(builtinTemplatesFor(own).map((t) => t.agent)).toEqual(['codex', 'agy', 'opencode'])
         const path = [{ id: 'b', name: 'X', icon: 'code', description: '', command: '/opt/bin/codex resume' }]
-        expect(builtinTemplatesFor(path).map((t) => t.agent)).toEqual(['claude', 'agy'])
+        expect(builtinTemplatesFor(path).map((t) => t.agent)).toEqual(['claude', 'agy', 'opencode'])
         const agy = [{ id: 'd', name: 'Gemini', icon: 'code', description: '', command: 'agy --model gemini-3.8-flash-low' }]
-        expect(builtinTemplatesFor(agy).map((t) => t.agent)).toEqual(['claude', 'codex'])
+        expect(builtinTemplatesFor(agy).map((t) => t.agent)).toEqual(['claude', 'codex', 'opencode'])
+        const opencode = [{ id: 'e', name: 'OC', icon: 'code', description: '', command: 'opencode -m opencode/big-pickle' }]
+        expect(builtinTemplatesFor(opencode).map((t) => t.agent)).toEqual(['claude', 'codex', 'agy'])
         // an alias is not recognised: every row stays
-        expect(builtinTemplatesFor([{ id: 'c', name: 'cldy', icon: 'code', description: '', command: 'cldy' }])).toHaveLength(3)
+        expect(builtinTemplatesFor([{ id: 'c', name: 'cldy', icon: 'code', description: '', command: 'cldy' }])).toHaveLength(4)
     })
 
     test('agentOfCommand reads the first word only', () => {
@@ -45,6 +47,7 @@ test.describe('built-in agent rows', () => {
         expect(agentOfCommand('  codex  --full-auto')).toBe('codex')
         expect(agentOfCommand('agy --conversation 1')).toBe('agy')
         expect(agentOfCommand('agyx')).toBeNull()
+        expect(agentOfCommand('opencode --session ses_abc')).toBe('opencode')
         expect(agentOfCommand('echo claude')).toBeNull()
         expect(agentOfCommand('claude-squad')).toBeNull()
         expect(agentOfCommand(undefined)).toBeNull()
@@ -205,39 +208,39 @@ test.describe('claude / codex install check', () => {
     }
 
     test('found in the login shell: one shell only', async () => {
-        const { run, asked } = shell({ '-l -c': 'Last login\nCLIM_FOUND_claude\nCLIM_FOUND_codex\nCLIM_FOUND_agy\n' })
-        expect(await checkAgentClis('/bin/zsh', run)).toEqual({ claude: 'installed', codex: 'installed', agy: 'installed' })
+        const { run, asked } = shell({ '-l -c': 'Last login\nCLIM_FOUND_claude\nCLIM_FOUND_codex\nCLIM_FOUND_agy\nCLIM_FOUND_opencode\n' })
+        expect(await checkAgentClis('/bin/zsh', run)).toEqual({ claude: 'installed', codex: 'installed', agy: 'installed', opencode: 'installed' })
         expect(asked).toHaveLength(1)
     })
 
     test('missing in the login shell is asked again in an interactive one (PATH set in .zshrc)', async () => {
         const { run, asked } = shell({
-            '-l -c': 'CLIM_FOUND_claude\nCLIM_MISSING_codex\nCLIM_FOUND_agy\n',
+            '-l -c': 'CLIM_FOUND_claude\nCLIM_MISSING_codex\nCLIM_FOUND_agy\nCLIM_FOUND_opencode\n',
             '-i -l -c': 'CLIM_FOUND_codex\n'
         })
-        expect(await checkAgentClis('/bin/zsh', run)).toEqual({ claude: 'installed', codex: 'installed', agy: 'installed' })
+        expect(await checkAgentClis('/bin/zsh', run)).toEqual({ claude: 'installed', codex: 'installed', agy: 'installed', opencode: 'installed' })
         expect(asked[1].at(-1)).toContain('command -v codex')
         expect(asked[1].at(-1)).not.toContain('claude')
     })
 
     test('missing only when both shells say so; a failed or silent check is unknown', async () => {
-        const allMissing = 'CLIM_MISSING_claude CLIM_MISSING_codex CLIM_MISSING_agy'
+        const allMissing = 'CLIM_MISSING_claude CLIM_MISSING_codex CLIM_MISSING_agy CLIM_MISSING_opencode'
         expect(await checkAgentClis('/bin/zsh', shell({ '-l -c': allMissing, '-i -l -c': allMissing }).run))
-            .toEqual({ claude: 'missing', codex: 'missing', agy: 'missing' })
+            .toEqual({ claude: 'missing', codex: 'missing', agy: 'missing', opencode: 'missing' })
         expect(await checkAgentClis('/bin/zsh', shell({ '-l -c': allMissing, '-i -l -c': new Error('timeout') }).run))
-            .toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown' })
+            .toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown', opencode: 'unknown' })
         expect(await checkAgentClis('/bin/zsh', shell({ '-l -c': new Error('timeout'), '-i -l -c': 'CLIM_MISSING_claude' }).run))
-            .toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown' })
+            .toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown', opencode: 'unknown' })
     })
 
     test('the test stand-in and the one-minute cache', async () => {
-        expect(parseAgentCliFake('claude=installed, codex=missing, agy=missing')).toEqual({ claude: 'installed', codex: 'missing', agy: 'missing' })
-        expect(parseAgentCliFake('')).toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown' })
-        expect(parseAgentCliFake('claude=yes,gemini=installed')).toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown' })
+        expect(parseAgentCliFake('claude=installed, codex=missing, agy=missing, opencode=missing')).toEqual({ claude: 'installed', codex: 'missing', agy: 'missing', opencode: 'missing' })
+        expect(parseAgentCliFake('')).toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown', opencode: 'unknown' })
+        expect(parseAgentCliFake('claude=yes,gemini=installed')).toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown', opencode: 'unknown' })
 
         let now = 0
         let runs = 0
-        const checker = new AgentCliChecker(async () => { runs++; return { claude: 'installed', codex: 'missing', agy: 'installed' } }, () => now)
+        const checker = new AgentCliChecker(async () => { runs++; return { claude: 'installed', codex: 'missing', agy: 'installed', opencode: 'installed' } }, () => now)
         await Promise.all([checker.get(), checker.get()])
         expect(runs).toBe(1)
         now = 59_000
@@ -247,6 +250,6 @@ test.describe('claude / codex install check', () => {
         await checker.get()
         expect(runs).toBe(2)
         const failing = new AgentCliChecker(async () => { throw new Error('x') })
-        expect(await failing.get()).toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown' })
+        expect(await failing.get()).toEqual({ claude: 'unknown', codex: 'unknown', agy: 'unknown', opencode: 'unknown' })
     })
 })

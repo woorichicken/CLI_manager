@@ -93,7 +93,7 @@ test.describe('T159 Getting started', () => {
                     CODEX_HOME: path.join(sandbox.root, 'codex-home'),
                     PATH: `${sandbox.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
                     SHELL: '/bin/zsh',
-                    CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=missing,agy=installed'
+                    CLIMANAGER_AGENT_CLI_FAKE: 'claude=installed,codex=missing,agy=installed,opencode=installed'
                 }
             }
         )
@@ -150,11 +150,20 @@ test.describe('T159 Getting started', () => {
         expect((await agyLogo.locator('path').getAttribute('d'))?.startsWith('M21.751 22.607')).toBe(true)
         const logoBox = await agyLogo.boundingBox()
         expect(logoBox!.width).toBeGreaterThan(8)
+        // OpenCode (installed): lobe-icons' frame mark drawn even-odd, the `opencode` command
+        const opencodeRow = page.locator('[data-builtin-template="opencode"]')
+        await expect(opencodeRow).toHaveAttribute('data-cli-status', 'installed')
+        await expect(opencodeRow).toHaveCSS('opacity', '1')
+        await expect(opencodeRow).toContainText('OpenCode')
+        await expect(opencodeRow).toContainText('opencode')
+        const opencodeLogo = opencodeRow.locator('svg[data-agent-logo="opencode"] path')
+        expect(await opencodeLogo.getAttribute('d')).toBe('M16 6H8v12h8V6zm4 16H4V2h16v20z')
+        expect(await opencodeLogo.getAttribute('fill-rule')).toBe('evenodd')
         const order = await page.evaluate(() => {
             const name = (b: Element): string => b.querySelector('span.truncate')?.textContent?.trim() ?? ''
-            return Array.from(document.querySelectorAll('button')).map(name).filter((n) => /^(Claude Code|Codex|Antigravity|Plain Terminal)$/.test(n))
+            return Array.from(document.querySelectorAll('button')).map(name).filter((n) => /^(Claude Code|Codex|Antigravity|OpenCode|Plain Terminal)$/.test(n))
         })
-        expect(order).toEqual(['Claude Code', 'Codex', 'Antigravity', 'Plain Terminal'])
+        expect(order).toEqual(['Claude Code', 'Codex', 'Antigravity', 'OpenCode', 'Plain Terminal'])
         await shot(page, '2-plus-menu')
 
         // Step 2 — the Claude Code row starts `claude` (the stand-in) in a new session
