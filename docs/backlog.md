@@ -19,6 +19,13 @@ rule goes to [`decisions/`](decisions/) or a scoped `CLAUDE.md`, never back into
 
 ## Open
 
+### `check:publish` 의 「unpushed release commit」이 `docs(release-todos)` 커밋을 릴리즈로 읽는다
+- Discovered: 2026-11-28 fb-1128 팀장 — `git switch -c <브랜치> origin/main` 으로 딴 브랜치(upstream = origin/main)에서 ship-bar `check:publish` 가 exit 1.
+- Evidence: `scripts/prepublish-check.cjs:194-205` — `@{upstream}..HEAD` 커밋 제목을 `/릴리즈|release|chore: v\d/i` 로 보고, `docs(release-todos): …` 한 줄이 걸려 FAIL. upstream 을 제 원격 브랜치로 바꾸자(`git branch -u origin/<브랜치>`) 통과. 같은 회차 sidebar 브랜치는 처음부터 제 원격을 추적해 통과했다.
+- Why deferred: 이번 범위(제보) 밖이고, 우회(upstream 바로잡기)가 한 줄이다.
+- Trigger: 다음에 이 FAIL 을 또 보거나 prepublish-check 를 만질 때 → 정규식을 버전 꼴(`release v\d`·`chore: v\d`·`릴리즈 \d`)로 좁히고, upstream 이 기본 브랜치면 그 검사를 건너뛴다. 시험: `release-todos` 제목 커밋은 통과 · `chore: v1.39.0` 은 FAIL.
+- Owner: 없음
+
 ### Grok CLI(`grok`, xAI Grok Build) 붙이기 — 설치·실제 화면 녹화가 먼저
 - Discovered: 2026-11-27 `/opensource` 조사(사람: 「opencode 까지 하고 나머지는 백로그로」). 브리프 `~/Downloads/_batches/agents-port-1127/port-grok.md`(ovis 175d24c MIT · herdr e8d7d97 Apache-2.0).
 - Evidence: 설치 `curl -fsSL https://x.ai/cli/install.sh | bash` → `~/.grok/bin`, 데이터 `$GROK_HOME` 또는 `~/.grok`(이 Mac 에 없음). 대화 `<home>/sessions/<cwd 그룹>/<id>/updates.jsonl` — ACP `session/update` 줄(`user_message_chunk`·`agent_message_chunk`·`tool_call`/`tool_call_update`(toolCallId 로 합침)·`turn_completed`·`rewind_marker`). 재시작 `grok --resume <id>`, fork 없음. 멈추기는 Esc 가 아니라 Ctrl+C(권한 패널에서 Esc 는 포커스만 옮김), 작업 중 Enter 는 대기열. **세션 묶기가 가장 어렵다** — grok 은 옛 세션의 `events.jsonl` 도 계속 열어 두어 `lsof` 만으로는 못 고르고, ovis 는 herdr 훅(`~/.grok/hooks/herdr.json`, `SessionStart` 만 — 따로 소유한 파일이라 0002 와 충돌 없음)에서 id 를 받는데 TUI 안 `/resume` 은 훅이 안 불린다. 화면 규칙 herdr `grok.toml` 13개(작업 중 `⠋… [stop]`·`esc:cancel`, 질문 `┃ N (○)`). 옮길 원본 시험: `grok.test.ts` 48건 중 순수 파싱 약 15 + 픽스처 4개.
